@@ -19,6 +19,9 @@
  * Motorola 2007-Sep-12 - Change AKS and sensitivity of keys 
  * Motorola 2007-Sep-05 - Look for releases before presses
  * Motorola 2007-Jul-05 - Remove shutdown and handle interrupt failure
+ * Motorola 2007-Jun-21 - Fix possible interrupt line not resetting
+ * Motorola 2007-Jun-13 - Remove KEYV shutdown
+ * Motorola 2007-Apr-26 - Fix possible reset when keys are enabled
  * Motorola 2007-Mar-26 - Handle multi-key pressing
  * Motorola 2007-Jan-04 - Release pressed key if key is requested to be disabled
  * Motorola 2006-Dec-07 - Remove original interrupt fix & fix current drain issue
@@ -105,6 +108,8 @@ static int interrupt_flag = 0;
 /******************************************************************************
 * Global variables
 ******************************************************************************/
+/*! Flag to indicate if the driver should be shut down due to a failure */
+///2007-Jun-13 - Remove int keyv_shutdown = 0;
 
 /******************************************************************************
 * Local function prototypes

@@ -16,6 +16,8 @@
  *
  * Date         Author    Comment
  * ----------   --------  ---------------------
+ * 03/02/2007   Motorola  Add Lido boardrev check for MMC.
+ * 02/28/2007   Motorola  Control which SDHCs are assigned to MMC.
  * 10/06/2006   Motorola  Remove ptrace support
  * 11/28/2006   Motorola  Add support for Marvell WiFi on SDHC2
  * 03/11/2007   Motorola  Control which SDHCs are assigned to MMC
@@ -30,6 +32,9 @@
 #include <linux/device.h>
 
 #include <asm/hardware.h>
+#ifdef CONFIG_MOT_FEAT_BRDREV
+#include <asm/boardrev.h>
+#endif /* CONFIG_MOT_FEAT_BRDREV */
 
 #include <asm/arch/spba.h>
 #include <asm/arch/sdma.h>
@@ -301,8 +306,15 @@ static struct platform_device mxcsdhc2_device = {
 static inline void mxc_init_mmc(void)
 {
 #if defined(CONFIG_MOT_FEAT_MMC_SDHC1)
-	spba_take_ownership(SPBA_SDHC1, SPBA_MASTER_A | SPBA_MASTER_C);
+#if defined(CONFIG_MACH_LIDO) && defined(CONFIG_MOT_FEAT_BRDREV)
+        /* boardrev P7A is used for Lido T1 */
+        if( (boardrev() >= BOARDREV_P7A) && (boardrev() != BOARDREV_UNKNOWN) ) {
+#endif /* CONFIG_MACH_LIDO && CONFIG_MOT_FEAT_BRDREV */
+ 	spba_take_ownership(SPBA_SDHC1, SPBA_MASTER_A | SPBA_MASTER_C);
 	(void)platform_device_register(&mxcsdhc1_device);
+#if defined(CONFIG_MACH_LIDO) && defined(CONFIG_MOT_FEAT_BRDREV)
+        }
+#endif /* CONFIG_MACH_LIDO && CONFIG_MOT_FEAT_BRDREV */
 #endif
 #if defined(CONFIG_MOT_FEAT_MMC_SDHC2)
 	spba_take_ownership(SPBA_SDHC2, SPBA_MASTER_A | SPBA_MASTER_C);

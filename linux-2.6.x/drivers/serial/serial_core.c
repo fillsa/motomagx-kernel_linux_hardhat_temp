@@ -7,7 +7,7 @@
  *
  *  Copyright 1999 ARM Limited
  *  Copyright (C) 2000-2001 Deep Blue Solutions Ltd.
- *  Copyright (C) 2008 Motorola, Inc.
+ *  Copyright (C) 2006-2008 Motorola, Inc.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -25,6 +25,7 @@
  */
 /*
  * Date         Author          Comment
+ * 10/05/2006  Motorola       added support for power mgmt and for kgdb 
  * 01/03/2008   Motorola        Add up function in uart_pm_functions.
 */
 

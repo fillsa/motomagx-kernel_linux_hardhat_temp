@@ -68,13 +68,13 @@ endchoice
 
 config FB_MXC_OVERLAY
 	bool "Framebuffer Overlay Plane"
-	depends on FB_MXC_SYNC_PANEL
+	depends on FB_MXC_SYNC_PANEL || FB_MXC_SYNC_ASYNC_PANEL
 	default n
 
 config FB_MXC_INTERNAL_MEM
 	bool "Framebuffer in Internal RAM"
 	depends on FB_MXC_SYNC_PANEL && !FB_MXC_VGA_PANEL && ARCH_MXC91231
-	depends on !FB_MXC_32BPP
+	depends on !FB_MXC_32BPP && !FB_MXC_HVGA_PANEL
 	default n
 
 config FB_MXC_ASYNC_PANEL
@@ -122,6 +122,19 @@ config FB_MXC_ASYNC_PANEL_IFC_16_BIT
 
 config FB_MXC_ASYNC_PANEL_IFC_SERIAL
 	bool "Serial Bus Interface"
+
+endchoice
+config FB_MXC_SYNC_ASYNC_PANEL
+	depends on FB_MXC && MOT_FEAT_GPIO_API_LCD
+	bool "Panels with both Synchronous and Asynchronous Interfaces"
+	default n
+choice
+	prompt "Dual Synchronous and Asynchronous Panel Types"
+        depends on FB_MXC_SYNC_ASYNC_PANEL
+	default FB_MXC_HVGA_PANEL
+
+config FB_MXC_HVGA_PANEL
+        bool "HVGA (2x240x320) Panels"
 
 endchoice
 

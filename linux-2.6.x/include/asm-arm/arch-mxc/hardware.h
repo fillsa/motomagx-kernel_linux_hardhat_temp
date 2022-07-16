@@ -153,11 +153,18 @@
 #include <asm/arch/board-mx31ads.h>
 #endif
 
-#if defined(CONFIG_MACH_SCMA11PHONE)
+#if defined(CONFIG_MACH_SCMA11REF)
+#include <asm/arch/board-scma11ref.h>
+#endif
+
+#if defined(CONFIG_MACH_ASCENSION) || defined(CONFIG_MACH_LIDO) || defined(CONFIG_MACH_SAIPAN) || defined(CONFIG_MACH_ELBA) || defined(CONFIG_MACH_PICO)
+//#if defined(CONFIG_MACH_SCMA11PHONE)
 #include <asm/arch/board-scma11phone.h>
 #endif
 
-#if defined(CONFIG_MACH_ARGONLVPHONE)
+#if defined(CONFIG_MACH_ARGONLVREF) || defined(CONFIG_MACH_ARGONPLUSREF)
+#include <asm/arch/board-argonlvref.h>
+#elif defined(CONFIG_MACH_ARGONLVPHONE)
 #include <asm/arch/board-argonlvphone.h>
 #endif
 

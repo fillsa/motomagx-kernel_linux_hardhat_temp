@@ -16,6 +16,7 @@
  * 02111-1307, USA
  *
  * Motorola 2007-Apr-23 - Remove Power Control 1 initialization. 
+ * Motorola 2007-Mar-19 - Remove Charger 0 initialization
  * Motorola 2007-Jan-08 - Updated copyright
  * Motorola 2006-Nov-09 - Remove LED initialization
  * Motorola 2006-Oct-09 - Update File

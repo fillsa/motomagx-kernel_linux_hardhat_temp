@@ -18,6 +18,7 @@
  * Motorola 2008-Jan-10 - Fix the share keypad LED
  * Motorola 2006-Oct-10 - Update File
  * Motorola 2006-Oct-05 - Fix display backlight in keylock mode
+ * Motorola 2006-Sep-27 - Temporary back out the change for Lido
  * Motorola 2006-Sep-11 - Fix backlight update issue for Lido
  * Motorola 2006-Sep-06 - Track lighting update status
  * Motorola 2006-May-31 - Added new interface functions to provide backlight status.

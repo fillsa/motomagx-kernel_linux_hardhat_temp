@@ -96,6 +96,17 @@ const POWER_IC_BACKUP_MEMORY_LOOKUP_T backup_memory_table[POWER_IC_BACKUP_MEMORY
 {  
     /* Memory Register         Offset  Length             Kernel                       User Space
                                                     Access Permission              Access Permission*/
+    { /* POWER_IC_BACKUP_MEMORY_ID_MEMA */
+        POWER_IC_BACKUP_MEMORY_A, /* memory register location */
+        0x00, /* offset */
+        0x10 /* length */
+    },
+
+    { /* POWER_IC_BACKUP_MEMORY_ID_MEMB */
+        POWER_IC_BACKUP_MEMORY_B, /* memory register location */
+        0x00, /* offset */
+        0x10 /* length */
+    },
     {POWER_IC_BACKUP_MEMORY_A,  0x00,   0x01,   SET_BIT|READ_BIT|CLEAR_BIT,   SET_BIT|READ_BIT|CLEAR_BIT},   /* POWER_IC_BACKUP_MEMORY_ID_ATLAS_BACKUP_FLASH_MODE */
     {POWER_IC_BACKUP_MEMORY_A,  0x01,   0x01,   SET_BIT|READ_BIT|CLEAR_BIT,   SET_BIT|READ_BIT|CLEAR_BIT},   /* POWER_IC_BACKUP_MEMORY_ID_ATLAS_BACKUP_PANIC */
     {POWER_IC_BACKUP_MEMORY_A,  0x02,   0x01,   SET_BIT|READ_BIT|CLEAR_BIT,   SET_BIT|READ_BIT|CLEAR_BIT},   /* POWER_IC_BACKUP_MEMORY_ID_ATLAS_BACKUP_FOTA_MODE */

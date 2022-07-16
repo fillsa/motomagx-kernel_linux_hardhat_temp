@@ -21,7 +21,9 @@
 /* Date         Author          Comment
  * ===========  ==============  ==============================================
  * 04-Oct-2006  Motorola        Initial revision.
+ * 10-Nov-2006  Motorola        Update high speed USB API.
  * 13-Nov-2006  Motorola        Change pad group 25 settings.
+ * 16-Nov-2006  Motorola        Updated LCD serializer reset and stby functions
  * 15-Dec-2006  Motorola        IOMUX pad 12 current drain improvement
  * 08-Jan-2007  Motorola        Change IOMUX pad 22 setting for camera.
  * 26-Jan-2007  Motorola        Bluetooth current drain improvements.
@@ -32,6 +34,10 @@
 #include <asm/mot-gpio.h>
 
 #include "mot-gpio-scma11.h"
+
+#ifdef CONFIG_MOT_FEAT_BRDREV
+#include <asm/boardrev.h>
+#endif /* CONFIG_MOT_FEAT_BRDREV */
 
 /**
  * Initial GPIO register settings.
@@ -201,11 +207,11 @@ struct gpio_signal_settings initial_gpio_settings[MAX_GPIO_SIGNAL] = {
     
     /*
      * SCM-A11 Package Pin Name: SPI1_CLK
-     * Ascension P1 Signal: Marked EL_NUM_EN on early documents; NC later (NC)
-     * Ascension P2 Signal: Marked EL_NUM_EN on early documents; NC later (NC)
+     * Ascension P1 Signal: Marked EL_NUM_EN (Backlight) on early documents; NC later (NC)
+     * Ascension P2 Signal: Marked EL_NUM_EN (Backlight) on early documents; NC later (NC)
      * Selected Primary Function: GP_SP_A27 (Output)
      *
-     * Array index: 14  GPIO_SIGNAL_SP_A27
+     * Array index: 14  GPIO_SIGNAL_SP_A27(GPIO_SIGNAL_EL_NUM_EN)
      */
     { GPIO_SP_A_PORT,   27, GPIO_GDIR_OUTPUT,   GPIO_DATA_LOW },
     
@@ -215,7 +221,7 @@ struct gpio_signal_settings initial_gpio_settings[MAX_GPIO_SIGNAL] = {
      * Ascension P2 Signal: EL_NAV_EN (Backlight)
      * Selected Primary Function: GP_SP_A29 (Output)
      *
-     * Array index: 15  GPIO_SIGNAL_EL_EN
+     * Array index: 15  GPIO_SIGNAL_EL_EN(GPIO_SIGNAL_EL_NAV_EN)
      */
     { GPIO_SP_A_PORT,   29, GPIO_GDIR_OUTPUT,   GPIO_DATA_LOW },
 
@@ -506,3 +512,64 @@ struct iomux_pad_setting iomux_pad_register_settings[IOMUX_PAD_SETTING_COUNT] __
     /* Not Used -- 0 */
     { IOPAD_GROUP28, 0x0000 },
 };
+
+void __init ascension_gpio_signal_fixup(void)
+{
+//#if defined(CONFIG_MOT_FEAT_BRDREV )
+//    if( (boardrev() == BOARDREV_P1A) || (boardrev() == BOARDREV_UNKNOWN) ) {
+//#endif /* CONFIG_MOT_FEAT_BRDREV */
+        gpio_setting_fixup_p1a();
+//#ifdef CONFIG_MOT_FEAT_BRDREV
+//    }
+//#endif /* CONFIG_MOT_FEAT_BRDREV */
+
+    return;
+}
+
+
+#ifdef CONFIG_MOT_FEAT_BRDREV
+/**
+ * Adjust the initial_gpio_settings table to reflect Ascension P1 connections.
+ * This function should be called before the GPIO signals are set to their
+ * desired initial states.
+ */
+void __init gpio_setting_fixup_p1a(void)
+{
+    /*
+     * SCM-A11 Package Pin Name: UH2_SUSPEND
+     * Ascension P1 Signal: CAM_TORCH_EN (Camera Flash)
+     * Ascension P2 Signal: NC (NC)
+     * Selected Primary Function: GP_SP_A10 (Output)
+     */
+    initial_gpio_settings[GPIO_SIGNAL_CAM_TORCH_EN].port = GPIO_SP_A_PORT;
+    initial_gpio_settings[GPIO_SIGNAL_CAM_TORCH_EN].sig_no = 10;
+    initial_gpio_settings[GPIO_SIGNAL_CAM_TORCH_EN].out    = GPIO_GDIR_OUTPUT;
+    initial_gpio_settings[GPIO_SIGNAL_CAM_TORCH_EN].data   = GPIO_DATA_LOW;
+
+    /*
+     * SCM-A11 Package Pin Name: UH2_SUSPEND
+     * Ascension P1 Signal: CAM_TORCH_EN (Camera Flash)
+     * Ascension P2 Signal: NC (NC)
+     * Selected Primary Function: GP_SP_A10 (Output)
+     *
+     * Since CAM_TORCH_EN is on GP_SP_A10 for P1, we don't want the
+     * GPIO_SIGNAL_SP_A10 no connection setting for P2 to be used.
+     */
+    initial_gpio_settings[GPIO_SIGNAL_SP_A10].port  = GPIO_INVALID_PORT;
+
+    /*
+     * SCM-A11 Package Pin Name: UH2_RXDM
+     * Ascension P1 Signal: NC (NC)
+     * Ascension P2 Signal: CAM_TORCH_EN (Camera Flash)
+     * Selected Primary Function: GP_SP_A13 (Output)
+     *
+     * The TF_ENABLE signal doesn't exist on Ascension P2.
+     */
+    initial_gpio_settings[GPIO_SIGNAL_P1_TF_ENABLE].port = GPIO_SP_A_PORT;
+    initial_gpio_settings[GPIO_SIGNAL_P1_TF_ENABLE].sig_no = 13;
+    initial_gpio_settings[GPIO_SIGNAL_P1_TF_ENABLE].out    = GPIO_GDIR_OUTPUT;
+    initial_gpio_settings[GPIO_SIGNAL_P1_TF_ENABLE].data   = GPIO_DATA_LOW;
+}
+#endif /* CONFIG_MOT_FEAT_BRDREV */
+
+

@@ -94,14 +94,14 @@
 #define ROWS 5
 static short int COLS = 6;
 /* Argon Family */
-#elif defined(CONFIG_ARCH_MXC91321)
+#elif defined(CONFIG_ARCH_MXC91321) // #elif (defined(CONFIG_MACH_ARGONPLUSREF) || defined(CONFIG_MACH_ARGONLVREF))
 #define ROWS 8
 static short int COLS = 6;
 #else
 #error "Unknown architecture!"
 #endif
 
-/*! Auto repeat timer for headset */
+/*! Auto repeat timer for headset(capacitive touch) */
 struct timer_list headset_timer;
 /*! Auto repeat timer for emu headset */
 struct timer_list emu_headset_timer;
@@ -272,6 +272,32 @@ static unsigned short key_map_P2W[] = {
     KEYPAD_4,           KEYPAD_NAV_LEFT,
     KEYPAD_SIDE_UP,     KEYPAD_SOFT_RIGHT,
         KEYPAD_SIDE_DOWN, KEYPAD_VA,
+};
+
+
+#elif defined(CONFIG_MACH_ASCENSION) || defined(CONFIG_MACH_LIDO)
+
+static unsigned short key_map[] = {
+        /* row 0 */
+    KEYFLAG_SLIDER_DISABLED|KEYPAD_6,     KEYPAD_NAV_RIGHT,
+    KEYFLAG_SLIDER_DISABLED|KEYPAD_1,     KEYPAD_NAV_CENTER,
+    KEYPAD_CARRIER,                       KEYPAD_NONE,
+        /* row 1 */
+    KEYFLAG_SLIDER_DISABLED|KEYPAD_8,     KEYPAD_NAV_DOWN,
+    KEYFLAG_SLIDER_DISABLED|KEYPAD_3,     KEYPAD_SOFT_LEFT,
+    KEYPAD_CLEAR_BACK, KEYPAD_MESSAGING,
+    /* row 2 */
+    KEYFLAG_SLIDER_DISABLED|KEYPAD_7,     KEYFLAG_SLIDER_DISABLED|KEYPAD_9,
+    KEYFLAG_SLIDER_DISABLED|KEYPAD_5,     KEYFLAG_SLIDER_DISABLED|KEYPAD_STAR,
+    KEYFLAG_SLIDER_DISABLED|KEYPAD_POUND, KEYFLAG_SLIDER_DISABLED|KEYPAD_0,
+    /* row 3 */
+    KEYFLAG_SLIDER_DISABLED|KEYPAD_2,     KEYPAD_NAV_UP,
+    KEYPAD_SMART,                         KEYPAD_SEND,
+    KEYPAD_IMAGING,                       KEYPAD_PTT,
+    /* row 4 */
+    KEYFLAG_SLIDER_DISABLED|KEYPAD_4,     KEYPAD_NAV_LEFT,
+    KEYPAD_SIDE_UP,                       KEYPAD_SOFT_RIGHT,
+	KEYPAD_SIDE_DOWN, KEYPAD_VA,
 };
 
 #elif defined(CONFIG_MACH_SAIPAN)
@@ -619,7 +645,7 @@ static const unsigned short keymap_cam_notoggle[] = {
 static const unsigned short *key_map;
 
 static void set_keymap(MORPHING_MODE_E mode);
-#else /* xPIXL */
+#else
 
 static unsigned short key_map[] = {
         /* row 0 */
@@ -645,7 +671,8 @@ static unsigned short key_map[] = {
 };
 #endif
 
-#elif defined(CONFIG_ARCH_MXC91321)
+#elif defined(CONFIG_ARCH_MXC91321) // #elif (defined(CONFIG_MACH_ARGONPLUSREF) || defined(CONFIG_MACH_ARGONLVREF))
+
 
 static unsigned short *key_map;
 
@@ -777,7 +804,7 @@ static unsigned short key_map_P4[] = {
 /* Lido & Pico inactive rows/columns */
 #define KEYPAD_CLOSED_INACTIVE_ROWS    (0x07)
 #define KEYPAD_CLOSED_INACTIVE_COLUMNS (0x0B)
-#elif  defined(CONFIG_ARCH_MXC91321)
+#elif  defined(CONFIG_ARCH_MXC91321) // #elif defined(CONFIG_MACH_ARGONPLUSREF) || defined(CONFIG_MACH_ARGONLVREF)
 #define KEYPAD_CLOSED_INACTIVE_ROWS    (0x00)
 #define KEYPAD_CLOSED_INACTIVE_COLUMNS (0x00)
 #endif
@@ -1557,7 +1584,7 @@ autorepeat_handle_timer (unsigned long unused)
 }
 
 /*!
- * This is called when the headset timer goes off.
+ * This is called when the headset(cap_touch autorepeat) timer goes off.
  */
 static void
 headset_handle_timer (unsigned long unused)
@@ -1578,7 +1605,7 @@ headset_handle_timer (unsigned long unused)
 }
 
 /*!
- * This is called when the headset timer goes off.
+ * This is called when the headset(cap_touch autorepeat) timer goes off.
  */
 static void
 emu_headset_handle_timer (unsigned long unused)
@@ -2811,7 +2838,7 @@ int generate_key_event(unsigned short keycode, unsigned short up_down)
         return 0;
     }
 #endif
-    /* do autorepeat for KEYPAD_HEADSET key*/
+    /* do autorepeat for KEYPAD_HEADSET (capacitive touch) keys except for proximity sensor */
     if(keycode == KEYPAD_HEADSET)
     {
         /* Press */
@@ -3199,6 +3226,7 @@ static irqreturn_t slider_irq_handler(int irq, void *ptr, struct pt_regs *regs)
     /* Dont allow suspend */
     reject_suspend = 1;
     
+    gpio_slider_clear_int ();
     del_timer(t);
     t->expires = jiffies + 10;
     add_timer(t);
@@ -3672,7 +3700,7 @@ static int __init mxc_kpp_init(void)
     init_timer(&kpp_dev.autorepeat_timer);
     kpp_dev.autorepeat_timer.function = autorepeat_handle_timer;
 
-    /* Initialize the headset timer */
+    /* Initialize the headset(capacitive touch) timer */
     init_timer(&headset_timer);
     headset_timer.function = headset_handle_timer;
 

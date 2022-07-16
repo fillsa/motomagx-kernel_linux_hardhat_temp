@@ -24,7 +24,9 @@
  */
 /*  Copyright (C) 2006-2008 Motorola
  * Date		Author			Comment
- * 11/17/2006	Motorola		Support SDA 2.0
+ * 11/17/2006	Motorola		Support SDA 2.0(SDHC)
+ * 12/25/2006	Motorola	Support for Motorola special request
+ * 12/12/2007   Motorola        Support shredding card
  * 11/28/2006   Motorola                Support MMCA 4.1 movinand 4-bit mode	
  * 03/08/2007   Motorola                Turn off sdhc clock when card is not present 	
  * 07/04/2007   Motorola                Add support for MC/MR

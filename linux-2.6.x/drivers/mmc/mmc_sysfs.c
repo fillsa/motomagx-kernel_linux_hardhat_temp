@@ -10,6 +10,11 @@
  *  MMC sysfs/driver model support.
  */
 /*
+ * Copyright (C) 2007 Motorola
+ * Date         Author          Comment
+ * 08/30/2007   Motorola        Support do dosfsck when fat panic
+ */
+/*
  * Copyright (C) 2006 - 2008 Motorola
  * Date         Author                  Comment
  * 2006-11-23	Motorola		Add sysfs and proc interface for megasim boot/halt.

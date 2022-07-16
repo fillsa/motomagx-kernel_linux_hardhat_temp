@@ -51,6 +51,11 @@ config MACH_MXC30030EVB
 	  Include support for MXC300-30 EVB platform. This includes specific
 	  configurations for the board and its peripherals.
 
+config MACH_ARGONLVREF
+	bool "Support ArgonLV Reference platforms"
+	help
+	  Include support for the ArgonLV Reference platform. This includes specific 
+	  configurations for the board and its peripherals.
 
 config MACH_MXC30030ADS
 	bool "Support MXC300-30 ADS platforms"

@@ -15,6 +15,7 @@
  * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA
  * 02111-1307, USA
  *
+ * Motorola 2007-Apr-20 - Fix Mass Storage
  * Motorola 2007-Mar-28 - Switch power source for phone power accessories
  * Motorola 2007-Feb-08 - Add support for China charger 
  * Motorola 2007-Jan-08 - Updated copyright

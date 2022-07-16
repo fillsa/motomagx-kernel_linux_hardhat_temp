@@ -25,6 +25,7 @@
  * OF SUCH DAMAGE.
  *
  * Motorola 2008-Jan-29 - Added function to set morphing mode
+ * Motorola 2007-Mar-30 - Support BT CIT test.
  * Motorola 2007-Feb-13 - Add privacy LED brightness support
  * Motorola 2007-Jan-26 - Add privacy brightness control
  * Motorola 2007-Jan-17 - Add one more funlight apps
@@ -257,6 +258,8 @@ typedef struct
 /*==================================================================================================
                                  GLOBAL VARIABLE DECLARATION
 ==================================================================================================*/
+
+extern LIGHTS_FL_APP_CTL_T LIGHTS_FL_calling_app;
 
 /*==================================================================================================
                                      FUNCTION PROTOTYPES

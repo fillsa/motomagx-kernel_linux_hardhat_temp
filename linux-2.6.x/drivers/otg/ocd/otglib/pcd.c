@@ -796,12 +796,14 @@ void bus_deregister_bh(void *arg)
         unsigned long flags;
 
         TRACE_MSG1(PCD, "BUS_DEREGISTER_BH: pcd: %x", pcd);
+//printk("\nBUS_DEREGISTER_BH: pcd: %x\n", pcd);
         if (pcd && (bus = pcd->bus) && (usbd_bus_state_enabled == bus->bus_state)) {
 
                 if (usbd_pcd_ops.disable) usbd_pcd_ops.disable (pcd);
 
                 //if (bus->device_state != STATE_ATTACHED) 
                 if (bus->device_state == STATE_ATTACHED) {
+//printk("\n LYN BUS ATTACHED, RESET IT  \n");
                         usbd_bus_event_handler_irq (bus, DEVICE_RESET, 0);
                         usbd_bus_event_handler_irq (bus, DEVICE_POWER_INTERRUPTION, 0);
                         usbd_bus_event_handler_irq (bus, DEVICE_HUB_RESET, 0);
@@ -809,6 +811,7 @@ void bus_deregister_bh(void *arg)
                 usbd_bus_event_handler_irq (bus, DEVICE_DESTROY, 0);
                 pcd_disable_endpoints (bus);
                 pcd_disable (bus);
+//printk("\nLYN DISABLE FUNCTION\n");
 
 
                 usbd_disable_function (bus);
@@ -826,9 +829,11 @@ void bus_deregister_bh(void *arg)
                 TRACE_MSG0(PCD, "BUS_DEREGISTER_BH: FINISHED - sending PCD_OK");
                 //MOD_DEC_USE_COUNT;
         }
+//printk("\nLYN BUS_DEREGISTER_BH: BEFORE - sending PCD_OK\n");
         otg_event(pcd->otg, PCD_OK, PCD, "BUS_DEREGISTER_BH PCD_OK");
         // XXX MODULE UNLOCK HERE
 	g_usb_bus_disable_clr();
+//printk("\nLYN BUS_DEREGISTER_BH: FINISHED - sending PCD_OK\n");
 }
 
 /* ************************************************************************************* */
@@ -885,6 +890,7 @@ void pcd_init_func (struct otg_instance *otg, u8 flag)
         struct pcd_instance *pcd = otg->pcd;
         struct usbd_bus_instance *bus = pcd->bus;
         //struct bus_data *data = NULL;
+//printk("\nLYN pcd_init_func\n");
 
         //TRACE_MSG0(PCD, "--");
         switch (flag) {
@@ -892,6 +898,7 @@ void pcd_init_func (struct otg_instance *otg, u8 flag)
                 TRACE_MSG0(PCD, "PCD_INIT: SET");
                 PREPARE_WORK_ITEM(pcd->bh, bus_register_bh, pcd);
 		if(g_usb_bus_disable_ing()){printk("\nLYN BUSDISABLED Return \n"); return; }
+//printk("\n LYN SCHEDUL  %s:%d ", __FUNCTION__, __LINE__);		
                 SCHEDULE_WORK(pcd->bh);
                 TRACE_MSG0(PCD, "BUS_REGISTER_SCHEDULE: finished");
                 break;
@@ -904,6 +911,7 @@ void pcd_init_func (struct otg_instance *otg, u8 flag)
 		}else{
 			printk("\nLYN BUSDISABLED Return \n");	return;
 		}
+//printk("\n LYN SCHEDUL  %s:%d ", __FUNCTION__, __LINE__);
                 DEBUS_SCHEDULE_WORK(pcd->bh);
         }
 }

@@ -14,6 +14,8 @@
  * Date     Author    Comment
  * 10/2006  Motorola  Added support for a BGR666 display mapping and the 
  *                    power-up logo.
+ * 02/2007  Motorola  Fixed the start and end porch panel specifications
+ * 06/2007  Motorola  Added a function to return if an SDC channel is enabled
  * 10/2007  Motorola  Fixed SDC_CONF register operation. 
  * 11/2007  Motorola  Add a function to syn global variables
  * 01/2008  Motorola  syn IPU_CHAN_ID(MEM_SDC_BG
@@ -391,6 +393,19 @@ int32_t ipu_sdc_set_window_pos(ipu_channel_t channel, int16_t x_pos,
 	return 0;
 }
 
+uint32_t ipu_is_sdc_chan_enabled(ipu_channel_t channel)
+{
+        uint32_t reg_val;
+
+        reg_val = __raw_readl(SDC_COM_CONF);
+
+        if(channel == MEM_SDC_BG)
+                return (reg_val & SDC_COM_BG_EN) != 0;
+        else if(channel == MEM_SDC_FG)
+                return (reg_val & SDC_COM_FG_EN) != 0;
+        else
+                return -EINVAL;
+}
 void _ipu_sdc_fg_init(ipu_channel_params_t * params)
 {
 	uint32_t reg;

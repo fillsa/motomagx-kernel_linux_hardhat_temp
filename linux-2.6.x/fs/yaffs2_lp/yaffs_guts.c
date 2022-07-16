@@ -30,6 +30,7 @@
  * 01-23-2007   Motorola  Do not shred Object Header page
  * 06-27-2007   Motorola  Added yaffs_FillCacheRemainder function to optimize
  *                        cache usage
+ * 07-13-2007   Motorola  Added config item YAFFS2_TUNING for special product 
  * 07-24-2007   Motorola  Fix cache->contig wrong calculate
  */
 
@@ -3230,7 +3231,7 @@ int yaffs_UpdateObjectHeader(yaffs_Object * in, const YCHAR * name, int force,
  *   need a very intelligent search.
  */
 
-#ifdef CONFIG_MOT_FEAT_MTD_FS
+#ifdef /*CONFIG_MOT_FEAT_YAFFS2_TUNING*/ CONFIG_MOT_FEAT_MTD_FS
 /*
  * Read data from object if chunk cache size is aligned with page size.
  *
@@ -3300,7 +3301,7 @@ static void yaffs_FlushFilesChunkCache(yaffs_Object * obj)
 
 			if (cache && !cache->locked) {
 				/* Write it out and free it up */
-#ifdef CONFIG_MOT_FEAT_MTD_FS
+#ifdef /*CONFIG_MOT_FEAT_YAFFS2_TUNING*/ CONFIG_MOT_FEAT_MTD_FS
 				yaffs_FillCacheRemainder(cache, dev);
 #endif
 				chunkWritten =
@@ -4038,7 +4039,7 @@ int yaffs_ReadDataFromFile(yaffs_Object * in, __u8 * buffer, loff_t offset,
 					yaffs_ReadChunkDataFromObject(in, chunk,
 								      cache->
 								      data);
-#ifdef CONFIG_MOT_FEAT_MTD_FS
+#ifdef /*CONFIG_MOT_FEAT_YAFFS2_TUNING*/ CONFIG_MOT_FEAT_MTD_FS
 					cache->contig = dev->nDataBytesPerChunk;
 #endif
 					cache->nBytes = 0;
@@ -4051,7 +4052,7 @@ int yaffs_ReadDataFromFile(yaffs_Object * in, __u8 * buffer, loff_t offset,
 #ifdef CONFIG_YAFFS_WINCE
 				yfsd_UnlockYAFFS(TRUE);
 #endif
-#ifdef CONFIG_MOT_FEAT_MTD_FS
+#ifdef /*CONFIG_MOT_FEAT_YAFFS2_TUNING*/ CONFIG_MOT_FEAT_MTD_FS
 				/* Make sure cache is complete */
 				yaffs_FillCacheRemainder(cache, dev);
 #endif
@@ -4216,7 +4217,7 @@ int yaffs_WriteDataToFile(yaffs_Object * in, const __u8 * buffer, loff_t offset,
 #ifdef CONFIG_YAFFS_WINCE
 					yfsd_UnlockYAFFS(TRUE);
 #endif
-#ifdef CONFIG_MOT_FEAT_MTD_FS
+#ifdef /*CONFIG_MOT_FEAT_YAFFS2_TUNING*/ CONFIG_MOT_FEAT_MTD_FS
 					if (start > cache->contig)
 					{
 						/* No longer a contiguous write to the buffer, 
@@ -4240,7 +4241,7 @@ int yaffs_WriteDataToFile(yaffs_Object * in, const __u8 * buffer, loff_t offset,
 					cache->nBytes = nToWriteBack;
 
 					if (writeThrough) {
-#ifdef CONFIG_MOT_FEAT_MTD_FS
+#ifdef /*CONFIG_MOT_FEAT_YAFFS2_TUNING*/ CONFIG_MOT_FEAT_MTD_FS
 						/* Make sure cache is complete. */
 						yaffs_FillCacheRemainder(cache, dev);
 #endif

@@ -377,12 +377,13 @@ struct net_device * __init cs89x0_probe(int unit)
 
 	if (!dev)
 		return ERR_PTR(-ENODEV);
-
+//#if defined(CONFIG_MACH_ARGONLVREF) && defined(CONFIG_MOT_FEAT_BRDREV)
 #if defined(CONFIG_MACH_BUTEREF) && defined(CONFIG_MOT_FEAT_BRDREV)
         if( boardrev() >= BOARDREV_P4A ) {
                 err = -ENODEV;
                 goto out;
         }
+//#endif /* CONFIG_MACH_ARGONLVREF && CONFIG_MOT_FEAT_BRDREV */        
 #endif /* CONFIG_MACH_BUTEREF && CONFIG_MOT_FEAT_BRDREV */
     
 	sprintf(dev->name, "eth%d", unit);

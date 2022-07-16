@@ -17,7 +17,10 @@
  *                    initialization for the power-up logo, removal of the
  *                    console cursor, and additional backlight and EzX
  *                    compatibility IOCTLs.
+ * 11/2006  Motorola  Updated DSM modes and added ESD recovery fix.
  * 11/2006  Motorola  Adjusted ArgonLV related defines.
+ * 01/2007  Motorola  Call routines to turn on/off SDC explicitly in blanking/unblanking
+ *                    routines. This should save an extra 2mA when display is blanked
  * 01/2007  Motorola  Added support for dynamic IPU pool config.
  * 08/2007  Motorola  remove unused mxcfb_suspend/resume definition
  * 09/2007  Motorola  Modified comments.
@@ -66,6 +69,7 @@
 #include <asm/uaccess.h>
 
 #if defined(CONFIG_MOT_FEAT_GPIO_API_LCD) || \
+    defined(CONFIG_MOT_FEAT_GPIO_API_SERIALIZER) || \
     defined(CONFIG_MOT_FEAT_GPIO_API_LIGHTING_LCD)
 #include <asm/mot-gpio.h>
 #endif /* CONFIG_MOT_FEAT_GPIO_API_LCD||CONFIG_MOT_FEAT_GPIO_API_LIGHTING_LCD */
@@ -112,13 +116,21 @@ struct mxcfb_data {
 #endif
 	volatile int32_t vsync_flag;
 	wait_queue_head_t vsync_wq;
+#if defined(CONFIG_MOT_FEAT_LCD_ESD_RECOVERY)
+	volatile int32_t esd_flag;
+#endif
 	wait_queue_head_t suspend_wq;
 	bool suspended;
+        bool currently_blanked;
 	int backlight_level;
 };
 
 static struct mxcfb_data mxcfb_drv_data;
 static uint32_t def_vram = 0;
+
+#if defined(CONFIG_MOT_FEAT_LCD_ESD_RECOVERY)
+static struct timer_list esd_timer;
+#endif
 
 #ifdef CONFIG_FB_MXC_SANYO_QVGA_PANEL
  #ifndef CONFIG_MOT_FEAT_LANDSCAPE_IMODULE
@@ -154,8 +166,8 @@ struct panel_info sanyo_qvga_panel = {
         .vStartWidth            = 4,
         .vEndWidth              = 2,
         .hSyncWidth             = 10,
-        .hStartWidth            = 30,
-        .hEndWidth              = 10,
+        .hStartWidth            = 30,/*20*/
+        .hEndWidth              = 10,/*20*/
         .sig_pol.datamask_en    = false,
         .sig_pol.clkidle_en     = false,
         .sig_pol.clksel_en      = false,
@@ -899,7 +911,7 @@ static int mxcfb_ioctl(struct inode *inode, struct file *file,
 			MXCFB_DOWN_INTERRUPTIBLE(&mxcfb_global_state.g_sem);
 #if defined(CONFIG_MOT_FEAT_GPIO_API_LIGHTING_LCD)
                         gpio_lcd_backlight_enable(false);
-#elif defined(CONFIG_MACH_MARCO)
+#elif defined(CONFIG_MACH_MARCO) || defined(CONFIG_MACH_ASCENSION) || defined(CONFIG_MACH_LIDO) // #elif 
 			/* Ascension does not have a separate GPIO to control
                          * backlight on/off */
 			lights_backlightset(LIGHTS_BACKLIGHT_DISPLAY, 0);
@@ -911,7 +923,7 @@ static int mxcfb_ioctl(struct inode *inode, struct file *file,
 			MXCFB_DOWN_INTERRUPTIBLE(&mxcfb_global_state.g_sem);
 #if defined(CONFIG_MOT_FEAT_GPIO_API_LIGHTING_LCD)
                         gpio_lcd_backlight_enable(true);
-#elif defined(CONFIG_MACH_MARCO)
+#elif defined(CONFIG_MACH_MARCO) || defined(CONFIG_MACH_ASCENSION) || defined(CONFIG_MACH_LIDO) // #elif 
 			/* Ascension does not have a separate GPIO to control
                          * backlight on/off */
 			lights_backlightset(LIGHTS_BACKLIGHT_DISPLAY,
@@ -960,6 +972,7 @@ static int mxcfb_ioctl(struct inode *inode, struct file *file,
 			retval = -EFAULT;
 			break;
 		}
+//#elif defined(CONFIG_MACH_ARGONLVREF)
 #elif defined(CONFIG_MACH_ARGONLVPHONE) \
                 && defined(CONFIG_MOT_FEAT_GPIO_API_LIGHTING_LCD)
 	        pwm_set_lcd_bkl_brightness(arg);	
@@ -986,6 +999,7 @@ static int mxcfb_ioctl(struct inode *inode, struct file *file,
 	case FBIOGETBRIGHTNESS:
 	{
 		MXCFB_DOWN_INTERRUPTIBLE(&mxcfb_global_state.g_sem);
+//#if defined(CONFIG_MACH_ARGONLVREF)
 #if defined(CONFIG_MACH_ARGONLVPHONE) \
                 && defined(CONFIG_MOT_FEAT_GPIO_API_LIGHTING_LCD)
 	        mxcfb_global_state.brightness = pwm_get_lcd_bkl_brightness();	
@@ -1357,13 +1371,38 @@ static int mxcfb_blank(int blank, struct fb_info *info)
 	case FB_BLANK_VSYNC_SUSPEND:
 	case FB_BLANK_HSYNC_SUSPEND:
 	case FB_BLANK_NORMAL:
+#if defined(CONFIG_MACH_ASCENSION) || defined(CONFIG_MACH_LIDO)
+                if(mxcfb_drv_data.currently_blanked)
+                        break;
+                mxcfb_drv_data.currently_blanked = true;
+#endif
+#if defined(CONFIG_MOT_FEAT_LCD_ESD_RECOVERY)
+                del_timer_sync(&esd_timer);
+#endif
 		ipu_disable_channel(MEM_SDC_BG, true);
+#if defined(CONFIG_MOT_FEAT_GPIO_API_LCD)
 		gpio_lcd_inactive();
+#endif
+                ipu_disable_sdc();
+
 		ipu_sdc_set_brightness(0);
 		break;
 	case FB_BLANK_UNBLANK:
+#if defined(CONFIG_MACH_ASCENSION) || defined(CONFIG_MACH_LIDO)	
+                if(!mxcfb_drv_data.currently_blanked)
+                        break;
+                mxcfb_drv_data.currently_blanked = false;
+
+                ipu_enable_sdc();
+#endif
+#if defined(CONFIG_MOT_FEAT_GPIO_API_LCD)
 		gpio_lcd_active();
+#endif
 		ipu_enable_channel(MEM_SDC_BG);
+#if defined(CONFIG_MOT_FEAT_LCD_ESD_RECOVERY)
+                mod_timer(&esd_timer, jiffies + esd_delay);
+                add_timer(&esd_timer);
+#endif
 		ipu_sdc_set_brightness(mxcfb_drv_data.backlight_level);
 		break;
 	}
@@ -1527,6 +1566,47 @@ static struct fb_ops mxcfb_cli_ops = {
 };
 #endif
 
+
+#if defined(CONFIG_MOT_FEAT_LCD_ESD_RECOVERY)
+static struct workqueue_struct *esd_workqueue;
+
+static void esd_work_handler(void * data)
+{
+#if defined(CONFIG_MOT_FEAT_IPU_IOCTL)
+	ipu_disable_pixel_clock();
+#endif
+#if defined(CONFIG_MOT_FEAT_GPIO_API_SERIALIZER)
+	gpio_lcd_serializer_stby(ASSERT_GPIO_SIGNAL);
+	udelay(20);
+	gpio_lcd_serializer_stby(DEASSERT_GPIO_SIGNAL);
+	udelay(50);
+#endif
+#if defined(CONFIG_MOT_FEAT_IPU_IOCTL)
+	ipu_enable_pixel_clock();
+#endif
+
+	mxcfb_drv_data.esd_flag = 0;
+}
+
+static void esd_timer_handler(unsigned long private)
+{
+	mxcfb_drv_data.esd_flag = 1;
+	ipu_clear_irq(IPU_IRQ_SDC_DISP3_VSYNC);
+	ipu_enable_irq(IPU_IRQ_SDC_DISP3_VSYNC);
+	mod_timer(&esd_timer, jiffies + esd_delay);
+}
+
+static void register_esd_timer(void)
+{
+	init_timer(&esd_timer);
+	esd_timer.data = (unsigned long)NULL;
+	esd_timer.function = esd_timer_handler; 
+	esd_timer.expires = jiffies + esd_delay; 
+	add_timer(&esd_timer); 
+}
+static DECLARE_WORK(esd_work, esd_work_handler, NULL);
+#endif /* defined(CONFIG_MOT_FEAT_LCD_ESD_RECOVERY) */
+
 #ifdef NEW_MBX
 static irqreturn_t mxcfb_vsync_irq_handler(int irq, void *dev_id,
 					   struct pt_regs *regs)
@@ -1534,6 +1614,12 @@ static irqreturn_t mxcfb_vsync_irq_handler(int irq, void *dev_id,
 	struct mxcfb_data *fb_data = dev_id;
 
 	ipu_disable_irq(irq);
+
+#if defined(CONFIG_MOT_FEAT_LCD_ESD_RECOVERY)
+	if (mxcfb_drv_data.esd_flag) {
+		queue_work(esd_workqueue, &esd_work);
+	}
+#endif /* defined(CONFIG_MOT_FEAT_LCD_ESD_RECOVERY) */
 
 	fb_data->vsync_flag = 1;
 	wake_up_interruptible(&fb_data->vsync_wq);
@@ -1552,27 +1638,35 @@ static irqreturn_t mxcfb_irq_handler(int irq, void *dev_id,
 	return IRQ_HANDLED;
 }
 
-/* remove unused mxcfb_suspend/resume definition for LJ6.3
-#ifdef CONFIG_PM
 
-/* 
+#if 0//#ifdef CONFIG_PM /************ 08/2007 remove unused mxcfb_suspend/resume definition for LJ6.3 ************/
+
+/*! 
  * XXX : Testing of the LPMC hardware uncovered an unexpected and infrequent 
  * error in suspend/resume.  We are disabling this until the root cause can be
  * identified.  Also, please note that this is not a real Kconfig option, but 
  * rather is intended to #if 0 the LPMC code out.
  */
-/*
 #undef CONFIG_MOT_FEAT_ENABLE_LPMC
 
-/*
+#include "asm/arch/clock.h"
+extern void mxc_clks_disable(enum mxc_clocks );
+extern void mxc_clks_enable(enum mxc_clocks );
+
+/*!
  * Power management hooks.      Note that we won't be called from IRQ context,
  * unlike the blank functions above, so we may sleep.
  */
 
-/*
+/*!
  * Suspends the framebuffer and blanks the screen. Power management support
+ *
+ * @param	dev	pointer to device structure.
+ * @param	state	state of the device.
+ * @param	level	level of suspend.
+ *
+ * @return	success
  */
-/*
 static int mxcfb_suspend(struct device *dev, u32 state, u32 level)
 {
 	struct mxcfb_data *drv_data = dev_get_drvdata(dev);
@@ -1588,7 +1682,7 @@ static int mxcfb_suspend(struct device *dev, u32 state, u32 level)
 #endif
 #endif /* CONFIG_MOT_FEAT_ENABLE_LPMC */
 
-/*
+
 	FUNC_START;
 	DPRINTK("level = %d\n", level);
 
@@ -1615,19 +1709,18 @@ static int mxcfb_suspend(struct device *dev, u32 state, u32 level)
 #else
 			ipu_disable_channel(MEM_SDC_BG, true);
 #endif /* CONFIG_MOT_FEAT_ENABLE_LPMC */
-/*
-#if defined(CONFIG_MOT_FEAT_IPU_GPIO)
+#if defined(CONFIG_MOT_FEAT_IPU_GPIO) || defined(CONFIG_MOT_FEAT_GPIO_API_LCD)
 			gpio_lcd_inactive();
 #endif
 #else /* !defined(CONFIG_FB_MXC_INTERNAL_MEM) */
-/*
+
 			ipu_disable_channel(MEM_SDC_BG, true);
 #if defined(CONFIG_MOT_FEAT_IPU_GPIO)
 			gpio_lcd_inactive();
 #endif
 			ipu_sdc_set_brightness(0);
 #endif /* defined(CONFIG_FB_MXC_INTERNAL_MEM) */
-/*		
+		
 		}
 		break;
 	case SUSPEND_POWER_DOWN:
@@ -1637,10 +1730,14 @@ static int mxcfb_suspend(struct device *dev, u32 state, u32 level)
 	return 0;
 }
 
-/*
+/*!
  * Resumes the framebuffer and unblanks the screen. Power management support
+ *
+ * @param       dev     pointer to device structure.
+ * @param       level   level of suspend.
+ *
+ * @return      success
  */
-/*
 static int mxcfb_resume(struct device *dev, u32 level)
 {
 	struct mxcfb_data *drv_data = dev_get_drvdata(dev);
@@ -1659,23 +1756,24 @@ static int mxcfb_resume(struct device *dev, u32 level)
 		break;
 	case RESUME_ENABLE:
 		if (mxc_fbi->blank == FB_BLANK_UNBLANK) {
+                        mxc_clks_enable(IPU_CLK);
 #ifdef CONFIG_FB_MXC_INTERNAL_MEM
 #if CONFIG_MOT_FEAT_ENABLE_LPMC 
 			// LPMC init
 			ipu_lpmc_uninit();
 #endif
 			ipu_enable_channel(MEM_SDC_BG);
-#if defined(CONFIG_MOT_FEAT_IPU_GPIO)
+#if defined(CONFIG_MOT_FEAT_IPU_GPIO) || defined(CONFIG_MOT_FEAT_GPIO_API_LCD)
 			gpio_lcd_active();
 #endif
 #else /* !defined(CONFIG_FB_MXC_INTERNAL_MEM) */
-/*			
 			ipu_enable_channel(MEM_SDC_BG);
-#if defined(CONFIG_MOT_FEAT_IPU_GPIO)
+//
+#if defined(CONFIG_MOT_FEAT_IPU_GPIO) || defined(CONFIG_MOT_FEAT_GPIO_API_LCD)
 			gpio_lcd_active();
 #endif
 			ipu_sdc_set_brightness(drv_data->backlight_level);
-#endif
+#endif /* #ifdef CONFIG_FB_MXC_INTERNAL_MEM */
 		}
 #ifdef CONFIG_FB_MXC_OVERLAY
 		if (mxc_fbi_ovl->blank)
@@ -1688,13 +1786,10 @@ static int mxcfb_resume(struct device *dev, u32 level)
 	FUNC_END;
 	return 0;
 }
-#else
-*/
+#else /* CONFIG_PM */
 #define mxcfb_suspend   NULL
 #define mxcfb_resume    NULL
-/*
-#endif
-*/
+#endif /* CONFIG_PM */
 
 /*
  * Main framebuffer functions
@@ -2035,6 +2130,11 @@ static int mxcfb_probe(struct device *dev)
 	ipu_disable_irq(IPU_IRQ_SDC_DISP3_VSYNC);
 #endif
 
+#if defined(CONFIG_MOT_FEAT_LCD_ESD_RECOVERY)
+	esd_workqueue = create_singlethread_workqueue("LCD_ESD");
+	mxcfb_drv_data.esd_flag = 0;
+	register_esd_timer();
+#endif
 #if defined(CONFIG_MOT_FEAT_BOOT_BACKLIGHT)
 #if defined(CONFIG_MOT_FEAT_GPIO_API_LIGHTING_LCD)
         gpio_lcd_backlight_enable(true);
@@ -2226,6 +2326,11 @@ void mxcfb_exit(void)
 
 #ifdef NEW_MBX
 	ipu_free_irq(IPU_IRQ_SDC_DISP3_VSYNC, &mxcfb_drv_data);
+#endif
+#if defined(CONFIG_MOT_FEAT_LCD_ESD_RECOVERY)
+	del_timer_sync(&esd_timer);
+	flush_workqueue(esd_workqueue);
+	destroy_workqueue(esd_workqueue);
 #endif
 
 	platform_device_unregister(&mxcfb_device);

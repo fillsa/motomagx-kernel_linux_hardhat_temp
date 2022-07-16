@@ -32,9 +32,11 @@
  */
 void gpio_lcd_serializer_reset(enum gpio_signal_assertion asserted)
 {
+#if ! defined(CONFIG_MACH_ASCENSION) // in ASCENSION not found GPIO_SIGNAL_SER_RST_B 
     /* GPIO_SIGNAL_SER_RST_B is serializer reset */
     gpio_signal_set_data(GPIO_SIGNAL_SER_RST_B,
             (asserted == ASSERT_GPIO_SIGNAL) ? GPIO_DATA_LOW : GPIO_DATA_HIGH);
+#endif			
 	/* GPIO_SIGNAL_DISP_RST_B is display reset */
     gpio_signal_set_data(GPIO_SIGNAL_DISP_RST_B,
             (asserted == ASSERT_GPIO_SIGNAL) ? GPIO_DATA_LOW : GPIO_DATA_HIGH);

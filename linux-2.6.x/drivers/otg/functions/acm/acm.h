@@ -84,6 +84,7 @@
 #define ACM_OPENED      (1 << 0)        /*!< upper layer has opened the device port */
 #define ACM_CONFIGURED  (1 << 1)        /*!< device is configured */
 #define ACM_THROTTLED   (1 << 2)        /*!< upper layer doesn't want to receive data  */
+//#define ACM_CARRIER     (1 << 3)        /*!< host has set DTR, i.e. host has opened com device */
 #define ACM_LOOPBACK    (1 << 4)        /*!< upper layer wants local loopback */
 #define ACM_LOCAL       (1 << 5)        /*!< upper layer specified LOCAL mode */
 

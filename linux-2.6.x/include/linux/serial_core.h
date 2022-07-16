@@ -1,4 +1,12 @@
 /*
+ * Copyright 2006 Motorola, Inc.
+ *
+ * Changelog:
+ * Date        Author         Comment
+ * 10/5/2006   Motorola       added power management support 
+*/
+
+/*
  *  linux/drivers/char/serial_core.h
  *
  *  Copyright (C) 2006-2007 Motorola, Inc

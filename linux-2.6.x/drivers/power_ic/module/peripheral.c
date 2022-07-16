@@ -15,6 +15,7 @@
  * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  
  * 02111-1307, USA
  * 
+ * Motorola 2007-May-31 - Add ring and vibrate PWM vibration support
  * Motorola 2006-Oct-10 - Update File
  * Motorola 2006-Sep-25 - Removing unused header
  * Motorola 2006-Aug-11 - Add Linear Vibrator support
@@ -308,6 +309,34 @@ int power_ic_periph_set_camera_on(int on)
 }
 
 /*!
+ * @brief This function is called by power IC clients to turn on and off the vibration sequence for ring and vibrate.
+ *
+ * @param        on         Turns the vibration sequence on or off (POWER_IC_PERIPH_ON or POWER_IC_PERIPH_OFF)
+ *
+ * @return       This function returns 0 if successful.
+ */
+int power_ic_periph_set_ring_and_vib(int on)
+{
+    int retval = 0;
+
+    /* A pointer to a function to be called to set the ring and vibrate vibration sequence*/
+    static int (*set_ring_vib)(int on) = NULL;
+
+    set_ring_vib = (void *)module_kallsyms_lookup_name((const char *)"pwm_generate_ring_vib");
+
+    if(set_ring_vib != NULL)
+    {
+        retval = (*set_ring_vib)(on);
+    }
+    else
+    {
+        retval = -EINVAL;
+    }
+    
+    return (retval);
+}
+
+/*!
  * @brief This function is the ioctl() interface handler for all peripheral operations.
  *
  * It is not called directly through an ioctl() call on the power IC device, but is executed from the core ioctl
@@ -344,6 +373,10 @@ int periph_ioctl(unsigned int cmd, unsigned long arg)
         case POWER_IC_IOCTL_PERIPH_SET_CAMERA_ON:
             retval = power_ic_periph_set_camera_on(data);
             break;
+	    
+	case POWER_IC_IOCTL_PERIPH_SET_RING_AND_VIB:
+            retval = power_ic_periph_set_ring_and_vib(data);
+	    break;
 
         default: /* This shouldn't be able to happen, but just in case... */
             tracemsg(_k_d("=> 0x%X unsupported peripheral ioctl command"), (int) cmd);
@@ -362,4 +395,5 @@ EXPORT_SYMBOL(power_ic_periph_is_usb_pull_up_enabled);
 EXPORT_SYMBOL(power_ic_periph_set_usb_pull_up);
 EXPORT_SYMBOL(power_ic_periph_set_sim_voltage);
 EXPORT_SYMBOL(power_ic_periph_set_camera_on);
+EXPORT_SYMBOL(power_ic_periph_set_ring_and_vib);
 #endif

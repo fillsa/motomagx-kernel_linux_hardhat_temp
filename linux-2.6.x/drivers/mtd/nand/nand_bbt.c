@@ -1799,7 +1799,7 @@ int nand_default_bbt (struct mtd_info *mtd)
 		}
 #endif
 		if (!this->badblock_pattern) {
-#if defined(CONFIG_MACH_SCMA11PHONE)
+#if defined(CONFIG_MACH_SCMA11REF) || defined(CONFIG_MACH_SCMA11PHONE)
 			if (this->options & NAND_BUSWIDTH_16)
 				smallpage_flashbased.offs = 11;
 			/*
@@ -1814,7 +1814,7 @@ int nand_default_bbt (struct mtd_info *mtd)
 		this->bbt_td = NULL;
 		this->bbt_md = NULL;
 		if (!this->badblock_pattern) {
-#if defined(CONFIG_MACH_SCMA11PHONE)
+#if defined(CONFIG_MACH_SCMA11REF) || defined(CONFIG_MACH_SCMA11PHONE)
 			if (this->options & NAND_BUSWIDTH_16)
 				smallpage_memorybased.offs = 11;
 			/*

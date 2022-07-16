@@ -1,67 +1,46 @@
 /*
- *  pxa_camera.h
+ *  camera.h
  *
- *  Bulverde Processor Camera Interface driver.
+ *  Camera Interface driver.
  *
- *  Copyright (C) 2003, Intel Corporation
- *  Copyright (C) 2003, Montavista Software Inc.
- *  Copyright (C) 2003-2006 Motorola Inc.
+ *  Copyright (C) 2006-2007 Motorola Inc.
  *
- *  Author: Intel Corporation Inc.
- *          MontaVista Software, Inc.
- *           source@mvista.com
- *          Motorola Inc.
+ *  Author: Motorola Inc.
  * 
- *  This program is free software; you can redistribute it and/or modify
- *  it under the terms of the GNU General Public License as published by
- *  the Free Software Foundation; either version 2 of the License, or
- *  (at your option) any later version.
+ *  This library is free software; you can redistribute it and/or modify it
+ *  under the terms of the GNU Lesser General Public License as published by
+ *  the Free Software Foundation; either version 2.1 of the License, or (at 
+ *  your option) any later version.
  *
- *  This program is distributed in the hope that it will be useful,
- *  but WITHOUT ANY WARRANTY; without even the implied warranty of
- *  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- *  GNU General Public License for more details.
+ *  This library is distributed in the hope that it will be useful, but 
+ *  WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY 
+ *  or FITNESS FOR A PARTICULAR PURPOSE. See the GNU Lesser General Public 
+ *  License for more details.
  *
- *  You should have received a copy of the GNU General Public License
- *  along with this program; if not, write to the Free Software
- *  Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
+ *  You should have received a copy of the GNU Lesser General Public License 
+ *  along with this library; if not, write to the Free Software Foundation, 
+ *  Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307 USA
  *
  
 Revision History:
                    Modification     
 Author                 Date        Description of Changes
 ----------------   ------------    -------------------------
-Motorola            12/19/2003     Created
-Motorola            02/05/2004     Set frame rate in video mode
-Motorola            03/08/2004     Photo effects setting
-Motorola            11/01/2004     Change to SDK style
-Motorola            07/26/2005     Adjusting light, style or mode is noneffective. 
-Motorola            08/04/2005     Add camera strobe flash to 1.3MP camera driver for Sumatra first phase
-Motorola            11/09/2005     add color styles and cloudy white blance
-Motorola            11/08/2005     Upmerge to EZXBASE36
-Motorola            02/15/2006     Add support for Omnivision OV2640
-Motorola            03/03/2006     EZXBASE 48 upmerge
-Motorola            03/15/2006     Add support for Micron MI2020SOC
-Motorola            05/06/2006     Force alignment of union struct to 4-byte boundary
-Motorola            07/12/2006     Viewfinder causing very long response delay to user input
-Motorola            08/15/2006     Implement common driver
+Motorola            12/07/2006     Created
+Motorola            01/04/2007     OSS code changes
 */
 
-/*================================================================================
+/*=============================================================================
                                  INCLUDE FILES
-================================================================================*/
-#ifndef __PXA_CAMERA_H__ 
-#define __PXA_CAMERA_H__ 
+=============================================================================*/
+#ifndef __CAMERA_H__ 
+#define __CAMERA_H__ 
 
 /*!
- *  General description of the Motorola A780/E680 video device driver:
+ *  General description of the Motorola video device driver:
  *
- *  The Motorola A780/E680 video device is based on V4L (video for linux) 1.0, however not 
- *  all V4L features are supported. 
- *  There are also some additional extensions included for specific requirements beyond V4L.
- *   
- *  The video device driver has a "character special" file named /dev/video0. Developers can 
- *  access the video device via the file operator interfaces.
+ *  The video device driver has a "character special" file named /dev/video0. 
+ *  Developers can access the video device via the file operator interfaces.
  *  Six file operator interfaces are supported:
  *     open
  *     ioctl
@@ -69,98 +48,207 @@ Motorola            08/15/2006     Implement common driver
  *     poll/select
  *     read
  *     close
- *  For information on using these fuctions, please refer to the standard linux 
+ *  For information on using these fuctions, please refer to the standard linux
  *  development documents.
  *  
- *  These four ioctl interfaces are important for getting the video device to work properly:
- *     VIDIOCGCAP       Gets the video device capability
- *     VIDIOCCAPTURE    Starts/stops the video capture 
- *     VIDIOCGMBUF      Gets the image frame buffer map info
- *     VIDIOCSWIN       Sets the picture size    
- *  These interfaces are compatible with V4L 1.0. Please refer to V4L documents for more details.
- *  sample.c demonstrates their use.
+ *  These following ioctl interfaces are important for getting the video 
+ *  device to work properly.
  * 
- *  The following ioctl interfaces are Motorola-specific extensions. These are not compatible with V4L 1.0.   
- *   WCAM_VIDIOCSCAMREG   	
- *   WCAM_VIDIOCGCAMREG   	
- *   WCAM_VIDIOCSCIREG    	
- *   WCAM_VIDIOCGCIREG    	
- *   WCAM_VIDIOCSINFOR	    
- *   WCAM_VIDIOCGINFOR
- *   WCAM_VIDIOCSSSIZE
- *   WCAM_VIDIOCSOSIZE
- *   WCAM_VIDIOCGSSIZE
- *   WCAM_VIDIOCGOSIZE
- *   WCAM_VIDIOCSFPS
- *   WCAM_VIDIOCSNIGHTMODE
- *   WCAM_VIDIOCSSTYLE      
- *   WCAM_VIDIOCSLIGHT      
- *   WCAM_VIDIOCSBRIGHT     
- *   WCAM_VIDIOCSBUFCOUNT   
- *   WCAM_VIDIOCGCURFRMS    
- *   WCAM_VIDIOCGSTYPE      
- *   WCAM_VIDIOCSCONTRAST   
- *   WCAM_VIDIOCSFLICKER
- *   WCAM_VIDIOCSVFPARAM
- *
- *   Detailed information about these constants are described below.   
- * 
- *  sample.c demonstrates most features of the Motorola A780/E680 video device driver.
- *    - Opening/closing the video device
- *    - Initializing the video device driver
- *    - Displaying the video image on a A780/E680 LCD screen     
- *    - Changing the image size
- *    - Changing the style
- *    - Changing the light mode
- *    - Changing the brightness
- *    - Capturing and saving a still picture
  */
 
 /*!
- * These are the registers for the read/write camera module and the CIF 
- * (Intel PXA27x processer quick capture interface)
- * The following 4 ioctl interfaces are used for debugging and are not open to developers
- */
-#define WCAM_VIDIOCSCAMREG   	211
-#define WCAM_VIDIOCGCAMREG   	212
-#define WCAM_VIDIOCSCIREG    	213
-#define WCAM_VIDIOCGCIREG    	214
-
-/*!
- * WCAM_VIDIOCSINFOR Sets the image data format
- *  
- * The following code sets the image format to YCbCr422_planar
+ * WCAM_VIDIOCGSNAME Gets the name of the camera sensor.
  *
- *   struct {int val1, val2;}format;
- *   format.val1 = CAMERA_IMAGE_FORMAT_YCBCR422_PLANAR;
- *   format.val2 = CAMERA_IMAGE_FORMAT_YCBCR422_PLANAR;
+ * The following code gets the name of the camera sensor:
+ *
+ *   char name[32];
  *   //dev is the video device handle 
- *   ioctl(dev, WCAM_VIDIOCSINFOR, &format);
+ *   ioctl(dev, WCAM_VIDIOCGSNAME, name);
+ *   printf("The sensor name is %s\n", name);
  *
- * Remarks:
- *   val1 is the output format of the camera module, val2 is the output format of the CIF (capture  
- *   interface). Image data from the camera module can be converted to other formats through
- *   the CIF. val2 specifies the final output format of the video device.
- *   
- *   For more description on CIF please refer to the Intel PXA27x processor family developer's manual.
- *     http://www.intel.com/design/pca/prodbref/253820.html 
  */
-#define WCAM_VIDIOCSINFOR	    215
+#define WCAM_VIDIOCGSNAME       200
 
-/*
- * WCAM_VIDIOCGINFOR Gets the image data format
+/*!
+ * WCAM_VIDIOCGMINMAX Gets minimum and maximum dimensions for sensor.
  *
- *  struct {int val1, val2;}format;
- *  ioctl(dev, WCAM_VIDIOCGINFOR, &format);
+ * The following code gets the min/max information:
+ *
+ *   min_max_t cap;
+ *   //dev is the video device handle 
+ *   ioctl(dev, WCAM_VIDIOCGMINMAX, &cap);
+ *   printf("max width is %d, max height is %d\n", cap.max_width, cap.max_height);
+ *   printf("min width is %d, min height is %d\n", cap.min_width, cap.min_height);
+ *
  */
-#define WCAM_VIDIOCGINFOR	    216
- 
+#define WCAM_VIDIOCGMINMAX      201
+
+typedef struct min_max_s
+{
+    int max_width;
+    int max_height;
+    int min_width;
+    int min_height;
+} min_max_t;
+
+/*!
+ * WCAM_VIDIOCGBUFINFO Gets image frame buffer info.
+ *
+ * The following code gets the image frame buffer info:
+ *
+ *   buf_info_t buf;
+ *   //dev is the video device handle 
+ *   ioctl(dev, WCAM_VIDIOCGBUFINFO, &buf);
+ *   printf("buffer size is %d, number of frames is %d\n", buf.buf_size, 
+ *          buf.num_frames);
+ *
+ */
+#define WCAM_VIDIOCGBUFINFO     202
+
+typedef struct buf_info_s
+{
+    int buf_size;
+    int num_frames;
+} buf_info_t;
+
+/*!
+ * WCAM_VIDIOCSPIXFORMAT Sets video and still mode formats.
+ *
+ * The following formats are supported:
+ *
+ *   PIX_FORMAT_RAW8
+ *   PIX_FORMAT_RGB444
+ *   PIX_FORMAT_RGB565
+ *   PIX_FORMAT_RGB666_PACKED
+ *   PIX_FORMAT_RGB666_PLANAR
+ *   PIX_FORMAT_RGB888_PACKED
+ *   PIX_FORMAT_RGB888_PLANAR
+ *   PIX_FORMAT_YCBCR422_PACKED
+ *   PIX_FORMAT_YCBCR422_PLANAR
+ *   PIX_FORMAT_YCBCR444_PACKED
+ *   PIX_FORMAT_YCBCR444_PLANAR
+ *   PIX_FORMAT_JPEG
+ *   PIX_FORMAT_JPEG_SENSOR
+ *
+ * The following code sets the formats to YUV422 PACKED:
+ *
+ *   pix_format_t format;
+ *   format.vid_in_format = PIX_FORMAT_YCBCR422_PACKED;
+ *   format.vid_out_format = PIX_FORMAT_YCBCR422_PACKED;
+ *   format.still_in_format = PIX_FORMAT_YCBCR422_PACKED;
+ *   format.still_out_format = PIX_FORMAT_YCBCR422_PACKED;
+ *   //dev is the video device handle 
+ *   ioctl(dev, WCAM_VIDIOCSPIXFORMAT, &format);
+ *
+ */
+#define WCAM_VIDIOCSPIXFORMAT   203
+
+typedef struct pix_format_s
+{
+    int vid_in_format;
+    int vid_out_format;
+    int still_in_format;
+    int still_out_format;
+} pix_format_t;
+
+/*!
+ *Image format definitions
+ */
+#define PIX_FORMAT_RAW8                1
+#define PIX_FORMAT_RGB444              2
+#define PIX_FORMAT_RGB555              3
+#define PIX_FORMAT_RGB565              4
+#define PIX_FORMAT_RGB666_PACKED       5
+#define PIX_FORMAT_RGB666_PLANAR       6
+#define PIX_FORMAT_RGB888_PACKED       7
+#define PIX_FORMAT_RGB888_PLANAR       8
+#define PIX_FORMAT_YCBCR422_PACKED     9
+#define PIX_FORMAT_YCBCR422_PLANAR    10
+#define PIX_FORMAT_YCBCR444_PACKED    11
+#define PIX_FORMAT_YCBCR444_PLANAR    12
+#define PIX_FORMAT_JPEG               13
+#define PIX_FORMAT_JPEG_SENSOR        14
+#define PIX_FORMAT_RGBT888_0          15  //RGB+Transparent bit 0
+#define PIX_FORMAT_RGBT888_1          16  //RGB+Transparent bit 1
+#define PIX_FORMAT_MAX                PIX_FORMAT_RGBT888_1
+
+
+
+/*!
+ * WCAM_VIDIOCSTARTSTOP Starts/stops the video capture.
+ *
+ * The following values are supported:
+ *
+ *   RETURN_VIDEO       Return to video capture after still image capture
+ *   STILL_IMAGE        Still image capture
+ *   VIDEO_START        Starts video capture
+ *   VIDEO_STOP         Stops video capture
+ *
+ * The following code segment demonstrates how to start the video:
+ *
+ *   ioctl(dev, WCAM_VIDIOCSTARTSTOP, VIDEO_START);
+ *
+ */
+#define WCAM_VIDIOCSTARTSTOP    204
+
+/*!
+ * WCAM_VIDIOCSTARTSTOP arguments
+ */
+#define RETURN_VIDEO    2
+#define STILL_IMAGE     1
+#define VIDEO_START     0
+#define VIDEO_STOP      -1
+
+/*! 
+ *  WCAM_VIDIOCSI2CREG Sets camera register through I2C bus
+ *
+ *   The following code sets the register 0x3000 to value 0x1234 for a sensor 
+ *   that uses word values:
+ *
+ *   camera_i2c_register_t reg;
+ *   reg.addr = 0x3000;
+ *   reg.value.w = 0x1234;
+ *   //dev is the video device handle 
+ *   ioctl(dev, WCAM_VIDIOCSI2CREG, &reg);
+ *
+ *   The following code sets the register 0x3000 to value 0x12 for a sensor 
+ *   that uses byte values:
+ *
+ *   camera_i2c_register_t reg;
+ *   reg.addr = 0x3000;
+ *   reg.value.b = 0x12;
+ *   //dev is the video device handle 
+ *   ioctl(dev, WCAM_VIDIOCSI2CREG, &reg);
+ *
+ */
+#define WCAM_VIDIOCSI2CREG      205
+
+/*! 
+ *  WCAM_VIDIOCGI2CREG Gets camera register through I2C bus
+ *
+ *   The following code gets the value at register 0x3000 for a sensor that 
+ *   uses word values:
+ *
+ *   camera_i2c_register_t reg;
+ *   reg.addr = 0x3000;
+ *   //dev is the video device handle 
+ *   ioctl(dev, WCAM_VIDIOCGI2CREG, &reg);
+ *   printf("The register value at %x is %x\n", reg.addr, reg.value.w);
+ *
+ */
+#define WCAM_VIDIOCGI2CREG      206
+
+typedef struct window_size_s
+{
+    unsigned short w, h;
+} window_size_t;
+
 /*! 
  *  WCAM_VIDIOCSSSIZE Sets the sensor window size
  *
  *   The following code sets the sensor size to 640 X 480:
  *
- *   struct {unsigned short w, h;}sensor_size;
+ *   window_size_t sensor_size;
  *   sensor_size.w = 640;
  *   sensor_size.h = 480;
  *   //dev is the video device handle 
@@ -168,110 +256,141 @@ Motorola            08/15/2006     Implement common driver
  *
  *  Remarks:
  *    The sensor size is restricted by the video device capability. 
- *    VIDIOCGCAP can get the video device capability.
- *    The sensor size must be an even of multiple of 8. If not, the driver changes the sensor size to a multiple of 8.
+ *    The sensor size must be an even of multiple of 8. If not, the driver 
+ *    changes the sensor size to a multiple of 8.
  */
-#define WCAM_VIDIOCSSSIZE        217
+#define WCAM_VIDIOCSSSIZE       217
 
 /*!
  * WCAM_VIDIOCSOSIZE Sets output size of the video device
  *
  *   The following code segment shows how to set the output size to 240 X 320:
  *
- *   struct {unsigned short w, h;}out_size;
+ *   window_size_t out_size;
  *   out_size.w = 240;
  *   out_size.h = 320;
  *   //dev is the video device handle 
- *   ioctl(dev, WCAM_VIDIOCSSSIZE, &out_size);
+ *   ioctl(dev, WCAM_VIDIOCSOSIZE, &out_size);
  *
  *  Remarks:
- *   In video mode, the output size must be less than 240X320. However, in still mode, the output  
- *   size is restricted by the video device capability and the sensor size.
- *   The output size must always be less than the sensor size, so if the developer changes the output size  
- *   to be greater than the sensor size, the video device driver may work abnormally.
- *   The width and height must also be a multiple of 8. If it is not, the driver changes the width and height size to a multiple of 8.
- *   The developer can modify the sensor size and the output size to create a digital zoom. 
+ *   In video mode, the output size must be less than 240X320. However, in 
+ *   still mode, the output size is restricted by the video device capability 
+ *   and the sensor size. The output size must always be less than the sensor 
+ *   size, so if the developer changes the output size to be greater than the 
+ *   sensor size, the video device driver may work abnormally. 
+ *   The width and height must also be a multiple of 8. If it is not, the 
+ *   driver changes the width and height size to a multiple of 8. 
+ *   The developer can modify the sensor size and the output size to create a 
+ *   digital zoom. 
  */
-#define WCAM_VIDIOCSOSIZE        218 
+#define WCAM_VIDIOCSOSIZE       218
 
 /*!
  * WCAM_VIDIOCGSSIZE Gets the current sensor size.
  * 
  * The following code segment shows how to use this function:
  *
- *   struct {unsigned short w, h;}sensor_size;
+ *   window_size_t sensor_size;
  *   //dev is the video device handle 
  *   ioctl(dev, WCAM_VIDIOCGSSIZE, &sensor_size); 
- *   printf("sensor width is %d, sensor_height is %d\n", sensor_size.w, sensor_size.h);
+ *   printf("sensor width is %d, sensor_height is %d\n", sensor_size.w, 
+ *          sensor_size.h);
  *
  */
-#define WCAM_VIDIOCGSSIZE        219
+#define WCAM_VIDIOCGSSIZE       219
 
 /*!
  * WCAM_VIDIOCGOSIZE Gets the current output size.
  * 
  * The following code segment shows how to use this function:
  *
- *   struct {unsigned short w, h;}out_size;
+ *   window_size_t out_size;
  *   //dev is the video device handle 
  *   ioctl(dev, WCAM_VIDIOCGOSIZE, &out_size); 
- *   printf("output width is %d, output height is %d\n", out_size.w, out_size.h);
+ *   printf("output width is %d, output height is %d\n", out_size.w, 
+ *          out_size.h);
  *
  */
-#define WCAM_VIDIOCGOSIZE        220 
+#define WCAM_VIDIOCGOSIZE       220
 
 /*!
- * WCAM_VIDIOCSFPS Sets the output frame rate (fps- frames per second) of the video device
+ * WCAM_VIDIOCSFPS Sets the output frame rate (fps - frames per second) of the 
+ * video device
  *
  * The following code segment shows how to use this function:
  *
- *   struct {int maxfps, minfps;}fps;
+ *   fps_max_min_t fps;
  *   fps.maxfps  = 15;
  *   fps.minfps  = 12;
  *   ioctl(dev, WCAM_VIDIOCSFPS, &fps);
  *
  * Remarks:
- *   The minimum value of maxfps is 1; the maximum value is 15.  minfps must not exceed maxfps. 
+ *   The minimum value of maxfps is 1; the maximum value is 15.  minfps must 
+ *   not exceed maxfps. 
  *   The default value of fps is [15, 10].
- *   minfps and maxfps only suggest a fps range. The video device driver will select 
- *   an appropriate value automatically. The actual fps depends on environmental circumstances  
- *   such as brightness, illumination, etc. 
- *   sample.c illustrates how to calculate actual frame rate.
+ *   minfps and maxfps only suggest a fps range. The video device driver will 
+ *   select an appropriate value automatically. The actual fps depends on 
+ *   environmental circumstances such as brightness, illumination, etc. 
  *   
  */
-#define WCAM_VIDIOCSFPS          221 
+#define WCAM_VIDIOCSFPS         221
+
+typedef struct fps_max_min_s
+{
+    int maxfps, minfps;
+} fps_max_min_t;
 
 /*!
  * WCAM_VIDIOCSNIGHTMODE Sets the video device capture mode. 
  *
  * The capture mode can use the following values
  *
- *   V4l_NM_AUTO     Auto mode(default value)
- *   V4l_NM_NIGHT    Night mode
- *   V4l_NM_ACTION   Action mode
+ *   NM_AUTO     Auto mode(default value)
+ *   NM_NIGHT    Night mode
+ *   NM_ACTION   Action mode
  *  
- * The following code segment shows how to set the video device to night mode:
+ * The following code segment shows how to set the video device to night mode 
+ * with max exposure time to 100 ms:
  *
- *   ioctl(dev, WCAM_VIDIOCSNIGHTMODE, V4l_NM_NIGHT);
+ *   EXPO_MODE_PARAM_T night_mode;
+ *   night_mode.mode = NM_NIGHT;
+ *   night_mode.maxexpotime  = 100000;
+ *   ioctl(dev, WCAM_VIDIOCSNIGHTMODE, &night_mode);
  *
  * Remarks:
- *   Different capture modes represent different sensor exposure times. Night mode represents a longer 
- *   exposure time. Setting the video device to night mode can capture high quality image data in low light environments.
- *   Action mode represents a shorter exposure time. This is used for capture moving objects. When working in auto mode, the 
- *   video device will select an appropriate exposure time automatically.
+ *   Different capture modes represent different sensor exposure times. Night 
+ *   mode represents a longer exposure time. Setting the video device to night 
+ *   mode can capture high quality image data in low light environments. 
+ *   Action mode represents a shorter exposure time. This is used for capture 
+ *   moving objects. When working in auto mode, the video device will select 
+ *   an appropriate exposure time automatically.
  *
- *   Not all camera modules support this interface. Developers can also use WCAM_VIDIOCSFPS to achieve similar results.
+ *   Not all camera modules support this interface. Developers can also use 
+ *   WCAM_VIDIOCSFPS to achieve similar results.
  *   Smaller minfps represent longer exposure times.
  *
  */
-#define WCAM_VIDIOCSNIGHTMODE    222 
+#define WCAM_VIDIOCSNIGHTMODE   222
+
+typedef enum NIGHT_MODE_S
+{
+   NM_AUTO,
+   NM_NIGHT,
+   NM_ACTION
+} NIGHT_MODE_T;
+
+typedef struct EXPO_MODE_PARAM_S
+{
+    NIGHT_MODE_T mode;
+    unsigned int maxexpotime;
+} EXPO_MODE_PARAM_T;
 
 /*
  * WCAM_VIDIOCSVFPARAM Sets camera viewfinder offset and size
  *
  * The following code segment shows how to use this function:
  *
- * struct V4l_VF_PARAM vfparam;
+ * VF_PARAM vfparam;
  * vf.xoffset  = xoffset_to_fb_upleft_corner;
  * vf.yoffset  = yoffset_to_fb_upleft_corner;
  * vf.width    = viewfinder_width;
@@ -282,40 +401,73 @@ Motorola            08/15/2006     Implement common driver
  * The viewfinder size must be smaller than the overlay frame buffer size and
  * vf.width + vf.xoffset must less than overlay frame buffer width
  * vf.height + vf.yoffset must less than overlay frame buffer height
+ *
  */
-#define WCAM_VIDIOCSVFPARAM    223
+#define WCAM_VIDIOCSVFPARAM     223
+
+typedef struct VF_PARAM_STRUCT
+{
+  unsigned int xoffset;
+  unsigned int yoffset;
+  unsigned int width;
+  unsigned int height;
+  unsigned int rotation;
+} VF_PARAM;
+
 
 /*!
  * WCAM_VIDIOCSSTYLE Sets the image style.
  *
  * The following styles are supported:
  *
- *   V4l_STYLE_NORMAL        Normal (default value)
- *   V4l_STYLE_BLACK_WHITE   Black and white 
- *   V4l_STYLE_SEPIA         Sepia
- *   V4l_STYLE_SOLARIZE      Solarized (not supported by all camera modules)
- *   V4l_STYLE_NEG_ART       Negative (not supported by all camera modules)
+ *   STYLE_NORMAL        Normal (default value)
+ *   STYLE_BLACK_WHITE   Black and white 
+ *   STYLE_SEPIA         Sepia
+ *   STYLE_SOLARIZE      Solarized (not supported by all camera modules)
+ *   STYLE_NEG_ART       Negative (not supported by all camera modules)
  *
- * The following code segment demonstrates how to set the image style to black and white:
+ * The following code segment demonstrates how to set the image style to black 
+ * and white:
  *
- *   ioctl(dev, WCAM_VIDIOCSSTYLE, V4l_STYLE_BLACK_WHITE);
+ *   ioctl(dev, WCAM_VIDIOCSSTYLE, STYLE_BLACK_WHITE);
  *
  */
-#define WCAM_VIDIOCSSTYLE        250  
+#define WCAM_VIDIOCSSTYLE       250
+
+typedef enum PIC_STYLE_S
+{
+   STYLE_NORMAL,
+   STYLE_BLACK_WHITE,
+   STYLE_SEPIA,
+   STYLE_SOLARIZE,
+   STYLE_NEG_ART,
+   STYLE_BLUISH,
+   STYLE_REDDISH,
+   STYLE_GREENISH
+} PIC_STYLE_T;
 
 /*!
  * WCAM_VIDIOCSLIGHT Sets the image light mode
  * 
  * The following light modes are supported:
- *   V4l_WB_AUTO           Auto mode(default)
- *   V4l_WB_DIRECT_SUN     Direct sun
- *   V4l_WB_INCANDESCENT   Incandescent
- *   V4l_WB_FLUORESCENT    Fluorescent
+ *   WB_AUTO           Auto mode(default)
+ *   WB_DIRECT_SUN     Direct sun
+ *   WB_INCANDESCENT   Incandescent
+ *   WB_FLUORESCENT    Fluorescent
  * 
  * The following code sets the image light mode to incandescent:
- *   ioctl(dev, WCAM_VIDIOCSLIGHT, V4l_WB_INCANDESCENT);
+ *   ioctl(dev, WCAM_VIDIOCSLIGHT, WB_INCANDESCENT);
  */
-#define WCAM_VIDIOCSLIGHT        251
+#define WCAM_VIDIOCSLIGHT       251
+
+typedef enum PIC_WB_S
+{
+   WB_AUTO,
+   WB_DIRECT_SUN,
+   WB_INCANDESCENT,
+   WB_FLUORESCENT,
+   WB_CLOUDY
+} PIC_WB_T;
 
 /*!
  * WCAM_VIDIOCSBRIGHT Sets the brightness of the image (exposure compensation value)
@@ -334,35 +486,29 @@ Motorola            08/15/2006     Implement common driver
  * The following code segment sets the brightness to 2.0 EV
  *   ioctl(dev, WCAM_VIDIOCSBRIGHT, 4);
  */
-#define WCAM_VIDIOCSBRIGHT       252
+#define WCAM_VIDIOCSBRIGHT      252
 
 /*!
  * Sets the frame buffer count for video mode. The default value is 3.
  *
+ * The following code segment shows how to use this function:
+ *
+ *   int bufcount = 4;
+ *   ioctl(handle.fd, WCAM_VIDIOCSBUFCOUNT, &bufcount);
+ *
  * Remarks:
- * The video device driver maintains some memory for buffering image data in the kernel space. When working in video mode,
- * there are at least 3 frame buffers in the driver.  In still mode, there is only 1 frame buffer.
+ * The video device driver maintains some memory for buffering image data in 
+ * the kernel space. When working in video mode, there are at least 3 frame 
+ * buffers in the driver.  In still mode, there is only 1 frame buffer.
  * This interface is not open to SDK developers.
  * 
  */
-#define WCAM_VIDIOCSBUFCOUNT     253  
-
-/*!
- * Gets the current available frames
- *
- * The following code demonstrates getting the current available frames:
- *
- *   struct {int first, last;}cur_frms;
- *   ioctl(dev, WCAM_VIDIOCGCURFRMS, &cur_frms);
- *
- * Remarks:
- *   cur_frms.first represents the earliest frame in frame buffer  
- *   cur_frms.last  represents the latest or most recent frame in frame buffer.
- */
-#define WCAM_VIDIOCGCURFRMS      254  
+#define WCAM_VIDIOCSBUFCOUNT    253
 
 /*!
  * Gets the camera sensor type
+ *
+ * The following code segment shows how to use this function:
  *
  *  unsigned int sensor_type
  *  ioctl(dev, WCAM_VIDIOCGSTYPE, &sensor_type);
@@ -374,189 +520,111 @@ Motorola            08/15/2006     Implement common driver
  * Remarks:
  *   For all possible values of sensor_type please refer to the sensor definitions below.
  */
-#define WCAM_VIDIOCGSTYPE        255 
+#define WCAM_VIDIOCGSTYPE       255 
 
 /*!
- * Sets the image contrast
- * Not open to SDK developers
+ *Sensor type definitions
  */
-#define WCAM_VIDIOCSCONTRAST     256
+#define CAMERA_TYPE_ADCM_2650               1
+#define CAMERA_TYPE_ADCM_2670               2
+#define CAMERA_TYPE_ADCM_2700               3
+#define CAMERA_TYPE_OMNIVISION_9640         4
+#define CAMERA_TYPE_ADCM3800                6
+#define CAMERA_TYPE_OV9650                  7
+#define CAMERA_TYPE_SENSOR2M                8
+#define CAMERA_TYPE_MAX                     CAMERA_TYPE_SENSOR2M
 
 /*!
  * Sets the flicker frequency(50hz/60hz)
- * Not open to SDK developers
+ *
+ * The following flicker frequencies are supported:
+ *   50                 50 hz
+ *   60                 60 hz
+ *   other              Auto
+ *
+ * The following code segment sets the flicker to 50 hz
+ *   ioctl(dev, WCAM_VIDIOCSFLICKER, 50);
  */
-#define WCAM_VIDIOCSFLICKER      257
-
+#define WCAM_VIDIOCSFLICKER     257
 
 /*
  * Gets the camera exposure parameters
-*/
-#define WCAM_VIDIOCGEXPOPARA      258
-
-/*
- * Sets the camera still mode size
-*/
-#define WCAM_VIDIOCSCSIZE         259
-
-/*
- * Gets the camera still mode size
-*/
-#define WCAM_VIDIOCGCSIZE         260
-
-/*
- * Sets the camera still mode format
-*/
-#define WCAM_VIDIOCSCINFOR        261
-
-/*
- * Gets the camera still mode format
-*/
-#define WCAM_VIDIOCGCINFOR        262
-
-/*
- * Sets the camera capture digital zoom number
-*/
-#define WCAM_VIDIOCSZOOM          263
-
-/*
- * Gets the camera capture digital zoom number
-*/
-#define WCAM_VIDIOCGZOOM          264
-
-/*
- * Gets the current frame
-*/
-#define WCAM_VIDIOCGRABFRAME      265
-
-/*
- * Move to the next frame
-*/
-#define WCAM_VIDIOCNEXTFRAME      266
-
-/*!
- * Gets the frame buffer count for video mode.
+ *
+ * The following code segment shows how to use this function:
+ *
+ *   EXPOSURE_PARA_T para;
+ *   ioctl(dev, WCAM_VIDIOCGEXPOPARA, &para);
  */
+#define WCAM_VIDIOCGEXPOPARA    258
 
-#define WCAM_VIDIOCGBUFCOUNT      267
-
-/*
- * Sets the camera still mode digital zoom number
-*/
-#define WCAM_VIDIOCSSZOOM         268
-
-/*
- * Gets the camera still mode digital zoom number
-*/
-#define WCAM_VIDIOCGSZOOM         269
-
-/*
- * Sets the camera JPEG quality
-*/
-#define WCAM_VIDIOCSJPEGQUALITY   270
-
-/*
- * Gets the camera JPEG quality
-*/
-#define WCAM_VIDIOCGJPEGQUALITY   271
-
-/*
- * Sets the camera horizontally or vertically mirroring
-*/
-#define WCAM_VIDIOCSMIRROR        272
-
-/*
- * Sets the camera strobe flash enable/disable
-*/
-#define WCAM_VIDIOCSSTROBEFLASH   273
-
-/* 
- * Configure I2C slave addr, I2C register size, and I2C data size.
- * An argument of type 'struct camera_i2c_param *' should be passed
- * along with this command.
- */
-#define WCAM_VIDIOCSI2CPARAM 274
-
-/*
- * Configure the master clock frequency supplied to the sensor.
- * An argument of type 'unsigned long' should be passed with this cmd.
- */
-#define WCAM_VIDIOCSMCLK 275
-
-/*
- * Phase 1 setup for capture.  Uses same argument as VIDIOCCAPTURE cmd.
- */
-#define WCAM_VIDIOCCAPTURESETUP1 276
-
-/*
- * Configures a group of camera registers via I2C.  Requires a
- * pointer argument of type 'void *', pointing to a group of
- * addr-data pairs.
- */
-#define WCAM_VIDIOCSCAMREGBLK 279
-
-
-/*
-   Defines for parameter
-*/
-
-#define CAMERA_MIRROR_VERTICALLY    0x0001
-#define CAMERA_MIRROR_HORIZONTALLY  0x0002
-
-/* 
- * Define the camera digital zoom level multiple 
- * the zoom value should equal
- *     zoom level x CAMERA_ZOOM_LEVEL_MULTIPLE
-*/
-#define CAMERA_ZOOM_LEVEL_MULTIPLE  256
-
-typedef struct V4l_VF_PARAM_STRUCT
-{
-  unsigned int xoffset;
-  unsigned int yoffset;
-  unsigned int width;
-  unsigned int height;
-  unsigned int rotation;
-} V4l_VF_PARAM;
-
-struct V4l_EXPOSURE_PARA
+typedef struct EXPOSURE_PARA_S
 {
     unsigned int luminance;
     int shutter;
     int ISOSpeed;
     char *reserved[16];
-};
+} EXPOSURE_PARA_T;
 
-typedef enum V4l_NIGHT_MODE
-{
-   V4l_NM_AUTO,
-   V4l_NM_NIGHT,
-   V4l_NM_ACTION
-}V4l_NM;
+/*
+ * Sets the camera still mode size
+ * 
+ * The following code segment shows how to use this function:
+ *
+ *   window_size_t si_size;
+ *   si_size.w = 640;
+ *   si_size.h = 480;
+ *   //dev is the video device handle 
+ *   ioctl(dev, WCAM_VIDIOCSCSIZE, &si_size); 
+ */
+#define WCAM_VIDIOCSCSIZE       259
 
-typedef enum V4l_PIC_STYLE
-{
-   V4l_STYLE_NORMAL,
-   V4l_STYLE_BLACK_WHITE,
-   V4l_STYLE_SEPIA,
-   V4l_STYLE_SOLARIZE,
-   V4l_STYLE_NEG_ART,
-   V4l_STYLE_BLUISH,
-   V4l_STYLE_REDDISH,
-   V4l_STYLE_GREENISH
-}V4l_PIC_STYLE;
+/*
+ * Gets the camera still mode size
+ * 
+ * The following code segment shows how to use this function:
+ *
+ *   window_size_t si_size;
+ *   //dev is the video device handle 
+ *   ioctl(dev, WCAM_VIDIOCGCSIZE, &si_size); 
+ *   printf("still image width is %d, still image height is %d\n", si_size.w, 
+ *          si_size.h);
+ */
+#define WCAM_VIDIOCGCSIZE       260
 
-typedef enum V4l_PIC_WB
-{
-   V4l_WB_AUTO,
-   V4l_WB_DIRECT_SUN,
-   V4l_WB_INCANDESCENT,
-   V4l_WB_FLUORESCENT,
-   V4l_WB_CLOUDY
-}V4l_PIC_WB;
+/*
+ * Sets the camera capture digital zoom number
+ *
+ * The following code segment shows how to use this function:
+ *
+ *   int vzoom = 2;
+ *   //dev is the video device handle 
+ *   ioctl(dev, WCAM_VIDIOCSZOOM, vzoom); 
+ */
+#define WCAM_VIDIOCSZOOM        263
 
+/*
+ * Gets the camera capture digital zoom number
+ *
+ * The following code segment shows how to use this function:
+ *
+ *   int vzoom;
+ *   //dev is the video device handle 
+ *   ioctl(dev, WCAM_VIDIOCGZOOM, &vzoom); 
+ *   printf("video zoom is %d\n", vzoom);
+ */
+#define WCAM_VIDIOCGZOOM        264
 
-struct V4l_IMAGE_FRAME
+/*
+ * Gets the current frame
+ *
+ * The following code segment shows how to use this function:
+ *
+ *   IMAGE_FRAME_T frame;
+ *   ioctl(dev, WCAM_VIDIOCGRABFRAME, &frame); 
+ */
+#define WCAM_VIDIOCGRABFRAME    265
+
+typedef struct IMAGE_FRAME_S
 {
     int first;
     int last;
@@ -572,66 +640,86 @@ struct V4l_IMAGE_FRAME
     unsigned        planeOffset[3];
     /*! The bytes size of image planes */
     int             planeBytes[3];
-};
+} IMAGE_FRAME_T;
+
+/*
+ * Move to the next frame
+ *
+ * The following code segment shows how to use this function:
+ *
+ *   int moveFrame = 1;
+ *   ioctl(dev, WCAM_VIDIOCNEXTFRAME, &moveFrame); 
+ */
+#define WCAM_VIDIOCNEXTFRAME    266
 
 /*!
- *Image format definitions
- *Remarks:
- *  Although not all formats are supported by all camera modules, YCBCR422_PLANAR is widely supported. 
- *  For detailed information on each format please refer to the Intel PXA27x processor family developer's manual. 
- *     http://www.intel.com/design/pca/prodbref/253820.html
- * 
+ * Gets the frame buffer count for video mode.
+ *
+ * The following code segment shows how to use this function:
+ *
+ *   int bufcount;
+ *   ioctl(dev, WCAM_VIDIOCGBUFCOUNT, &bufcount); 
+ *   printf("buffer count is %d\n", bufcount);
  */
-#define CAMERA_IMAGE_FORMAT_RAW8                0
-#define CAMERA_IMAGE_FORMAT_RAW9                1
-#define CAMERA_IMAGE_FORMAT_RAW10               2
-                                                                                                                             
-#define CAMERA_IMAGE_FORMAT_RGB444              3
-#define CAMERA_IMAGE_FORMAT_RGB555              4
-#define CAMERA_IMAGE_FORMAT_RGB565              5
-#define CAMERA_IMAGE_FORMAT_RGB666_PACKED       6
-#define CAMERA_IMAGE_FORMAT_RGB666_PLANAR       7
-#define CAMERA_IMAGE_FORMAT_RGB888_PACKED       8
-#define CAMERA_IMAGE_FORMAT_RGB888_PLANAR       9
-#define CAMERA_IMAGE_FORMAT_RGBT555_0          10  //RGB+Transparent bit 0
-#define CAMERA_IMAGE_FORMAT_RGBT888_0          11
-#define CAMERA_IMAGE_FORMAT_RGBT555_1          12  //RGB+Transparent bit 1
-#define CAMERA_IMAGE_FORMAT_RGBT888_1          13
-                                                                                                                             
-#define CAMERA_IMAGE_FORMAT_YCBCR400           14
-#define CAMERA_IMAGE_FORMAT_YCBCR422_PACKED    15
-#define CAMERA_IMAGE_FORMAT_YCBCR422_PLANAR    16
-#define CAMERA_IMAGE_FORMAT_YCBCR444_PACKED    17
-#define CAMERA_IMAGE_FORMAT_YCBCR444_PLANAR    18
-#define CAMERA_IMAGE_FORMAT_JPEG               19
-#define CAMERA_IMAGE_FORMAT_JPEG_MICRON        20
+#define WCAM_VIDIOCGBUFCOUNT    267
 
-#define CAMERA_IMAGE_FORMAT_MAX                20
-
-
-/*!
- *VIDIOCCAPTURE arguments
+/*
+ * Sets the camera still mode digital zoom number
+ *
+ * The following code segment shows how to use this function:
+ *
+ *   int pzoom = 2;
+ *   //dev is the video device handle 
+ *   ioctl(dev, WCAM_VIDIOCSSZOOM, pzoom); 
  */
-#define RETURN_VIDEO            2
-#define STILL_IMAGE				1
-#define VIDEO_START				0
-#define VIDEO_STOP				-1
+#define WCAM_VIDIOCSSZOOM       268
 
-/*!
- *Sensor type definitions
+/*
+ * Gets the camera still mode digital zoom number
+ *
+ * The following code segment shows how to use this function:
+ *
+ *   int pzoom;
+ *   //dev is the video device handle 
+ *   ioctl(dev, WCAM_VIDIOCGSZOOM, &pzoom); 
+ *   printf("still image zoom is %d\n", pzoom);
  */
-#define CAMERA_TYPE_ADCM_2650               1
-#define CAMERA_TYPE_ADCM_2670               2
-#define CAMERA_TYPE_ADCM_2700               3
-#define CAMERA_TYPE_OMNIVISION_9640         4
-#define CAMERA_TYPE_MT9M111                 5
-#define CAMERA_TYPE_MT9V111                 6
-#define CAMERA_TYPE_ADCM3800                7
-#define CAMERA_TYPE_OV9650                  8
-#define CAMERA_TYPE_MI2010SOC               9
-#define CAMERA_TYPE_OV2640                  10
-#define CAMERA_TYPE_MI2020SOC               11
-#define CAMERA_TYPE_MAX                     CAMERA_TYPE_MI2020SOC
+#define WCAM_VIDIOCGSZOOM       269
+
+/*
+ * Sets the camera JPEG quality
+ * Not currently used
+ */
+#define WCAM_VIDIOCSJPEGQUALITY 270
+
+/*
+ * Sets the camera horizontally or vertically mirroring
+ *
+ * The following code segment shows how to use this function:
+ *
+ *   int mirror = 0;
+ *   mirror |= CAMERA_MIRROR_VERTICALLY;
+ *   mirror |= CAMERA_MIRROR_HORIZONTALLY;
+ *   ioctl(handle.fd, WCAM_VIDIOCSMIRROR, mirror);
+ *
+ */
+#define WCAM_VIDIOCSMIRROR      272
+
+/*
+ * Defines for parameter for WCAM_VIDIOCSMIRROR
+ */
+#define CAMERA_MIRROR_VERTICALLY    0x0001
+#define CAMERA_MIRROR_HORIZONTALLY  0x0002
+
+/*
+ * Sets the camera strobe flash enable/disable
+ *
+ * The following code segment shows how to use this function:
+ *
+ *   int strobe = 1;
+ *   ioctl(handle.fd, WCAM_VIDIOCSSTROBEFLASH, strobe);
+ */
+#define WCAM_VIDIOCSSTROBEFLASH 273
 
 
 /*
@@ -643,29 +731,31 @@ struct V4l_IMAGE_FRAME
 #define CAMERA_I2C_READB     104
 #define CAMERA_I2C_DETECTID  105
 
-struct camera_i2c_register {
+typedef struct camera_i2c_register {
     unsigned short  addr;
     union {
         unsigned short w;
         unsigned char b;
     } value __attribute__ (( __aligned__ (4)));
-};
+} camera_i2c_register_t;
 
 struct camera_i2c_detectid {
     int buflen;
     char data[256];
 };
-
-/*
- * This structure contains properties of the camera I2C interface.
- */
-struct camera_i2c_param {
-  unsigned char slave_addr; /* I2C 8-bit slave address, divided by 2 */
-  unsigned char reg_size; /* I2C register size, expressed in bytes */
-  unsigned char data_size; /* I2C data size, expressed in bytes */
-};
-
 //End of the camera's i2c device
 
-#endif // __PXA_CAMERA_H__ 
+/* 
+ * Define the camera digital zoom level multiple 
+ * the zoom value should equal
+ *     zoom level x CAMERA_ZOOM_LEVEL_MULTIPLE
+*/
+#define CAMERA_ZOOM_LEVEL_MULTIPLE  256
+
+/*
+ * Maximum number of frames.
+ */
+#define MAX_FRAMES 32
+
+#endif // __CAMERA_H__ 
 

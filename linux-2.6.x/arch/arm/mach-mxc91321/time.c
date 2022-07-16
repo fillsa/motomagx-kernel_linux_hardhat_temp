@@ -27,8 +27,11 @@
  * DATE 	AUTHOR 	        COMMENT
  * ---- 	------ 		-------
  * 01/12/2005   Motorola        Change kick_wd to support panic.
+ *                              to make it a non-static function
+ * 12-Jan-2005  Motorola        Modified function signature for kick_wd
  * 08/26/2005   Motorola        Overwrote the generic sched_clock function to
  *                              capture higher precision timestamps
+
  * 01/27/2006   Motorola        Renamed sched_clock funtion to get_curr_ns_time
  * 28-Mar-2007  Motorola        FN482: Fixed the calculation of timer
  *                              interrupt match in schedule_hr_timer_int

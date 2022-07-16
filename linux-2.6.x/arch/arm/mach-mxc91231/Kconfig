@@ -15,7 +15,7 @@ config MACH_SCMA11PHONE
           Include support for Motorola products based on the SCM-A11 SOC.
 
 menu "Motorola SCM-A11 Products"
-        depends on MACH_SCMA11PHONE
+#        depends on MACH_SCMA11PHONE
 
 config MACH_SCMA11REF
 	bool "Support the SCM-A11 Reference platform"

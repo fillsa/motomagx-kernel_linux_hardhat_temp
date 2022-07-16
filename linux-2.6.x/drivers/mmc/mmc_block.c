@@ -35,11 +35,14 @@
  */
 /* Copyright (C)  2006-2008 Motorola, Inc.
  * Date		Author			Comment
- * 11/17/2006	Motorola		Support SDA 2.0
+ * 11/17/2006	Motorola		Support SDA 2.0(SDHC)
  * 11/23/2006	Motorola		Force remove md when blk removed
+ * 12/20/2006   Motorola        Support locked card
  * 03/08/2007	Motorola		Add an interface for hotplug event
+ * 04/02/2007   Motorola        Support one Mass storage partition for LIDO P
  * 07/04/2007	Motorola		Add support for MC/MR
  * 09/28/2007   Motorola  		Jump out from dead loop when SDHC is in error
+ * 12/12/2007	Motorola	Support shredding card
  * 03/25/2008	Motorola		Add support 4bit for SDA2.0 cards
  * 06/16/2008   Motorola  		Avoid going to DSM if there is activity
  * 09/23/2008	Motorola		Support shredding card
@@ -67,6 +70,11 @@
 #include <asm/uaccess.h>
 
 #include "mmc_queue.h"
+
+/* max 8 partitions per card */
+#define MMC_DEV_NUM_PARTS	8	
+/*move define to external.h*/
+
 
 static int major = MMC_BLK_DEV_NUM;
 
@@ -213,7 +221,7 @@ mmc_blk_ioctl(struct inode *inode, struct file *filp, unsigned int cmd, unsigned
 		 * Return the card type as follows 
 		 *  0 - MMC Card
 		 *  1 - SD Card
-		 *  2 - High Capacity SD Card
+		 *  2 - High Capacity SD Card(SDHC)
 		 */
 #ifdef CONFIG_MOT_FEAT_MMCSD_HCSD
 		ret = (mmc_card_hcsd(card) ? TYPE_HCSD : (mmc_card_sd(card) ? TYPE_SDT : TYPE_MMC));
@@ -672,7 +680,7 @@ static int mmc_blk_resume(struct mmc_card *card)
 	struct mmc_blk_data *md = mmc_get_drvdata(card);
 
 	if (md) {
-		//mmc_blk_set_blksize(md, card);
+		//mmc_blk_set_blksize(md, card); //Need not set block size each resume. Set once is enough when bootup
 		mmc_queue_resume(&md->queue);
 	}
 	return 0;
@@ -695,7 +703,9 @@ static struct mmc_driver mmc_driver = {
 static int __init mmc_blk_init(void)
 {
 	int res = -ENOMEM;
+	int i,count;
 
+	count = 0;
 	res = register_blkdev(major, "mmc");
 	if (res < 0) {
 		printk(KERN_WARNING "Unable to get major %d for MMC media: %d\n",
@@ -706,8 +716,37 @@ static int __init mmc_blk_init(void)
 		major = res;
 
 	devfs_mk_dir("mmc");
-	devfs_mk_bdev(MKDEV(major, 0), S_IFBLK|S_IRUGO|S_IWUSR, "mmca");
-	devfs_mk_bdev(MKDEV(major, 1), S_IFBLK|S_IRUGO|S_IWUSR, "mmca1");
+	
+	i = 0;
+//#ifndef CONFIG_MACH_LIDO // ???? почему, может связано блоком из mxc_mmc.c? у 2Гб есть EXTERN_SD
+#ifdef CONFIG_MOT_FEAT_INTERN_SD	
+	count = i + MMC_DEV_NUM_PARTS;
+	devfs_mk_bdev(MKDEV(major, i++), S_IFBLK|S_IRUGO|S_IWUSR, "mmci");
+	while (i < count) {
+		devfs_mk_bdev(MKDEV(major, i), S_IFBLK|S_IRUGO|S_IWUSR,
+					 "mmci%d", i);
+		i++;
+	}
+#endif
+#ifdef CONFIG_MOT_FEAT_MEGASIM	
+	count = i + MMC_DEV_NUM_PARTS;
+	devfs_mk_bdev(MKDEV(major, i++), S_IFBLK|S_IRUGO|S_IWUSR, "megasim");
+	while (i < count) {
+		devfs_mk_bdev(MKDEV(major, i), S_IFBLK|S_IRUGO|S_IWUSR,
+					 "megasim%d", i);
+		i++;
+	}
+#endif
+#ifdef CONFIG_MOT_FEAT_EXTERN_SD	
+	count = i + MMC_DEV_NUM_PARTS;
+	devfs_mk_bdev(MKDEV(major, i++), S_IFBLK|S_IRUGO|S_IWUSR, "mmca");
+	while (i < count) {
+		devfs_mk_bdev(MKDEV(major, i), S_IFBLK|S_IRUGO|S_IWUSR,
+					 "mmca%d", i);
+		i++;
+	}
+#endif
+//#endif
 
 	return mmc_register_driver(&mmc_driver);
 

@@ -197,18 +197,34 @@ unsigned long emu_glue_read_sense(unsigned long clear_int_flags)
 {
     int value_read;
     unsigned long emu_glue_sense_read = 0;
+    ATLAS_REVISION_T atlas_revision=0;
+
+    atlas_revision = ATLAS_GET_IC_REV();
    
     /* Read Atlas Sense 0 register bits */
     power_ic_get_reg_value(POWER_IC_REG_ATLAS_INT_SENSE_0, 0,
                            &(value_read), 24);
 
     /* Get all EMU sense bit states from the power ic */
-    emu_glue_sense_read =  value_read & (EMU_SENSE_CHGCURR | EMU_SENSE_DPLUS | EMU_SENSE_DMINUS | \
+    /* From Atlas 3.2 revision D+ and D- status could be read by SPI else read GPIO */
+    if ((atlas_revision == ATLAS_3_2A) || (atlas_revision >= ATLAS_3_2))
+    {
+        /* D+ and D- could be read from Atlas */
+        emu_glue_sense_read =  value_read & (EMU_SENSE_CHGCURR | EMU_SENSE_DPLUS | EMU_SENSE_DMINUS | \
                                          EMU_SENSE_VBUS_4V4 | EMU_SENSE_VBUS_2V0 | EMU_SENSE_VBUS_0V8 | \
                                          EMU_SENSE_ID_FLOAT | EMU_SENSE_ID_GROUND | EMU_SENSE_SE1 );
+    }
+    else
+    {
+        emu_glue_sense_read =  value_read & (EMU_SENSE_CHGCURR | EMU_SENSE_VBUS_4V4 | EMU_SENSE_VBUS_2V0 |\
+                                             EMU_SENSE_VBUS_0V8 | EMU_SENSE_ID_FLOAT | EMU_SENSE_ID_GROUND |\
+                                             EMU_SENSE_SE1 );
+        /* Read D+ D- state from GPIO */
+        emu_glue_sense_read |= ((EMU_GET_D_PLUS() << 15) | (EMU_GET_D_MINUS() << 23));
 
+    }
     /* OR in the state of the cradle detect line */
-    emu_glue_sense_read |= (EMU_GET_CRADLE_DETECT() ? EMU_SENSE_CRADLE_DETECT : 0);
+    emu_glue_sense_read |= (EMU_GET_CRADLE_DETECT() ? EMU_SENSE_CRADLE_DETECT : 0);     
     
     /* Get accessory power setting */
     power_ic_get_reg_value(POWER_IC_REG_ATLAS_CHARGE_USB_1, 5,  &(value_read), 1);

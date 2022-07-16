@@ -16,6 +16,7 @@
  * 02111-1307, USA
  *
  * Motorola 2007-Jul-03 - Prevent reads and writes from occurring at the same time
+ * Motorola 2007-Jun-13 - Remove KEYV shutdown and keep track of resets
  * Motorola 2006-Dec-14 - Add in loop for reading and writing on error return
  * Motorola 2006-May-09 - Initial creation.
  */

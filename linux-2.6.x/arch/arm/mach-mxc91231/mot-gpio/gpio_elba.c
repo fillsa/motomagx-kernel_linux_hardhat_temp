@@ -23,6 +23,7 @@
  * ===========  ==============  ==============================================
  * 19-Oct-2006  Motorola        Initial revision.
  * 13-Nov-2006  Motorola        Change pad group 25 settings.
+ * 16-Nov-2006  Motorola        Updated LCD serializer reset and stby functions
  * 11-Dec-2006  Motorola        UI_IC_DBG changes for Elba R1.2
  * 26-Jan-2007  Motorola        Bluetooth current drain improvements.
  * 02-Apr-2007  Motorola        Pad group 10 setting changed to 6.
@@ -334,6 +335,7 @@ struct gpio_signal_settings initial_gpio_settings[MAX_GPIO_SIGNAL] = {
      * Array index: 28  GPIO_SIGNAL_TNLC_RESET
      */
     { GPIO_INVALID_PORT,    31, GPIO_GDIR_OUTPUT,   GPIO_DATA_LOW },
+
     /*
      * SCM-A11 Package Pin Name: ED_INT1
      * Elba P0 Signal: BT_HOST_WAKE_B (Bluetooth)

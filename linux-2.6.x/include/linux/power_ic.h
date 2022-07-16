@@ -31,9 +31,12 @@
  * Motorola 2007-Jul-05 - Remove external access functions which toggle atod channel.
  * Motorola 2007-Jun-21 - Adding I/O control to get power path setting.
  * Motorola 2007-Jun-19 - NAND secure boot time improvement 
+ * Motorola 2007-May-31 - Added IOCTL for ring and vibrate PWM vibration feature.
  * Motorola 2007-May-30 - Added digital loopback ioctl for tcmd
  * Motorola 2007-Apr-23 - Remove Power Control 1 initialization.
  * Motorola 2007-Mar-28 - Added IOCTL for Wlan TCMD
+ * Motorola 2007-Mar-23 - Remove Power Control 1 register from initialization.
+ * Motorola 2007-Mar-20 - Update NUM_INIT_REGS
  * Motorola 2007-Mar-19 - Handle PowerCut
  * Motorola 2007-Feb-01 - Add IOCTL for FET_CTRL and FET_OVRD
  * Motorola 2006-Dec-22 - Add form factor interface
@@ -502,7 +505,7 @@ typedef enum
 /*! For the AtoD interface, these are the individual channels that can be requested. */
 typedef enum
 {
-    POWER_IC_ATOD_CHANNEL_PA_THERM,
+    POWER_IC_ATOD_CHANNEL_AD6,
     POWER_IC_ATOD_CHANNEL_BATT,
     POWER_IC_ATOD_CHANNEL_BATT_CURR,
     POWER_IC_ATOD_CHANNEL_BPLUS,
@@ -594,6 +597,8 @@ typedef enum
 /*! Identifiers for bits that can be read/written to using the Backup Memory API. */
 typedef enum
 {
+    POWER_IC_BACKUP_MEMORY_ID_MEMA,                    /*!< All of Memory Register A. */
+    POWER_IC_BACKUP_MEMORY_ID_MEMB,                    /*!< All of Memory Register B. */
     POWER_IC_BACKUP_MEMORY_ID_ATLAS_BACKUP_FLASH_MODE, /*!< Signal MBM to go into flash mode after reboot. */
     POWER_IC_BACKUP_MEMORY_ID_ATLAS_BACKUP_PANIC,      /*!< Signal MBM that a panic occurred. */
     POWER_IC_BACKUP_MEMORY_ID_ATLAS_BACKUP_FOTA_MODE,  /*!< Signal MBM to go in FOTA mode after reboot. */
@@ -960,6 +965,20 @@ typedef enum
  */
 #define POWER_IC_IOCTL_PERIPH_SET_CAMERA_ON \
         _IOW(POWER_IC_MAJOR_NUM, (POWER_IC_IOC_CMD_PERIPH_BASE + 0x02), POWER_IC_PERIPH_ONOFF_T)
+	
+/*!
+ * @brief Turns the vibration sequence on and off for ring and vibrate mode.
+ *
+ * This command is the on/off switch for the vibrating sequence in ring and vibrate mode.
+ *
+ * The command takes a single POWER_IC_PERIPH_ONOFF_T, indicating whether the vibrating sequence
+ * should be turned on or off.
+ *
+ * This command has no output other than the returned error code for the ioctl() call.
+ */
+#define POWER_IC_IOCTL_PERIPH_SET_RING_AND_VIB \
+        _IOW(POWER_IC_MAJOR_NUM, (POWER_IC_IOC_CMD_PERIPH_BASE + 0x03), POWER_IC_PERIPH_ONOFF_T)	
+
 /* @} End of power management ioctls.  ------------------------------------------------------------*/
 
 
@@ -1134,6 +1153,20 @@ typedef enum
         _IOW(POWER_IC_MAJOR_NUM, (POWER_IC_IOC_ATOD_BASE + 0x05), unsigned char *)
 
 /*!
+ * @brief Turns the thermistor on and off.
+ *
+ * This command is the on/off switch for the thermistor GPO.
+ *
+ * This command takes a single int on/off, indicating whether the thermistor should be
+ * turned on or off.
+ *
+ * This command has no output other than the returned error code for the ioctl() call.
+ */
+#define POWER_IC_IOCTL_ATOD_SET_THERM \
+        _IOW(POWER_IC_MAJOR_NUM, (POWER_IC_IOC_ATOD_BASE + 0x06), int)
+
+
+/*!
  * @brief Converts battery voltage and current for Phasing.
  *
  * This command performs a conversion of the battery voltage and current. The results of the
@@ -1144,7 +1177,22 @@ typedef enum
  * back is in DAC values.
  */
 #define POWER_IC_IOCTL_ATOD_BATT_AND_CURR_PHASED \
-        _IOR(POWER_IC_MAJOR_NUM, (POWER_IC_IOC_ATOD_BASE + 0x06), POWER_IC_ATOD_REQUEST_BATT_AND_CURR_T *)
+        _IOR(POWER_IC_MAJOR_NUM, (POWER_IC_IOC_ATOD_BASE + 0x07), POWER_IC_ATOD_REQUEST_BATT_AND_CURR_T *)
+
+/*!
+ * @brief Sets the lithium coin cell enable bit.
+ *
+ * This command sets the lithium coin cell enable bit in order to read the RTCBatt AtoD
+ * voltage.
+ *
+ * The command takes an int containing the value for the lithium coin cell bit.
+ *
+ * The command has no output other than the returned error code for the ioctl() call.
+ *
+ */
+#define POWER_IC_IOCTL_ATOD_SET_LITHIUM_COIN_CELL_EN \
+        _IOW(POWER_IC_MAJOR_NUM, (POWER_IC_IOC_ATOD_BASE + 0x08), int)
+
         
  /*!
  * @brief Converts battery voltage and current and returns the unphased raw A2D measurements.
@@ -1157,7 +1205,7 @@ typedef enum
  * back is in DAC values.
  */
 #define POWER_IC_IOCTL_ATOD_BATT_AND_CURR_UNPHASED \
-        _IOR(POWER_IC_MAJOR_NUM, (POWER_IC_IOC_ATOD_BASE + 0x07), POWER_IC_ATOD_REQUEST_BATT_AND_CURR_T *)       
+        _IOR(POWER_IC_MAJOR_NUM, (POWER_IC_IOC_ATOD_BASE + 0x09), POWER_IC_ATOD_REQUEST_BATT_AND_CURR_T *)       
 
 /*!
  * @brief Converts a single channel.
@@ -1176,7 +1224,7 @@ typedef enum
  * not averaged, making decisions on the results of this conversion is probably not a good idea.
  */
 #define POWER_IC_IOCTL_ATOD_RAW \
-        _IOR(POWER_IC_MAJOR_NUM, (POWER_IC_IOC_ATOD_BASE + 0x08), POWER_IC_ATOD_REQUEST_RAW_T *)
+        _IOR(POWER_IC_MAJOR_NUM, (POWER_IC_IOC_ATOD_BASE + 0x0A), POWER_IC_ATOD_REQUEST_RAW_T *)
         
 /*!
  * @brief Uses a single channel conversion on charger current.
@@ -1191,7 +1239,7 @@ typedef enum
  * structure.
  */
 #define POWER_IC_IOCTL_ATOD_CHRGR_CURR \
-        _IOR(POWER_IC_MAJOR_NUM, (POWER_IC_IOC_ATOD_BASE + 0x09), POWER_IC_ATOD_REQUEST_SINGLE_CHANNEL_T *)
+        _IOR(POWER_IC_MAJOR_NUM, (POWER_IC_IOC_ATOD_BASE + 0x0B), POWER_IC_ATOD_REQUEST_SINGLE_CHANNEL_T *)
         
 /* @} End of AtoD ioctls ------------------------------------------------------------------------- */
 
@@ -1729,7 +1777,6 @@ typedef struct
     int mobportb;
     int charger_id;
     int temperature;
-    POWER_IC_ATOD_AD6_T ad6_sel; /*!< When it is set to zero, indicates to take atod on PA temperature */
 } POWER_IC_ATOD_RESULT_GENERAL_CONVERSION_T;
 
 /*!

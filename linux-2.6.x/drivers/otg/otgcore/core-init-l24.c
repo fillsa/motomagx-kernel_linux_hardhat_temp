@@ -288,7 +288,7 @@ static int otg_modinit (void)
 
         printk(KERN_INFO"%s: \n", __FUNCTION__);
 	otg_workqueue = create_workqueue("otg_work");
-	//printk("workqueue otg_work is created otg_workqueue value is 0x%x.\n", otg_workqueue);
+//	printk("workqueue otg_work is created otg_workqueue value is 0x%x.\n", otg_workqueue);
 	otg_wqrs = create_workqueue("otg_wqrs");
 
         THROW_IF((bus_registered = bus_register(&otg_bus_type)), error);

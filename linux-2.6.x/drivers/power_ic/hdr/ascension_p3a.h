@@ -16,7 +16,9 @@
  * 02111-1307, USA
  *
  * Motorola 2007-Apr-23 - Remove Power Control 1 initialization. 
+ * Motorola 2007-Mar-19 - Remove Charger 0 initialization
  * Motorola 2007-Jan-08 - Updated copyright
+ * Motorola 2006-Dec-07 - Update for power cut timer
  * Motorola 2006-Nov-09 - Remove LED initialization
  * Motorola 2006-Oct-09 - Update File
  * Motorola 2006-Aug-18 - Current drain optimizations.
@@ -53,6 +55,7 @@
     {POWER_IC_REG_ATLAS_ARB_REG_0,         0x0000000},
     {POWER_IC_REG_ATLAS_ARB_REG_1,         0x0000000},
     {POWER_IC_REG_ATLAS_PWR_CONTROL_0,     0x0CA0E03},
+//2007-Apr-23 - Remove Power Control 1 initialization    {POWER_IC_REG_ATLAS_PWR_CONTROL_1,     0x000A005},
     {POWER_IC_REG_ATLAS_PWR_CONTROL_2,     0x0000000},
 
     {POWER_IC_REG_ATLAS_REGEN_ASSIGN,      0x0800000},
@@ -81,6 +84,14 @@
 
     {POWER_IC_REG_ATLAS_USB_0,             0x0000060},
     {POWER_IC_REG_ATLAS_CHARGE_USB_1,      0x000000E}
+/*2006-Nov-09 - Remove LED initialization,
+    {POWER_IC_REG_ATLAS_LED_CONTROL_0,     0x0000001},
+    {POWER_IC_REG_ATLAS_LED_CONTROL_1,     0x0040000},
+    {POWER_IC_REG_ATLAS_LED_CONTROL_2,     0x0001E07},
+
+    {POWER_IC_REG_ATLAS_LED_CONTROL_3,     0x000000A},
+    {POWER_IC_REG_ATLAS_LED_CONTROL_4,     0x000000A},
+    {POWER_IC_REG_ATLAS_LED_CONTROL_5,     0x000000A}*/
 };
 
 #endif /* __POWER_IC_ASCENSION_P3A_H__ */

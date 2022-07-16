@@ -41,11 +41,15 @@
  * Copyright (C) 2006-2008 Motorola
  * Date         Author                  Comment
  * 11/23/2006   Motorola		Add megasim_restart_mmc for sysfs and ioctl interface.
+ * 11/25/2006   Motorola        Modify suspend and resume
  * 03/08/2007   Motorola		Add two interfaces for turning on/off sdhc clock.
+ * 04/02/2007   Motorola        Support one Mass storage partition for LIDO P
  * 04/06/2007   Motorola                change power up sequence for 4G SD cards
  * 07/04/2007   Motorola                Add support for MC/MR
  * 07/12/2007   Motorola   		Add time out in stop clock
+ * 08/31/2007	Motorola	Change mmc frequency to 12MHz
  * 09/07/2007	Motorola		Change mmc clock to 12MHz from 24MHz
+ * 09/26/2007	Motorola	Modify the gpio settings when TF power up
  * 09/28/2007   Motorola		Recover SDHC error
  * 12/04/2007	Motorola		Modify power setting place
  * 01/11/2008   Motorola                Modify stop clock
@@ -73,6 +77,7 @@
 #include <linux/delay.h>
 #include <linux/timer.h>
 #include <linux/power_ic_kernel.h>
+#include <linux/devfs_fs_kernel.h>
 #include <linux/mpm.h>
 #include <linux/sched.h>
 
@@ -1514,7 +1519,8 @@ static void mxcmci_set_ios(struct mmc_host *mmc, struct mmc_ios *ios)
 		if ( machine_is_mxc91131evb() ) {
 			clk_dev = 0;
 		} else {
-			clk_dev = 3;	/* we can only use 16MHz or lower freq to avoid SDHC fifo overflow */
+//OLD			clk_dev = 1;
+			clk_dev = 3;	//12MHz clock	/* we can only use 16MHz or lower freq to avoid SDHC fifo overflow */
 		}
 
 		for (; clk_dev <= 0xF; clk_dev++) {
@@ -1665,6 +1671,20 @@ static int mxcmci_probe(struct device *dev)
 	struct mmc_host *mmc;
 	struct mxcmci_host *host = NULL;
 	int ret = 0;
+/*OLD		#ifdef CONFIG_MACH_LIDO
+#define MMC_SHIFT		3
+#define MMC_BLK_DEV_NUM		243
+#define MMC_DEV_NUM_PARTS	8	
+	int count, i = 0, major;
+	major = MMC_BLK_DEV_NUM;
+	count = i + MMC_DEV_NUM_PARTS;
+	devfs_mk_bdev(MKDEV(major, i++), S_IFBLK|S_IRUGO|S_IWUSR, "mmca");
+	while (i < count) {
+		devfs_mk_bdev(MKDEV(major, i), S_IFBLK|S_IRUGO|S_IWUSR,
+					 "mmca%d", i);
+		i++;
+	}
+#endif*/
 DBG(2,"mxcmci_probe: begin. id = 0x%x; slot_id = 0x%x  \n", pdev->id, slot_id);
 	if (pdev->id != 0 && pdev->id != 1) {	//There is 2 SDHC
 		printk(KERN_DEBUG
@@ -1792,11 +1812,16 @@ DBG(2,"mxcmci_probe: invalid controller selected \n");
 		goto out3;
 	}
 
+	/*Add power to TF card*/
 /*	if( pdev->id == 0 ){
 #ifndef CONFIG_MACH_MXC91131EVB
 		power_ic_set_transflash_voltage(3200);	
 #endif
-	}*/
+	}
+#ifndef CONFIG_MACH_LIDO
+	mxcmci_power_set_voltage(pdev->id, 3200);
+#endif
+	*/
 
 	mmc_add_host(mmc);
 
@@ -1819,6 +1844,10 @@ DBG(2,"mxcmci_probe: invalid controller selected \n");
 #ifndef CONFIG_MACH_MXC91131EVB
 		power_ic_set_transflash_voltage(0);
 #endif
+#ifndef CONFIG_MACH_LIDO
+		mxcmci_power_set_voltage(pdev->id, 0);
+#endif
+	}
 	}*/
 
 	printk(KERN_INFO "%s-%d found\n", pdev->name, pdev->id);
@@ -1880,10 +1909,14 @@ static int mxcmci_remove(struct device *dev)
 		gpio_sdhc_inactive(pdev->id);
 		sdhc_intr_destroy(pdev->id, host);
 	}
-
+	
+	/*Shutdown power when exit*/
 /*	if( pdev->id == 0 ){
 #ifndef CONFIG_MACH_MXC91131EVB
 		power_ic_set_transflash_voltage(0);
+#endif
+#ifndef CONFIG_MACH_LIDO
+	mxcmci_power_set_voltage(pdev->id, 0);
 #endif
 	}*/
 
@@ -2048,6 +2081,9 @@ static int __init mxcmci_init(void)
 	init_MUTEX(&megasim_restart_mutex);
 #endif
 
+/*#ifdef CONFIG_MACH_LIDO
+	power_ic_set_transflash_voltage(3200);	
+#endif*/
 #ifdef  CONFIG_MACH_ELBA
         /* Sierra team have not support movinand, direct set power*/
         /* LIBkk54542 tracking for this issue */

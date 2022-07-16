@@ -12,6 +12,7 @@
 
 /* ChangeLog:
  * (mm-dd-yyyy)  Author    Comment
+ * 10-26-2007    Motorola  Added conditional fsync for loop device
  * 11-15-2007    Motorola  Upmege from 6.1 (Added conditional fsync for loop device)
  */
 

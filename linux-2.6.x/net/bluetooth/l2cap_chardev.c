@@ -191,6 +191,7 @@ static int l2cap_char_dev_open(struct inode *inode, struct file *filp)
     /* Check valid socket underneath-in good state */
     if (dev->sk->sk_state != BT_CONNECTED) {
        BT_DBG("socket not BT_CONNECTED");    
+	//old	return -ENOTCONN; // or -EINVAL   
     }
 
     /* Update l2cap char dev state */
@@ -280,6 +281,7 @@ static int __l2cap_char_dev_rw(struct file *filp,char *buffer,size_t length, cha
     /* check whether the socket it still open */
     if (l2capdevice->sk->sk_state != BT_CONNECTED) {
        BT_DBG("socket state is not BT_CONNECTED");
+    //old    return -ENOTCONN;
     }
     
     sock = l2capdevice->sk->sk_socket;
@@ -345,6 +347,7 @@ static unsigned int l2cap_char_dev_poll(struct file *filp, poll_table *wait)
  
     if (l2capdevice->sk->sk_state != BT_CONNECTED) {
        BT_DBG("socket state is not BT_CONNECTED");
+    //old    return -ENOTCONN;
     }
 
     sock = l2capdevice->sk->sk_socket;

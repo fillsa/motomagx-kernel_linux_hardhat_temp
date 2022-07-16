@@ -53,6 +53,7 @@
  * 03/27/2007    Motorola       Added fix to maintain interrupt state in resume
  *                              routine.
  * 04/29/2007    Motorola       Added support for GPT running at 32KHz.
+ * 10/18/2007    Motorola	re-align to xtime when xtime changed somewhere for LJ6.1.
  * 11/15/2007    Motorola       Upmerge from 6.1.(re-align to xtime when xtime changed somewhere.)
  * 12/17/2008    Motorola       Calculate the time drift and make the time accurate.
  */

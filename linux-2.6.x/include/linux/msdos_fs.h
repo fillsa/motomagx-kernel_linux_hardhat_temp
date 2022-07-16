@@ -6,6 +6,7 @@
  */
 /* ChangeLog:
  * (mm-dd-yyyy)  Author    Comment
+ * 10-31-2007    Motorola  Added hidden and system attr interface
  * 11-21-2007    Motorola  Upmerge from 6.1 (Added hidden and system attr interface)
  * 02-20-2008    Motorola  remove sticky mode
  */
@@ -52,6 +53,8 @@
 #define ATTR_UNUSED  (ATTR_VOLUME | ATTR_ARCH | ATTR_SYS | ATTR_HIDDEN)
 /* bits that are used by the Windows 95/Windows NT extended FAT */
 #define ATTR_EXT     (ATTR_RO | ATTR_HIDDEN | ATTR_SYS | ATTR_VOLUME)
+/* bits that are used for systerm and hidden by the Windows 95/NT/XP */
+#define ATTR_INV     (ATTR_HIDDEN | ATTR_SYS)
 
 #define CASE_LOWER_BASE 8	/* base is lower case */
 #define CASE_LOWER_EXT  16	/* extension is lower case */

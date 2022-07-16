@@ -69,7 +69,7 @@ void gpio_camera_torch_enable(int enable)
  */
 void gpio_backlight_numbers_enable(int enable)
 {
-#if defined(CONFIG_MACH_SCMA11REF)
+#if defined(CONFIG_MACH_SCMA11REF) //||  defined(CONFIG_MACH_ASCENSION)
     if(GPIO_SIGNAL_IS_VALID(GPIO_SIGNAL_EL_NUM_EN)) {
         gpio_signal_set_data(GPIO_SIGNAL_EL_NUM_EN,
                 enable ? GPIO_DATA_HIGH : GPIO_DATA_LOW);

@@ -10,6 +10,7 @@
 /*
  * Copyright (C) 2007 Motorola
  * Date		Author			Comment
+ * 12/13/2006   Motorola        Modify queue management to avoid deadlock
  * 03/08/2007	Motorola		Turn off sdhc clock when card isn't used.
  * 07/04/2007	Motorola		Modify the sdhc clock control.
  * 09/05/2007	Motorola		Fix mmcqd thread not wakeup bug.
@@ -96,6 +97,7 @@ static int mmc_queue_thread(void *d)
 			up(&mq->thread_sem);
 			schedule();
 			down(&mq->thread_sem);
+
 
 			continue;
 		}

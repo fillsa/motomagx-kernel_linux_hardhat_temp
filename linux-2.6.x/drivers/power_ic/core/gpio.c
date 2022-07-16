@@ -29,10 +29,15 @@
  * Motorola 2006-Sep-08 - Fix use of BOARDREV for Lido and Saipan.
  * Motorola 2006-Aug-15 - Add Elba support.
  * Motorola 2006-Jul-31 - Update comments
+ * Motorola 2006-Jul-26 - Add TransFlash support to BUTE
  * Motorola 2006-Jul-14 - Add Lido & Saipan Support
  * Motorola 2006-Jun-28 - Montavista header upmerges
  * Motorola 2006-Jun-19 - Fix montavista upmerge conditionals
  * Motorola 2006-Jun-14 - Modify keypad lights for HW revisions.
+ * Motorola 2006-Jun-14 - Fix TransFlash detection on Ascension
+ * Motorola 2006-Jun-19 - Fix montavista upmerge conditionals
+ * Motorola 2006-Jun-14 - Fix TransFlash detection on Ascension
+ * Motorola 2006-May-12 - Add Zeus support for SD
  * Motorola 2006-Apr-24 - Add 3.5mm headset support
  * Motorola 2006-Apr-04 - Confine all GPIO functions to this file
  */
@@ -129,7 +134,7 @@ void power_ic_gpio_config_event_int(void)
     /* Configure and register the ATLAS interrupt */
     set_irq_type(PM_INT, IRQT_RISING);
     request_irq(PM_INT, power_ic_irq_handler, SA_INTERRUPT, "Atlas irq: SCM-A11", 0);
-#elif defined(CONFIG_ARCH_MXC91321)
+#elif defined(CONFIG_ARCH_MXC91321) /*defined(CONFIG_MACH_ARGONLVREF)*/
     /* Configure mux */
     iomux_config_mux(PIN_PM_INT, OUTPUTCONFIG_ALT2, INPUTCONFIG_ALT2);
     /* Configure and register the ATLAS interrupt */
@@ -174,7 +179,7 @@ void power_ic_gpio_emu_config(void)
     gpio_config(GPIO_AP_C_PORT, 25, false, GPIO_INT_NONE);
 #endif
     
-#elif defined(CONFIG_ARCH_MXC91321)
+#elif defined(CONFIG_ARCH_MXC91321) /* defined(CONFIG_MACH_ARGONLVREF)*/
     iomux_config_mux(PIN_USB_VPIN, OUTPUTCONFIG_FUNC, INPUTCONFIG_GPIO);
     iomux_config_mux(PIN_USB_VMIN, OUTPUTCONFIG_FUNC, INPUTCONFIG_GPIO);
     iomux_config_mux(PIN_GPIO4, OUTPUTCONFIG_FUNC, INPUTCONFIG_GPIO);
@@ -193,9 +198,18 @@ void power_ic_gpio_emu_config(void)
 void power_ic_gpio_lights_config(void)
 {
 #if defined(CONFIG_ARCH_MXC91231) && defined(CONFIG_MACH_SCMA11REF)
+#ifdef CONFIG_MOT_FEAT_BRDREV
+    if(boardrev() < BOARDREV_P1A)
+    {
+        iomux_config_mux(AP_GPIO_AP_B17, OUTPUTCONFIG_DEFAULT, INPUTCONFIG_NONE);
+        gpio_config(GPIO_AP_B_PORT, LIGHTS_FL_PWM_BKL_PIN, true, GPIO_INT_NONE);
+        gpio_set_data(GPIO_AP_B_PORT, LIGHTS_FL_PWM_BKL_PIN, 1);
+    }
+#endif /* CONFIG_MOT_FEAT_BRDREV */
     iomux_config_mux(AP_IPU_D3_PS, OUTPUTCONFIG_DEFAULT, INPUTCONFIG_NONE);
     gpio_config(GPIO_AP_A_PORT, LIGHTS_FL_MAIN_BKL_PIN, true, GPIO_INT_NONE);
     gpio_set_data(GPIO_AP_A_PORT, LIGHTS_FL_MAIN_BKL_PIN, 1);
+//#elif defined(CONFIG_MACH_ASCENSION) || defined(CONFIG_MACH_LIDO) || defined(CONFIG_MACH_SAIPAN)    
 #elif defined(CONFIG_ARCH_MXC91231) && !(defined(CONFIG_MACH_ELBA)) && !(defined(CONFIG_MACH_XPIXL))
     /* EL Keypad GPIOs */
     iomux_config_mux(SP_SPI1_CLK, OUTPUTCONFIG_DEFAULT, INPUTCONFIG_NONE);
@@ -227,6 +241,12 @@ void power_ic_gpio_lights_config(void)
 void power_ic_gpio_lights_set_main_display(LIGHTS_FL_COLOR_T nColor)
 {
 #if defined(CONFIG_ARCH_MXC91231) && defined(CONFIG_MACH_SCMA11REF)
+#ifdef CONFIG_MOT_FEAT_BRDREV
+    if(boardrev() < BOARDREV_P1A)
+    {
+        gpio_set_data(GPIO_AP_B_PORT, LIGHTS_FL_PWM_BKL_PIN, (nColor != 0));
+    }
+#endif /* CONFIG_MOT_FEAT_BRDREV */
     gpio_set_data(GPIO_AP_A_PORT, LIGHTS_FL_MAIN_BKL_PIN, (nColor != 0));
 #endif
 }
@@ -242,7 +262,19 @@ void power_ic_gpio_lights_set_main_display(LIGHTS_FL_COLOR_T nColor)
 void power_ic_gpio_lights_set_keypad_base(LIGHTS_FL_COLOR_T nColor)
 {
 #if defined(CONFIG_ARCH_MXC91231)
+#ifdef CONFIG_MACH_ASCENSION
+    /* Disable keypad lights for P2A and earlier */
+    if (boardrev() > BOARDREV_P2A)
+    {
+        gpio_set_data(GPIO_SP_A_PORT, LIGHTS_FL_EL_BASE, (nColor != 0));
+    }
+    else
+    {
+        gpio_set_data(GPIO_SP_A_PORT, LIGHTS_FL_EL_BASE, 0);
+    }
+#else
     gpio_set_data(GPIO_SP_A_PORT, LIGHTS_FL_EL_BASE, (nColor != 0));
+#endif
 #endif
 }
 

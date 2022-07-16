@@ -27,10 +27,14 @@
  * Motorola 2008-Jan-29 - Add xPIXL morphing mode support
  * Motorola 2008-Jan-10 - Make the share LED working on keypad
  * Motorola 2007-Mar-30 - Privacy LED test command not working for MAX6946.
+ * Motorola 2007-Mar-30 - Support BT CIT test.
  * Motorola 2007-Mar-09 - Update LIGHTS_FL_region_ctl_tb for Marco
+ * Motorola 2007-Feb-23 - Finalize Bluetooth LED behavior.
  * Motorola 2007-Feb-19 - Use HWCFG to determine which chip is present.
+ * Motorola 2007-Feb-09 - Control Bluetooth LED blinking
  * Motorola 2007-Jan-23 - Add privacy brightness support for MAX6946 LED
  * Motorola 2007-Jan-16 - Add support for MAX6946 LED controller chip.
+ * Motorola 2006-Dec-19 - Add more steps in main backlight
  * Motorola 2006-Nov-10 - Add support for Marco.
  * Motorola 2006-Oct-19 - Add one more step for display
  * Motorola 2006-Oct-10 - Update File
@@ -99,7 +103,10 @@ static bool lights_fl_region_main_display(const LIGHTS_FL_LED_CTL_T *pCtlData, L
 static bool lights_fl_region_main_display_maxim(const LIGHTS_FL_LED_CTL_T *pCtlData, LIGHTS_FL_COLOR_T nStep);
 static bool lights_fl_region_main_display_max6946(const LIGHTS_FL_LED_CTL_T *pCtlData, LIGHTS_FL_COLOR_T nStep);
 static bool lights_fl_region_main_display_max7314(const LIGHTS_FL_LED_CTL_T *pCtlData, LIGHTS_FL_COLOR_T nStep);
+#if defined(CONFIG_MACH_LIDO) || defined(CONFIG_MACH_ELBA)
 static bool lights_fl_region_main_cli_display(const LIGHTS_FL_LED_CTL_T *pCtlData, LIGHTS_FL_COLOR_T nStep);
+#endif
+
 #ifdef CONFIG_MACH_NEVIS
 static bool lights_fl_region_keypad_nevis(const LIGHTS_FL_LED_CTL_T *pCtlData, LIGHTS_FL_COLOR_T nStep);
 #else
@@ -110,6 +117,7 @@ static int lights_fl_region_keypad_set_section(LIGHTS_FL_COLOR_T nStep);
 static bool lights_fl_region_ledkp(const LIGHTS_FL_LED_CTL_T *pCtlData, LIGHTS_FL_COLOR_T nColor); 
 static int lights_fl_config_atlas_led(POWER_IC_REGISTER_T reg, LIGHTS_FL_COLOR_T nStep);
 #endif /* CONFIG_MACH_XPIXL */
+
 
 /*******************************************************************************************
  * LOCAL CONSTANTS
@@ -208,6 +216,7 @@ typedef struct
 #define LIGHTS_FL_TRI_COLOR_GREEN_DC_MASK    0x00F800
 #define LIGHTS_FL_TRI_COLOR_BLUE_DC_INDEX    16
 #define LIGHTS_FL_TRI_COLOR_BLUE_DC_MASK     0x1F0000
+#define LIGHTS_FL_TRI_COLOR_BT_DC_MASK       0x020000
 #define LIGHTS_FL_TRI_COLOR_RED_CL_INDEX     0
 #define LIGHTS_FL_TRI_COLOR_GREEN_CL_INDEX   2
 #define LIGHTS_FL_TRI_COLOR_BLUE_CL_INDEX    4
@@ -217,7 +226,7 @@ typedef struct
 /*@}*/
 
 /*!
- * @name Register LED Control tri-color mask
+ * @name Register LED Control 4 (tri-color mask)
  */
 /*@{*/
 #define LIGHTS_FL_TRI_COLOR_DC_MASK          0x1FFFC0
@@ -268,10 +277,8 @@ typedef struct
 #define LIGHTS_FL_LEDR3_TRASH_RAMPDOWN                  0x008000
 #define LIGHTS_FL_LEDG1_SHARE_RAMPUP                    0x000002
 #define LIGHTS_FL_LEDG1_SHARE_RAMPDOWN                  0x000010
-//#define LIGHTS_FL_LEDG2_KODAK_RAMPUP                    0x000080
-//#define LIGHTS_FL_LEDG2_KODAK_RAMPDOWN                  0x000400
-#define LIGHTS_FL_LEDG2_REVIEW_RAMPUP                   0x000080
-#define LIGHTS_FL_LEDG2_REVIEW_RAMPDOWN                 0x000400
+#define LIGHTS_FL_LEDG2_REVIEW_RAMPUP                   0x000080//#define LIGHTS_FL_LEDG2_KODAK_RAMPUP                    0x000080
+#define LIGHTS_FL_LEDG2_REVIEW_RAMPDOWN                 0x000400//#define LIGHTS_FL_LEDG2_KODAK_RAMPDOWN                  0x000400
 #define LIGHTS_FL_LEDG3_NUMBER_A_RAMPUP                 0x002000
 #define LIGHTS_FL_LEDG3_NUMBER_A_RAMPDOWN               0x010000
 #define LIGHTS_FL_LEDB2_CAPTURE_PLAYBACK_RAMPUP         0x000100
@@ -399,15 +406,43 @@ const LIGHTS_FL_REGION_CFG_T LIGHTS_FL_region_ctl_tb[LIGHTS_FL_MAX_REGIONS] =
     {(void*)lights_fl_region_gpio,                 {0, power_ic_gpio_lights_set_camera_flash}}, /* Camera Flash */
     {(void*)lights_fl_region_main_display,         {0, NULL}}, /* Display Backlight */
     {(void*)lights_fl_region_cli_display,          {0, NULL}}, /* CLI Display Backlight */
-    { NULL,                                        {0, NULL}}, /* Motorola Logo */
+    { NULL,                                        {0, NULL}}, /* Motorola Logo */ /* WiFi Status LED */
     {(void*)lights_fl_region_gpio,                 {0, power_ic_gpio_lights_set_keypad_slider}},  /* Navigation Keypad Backlight */
     {(void*)lights_fl_region_gpio,                 {0, power_ic_gpio_lights_set_keypad_base}}, /* Keypad Backlight */
-    {(void*)lights_fl_region_tri_color,            {/*1*/3, NULL}}, /* Bluetooth Status LED */
+    {(void*)lights_fl_region_tri_color,            {3, NULL}}, /* Bluetooth Status LED */
     {(void*)lights_fl_region_sol_led,              {0, NULL}}, /* SOL */
     { NULL,                                        {0, NULL}}, /* Privacy LED */
     {(void*)lights_fl_region_tri_color,            {1, NULL}}, /* Tri Color LED #1 */
     {(void*)lights_fl_region_tri_color,            {2, NULL}}, /* Tri Color LED #2 */
     { NULL,                                        {0, NULL}}, /* WiFi Status LED */
+
+#elif defined(CONFIG_MACH_LIDO)
+    {(void*)lights_fl_region_gpio,                 {0, power_ic_gpio_lights_set_camera_flash}}, /* Camera Flash */
+    {(void*)lights_fl_region_main_cli_display,     {0, NULL}}, /* Display Backlight */
+    {(void*)lights_fl_region_main_cli_display,     {0, NULL}}, /* CLI Display Backlight */
+    { NULL,                                        {0, NULL}}, /* Motorola Logo */ /* WiFi Status LED */
+    {(void*)lights_fl_region_gpio,                 {0, power_ic_gpio_lights_set_keypad_slider}},  /* Navigation Keypad Backlight */
+    {(void*)lights_fl_region_gpio,                 {0, power_ic_gpio_lights_set_keypad_base}}, /* Keypad Backlight */
+    {(void*)lights_fl_region_tri_color,            {3, NULL}}, /* Bluetooth Status LED */
+    {(void*)lights_fl_region_sol_led,              {0, NULL}},  /* SOL */
+    {NULL,                                         {0, NULL}}, /* Privacy LED */
+    {(void*)lights_fl_region_tri_color,            {1, NULL}}, /* Tri Color LED #1 */
+    {(void*)lights_fl_region_tri_color,            {2, NULL}}, /* Tri Color LED #2 */
+    {NULL,                                         {0, NULL}}, /* WiFi Status LED */    
+
+#elif defined(CONFIG_MACH_SAIPAN)
+    {NULL,                                         {0, NULL}}, /* Camera Flash */
+    {(void*)lights_fl_region_main_display,         {0, NULL}}, /* Display Backlight */
+    {(void*)lights_fl_region_cli_display,          {0, NULL}}, /* CLI Display Backlight */
+    {NULL,                                         {0, NULL}}, /* Motorola Logo */ /* WiFi Status LED */
+    {NULL,                                         {0, NULL}}, /* Navigation Keypad Backlight */
+    {(void*)lights_fl_region_keypad,               {0, NULL}}, /* Keypad Backlight */
+    {(void*)lights_fl_region_tri_color,            {3, NULL}}, /* Bluetooth Status LED */
+    {(void*)lights_fl_region_sol_led,              {0, NULL}}, /* SOL */
+    {NULL,                                         {0, NULL}}, /* Privacy LED */
+    {(void*)lights_fl_region_tri_color,            {1, NULL}}, /* Tri Color LED #1 */
+    {(void*)lights_fl_region_tri_color,            {2, NULL}}, /* Tri Color LED #2 */
+    {NULL,                                         {0, NULL}}, /* WiFi Status LED */
 
 #elif defined(CONFIG_MACH_XPIXL)
     {NULL,                                         {0, NULL}}, /* Camera Flash */
@@ -430,7 +465,7 @@ const LIGHTS_FL_REGION_CFG_T LIGHTS_FL_region_ctl_tb[LIGHTS_FL_MAX_REGIONS] =
     {NULL,                                         {0, NULL}}, /* Motorola Logo */
     {(void*)lights_fl_region_gpio,                 {0, power_ic_gpio_lights_set_keypad_base}},  /* Navigation Keypad Backlight */
     {(void*)lights_fl_region_gpio,                 {0, power_ic_gpio_lights_set_keypad_base}}, /* Keypad Backlight */
-    {(void*)lights_fl_region_tri_color,            {/*1*/3, NULL}}, /* Bluetooth Status LED */
+    {(void*)lights_fl_region_tri_color,            {3, NULL}}, /* Bluetooth Status LED */
     {(void*)lights_fl_region_sol_led,              {0, NULL}}, /* SOL */
     {NULL,                                         {/*0*/1, NULL}}, /* Privacy LED */
     {NULL,                                         {/*1*/0, NULL}}, /* Tri Color LED #1 */
@@ -451,34 +486,6 @@ const LIGHTS_FL_REGION_CFG_T LIGHTS_FL_region_ctl_tb[LIGHTS_FL_MAX_REGIONS] =
     {NULL,                                         {0, NULL}}, /* Tri Color LED #2 */
     {NULL,                                         {0, NULL}}, /* WiFi Status LED */
 
-#elif defined(CONFIG_MACH_LIDO)
-    {(void*)lights_fl_region_gpio,                 {0, power_ic_gpio_lights_set_camera_flash}}, /* Camera Flash */
-    {(void*)lights_fl_region_main_cli_display,     {0, NULL}}, /* Display Backlight */
-    {(void*)lights_fl_region_main_cli_display,     {0, NULL}}, /* CLI Display Backlight */
-    { NULL,                                        {0, NULL}}, /* Motorola Logo */
-    {(void*)lights_fl_region_gpio,                 {0, power_ic_gpio_lights_set_keypad_slider}},  /* Navigation Keypad Backlight */
-    {(void*)lights_fl_region_gpio,                 {0, power_ic_gpio_lights_set_keypad_base}}, /* Keypad Backlight */
-    {(void*)lights_fl_region_tri_color,            {/*1*/3, NULL}}, /* Bluetooth Status LED */
-    {(void*)lights_fl_region_sol_led,              {0, NULL}},  /* SOL */
-    {NULL,                                         {0, NULL}}, /* Privacy LED */
-    {(void*)lights_fl_region_tri_color,            {1, NULL}}, /* Tri Color LED #1 */
-    {(void*)lights_fl_region_tri_color,            {2, NULL}}, /* Tri Color LED #2 */
-    {NULL,                                         {0, NULL}}, /* WiFi Status LED */    
-
-#elif defined(CONFIG_MACH_SAIPAN)
-    {NULL,                                         {0, NULL}}, /* Camera Flash */
-    {(void*)lights_fl_region_main_display,         {0, NULL}}, /* Display Backlight */
-    {(void*)lights_fl_region_cli_display,          {0, NULL}}, /* CLI Display Backlight */
-    {NULL,                                         {0, NULL}}, /* Motorola Logo */
-    {NULL,                                         {0, NULL}}, /* Navigation Keypad Backlight */
-    {(void*)lights_fl_region_keypad,               {0, NULL}}, /* Keypad Backlight */
-    {(void*)lights_fl_region_tri_color,            {/*1*/3, NULL}}, /* Bluetooth Status LED */
-    {(void*)lights_fl_region_sol_led,              {0, NULL}}, /* SOL */
-    {NULL,                                         {0, NULL}}, /* Privacy LED */
-    {(void*)lights_fl_region_tri_color,            {1, NULL}}, /* Tri Color LED #1 */
-    {(void*)lights_fl_region_tri_color,            {2, NULL}}, /* Tri Color LED #2 */
-    {NULL,                                         {0, NULL}}, /* WiFi Status LED */
-
 #elif defined(CONFIG_MACH_ELBA)
     {NULL,                                         {0, NULL}}, /* Camera Flash */
     {(void*)lights_fl_region_main_cli_display,     {0, NULL}}, /* Display Backlight */
@@ -486,7 +493,7 @@ const LIGHTS_FL_REGION_CFG_T LIGHTS_FL_region_ctl_tb[LIGHTS_FL_MAX_REGIONS] =
     {NULL,                                         {0, NULL}}, /* Motorola Logo */
     {NULL,                                         {0, NULL}}, /* Navigation Keypad Backlight */
     {NULL,                                         {0, NULL}}, /* Keypad Backlight */
-    {NULL,                                         {/*1*/0, NULL}}, /* Bluetooth Status LED */
+    {NULL,                                         {0, NULL}}, /* Bluetooth Status LED */
     {NULL,                                         {0, NULL}}, /* SOL */
     {NULL,                                         {0, NULL}}, /* Privacy LED */
     {NULL,                                         {0, NULL}}, /* Tri Color LED #1 */
@@ -514,7 +521,7 @@ const LIGHTS_FL_REGION_CFG_T LIGHTS_FL_region_ctl_tb[LIGHTS_FL_MAX_REGIONS] =
     {NULL,                                         {0, NULL}}, /* Motorola Logo */
     {(void*)lights_fl_region_keypad,               {0, NULL}}, /* Navigation Keypad Backlight */
     {(void*)lights_fl_region_keypad,               {0, NULL}}, /* Keypad Backlight */
-    {(void*)lights_fl_region_tri_color,            {/*1*/3, NULL}}, /* Bluetooth Status LED */
+    {(void*)lights_fl_region_tri_color,            {3, NULL}}, /* Bluetooth Status LED */
     {(void*)lights_fl_region_sol_led,              {0, NULL}}, /* SOL */
     {NULL,                                         {0, NULL}}, /* Privacy LED */
     {(void*)lights_fl_region_tri_color,            {1, NULL}}, /* Tri Color LED #1 */
@@ -547,7 +554,7 @@ const unsigned char bl_pwm_brightness_tb[LIGHTS_NUM_DISPLAY_STEPS] =
  */
 static const MORPHING_SEGMENT_T led_onoff_tb[MORPHING_MODE_NUM] =
 {
-    /*  navi           kodak(review)         number        toggle        share        trash   */
+    /*  navi       kodak(review)  number        toggle        share        trash   */
     {SET_INACTIVE, SET_INACTIVE, SET_INACTIVE, SET_INACTIVE, SET_INACTIVE, SET_INACTIVE}, /* standby  */
     {SET_ACTIVE  , SET_INACTIVE, SET_INACTIVE, SET_INACTIVE, SET_INACTIVE, SET_INACTIVE}, /* navi     */
     {SET_ACTIVE  , SET_ACTIVE  , SET_ACTIVE  , SET_INACTIVE, SET_INACTIVE, SET_INACTIVE}, /* phone    */	
@@ -1296,9 +1303,18 @@ static bool lights_fl_region_tri_color
            break;
         /*Bluetooth*/
         case 3:
-            error = power_ic_set_reg_mask(POWER_IC_REG_ATLAS_LED_CONTROL_3,
+            if (LIGHTS_FL_calling_app == LIGHTS_FL_APP_CTL_TST_CMDS)
+			{
+				error = power_ic_set_reg_mask(POWER_IC_REG_ATLAS_LED_CONTROL_3,
                                          LIGHTS_FL_TRI_COLOR_BLUE_DC_MASK,
-                                         (step << LIGHTS_FL_TRI_COLOR_BLUE_DC_INDEX));
+                                         step);
+			}
+			else
+			{
+				error = power_ic_set_reg_mask(POWER_IC_REG_ATLAS_LED_CONTROL_3,
+                                         LIGHTS_FL_TRI_COLOR_BLUE_DC_MASK,
+                                         (step << LIGHTS_FL_TRI_COLOR_BLUE_DC_INDEX)) /*(LIGHTS_FL_TRI_COLOR_BT_DC_MASK & color_mask))*/ ; 
+			}
            break;
         default:
             break;

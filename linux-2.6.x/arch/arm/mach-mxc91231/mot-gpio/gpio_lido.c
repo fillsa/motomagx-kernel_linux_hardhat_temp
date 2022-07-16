@@ -22,7 +22,11 @@
  * ===========  ==============  ==============================================
  * 04-Oct-2006  Motorola        Initial revision.
  * 02-Nov-2006  Motorola        Changed IOMUX pad group 22 setting.
+ * 10-Nov-2006  Motorola        Update high speed USB API.
+ * 10-Nov-2006  Motorola        Added support for Lido P2.
  * 13-Nov-2006  Motorola        Change pad group 25 settings.
+ * 30-Nov-2006  Motorola        Added support for toggling AP_IPU_D3_CLK between
+ *                              default output function and function1
  * 15-Dec-2006  Motorola        IOMUX pad 12 current drain improvement
  * 02-Jan-2007  Motorola        Added support for Lido P2.
  * 26-Jan-2007  Motorola        Bluetooth current drain improvements.

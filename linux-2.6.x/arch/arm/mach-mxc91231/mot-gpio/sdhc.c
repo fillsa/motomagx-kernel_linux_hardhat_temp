@@ -117,12 +117,12 @@ int sdhc_find_card(int module)
 
 #if defined(CONFIG_MOT_FEAT_SD1_TF_DET)
     if(module == 0) {
-#if ! defined(CONFIG_MACH_NEVIS) // || ! defined(CONFIG_MACH_XPIXL)
-        /* TF_DET is low if card is present */
-        data = gpio_signal_get_data_check(GPIO_SIGNAL_TF_DET);
-#else
+#if defined(CONFIG_MACH_NEVIS) || defined(CONFIG_MACH_XPIXL)
 	/*GND is low if card is present*/
 	data = gpio_signal_get_data_check(GPIO_SIGNAL_GND);
+#else
+        /* TF_DET is low if card is present */
+        data = gpio_signal_get_data_check(GPIO_SIGNAL_TF_DET);
 #endif
     } else {
 #endif

@@ -18,7 +18,10 @@
  * Motorola 2008-Jan-29 - Added IOCTL entry for setting morphing mode
  * Motorola 2007-May-11 - Remove fl_setcontrol from lights_init
  * Motorola 2007-May-08 - Add turbo indicator functions.
+ * Motorola 2007-Mar-30 - Support BT CIT test.
+ * Motorola 2007-Feb-23 - Finalize Bluetooth LED behavior.
  * Motorola 2007-Feb-19 - Move fl_initialize call to lights_init
+ * Motorola 2007-Feb-09 - Control Bluetooth LED blinking
  * Motorola 2006-Nov-15 - Remove LED register initialization.
  * Motorola 2006-Nov-07 - Fix Klocwork Warnings
  * Motorola 2006-Oct-10 - Update File
@@ -73,6 +76,9 @@
  */
 #define LIGHTS_FL_NREGION_TO_MASK(nRegion)  (1 << nRegion)
 
+#define LIGHTS_FL_TRI_COLOR_BT_PERIOD_MASK  0x600000
+#define LIGHTS_FL_TRI_COLOR_TC1HALF_MASK    0x040000
+
 /*******************************************************************************************
  * LOCAL VARIABLES
  ******************************************************************************************/
@@ -94,6 +100,8 @@ static LIGHTS_FL_REGION_MSK_T LIGHTS_FL_region_priorities[LIGHTS_FL_APP_CTL_END]
 /*******************************************************************************************
  * GLOBAL VARIABLES
  ******************************************************************************************/
+
+LIGHTS_FL_APP_CTL_T LIGHTS_FL_calling_app = LIGHTS_FL_APP_CTL_DEFAULT;
 
 /*******************************************************************************************
  * LOCAL FUNCTIONS
@@ -138,8 +146,21 @@ int lights_init(void)
     /* Configure all GPIOs needed for lighting */
     power_ic_gpio_lights_config();
 
+#if 0 // моргает часть клавиатуры.
+#ifndef CONFIG_MOT_TURBO_INDICATOR
+    /* Set period for Bluetooth LED to 2 seconds. */
+    power_ic_set_reg_mask(POWER_IC_REG_ATLAS_LED_CONTROL_3,
+                          LIGHTS_FL_TRI_COLOR_BT_PERIOD_MASK,
+                          LIGHTS_FL_TRI_COLOR_BT_PERIOD_MASK);
+#endif
+
+    /* Set BT LED to half current. */
+    power_ic_set_reg_mask(POWER_IC_REG_ATLAS_LED_CONTROL_1,
+                          LIGHTS_FL_TRI_COLOR_TC1HALF_MASK,
+                          LIGHTS_FL_TRI_COLOR_TC1HALF_MASK);
+#endif     
     /* Initialize the funlights driver */
-    fl_initialize();
+//    fl_initialize();
 
     return 0;
 }
@@ -304,6 +325,9 @@ LIGHTS_FL_REGION_MSK_T lights_fl_vupdate
    
     if (nApp < LIGHTS_FL_APP_CTL_END)
     {
+        /* Remember the application that called into the funlights driver. */
+        LIGHTS_FL_calling_app = nApp;
+
         while (nRegions > 0)
         {
             /*

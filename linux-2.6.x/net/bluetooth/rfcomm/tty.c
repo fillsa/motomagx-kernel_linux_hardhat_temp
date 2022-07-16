@@ -44,6 +44,7 @@
    2007-Feb-09  Motorola         Moved modem status from dev to dlc
    2007-Feb-27  Motorola         Make raw tty by default
    2007-Apr-25  Motorola         Reorder rfcomm_tty_close to prevent race.
+   2007-May-25  Motorola         Don't base rfcomm_room on current transfer credits
 
 */
 
@@ -122,6 +123,7 @@ static DEFINE_RWLOCK(rfcomm_dev_lock);
 
 static void rfcomm_dev_data_ready(struct rfcomm_dlc *dlc, struct sk_buff *skb);
 static void rfcomm_dev_state_change(struct rfcomm_dlc *dlc, int err);
+static void rfcomm_dev_modem_status(struct rfcomm_dlc *dlc, u8 v24_sig); // depend in LJ6.1
 static void rfcomm_dev_modem_status(struct rfcomm_dlc *dlc);
 
 static void rfcomm_tty_wakeup(unsigned long arg);
@@ -670,6 +672,12 @@ static void rfcomm_dev_state_change(struct rfcomm_dlc *dlc, int err)
 	}
 }
 
+//depend in LJ6.1
+static void rfcomm_dev_modem_status(struct rfcomm_dlc *dlc, u8 v24_sig)
+{
+	rfcomm_dev_modem_status(dlc);
+}
+	
 static void rfcomm_dev_modem_status(struct rfcomm_dlc *dlc)
 {
 	struct rfcomm_dev *dev = dlc->owner;

@@ -40,8 +40,9 @@
  * 05/15/2002	Andrew Christian
  * 11/17/2006	Motorola		Support SDA 2.0
  * 11/28/2006   Motorola                Support MMCA 4.1 movinand 4-bit mode
+ * 12/12/2007   Motorola        Support erase command for LJ6.1
  * 07/31/2008	Motorola		Fix 4bit issue
- * 09/32/2008   Motorola        	Support erase command
+ * 09/32/2008   Motorola        	Support erase command for LJ6.3
  */
 
 #ifndef MMC_MMC_PROTOCOL_H

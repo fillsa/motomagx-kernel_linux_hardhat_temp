@@ -64,6 +64,10 @@ void mxc_func_clock_on(void)
         u32 timeout = TIMEOUT_VALUE;
         fs_orl(OTG_CORE_CLK_CTRL, MODULE_FUNC_CLK);
         while(!( fs_rl(OTG_CORE_CLK_CTRL) & MODULE_FUNC_CLK)) { timeout--; if (!timeout) break; }
+
+        //TRACE_MSG1(OCD, "FUNC CLOCK ON: %08x", fs_rl(OTG_CORE_CLK_CTRL));
+
+        //fs_orl(OTG_CORE_CINT_STEN, MODULE_ASFCINT_EN |MODULE_FCINT_EN);
 }       
 
 /*!
@@ -74,6 +78,7 @@ void mxc_host_clock_on(void)
         u32 timeout = TIMEOUT_VALUE;
         fs_orl(OTG_CORE_CLK_CTRL, MODULE_HOST_CLK);
         while(!( fs_rl(OTG_CORE_CLK_CTRL) & MODULE_HOST_CLK)) { timeout--; if (!timeout) break; }
+        //TRACE_MSG1(OCD, "HOST CLOCK ON: %08x", fs_rl(OTG_CORE_CLK_CTRL));
 }       
 
 /*!
@@ -84,6 +89,7 @@ void mxc_func_clock_off(void)
         u32 timeout = TIMEOUT_VALUE;
         fs_andl(OTG_CORE_CLK_CTRL, 0x0);
         while((fs_rl(OTG_CORE_CLK_CTRL) & (MODULE_FUNC_CLK | MODULE_MAIN_CLK))) { timeout--; if (!timeout) break; }
+        //TRACE_MSG1(OCD, "FUNC CLOCK OFF: %08x", fs_rl(OTG_CORE_CLK_CTRL));
 }       
 
 /*!
@@ -94,6 +100,7 @@ void mxc_host_clock_off(void)
         u32 timeout = TIMEOUT_VALUE;
         fs_andl(OTG_CORE_CLK_CTRL, 0x0);
         while((fs_rl(OTG_CORE_CLK_CTRL) & (MODULE_HOST_CLK | MODULE_MAIN_CLK))) { timeout--; if (!timeout) break; }
+        //TRACE_MSG1(OCD, "HOST CLOCK OFF: %08x", fs_rl(OTG_CORE_CLK_CTRL));
 }       
 
 /*!
@@ -104,6 +111,7 @@ void mxc_main_clock_on(void)
         u32 timeout = TIMEOUT_VALUE;
         fs_orl(OTG_CORE_CLK_CTRL, MODULE_MAIN_CLK);
         while(!( fs_rl(OTG_CORE_CLK_CTRL) & MODULE_MAIN_CLK)) { timeout--; if (!timeout) break; }
+        //TRACE_MSG1(OCD, "MAIN CLOCK ON: %08x", fs_rl(OTG_CORE_CLK_CTRL));
 }
 
 /*!
@@ -114,6 +122,7 @@ void mxc_main_clock_off(void)
         u32 timeout = TIMEOUT_VALUE;
         fs_wl_set(OCD, OTG_CORE_CLK_CTRL, 0);
         while((fs_rl(OTG_CORE_CLK_CTRL) & MODULE_MAIN_CLK)) { timeout--; if (!timeout) break; }
+        //TRACE_MSG1(OCD, "MAIN CLOCK OFF: %08x", fs_rl(OTG_CORE_CLK_CTRL));
 }
 
 /*!
@@ -124,6 +133,7 @@ void mxc_set_transceiver_mode(int mode)
         mxc_transceiver_mode = mode;
         fs_andl(OTG_CORE_HWMODE, ~0xf0);
         fs_orl(OTG_CORE_HWMODE, (mode << 6) | (mode << 4));           // set to software hnp
+        //TRACE_MSG2(OCD, "set hwmode: %08x want %08x", fs_rl(OTG_CORE_HWMODE), (mode << 6) | (mode << 4));
         TRACE_MSG1(OCD, "hwmode: %08x", fs_rl(OTG_CORE_HWMODE));
 }       
 
@@ -159,6 +169,7 @@ void mxc_init (void)
 {
         int timeout; 
         unsigned long flags;
+        //u32 mode = XCVR_D_SE0;
         u32 mode = XCVR_SE0_D_NEW;
 
         TRACE_MSG0(OCD, "FS_INIT");
@@ -168,6 +179,8 @@ void mxc_init (void)
 
         /* 2. Ensure hardware is reset and cleared
          */
+        // XXX
+        //fs_clear_words((volatile u32 *)IO_ADDRESS(OTG_DMA_BASE), (32*16/4));
         fs_clear_words((volatile u32 *)IO_ADDRESS(OTG_DMA_BASE), (16*16/4));
         fs_clear_words((void *)IO_ADDRESS(OTG_FUNC_BASE), 0x200);
         mxc_main_clock_off();
@@ -216,6 +229,8 @@ void mxc_init (void)
         fs_wl(OTG_FUNC_EP_DEN, 0);
 
         fs_wl(OTG_DMA_DINT_STEN, 0x3);
+        //fs_wb(I2C_MASTER_INT_REG_ADD, 0xf0);
+        //fs_wb(I2C_MASTER_INT_REG_ADD, 0x00);
 
         // XXX note that newer designs than the mx21 will also need to check
         // and/or set OTG_CORE_INTERRUPT_STEN
@@ -239,12 +254,18 @@ void mxc_exit(void)
         unsigned long flags;
         TRACE_MSG0(OCD, "FS_EXIT");
 
+        //mxc_disable_interrupts();
+        //_reg_CRM_PCCR1 &= ~(1<<27);                                             // disable GPT3
+
         local_irq_save (flags);
         for (i = 0; i < 16; i++) {
                 mxc_stop_ep(i, USB_DIR_IN);
                 mxc_stop_ep(i, USB_DIR_OUT);
         }
         fs_clear_words((volatile u32 *)IO_ADDRESS(OTG_EP_BASE), (32*16/4));
+        //fs_clear((void *)IO_ADDRESS(OTG_EP_BASE), 0x200);
+        //fs_clear((volatile u32 *)IO_ADDRESS(OTG_DMA_BASE), 32*16);
+        //fs_clear((void *)IO_ADDRESS(OTG_FUNC_BASE), 0x200);
         fs_wl( OTG_CORE_HWMODE, 0xa3);
         mxc_main_clock_off();
         local_irq_restore (flags);
@@ -324,11 +345,17 @@ irqreturn_t ocd_hnp_int_hndlr (int irq, void *dev_id, struct pt_regs *regs)
 static irqreturn_t pcd_bwkup_int_hndlr (int irq, void *dev_id, struct pt_regs *regs)
 {
         u32 sys_ctrl = fs_rl(OTG_SYS_CTRL);
+        //static int bwkup_count = 0;
 
         TRACE_MSG2(OCD, "SYS_CTRL: %08x CORE_CLK: %08x", sys_ctrl, fs_rl(OTG_CORE_CLK_CTRL));
+        //printk(KERN_INFO"%s: %08x CORE_CLK: %08x\n", __FUNCTION__, sys_ctrl, fs_rl(OTG_CORE_CLK_CTRL));
 
+        //fs_wl(OTG_SYS_CTRL, sys_ctrl & ~0x0F000000);
         mxc_main_clock_on();                          // turn on Main Clock
         mxc_func_clock_on();                                    // turn on Function Clock
+
+        //if (bwkup_count++ > 10)
+        //        fs_wl(OTG_SYS_CTRL, 0);
 
         return IRQ_HANDLED;
 }
@@ -344,12 +371,14 @@ static irqreturn_t ocd_dma_int_hndlr (int irq, void *dev_id, struct pt_regs *reg
         u32 dint_stat = fs_rl(OTG_DMA_DINT_STAT);
         static u32 dma_interrupts = 0;
         dma_interrupts += 1;
+        //printk(KERN_INFO"%s:\n", __FUNCTION__);
         if (dma_interrupts > 10) {
                 TRACE_MSG1(OCD, "DMA INT #%08x disabling DMA error interrupts",dint_stat);
                 fs_wl(OTG_DMA_DINT_STEN, 0x0);
                 fs_wl(OTG_DMA_EP_ERR, 0x0);
         } 
         else {
+                //TRACE_MSG1(OCD, "DMA INT #%08x",dint_stat);
                 if (dint_stat & 0x1) {  // FIXME - find the #def for 0x1
                         // HCD DMA error
                         mxc_hcd_hw_int_hndlr(irq, NULL, regs);
@@ -369,6 +398,7 @@ static irqreturn_t hcd_host_int_hndlr (int irq, void *dev_id, struct pt_regs *re
 {
         u32 sint_stat = fs_rl(OTG_HOST_SINT_STAT);
         static u32 hcd_interrupts = 0;
+        //printk(KERN_INFO"%s: %d\n", __FUNCTION__, hcd_interrupts++);
         mxc_hcd_hw_int_hndlr(irq, NULL, regs);
         return IRQ_HANDLED;
 }
@@ -405,6 +435,8 @@ static irqreturn_t ocd_ctrl_int_hndlr (int irq, void *dev_id, struct pt_regs *re
         }
 
         if (hint_stat) {
+                //if (hint_stat & HNP_I2COTGINT) 
+                //        TRACE_MSG1(OCD, "OTG_CORE_HINT_STAT HNP_I2COTGINT %08x ignored (periodic?)", hint_stat);
                 
                 fs_wl(OTG_CORE_HINT_STAT, hint_stat);
                 printk(KERN_INFO"%s: HINT_STAT: %08x HNP_CSTAT: %08x\n", __FUNCTION__, hint_stat, hnp_cstat); 
@@ -417,6 +449,12 @@ static irqreturn_t ocd_ctrl_int_hndlr (int irq, void *dev_id, struct pt_regs *re
 
                 mxc_main_clock_on();                          // turn on Main Clock
 
+                //if (hnp_cstat & MODULE_ISBDEV) 
+                //        TRACE_MSG0(OCD, "ISBDEV");
+                
+                //if (hnp_cstat & MODULE_ISADEV) 
+                //        TRACE_MSG0(OCD, "ISADEV");
+                
                 fs_wl_set(OCD, OTG_CORE_HINT_STAT, hint_stat);
                 ocd_hnp_int_hndlr(irq, dev_id, regs);
         }
@@ -438,6 +476,7 @@ static irqreturn_t ocd_ctrl_int_hndlr (int irq, void *dev_id, struct pt_regs *re
                 mxc_pcd_int_hndlr(irq, dev_id, regs);
 
         if (cint_stat & MODULE_HCINT) {
+                //TRACE_MSG1(OCD, "MODULE_HCINT %08x", cint_stat);
                 mxc_hcd_hw_int_hndlr(irq, NULL, regs);
         }
 
@@ -454,6 +493,7 @@ static irqreturn_t ocd_ctrl_int_hndlr (int irq, void *dev_id, struct pt_regs *re
 irqreturn_t pcd_bwkup_int_hndlr_isr (int irq, void *dev_id, struct pt_regs *regs)
 {
         pcd_instance->otg->interrupts++;
+        //printk(KERN_INFO"%s:\n", __FUNCTION__);
         TRACE_MSG0(OCD, "--");
         return pcd_bwkup_int_hndlr (irq, dev_id, regs);
 }
@@ -467,6 +507,7 @@ irqreturn_t pcd_bwkup_int_hndlr_isr (int irq, void *dev_id, struct pt_regs *regs
 irqreturn_t ocd_hnp_int_hndlr_isr (int irq, void *dev_id, struct pt_regs *regs)
 {
         pcd_instance->otg->interrupts++;
+        //printk(KERN_INFO"%s:\n", __FUNCTION__);
         TRACE_MSG0(OCD, "--");
         return ocd_hnp_int_hndlr (irq, dev_id, regs);
 }
@@ -480,9 +521,12 @@ irqreturn_t ocd_hnp_int_hndlr_isr (int irq, void *dev_id, struct pt_regs *regs)
 irqreturn_t pcd_func_int_hndlr_isr (int irq, void *dev_id, struct pt_regs *regs)
 {
         pcd_instance->otg->interrupts++;
+        //printk(KERN_INFO"%s:\n", __FUNCTION__);
+        //TRACE_MSG0(OCD, "--");
         TRACE_MSG1(OCD, "CLK: %08x", fs_rl(OTG_CORE_CLK_CTRL) );
 
         return mxc_pcd_int_hndlr(irq, dev_id, regs);
+        //return pcd_func_int_hndlr (irq, dev_id, regs);
 }
 
 /*!
@@ -494,6 +538,7 @@ irqreturn_t pcd_func_int_hndlr_isr (int irq, void *dev_id, struct pt_regs *regs)
 irqreturn_t hcd_host_int_hndlr_isr (int irq, void *dev_id, struct pt_regs *regs)
 {
         pcd_instance->otg->interrupts++;
+        //printk(KERN_INFO"%s:\n", __FUNCTION__);
         TRACE_MSG0(OCD, "--");
         return hcd_host_int_hndlr (irq, dev_id, regs);
 }
@@ -506,6 +551,7 @@ irqreturn_t hcd_host_int_hndlr_isr (int irq, void *dev_id, struct pt_regs *regs)
  */
 irqreturn_t ocd_ctrl_int_hndlr_isr (int irq, void *dev_id, struct pt_regs *regs)
 {
+        //printk(KERN_INFO"%s:\n", __FUNCTION__);
         pcd_instance->otg->interrupts++;
         return ocd_ctrl_int_hndlr (irq, dev_id, regs);
 }
@@ -518,6 +564,7 @@ irqreturn_t ocd_ctrl_int_hndlr_isr (int irq, void *dev_id, struct pt_regs *regs)
  */
 irqreturn_t ocd_dma_int_hndlr_isr (int irq, void *dev_id, struct pt_regs *regs)
 {
+        //printk(KERN_INFO"%s:\n", __FUNCTION__);
         pcd_instance->otg->interrupts++;
         return ocd_dma_int_hndlr (irq, dev_id, regs);
 }
@@ -599,9 +646,14 @@ int mxc_ocd_mod_init (void)
         int bwkup = request_irq (INT_USB_WAKEUP, pcd_bwkup_int_hndlr_isr, OTG_INTERRUPT, UDC_NAME " USBD BWKUP", NULL);
         int func = request_irq (INT_USB_FUNC, pcd_func_int_hndlr_isr, OTG_INTERRUPT, UDC_NAME " USBD FUNC", NULL);
         int ctrl = request_irq (INT_USB_CTRL, ocd_ctrl_int_hndlr_isr, OTG_INTERRUPT, UDC_NAME " USBD CTRL", NULL);
+        //int sof = request_irq (INT_USB_SOF, sof_int_hndlr_isr, OTG_INTERRUPT, UDC_NAME " USBD SOF", NULL);
+        //int host = request_irq (OTG_USBHOST, hcd_host_int_hndlr_isr, OTG_INTERRUPT, UDC_NAME " USBD HOST", NULL);
+
         int dma = request_irq (INT_USB_DMA, ocd_dma_int_hndlr_isr, OTG_INTERRUPT, UDC_NAME " USBD DMA", NULL);
         int clk_ret=-1;
 
+        TRACE_MSG0(OCD, "1. Interrupts requested");
+        
         RETURN_EINVAL_IF(bwkup || dma || func || ctrl);
 
         /* USB_CLK is shared by SD and USB. To switch on/off the USBCLK,
@@ -643,10 +695,13 @@ void mxc_ocd_mod_exit (void)
         }
 
         TRACE_MSG0(OCD, "clocks started, freeing irqs");
+//      for (i = INT_USB_WAKEUP; i <= INT_USB_DMA; i++) free_irq (i, NULL);        // Free IRQ's
         free_irq (INT_USB_WAKEUP, NULL);
         free_irq (INT_USB_FUNC, NULL);
         free_irq (INT_USB_CTRL, NULL);
         free_irq (INT_USB_DMA, NULL);
+        //free_irq (INT_GPT2, NULL);
+        //free_irq (INT_GPIO, NULL);
 }
 
 

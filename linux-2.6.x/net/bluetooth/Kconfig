@@ -58,3 +58,6 @@ source "net/bluetooth/bnep/Kconfig"
 source "net/bluetooth/cmtp/Kconfig"
 
 source "net/bluetooth/hidp/Kconfig"
+
+source "drivers/bluetooth/Kconfig"
+

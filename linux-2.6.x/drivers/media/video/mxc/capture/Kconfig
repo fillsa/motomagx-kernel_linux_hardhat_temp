@@ -2,7 +2,7 @@ menu "MXC Camera/V4L2 PRP Features support"
 config MXC_CAMERA_MICRON111
         tristate "micron mt9v111 camera support"
         depends on (VIDEO_MXC_CAMERA && I2C_MXC && (!MACH_I30030ADS) && (!MACH_MXC30030ADS))
-    default y
+    default n
         help
           If you plan to use the mt9v111 Camera with your MXC system, say Y here.
 
@@ -16,7 +16,7 @@ config MXC_CAMERA_S5K3AAEX
 config MXC_CAMERA_HV7161
         tristate "Magna Hv7161 camera support"
         depends on (VIDEO_MXC_CAMERA && I2C_MXC && (MACH_I30030ADS || MACH_MXC30030ADS))
-    default y
+    default n
         help
           If you plan to use the magna hv7161 Camera with your MXC system, say Y here.
 
@@ -51,5 +51,12 @@ config MXC_IPU_PRP_ENC
            Use case PRP_ENC:
               Preprocessing image from smart sensor for encoder.
                 CSI -> IC (PRP ENC) -> MEM
+
+config MXC_IPU_CAMERA_I2C_INTERFACE
+	tristate "IPU camera I2C interface support"
+	depends on (MXC_IPU && I2C_MXC)
+	default n
+	help
+	If you plan to configure the camera sensor via I2C, say Y here.
 
 endmenu

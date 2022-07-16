@@ -20,6 +20,7 @@
 
 /* ChangeLog:
  * (mm-dd-yyyy)  Author    Comment
+  * 10-31-2007    Motorola  Succeed hidden and system attr from parent inode for LJ6.1
  * 1i-21-2007    Motorola  Upmerge from 6.1. (Succeed hidden and system attr from parent inode)
  * 02-20-2008    Motorola  change hidden way
  */

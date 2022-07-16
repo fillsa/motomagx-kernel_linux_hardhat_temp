@@ -17,7 +17,9 @@
 # Motorola 2006-Nov-01 - Support LJ7.1 Reference Design
 # Motorola 2006-Oct-06 - Update File
 # Motorola 2006-Sep-26 - Add support for MAX7314 LED controller chip.
+# Motorola 2006-Jul-26 - Add TransFlash support to BUTE
 # Motorola 2006-Jun-19 - Fix montavista upmerge conditionals
+# Motorola 2006-May-12 - Add Zeus support for SD
 # Motorola 2006-Apr-07 - Build gpio.o for all platforms
 # Motorola 2006-Feb-10 - Add ArgonLV support
 # Motorola 2005-Dec-06 - Minor modification to file names
@@ -29,15 +31,24 @@ ifeq ($(CONFIG_ARCH_MXC91231),y)
         core.o \
         event.o \
         external.o  \
-        fl_register.o \
         gpio.o \
         thread.o
-
+    obj-$(CONFIG_MOT_FEAT_DEVICE_TREE) += \
+        fl_register.o 
     obj-$(CONFIG_MOT_POWER_IC_ATLAS) += \
         atlas_register.o
+
+# 2007-Feb-22 - Removed transflash driver		    obj-$(CONFIG_USR_BLK_DEV) += \sdhc_main.o \sdhc_user.o \ usr_blk_dev.o
 endif
 
-ifeq ($(CONFIG_ARCH_MXC91321),y)
+ifeq ($(CONFIG_ARCH_MXC91131), y)
+    obj-$(CONFIG_MOT_POWER_IC) := \
+        gpio.o
+
+# 2007-Feb-22 - Removed transflash driver		    obj-$(CONFIG_USR_BLK_DEV) += \sdhc_main.o \sdhc_user.o \ usr_blk_dev.o
+endif
+
+ifeq ($(CONFIG_ARCH_MXC91321),y) #ifeq ($(CONFIG_MACH_ARGONLVREF),y)
     obj-$(CONFIG_MOT_POWER_IC) := \
         core.o \
         event.o \
@@ -48,6 +59,8 @@ ifeq ($(CONFIG_ARCH_MXC91321),y)
 
     obj-$(CONFIG_MOT_POWER_IC_ATLAS) += \
         atlas_register.o
+
+# 2007-Feb-22 - Removed transflash driver		    obj-$(CONFIG_USR_BLK_DEV) += \sdhc_main.o \sdhc_user.o \ usr_blk_dev.o
 endif
 
 fastdep:

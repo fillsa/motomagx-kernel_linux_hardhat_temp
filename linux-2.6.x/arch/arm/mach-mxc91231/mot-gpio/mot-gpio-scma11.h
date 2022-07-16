@@ -59,6 +59,10 @@ extern void __init scma11ref_gpio_signal_fixup(void);
 extern void __init scma11ref_iomux_mux_fixup(void);
 #endif /* CONFIG_MACH_SCMA11REF */
 
+#if defined(CONFIG_MACH_ASCENSION)
+extern void __init gpio_setting_fixup_p1a(void);
+#endif /* CONFIG_MACH_ASCENSION */
+
 #if defined(CONFIG_MACH_ELBA)
 extern void __init elba_gpio_signal_fixup(void);
 #endif /* CONFIG_MACH_ELBA */

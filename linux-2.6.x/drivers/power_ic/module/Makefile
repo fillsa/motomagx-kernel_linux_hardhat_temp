@@ -50,7 +50,7 @@ ifeq ($(CONFIG_ARCH_MXC91231),y)
        tcmd_ioctl.o
 endif
 
-ifeq ($(CONFIG_ARCH_MXC91321),y)
+ifeq ($(CONFIG_ARCH_MXC91321),y) #ifeq ($(CONFIG_MACH_ARGONLVREF),y)
     obj-$(CONFIG_MOT_POWER_IC_ATLAS) := \
        accy.o \
        atod.o \

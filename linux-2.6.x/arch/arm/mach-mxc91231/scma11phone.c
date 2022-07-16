@@ -200,6 +200,12 @@ static void __init mxc_board_init(void)
          * request for this PLL to be turned ON by using
          * mxc_pll_request_pll
          * */
+         
+    /* PLL0 Starts Out Running */
+	/* Potential Problems Touching It Here */
+	/* (void) mxc_pll_request_pll(MCUPLL); */
+
+	/* Initially do not need PLL2 - Ignore potential error return. */
         (void) mxc_pll_release_pll(USBPLL);
 #endif
 
@@ -209,7 +215,13 @@ static void __init mxc_board_init(void)
  * The following uses standard kernel macros define in arch.h in order to 
  * initialize __mach_desc_SCMA11PHONE data structure.
  */
+#if defined(CONFIG_MACH_ASCENSION)
+MACHINE_START(ASCENSION, "Motorola Product - SCM-A11 Phone")
+#elif defined(CONFIG_MACH_LIDO)
+MACHINE_START(LIDO, "Motorola Product - SCM-A11 Phone")
+#else
 MACHINE_START(SCMA11PHONE, "Motorola Product - SCM-A11 Phone")
+#endif
         MAINTAINER("Motorola, Inc.")
         /*       physical memory    physical IO        virtual IO     */
         BOOT_MEM(PHYS_OFFSET_ASM, AIPS1_BASE_ADDR, AIPS1_BASE_ADDR_VIRT)

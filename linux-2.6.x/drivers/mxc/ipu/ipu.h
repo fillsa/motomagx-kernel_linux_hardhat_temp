@@ -13,7 +13,12 @@
  * Date     Author      Comment
  * 10/2006  Motorola    Added support for QVGA Sanyo display, additional pixel
  *                      packing formats, and a configurable memory location.
+ * 11/2006  Motorola  Added prototypes for ipu_enable_pixel_clock functions.
+ * 01/2007  Motorola  Added prototypes for ipu_enable_sdc, ipu_disable_sdc functions.
  * 01/2007  Motorola    Added support for configurable IPU memory size.
+ * 02/2007  Motorola  Added ipu_adc_read_cmd prototype for reading via ADC SPI
+ * 03/2007  Motorola  Added RODEM and TANGO as cmddata types
+ * 06/2007  Motorola  Added a function to return if an SDC channel is enabled or not
  * 06/2007  Motorola    Fix to support setting of ADC serial interface bit
  *                      width in ipu driver.
  * 08/2007  Motorola    Add comments for oss compliance.
@@ -581,6 +586,12 @@ typedef enum
 {
         DAT,      /* Send only data to the display */
         CMD,      /* Send a command and then associated data */
+#if defined(CONFIG_FB_MXC_HVGA_PANEL)
+	RODEM = CMD,
+	TANGO,
+	CMD_ONLY,
+	INVALID,  /* Indicates the end of a command array block */
+#endif
 }cmddata_t;
 
 /*!
@@ -700,6 +711,11 @@ typedef struct {
 int32_t ipu_init_channel(ipu_channel_t channel, ipu_channel_params_t * params);
 void ipu_uninit_channel(ipu_channel_t channel);
 
+void ipu_enable_sdc(void);
+void ipu_disable_sdc(void);
+void ipu_enable_pixel_clock(void);
+void ipu_disable_pixel_clock(void);
+
 int32_t ipu_init_channel_buffer(ipu_channel_t channel, ipu_buffer_t type,
 				uint32_t pixel_fmt,
 				uint16_t width, uint16_t height,
@@ -742,6 +758,7 @@ int32_t ipu_sdc_init_panel(ipu_panel_t panel,
 			   ipu_di_signal_cfg_t sig);
 int32_t ipu_sdc_set_window_pos(ipu_channel_t channel, int16_t x_pos,
 			       int16_t y_pos);
+uint32_t ipu_is_sdc_chan_enabled(ipu_channel_t channel);
 int32_t ipu_sdc_set_global_alpha(bool enable, uint8_t alpha);
 int32_t ipu_sdc_set_color_key(ipu_channel_t channel, bool enable,
 			      uint32_t colorKey);
@@ -766,6 +783,8 @@ int32_t restore_ipu_access_memory_priority(void);
 int32_t ipu_adc_write_cmd(display_port_t disp, cmddata_t type,
 			  uint32_t cmd, const uint32_t * params,
 			  uint16_t numParams);
+
+uint32_t ipu_adc_read_cmd(display_port_t disp, uint32_t cmd);
 
 int32_t ipu_adc_init_panel(display_port_t disp,
 			   uint16_t width, uint16_t height,

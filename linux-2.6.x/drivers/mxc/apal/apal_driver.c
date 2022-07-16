@@ -1509,7 +1509,7 @@ apal_stop
         mxc_dma_stop (apal_tx_dma_config[stdac_codec_in_use].write_channel);
 
         /*@TODO: This is a hack to avoid the noise happening due to SDMA playing out old buffers 
-                 even after a stop and reset */
+                 even after a stop and reset  LIBmm02890 */
         if (stdac_codec_in_use == APAL_STDAC)
         {
             /* fifo 0, SSI2 */
@@ -1524,6 +1524,7 @@ apal_stop
             tx_params.bd_number       = APAL_NB_BLOCK_SDMA;
             tx_params.word_size       = TRANSFER_16BIT;
 
+            /* Need to unlock as the setup channel function calls schedule internally */
             spin_unlock_irqrestore(&apal_write_lock, flags);
             mxc_dma_setup_channel(apal_tx_dma_config[stdac_codec_in_use].write_channel, &tx_params);
             spin_lock_irqsave(&apal_write_lock, flags);

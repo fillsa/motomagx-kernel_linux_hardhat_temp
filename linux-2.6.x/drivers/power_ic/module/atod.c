@@ -168,8 +168,13 @@
 #ifndef DOXYGEN_SHOULD_SKIP_THIS
 EXPORT_SYMBOL(power_ic_atod_single_channel);
 EXPORT_SYMBOL(power_ic_atod_general_conversion);
-//remove 2008-Feb-20 EXPORT_SYMBOL(power_ic_atod_current_and_batt_conversion);
 EXPORT_SYMBOL(power_ic_atod_raw_conversion);
+#if defined(CONFIG_MACH_ASCENSION) || defined(CONFIG_MACH_LIDO) || defined(CONFIG_MACH_SAIPAN)
+//remove in LJ6.3  //remove 2008-Feb-20
+EXPORT_SYMBOL(power_ic_atod_current_and_batt_conversion);
+EXPORT_SYMBOL(power_ic_atod_set_therm);
+EXPORT_SYMBOL(power_ic_atod_set_lithium_coin_cell_en);
+#endif
 #endif
 
 /******************************************************************************
@@ -187,8 +192,8 @@ EXPORT_SYMBOL(power_ic_atod_raw_conversion);
 #define CHRG_I_ADC_MASK        0x0000002
 #define LICELLCON_INDEX        0
 #define LICELLCON_BITS         1
-#define BIT_ENABLE             1
-#define BIT_DISABLE            0
+#define BIT_ENABLE             1 // LICELLCON_ENABLE
+#define BIT_DISABLE            0 // LICELLCON_DISABLE
 #define PHASING_NEEDED         1
 #define PHASING_NOT_NEEDED     0
 
@@ -261,7 +266,7 @@ EXPORT_SYMBOL(power_ic_atod_raw_conversion);
 #define CHRG_THERM_ON     1
 #define CHRG_THERM_OFF    0
 
-#ifdef CONFIG_ARCH_MXC91321
+#ifdef CONFIG_ARCH_MXC91321 //#ifdef CONFIG_MACH_ARGONLVREF
 #define CHRG_THERM_INDEX  6
 #else
 #define CHRG_THERM_INDEX  10
@@ -293,6 +298,10 @@ EXPORT_SYMBOL(power_ic_atod_raw_conversion);
 #define PHASING_OFFSET_MULTIPLY 4
 /*! Shift for division after slope multipler. */
 #define PHASING_SLOPE_DIVIDE    7
+/*! Maximum bad slope value */
+#define PHASING_BAD_SLOPE_MAX   0xFF
+/*! Minimum bad slope value */
+#define PHASING_BAD_SLOPE_MIN   0x00
 /*! Phasing not available */
 #define PHASING_NOT_AVAILABLE   -1
 /*@}*/
@@ -323,7 +332,6 @@ typedef struct
     POWER_IC_ATOD_TIMING_T   timing;  /*!< Ignored for single-channel conversion. */
     POWER_IC_ATOD_CURR_POLARITY_T  curr_polarity; /*!< Polarity for batt/current conversion. */
     int                      timeout; /*!< Timeout for postponable conversion, in seconds. */
-    POWER_IC_ATOD_AD6_T      ad6_sel; /*!< Indicates to take atod on PA temperature or Licell */
 } POWER_IC_ATOD_REQUEST_T;
 
 /*!
@@ -416,7 +424,7 @@ static int postponable_results_error = 0;
 /*! Phasing data is stored here. */
 static unsigned char phasing_values[ATOD_PHASING_NUM_VALUES] =
 {
-    /* Batt Current. */
+    /* Batt Current(Discharge current). */
     PHASING_ZERO_OFFSET,
     PHASING_ZERO_SLOPE,
     /* Unused. */
@@ -488,7 +496,7 @@ static int disable_converter(void);
 static int arm_one_shot(void);
 static int start_conversion(POWER_IC_ATOD_REQUEST_T * request);
 static int set_single_channel_conversion(POWER_IC_ATOD_REQUEST_T * request);
-static int set_bank_conversion(POWER_IC_ATOD_BANK_T bank, POWER_IC_ATOD_REQUEST_T * request);
+static int set_bank_conversion(POWER_IC_ATOD_BANK_T bank);
 static int set_batt_current_conversion(POWER_IC_ATOD_CURR_POLARITY_T curr_polarity);
 static int set_up_hardware_exclusive_conversion(POWER_IC_ATOD_REQUEST_T * request);
 static int get_results(int * results);
@@ -505,12 +513,8 @@ static int power_ic_atod_nonblock_begin_conversion(POWER_IC_ATOD_TIMING_T timing
 static int power_ic_atod_nonblock_cancel_conversion(void);
 static ATOD_CHANNEL_T atod_channel_available(POWER_IC_ATOD_CHANNEL_T channel);
 static int power_ic_atod_get_therm(void);
-static int power_ic_atod_set_therm(int on);
 static int power_ic_atod_dummy_conversion(void);
-static int power_ic_atod_get_lithium_coin_cell_en(void);
-static int power_ic_atod_set_lithium_coin_cell_en(int value);
-static int power_ic_atod_current_and_batt_conversion(POWER_IC_ATOD_TIMING_T timing,
-                                                         int * batt_result, int * curr_result, int phasing);
+
 /******************************************************************************
 * Local functions
 ******************************************************************************/
@@ -555,6 +559,18 @@ static int set_phasing_values(unsigned char * values)
     for(i = 1; i< ATOD_PHASING_NUM_VALUES; i+=2)
     {
         tracemsg(_k_d("   values[%d..%d]: 0x%X, 0x%X"), i-1, i, values[i-1], values[i]);
+        
+        /* Realistically, only the slope can be used to indicate a problem in the passed
+         * phasing values. Although a slope correction of 0x00 or 0xFF is technically allowed,
+         * in reality these shouldn't ever be seen in actual phasing data (e.g. a slope of 
+         * zero results in a flat response from the phased AtoD, which is useless). 
+         * We therefore start from the first slope in the phasing values (index 1) and 
+         * skip over 2 vaules at a time to the next slope.*/
+        if((values[i] == PHASING_BAD_SLOPE_MAX) || (values[i] == PHASING_BAD_SLOPE_MIN))
+        {
+            tracemsg(_k_d("   Error: Bad slope value seen. Phasing not set."));
+            return -EINVAL;
+        } 
     }
 
     /* If a signal caused us to continue without getting the mutex, then quit with an error. */
@@ -775,22 +791,16 @@ static int start_conversion(POWER_IC_ATOD_REQUEST_T * request)
 {
     int mask;
     int setup;
-    unsigned short ato = 0;
-    unsigned short atox = 0;
+    int ato;
     int error;
 
     last_conversion = request->timing;
 
     if(request->timing == POWER_IC_ATOD_TIMING_IMMEDIATE)
     {
-       if( (request->channel == POWER_IC_ATOD_CHANNEL_CHRG_CURR)  &&  (request->type == POWER_IC_ATOD_TYPE_SINGLE_CHANNEL) )
-       {
-           atox = 1;
-       }
- 
        /* An immediate conversion is triggered by setting the ASC bit. */   
-       mask = ASC_MASK | ADTRIGIGN_MASK | ADTRIG_ONESHOT_MASK | ATO_MASK | ATOX_MASK;
-       setup = ASC_MASK | ADTRIGIGN_MASK |((ato << ATO_SHIFT) & ATO_MASK) | ((atox << ATOX_SHIFT) & ATOX_MASK);       
+       mask = ASC_MASK | ADTRIGIGN_MASK | ADTRIG_ONESHOT_MASK;
+       setup = ASC_MASK | ADTRIGIGN_MASK;       
        return(power_ic_set_reg_mask(START_CONVERT_REG_ASC, mask, setup));
    }
     else /* This is a hardware-timed conversion. */
@@ -798,17 +808,17 @@ static int start_conversion(POWER_IC_ATOD_REQUEST_T * request)
         if(request->timing == POWER_IC_ATOD_TIMING_IN_BURST)
         {
             ato = DELAY_IN_BURST;
-            atox = 0;
         }
         else
         {
             ato = DELAY_OUT_OF_BURST;
-            atox = 0;
         }
         
         /* The timing for a hardware-controlled conversion is handled by setting ATO and ATOX. */
+        /* In this case, ATOX will be left low so that there is no additional
+         * ato between each of the conversions. */
         mask = ATO_MASK | ATOX_MASK | ADTRIGIGN_MASK;
-        setup = ((ato << ATO_SHIFT) & ATO_MASK) | ((atox << ATOX_SHIFT) & ATOX_MASK) | ADTRIGIGN_MASK;
+        setup = ((ato << ATO_SHIFT) & ATO_MASK) | ADTRIGIGN_MASK;
         
         tracemsg(_k_d("    hardware-timed conversion - setting delay: mask 0x%X, data 0x%X."), 
                  mask, setup); 
@@ -849,24 +859,6 @@ static int set_single_channel_conversion(POWER_IC_ATOD_REQUEST_T * request)
         printk("POWER IC: AtoD channel is not a valid channel on this Power IC.");
         return -EINVAL;
     }
-
-    /* If reading the thermistor, turn on the corresponding GPO */
-    if(request->channel == POWER_IC_ATOD_CHANNEL_TEMPERATURE)
-    {
-        error |= power_ic_atod_set_therm(BIT_ENABLE);
-        mdelay(2);
-    }
-
-    if((request->channel == POWER_IC_ATOD_CHANNEL_COIN_CELL) && (power_ic_atod_get_lithium_coin_cell_en() == 0))
-    {
-        /* Enable the lithium coin cell reading */
-        error |= power_ic_atod_set_lithium_coin_cell_en(BIT_ENABLE);
-    }
-    else if((request->channel == POWER_IC_ATOD_CHANNEL_PA_THERM) && (power_ic_atod_get_lithium_coin_cell_en() != 0))
-    {
-        /* Enable the PA thermistor reading */
-        error |= power_ic_atod_set_lithium_coin_cell_en(BIT_DISABLE);
-    }
     
     /* Pick the bank and channel. */
     if(atod_channel < SAMPLES_PER_BANK)
@@ -897,31 +889,14 @@ static int set_single_channel_conversion(POWER_IC_ATOD_REQUEST_T * request)
  * using this function.
  *
  * @param        bank      The bank of channels to be sampled.
- * @param        request   Pointer to structure that describes the request.
  *
  * @return 0 if successful.
  */
-static int set_bank_conversion(POWER_IC_ATOD_BANK_T bank, POWER_IC_ATOD_REQUEST_T * request)
+static int set_bank_conversion(POWER_IC_ATOD_BANK_T bank)
 {
     int setup= ADEN_MASK | ((bank << AD_SEL1_SHIFT) & AD_SEL1_MASK);
     
     int error = power_ic_set_reg_mask(POWER_IC_REG_ATLAS_ADC_0, (BATT_I_ADC_MASK | CHRG_I_ADC_MASK), 0);
-    
-    /* If reading the thermistor, turn on the corresponding GPO */
-    error |= power_ic_atod_set_therm(BIT_ENABLE);
-    mdelay(2);
-    
-    if((request->ad6_sel == POWER_IC_ATOD_AD6_LI_CELL) && (power_ic_atod_get_lithium_coin_cell_en() == 0))
-    {
-        /* Enable the lithium coin cell reading */
-        error |= power_ic_atod_set_lithium_coin_cell_en(BIT_ENABLE);
-    }
-    else if((request->ad6_sel == POWER_IC_ATOD_AD6_PA_THERM) && (power_ic_atod_get_lithium_coin_cell_en() != 0))
-    {
-        /* Enable the PA thermistor reading */
-        error |= power_ic_atod_set_lithium_coin_cell_en(BIT_DISABLE);
-    }
-    
     error |= power_ic_set_reg_mask(POWER_IC_REG_ATLAS_ADC_1, (ADEN_MASK | RAND_MASK 
         | AD_SEL1_MASK), setup);
            
@@ -992,7 +967,7 @@ static int set_up_hardware_exclusive_conversion(POWER_IC_ATOD_REQUEST_T * reques
             return(set_batt_current_conversion(request->curr_polarity));
             
         case POWER_IC_ATOD_TYPE_GENERAL:
-            return(set_bank_conversion(POWER_IC_ATOD_BANK_0, request));
+            return(set_bank_conversion(POWER_IC_ATOD_BANK_0));
             
         default:
             return -EINVAL;
@@ -1197,17 +1172,6 @@ static int exclusive_conversion(POWER_IC_ATOD_REQUEST_T * request, int * samples
     }
     
 quit_due_to_error:        
-    /* Since the conversion is complete, turn off the corresponding GPO */
-    if(power_ic_atod_get_therm() != 0)
-    {
-        power_ic_atod_set_therm(BIT_DISABLE);
-    }
-    /* Set LICELLCON off to enable LiCell charge */
-    if (power_ic_atod_get_lithium_coin_cell_en() != 0)
-    {
-        power_ic_atod_set_lithium_coin_cell_en(BIT_DISABLE);
-    }
-
     /* Done - release the converter. */
     up(&hardware_mutex);
 
@@ -1442,7 +1406,7 @@ static int power_ic_atod_get_therm(void)
  *
  * @return 0 if successful
  */
-static int power_ic_atod_set_therm(int on)
+int power_ic_atod_set_therm(int on)
 {
      
     /* Any input above zero is on.. */
@@ -1459,21 +1423,6 @@ static int power_ic_atod_set_therm(int on)
 }
 
 /*!
- * @brief Gets the value of the licell enable pin
- *
- * This function will return if the LICELLON is enabled or disabled
- *
- * @return 1 if LICELLON is set
- */
-static int power_ic_atod_get_lithium_coin_cell_en(void)
-{
-    int data = 0;
-    
-    power_ic_get_reg_value(POWER_IC_REG_ATLAS_ADC_0, LICELLCON_INDEX, &data, LICELLCON_BITS);
-    return(data);
-}
-
-/*!
  * @brief Sets the lithium coin cell AtoD reading.
  *
  * This function sets the lithium coin cell enable bit so that RTC Batt AtoD Voltage can be
@@ -1483,7 +1432,7 @@ static int power_ic_atod_get_lithium_coin_cell_en(void)
  *
  * @return 0 if successful.
  */
-static int power_ic_atod_set_lithium_coin_cell_en(int value)
+int power_ic_atod_set_lithium_coin_cell_en(int value)
 {
     int error;
     
@@ -1535,19 +1484,22 @@ static int power_ic_atod_set_lithium_coin_cell_en(int value)
  * @return POWER_IC_ATOD_CONVERSION_TIMEOUT if conversion timed out, 
  * POWER_IC_ATOD_CONVERSION_COMPLETE if conversion was successfully completed.
  */
-static int power_ic_atod_current_and_batt_conversion(POWER_IC_ATOD_TIMING_T timing,
-                                                int * batt_result, int * curr_result, int phasing)
+int power_ic_atod_current_and_batt_conversion(POWER_IC_ATOD_TIMING_T timing,
+                                              int timeout_secs,
+                                              POWER_IC_ATOD_CURR_POLARITY_T polarity,
+                                                int * batt_result, int * curr_result)
 {
     int average = 0;
     int error;
     int i;
     int samples[SAMPLES_PER_BANK];
-    int current_batt_diag_data[2] = {0};
     
     POWER_IC_ATOD_REQUEST_T request = 
     {
         .type = POWER_IC_ATOD_TYPE_BATT_AND_CURR,
-        .timing = POWER_IC_ATOD_TIMING_IMMEDIATE,
+        .timing = timing,
+        .curr_polarity = polarity,
+        .timeout = timeout_secs,
     };
     
     /* Don't allow the conversion to proceed if in interrupt context. */
@@ -1574,15 +1526,7 @@ static int power_ic_atod_current_and_batt_conversion(POWER_IC_ATOD_TIMING_T timi
         average += samples[i];
     }
 
-    if(phasing != PHASING_NOT_NEEDED)
-    { 
          *batt_result = phase_channel(POWER_IC_ATOD_CHANNEL_BATT, average / (SAMPLES_PER_BANK/2));
-    }
-    else
-    {
-         *batt_result =  average / (SAMPLES_PER_BANK/2);   
-    }
-    current_batt_diag_data[0] = *batt_result;
         
     /* Average all of the current samples taken. */
     average = 0;
@@ -1598,18 +1542,8 @@ static int power_ic_atod_current_and_batt_conversion(POWER_IC_ATOD_TIMING_T timi
     
     average = average / (SAMPLES_PER_BANK/2);
     
-    if(phasing != PHASING_NOT_NEEDED)
-    {
         *curr_result = phase_atod_10((signed char)phasing_values[ATOD_PHASING_BATT_CURR_OFFSET], 
                                  phasing_values[ATOD_PHASING_BATT_CURR_SLOPE], average);
-    }
-    else
-    {
-        *curr_result = average;
-    }
-    
-    current_batt_diag_data[1] = *curr_result;
-
     return error;
 }
 
@@ -1706,14 +1640,17 @@ int atod_ioctl(unsigned int cmd, unsigned long arg)
             /* Convert both the battery and current. */
             if((error = power_ic_atod_current_and_batt_conversion( 
                               ((POWER_IC_ATOD_REQUEST_BATT_AND_CURR_T *) temp)->timing,
+                              ((POWER_IC_ATOD_REQUEST_BATT_AND_CURR_T *) temp)->timeout_secs,
+                              ((POWER_IC_ATOD_REQUEST_BATT_AND_CURR_T *) temp)->polarity, 
                              &((POWER_IC_ATOD_REQUEST_BATT_AND_CURR_T *) temp)->batt_result,
-                             &((POWER_IC_ATOD_REQUEST_BATT_AND_CURR_T *) temp)->curr_result,phasing)) != 0)
+                             &((POWER_IC_ATOD_REQUEST_BATT_AND_CURR_T *) temp)->curr_result)) != 0)
             {
                 return error;
             }
             
             /* Since the POWER_IC_IOCTL_ATOD_BATT_AND_CURR will be used during normal operation.  The follow if will be used 
-            * to convert the curr_result from DACs to milliamps since this an easier number to work with.    
+            * to convert the curr_result from DACs to milliamps since this an easier number to work with.  However; the 
+             * POWER_IC_IOCTL_ATOD_BATT_AND_CURR_PHASED will be used primarily for phasing it should remain it DACs.  
             */
             if(cmd == POWER_IC_IOCTL_ATOD_BATT_AND_CURR)
             {
@@ -1850,6 +1787,19 @@ int atod_ioctl(unsigned int cmd, unsigned long arg)
             return set_phasing_values((unsigned char *)temp);
             break;
 
+        case POWER_IC_IOCTL_ATOD_SET_LITHIUM_COIN_CELL_EN:
+            return(power_ic_atod_set_lithium_coin_cell_en((int) arg));
+            break;
+            
+        case POWER_IC_IOCTL_ATOD_SET_THERM:
+            printk("POWER IC:   => Setting Thermistor Pin. ");
+            if((error = power_ic_atod_set_therm((int)arg)) != 0)
+            {
+                return error;
+            }
+            
+            break;
+               
         default: /* This shouldn't be able to happen, but just in case... */
             printk(("POWER IC: => 0x%X unsupported AtoD ioctl command"), (int) cmd);
             return -ENOTTY;
@@ -2149,6 +2099,12 @@ int power_ic_atod_single_channel(POWER_IC_ATOD_CHANNEL_T channel, int * result)
         .channel = channel,
     };
 
+    /* If reading the thermistor, turn on the corresponding GPO */
+    if((power_ic_atod_get_therm() == 0) && (channel == POWER_IC_ATOD_CHANNEL_TEMPERATURE))
+    {
+        power_ic_atod_set_therm(CHRG_THERM_ON);
+        mdelay(2);
+    }
 
     /* Don't allow the conversion to proceed if in interrupt context. */
     if(in_interrupt())
@@ -2159,13 +2115,33 @@ int power_ic_atod_single_channel(POWER_IC_ATOD_CHANNEL_T channel, int * result)
     
 HACK_retry_conversion:
 
+    if(channel == POWER_IC_ATOD_CHANNEL_COIN_CELL)
+    {
+        /* Enable the lithium coin cell reading */
+        if((error = power_ic_atod_set_lithium_coin_cell_en(BIT_ENABLE)) != 0)
+        {
+            return error;
+        }
+    }
     /* Perform the conversion. This will sleep. */
     error = exclusive_conversion(&request, samples);
    
+    /* If reading the thermistor, turn off the corresponding GPO since the conversion is complete */
+    if((power_ic_atod_get_therm() != 0) && (channel == POWER_IC_ATOD_CHANNEL_TEMPERATURE))
+    {
+        power_ic_atod_set_therm(CHRG_THERM_OFF);
+    }
+  
     if(error != 0)
     {
         *result = 0;
         return error;
+    }
+    
+    if(channel == POWER_IC_ATOD_CHANNEL_COIN_CELL)
+    {
+        /* Disable the lithium coin cell reading */
+        error = power_ic_atod_set_lithium_coin_cell_en(BIT_DISABLE);
     }
    
     average = 0;
@@ -2245,14 +2221,20 @@ HACK_retry_conversion:
 int power_ic_atod_general_conversion(POWER_IC_ATOD_RESULT_GENERAL_CONVERSION_T * result)
 {
     int error;
-    int samples[ATOD_CHANNEL_NUM_VALUES+1];
+    int samples[SAMPLES_PER_BANK];
     
     POWER_IC_ATOD_REQUEST_T request = 
     {
         .type = POWER_IC_ATOD_TYPE_GENERAL,
-        .ad6_sel = result->ad6_sel,
     };
 
+    /* General Conversion reads the temperature, so turn on the corresponding GPO */
+    if(power_ic_atod_get_therm() == 0)
+    {
+        power_ic_atod_set_therm(CHRG_THERM_ON);
+        mdelay(2);
+    }
+    
     /* Don't allow the conversion to proceed if in interrupt context. */
     if(in_interrupt())
     {
@@ -2262,6 +2244,12 @@ int power_ic_atod_general_conversion(POWER_IC_ATOD_RESULT_GENERAL_CONVERSION_T *
     
     /* Perform the conversion. This will sleep. */
     error = exclusive_conversion(&request, samples);
+
+    /* Since the conversion is complete, turn off the corresponding GPO */
+    if(power_ic_atod_get_therm() != 0)
+    {
+        power_ic_atod_set_therm(CHRG_THERM_OFF);
+    }
     
     if(error != 0)
     {
@@ -2348,6 +2336,13 @@ int power_ic_atod_raw_conversion(POWER_IC_ATOD_CHANNEL_T channel, int * samples,
 
     *length = ATOD_NUM_RAW_RESULTS;
     
+    /* If reading the thermistor, turn on the corresponding GPO */
+    if((power_ic_atod_get_therm() == 0) && (channel == POWER_IC_ATOD_CHANNEL_TEMPERATURE))
+    {
+        power_ic_atod_set_therm(CHRG_THERM_ON);
+        mdelay(2);
+    }
+
     /* Don't allow the conversion to proceed if in interrupt context. */
     if(in_interrupt())
     {
@@ -2355,9 +2350,31 @@ int power_ic_atod_raw_conversion(POWER_IC_ATOD_CHANNEL_T channel, int * samples,
         return -EPERM;
     }
     
+    if(channel == POWER_IC_ATOD_CHANNEL_COIN_CELL)
+    {
+        /* Enable the lithium coin cell reading */
+        if((error = power_ic_atod_set_lithium_coin_cell_en(BIT_ENABLE)) != 0)
+        {
+            return error;
+        }
+    }
+
     /* Perform the conversion. This will sleep. The results will be copied straight to the
      * caller's array with no post-processing. */
     error = exclusive_conversion(&request, samples);
   
+
+    /* If reading the thermistor, turn off the corresponding GPO since the conversion is complete*/
+    if((power_ic_atod_get_therm() != 0) && (channel == POWER_IC_ATOD_CHANNEL_TEMPERATURE))
+    {
+        power_ic_atod_set_therm(CHRG_THERM_OFF);
+    }
+
+    if(channel == POWER_IC_ATOD_CHANNEL_COIN_CELL)
+    {
+        /* Disable the lithium coin cell reading */
+        error |= power_ic_atod_set_lithium_coin_cell_en(BIT_DISABLE);
+    }
+    
     return (error);
 }

@@ -34,6 +34,9 @@ Motorola            10/18/2005     Remove the clearing of status
                                    CSI_EOF
 Motorola            01/04/2006     Upmerge to MV 12/19/05 release
 Motorola            06/09/2006     Upmerge to MV 05/12/2006
+Motorola            12/07/2006     OSS code changes
+Motorola            12/14/2006     Detect buffer overflow and recover
+
  */
 
 /*!
@@ -79,6 +82,7 @@ static ipu_rotate_mode_t grotation = IPU_ROTATE_NONE;
 extern void v4l1_camera_callback(u32 mask);
 extern ipu_csi_signal_cfg_t param;
 extern uint32_t p_mclk_freq;
+static int enc_bufovf_err;
 #endif
 
 /*
@@ -100,6 +104,10 @@ static irqreturn_t prp_enc_callback(int irq, void *dev_id, struct pt_regs *regs)
 
 #ifdef CONFIG_VIDEO_MXC_V4L1
 	v4l1_camera_callback(irq);
+	if(enc_bufovf_err)
+	  {
+	    enc_bufovf_err = 0;
+	  }
 #else
 	camera_callback(irq, dev_id);
 #endif
@@ -389,6 +397,26 @@ static int prp_enc_eba_update(u32 eba, int *buffer_num)
 	return 0;
 }
 
+#ifdef CONFIG_VIDEO_MXC_V4L1
+static irqreturn_t
+prp_csi_eof_callback(int irq, void *dev_id, struct pt_regs *regs)
+{
+  if(enc_bufovf_err)
+    {
+      mxc_camera_callback(irq);
+      enc_bufovf_err = 0;
+    }
+
+  if(__raw_readl(IPU_INT_STAT_5) & 0x00000002)
+    {
+      enc_bufovf_err = 1;
+      __raw_writel(0x00000002, IPU_INT_STAT_5);
+    }
+
+  return IRQ_HANDLED;
+}
+#endif
+
 /*!
  * Enable encoder task
  * @param private       struct cam_data * mxc capture instance
@@ -407,6 +435,11 @@ static int prp_enc_enabling_tasks(void *private)
 	} else {
 		err = ipu_request_irq(IPU_IRQ_PRP_ENC_OUT_EOF,
 				      prp_enc_callback, 0, "Mxc Camera", cam);
+#ifdef CONFIG_VIDEO_MXC_V4L1
+		enc_bufovf_err = 0;
+		err = ipu_request_irq(IPU_IRQ_SENSOR_EOF, prp_csi_eof_callback,
+				      0, "Mxc Camera", cam);
+#endif
 	}
 	if (err != 0) {
 		DPRINTK("Error registering rot irq\n");
@@ -447,6 +480,9 @@ static int prp_enc_disabling_tasks(void *private)
 		ipu_free_irq(IPU_IRQ_PRP_ENC_ROT_OUT_EOF, cam);
 	} else {
 		ipu_free_irq(IPU_IRQ_PRP_ENC_OUT_EOF, cam);
+#ifdef CONFIG_VIDEO_MXC_V4L1
+		ipu_free_irq(IPU_IRQ_SENSOR_EOF, cam);
+#endif
 	}
 
 	if (cam->rotation >= IPU_ROTATE_90_RIGHT) {

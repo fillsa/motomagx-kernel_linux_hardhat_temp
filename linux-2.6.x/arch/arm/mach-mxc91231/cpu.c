@@ -21,6 +21,7 @@
  * Changelog:
  * Date               Author           Comment
  * -----------------------------------------------------------------------------
+ * 12/05/2006  Motorola          Dynamic PLL lock/unlock
  * 05/11/2007         Motorola         Enable PLL2 Lock/Unlock Change
  * 02/28/2008         Motorola         Fix flicker when showing logo
  */

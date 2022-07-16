@@ -166,6 +166,13 @@ config MOT_FEAT_EMULATED_CLI
 	  This feature enables an emulated CLI display, which displays its 
 	  contents on the main display instead of a physical CLI display.
 
+config MOT_FEAT_LCD_ESD_RECOVERY
+	bool "LCD display recovery from ESD"
+	default n
+	help
+	  This feature enables support for recovering from electrostatic 
+	  discharge automatically every 5 seconds on the LCD display.  
+
 config MOT_FEAT_IPU_PF_PERM666
 	bool "set MXC MPEG4/H.264 Post Filter Driver permission to rw-rw-rw-"
 	depends on MXC_IPU_PF
@@ -221,7 +228,10 @@ config MOT_FEAT_IPU_MEM_ADDR
 	help
 	  This feature dynamically determines at boot time how much memory is 
 	  allocated to the kernel, and reserves space immediately after the 
-	  kernel for the IPU framebuffer. 
+	  kernel for the IPU framebuffer. If an optional ipu_mem=size@addr is 
+	  specified at the boot command line, the kernel will reserve this 
+	  region and let the IPU driver use it. In this case, mem=size@addr
+	  option must include the region specified by ipu_mem option. 
 
 config MOT_FEAT_IPU_IOCTL
 	bool "IPU ioctl definition relocation"
@@ -1104,10 +1114,10 @@ config MOT_TURBO_INDICATOR
            when the AP runs in turbo mode.
 
 config MOT_DSM_INDICATOR
-        bool "Use BT LED as an AP DSM mode"
+        bool "Use BT LED as an AP DSM(Deep Sleep Mode) mode"
         default n
         help
-           This is a debug option to use the BT LED as DSM mode indicator showing when
+           This is a debug option to use the BT LED as DSM(Deep Sleep Mode) mode indicator showing when
            the AP runs out of DSM mode.
 
 config MOT_FEAT_MSS_CMCC

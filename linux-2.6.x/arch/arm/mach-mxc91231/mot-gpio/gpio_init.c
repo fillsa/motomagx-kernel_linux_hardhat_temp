@@ -39,6 +39,12 @@
 /**
  * This function is called by mxc_board_init() at boot time.
  */
+/*!
+ * This system-wise GPIO function initializes the pins during system startup.
+ * All the statically linked device drivers should put the proper GPIO
+ * initialization code inside this function. It is called by
+ * \b fixup_scma11() during system startup. This function is board specific.
+ */
 void __init scma11phone_gpio_init(void)
 {
     int i;
@@ -49,6 +55,8 @@ void __init scma11phone_gpio_init(void)
     /* make board-specific fixups */
 #if defined(CONFIG_MACH_SCMA11REF)
     scma11ref_gpio_signal_fixup();
+#elif defined(CONFIG_MACH_ASCENSION)
+    ascension_gpio_signal_fixup();
 #elif defined(CONFIG_MACH_ELBA)
     elba_gpio_signal_fixup();
 #elif defined(CONFIG_MACH_LIDO)

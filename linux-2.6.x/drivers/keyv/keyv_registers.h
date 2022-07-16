@@ -34,6 +34,8 @@
 /******************************************************************************
 * Global variables
 ******************************************************************************/
+/*! Flag to indicate if the driver should be shut down due to a failure */
+///2007-Jun-13 - Remove extern int keyv_shutdown;
 
 /******************************************************************************
 * Global Function Prototypes

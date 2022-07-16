@@ -24,6 +24,7 @@
  * 01/05/2006         Motorola         Merge with Belcarra 2.6.2 stack
  * 10/18/2006         Motorola         Add Open Src Software language
  * 12/11/2006         Motorola         Changes for Open src compliance.
+ * 12/20/2006         Motorola         Add Power IC header file include
  * 08/24/2007         Motorola         Changes for Open src compliance.
  *
  * This Program is distributed in the hope that it will
@@ -281,7 +282,7 @@ int mxc91231_tcd_mod_init (void)
 	
 	#endif
 
-        #if defined(CONFIG_MACH_ARGONLVPHONE)
+        #if defined(CONFIG_MACH_ARGONLVPHONE) /*#if defined(CONFIG_MACH_ARGONLVREF)*/
         printk(KERN_INFO"IOMUX setting for MXC91331 and MXC91321\n");
         iomux_config_mux(PIN_USB_XRXD,  OUTPUTCONFIG_FUNC, INPUTCONFIG_FUNC);
         iomux_config_mux(PIN_USB_VMOUT, OUTPUTCONFIG_FUNC, INPUTCONFIG_FUNC);
@@ -290,7 +291,7 @@ int mxc91231_tcd_mod_init (void)
         iomux_config_mux(PIN_USB_TXENB, OUTPUTCONFIG_FUNC, INPUTCONFIG_FUNC);
         iomux_config_mux(PIN_USB_VMIN,  OUTPUTCONFIG_FUNC, INPUTCONFIG_FUNC);
 
-	#endif /* CONFIG_MACH_ARGONLVPHONE */
+	#endif /* CONFIG_MACH_ARGONLVPHONE */ /* CONFIG_MACH_ARGONLVREF */
 								
 #endif
 	

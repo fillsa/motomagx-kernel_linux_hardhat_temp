@@ -16,11 +16,18 @@
  * Motorola 2007-Jun-22 - Remember register initialization values after init.
  * Motorola 2007-Jun-19 - NAND secure boot time improvement 
  * Motorola 2007-Apr-23 - Do not set Power Cut related bits on init.
+ * Motorola 2007-Apr-04 - Add support for the china charger
+ * Motorola 2007-Mar-23 - Do not set Power Cut related bits on init.
+ * Motorola 2007-Mar-15 - Do not allow the power path to be set to 10 if it
+ *                        has already been set to 11
+ * Motorola 2007-Mar-09 - Disable Adaptive Boost for Lido T1.
  * Motorola 2007-Feb-19 - Move fl_initialize call to lights_init
+ * Motorola 2007-Jan-26 - Support Adaptive Boost for Lido T1.
  * Motorola 2007-Jan-25 - Add support for power management
  * Motorola 2007-Jan-16 - Add support for MAX6946 LED controller chip.
  * Motorola 2006-Nov-20 - Update File
  * Motorola 2006-Nov-10 - Add support for Marco.
+ * Motorola 2006-Nov-09 - Remove LED register initialization
  * Motorola 2006-Nov-01 - Support LJ7.1 Reference Design
  * Motorola 2006-Oct-06 - Update File
  * Motorola 2006-Sep-25 - Add support for MAX7314 LED controller chip.
@@ -113,7 +120,7 @@
 #if defined(CONFIG_MACH_ASCENSION)
 #include "../hdr/ascension_p2a.h"
 #include "../hdr/ascension_p3a.h"
-#elif defined(CONFIG_ARCH_MXC91321)
+#elif defined(CONFIG_ARCH_MXC91321) /*#elif defined(CONFIG_MACH_ARGONLVREF)*/
 #if defined(CONFIG_MOT_FEAT_RF_PYTHON)
 #include "../hdr/python_base.h"
 #elif defined(CONFIG_MACH_BUTEREF)
@@ -161,11 +168,13 @@
 * Constants
 ******************************************************************************/
 
-/* Masks for determining the power path. */
+/* Masks for determining and setting the power path. */
 #define USB2V0_MASK 0x0020000
 #define IDF_MASK    0x0080000
 #define IDG_MASK    0x0100000
 #define SE1_MASK    0x0200000
+#define FET_OVRD    0x0000400
+#define FET_CTRL    0x0000800
 
 /* Mask for preventing the power cut bits from being set. */
 #define PC0_POWERCUT_MASK   0x0FFFFFC
@@ -321,7 +330,44 @@ static POWER_IC_POWER_UP_REASON_T determine_power_up_reason (void)
     /* Return the reason that we found (or will default to none if we didn't find anything) */
     return retval;
 }
-
+/*!
+ * @brief determines power path
+ *
+ * This function determines the power path at power up.  This
+ * determination is done by reading the contents of the
+ * sense registers in the power IC(s).
+ *
+ * @return none
+ */
+static void determines_power_path(void)
+{
+    int sense0_reg;
+    int charger0_reg;
+    
+    if(power_ic_read_reg(POWER_IC_REG_ATLAS_CHARGER_0, &charger0_reg) == 0)
+    {   
+        if ((charger0_reg & (FET_OVRD | FET_CTRL)) != (FET_OVRD | FET_CTRL))
+        {            
+            /* If the FETs are not configured in current share mode, reconfigure them based upon
+               the connected accessory */
+            if(power_ic_read_reg(POWER_IC_REG_ATLAS_INT_SENSE_0, &sense0_reg) == 0)
+            {   
+                if((sense0_reg & (USB2V0_MASK | SE1_MASK)) == (USB2V0_MASK | SE1_MASK))
+                {
+                    /* For an SE1 charger the path is set to dual path. FETOVRD = 1, FETCTRL = 0 */
+                    tracemsg(_k_d("Core: the power path is dual path"));
+                    power_ic_set_reg_mask(POWER_IC_REG_ATLAS_CHARGER_0, (FET_OVRD | FET_CTRL), FET_OVRD);
+                }
+                else
+                {
+                    /* For anything else the path is set to current share */
+                    tracemsg(_k_d("Core: the power path is share current"));
+                    power_ic_set_reg_mask(POWER_IC_REG_ATLAS_CHARGER_0, (FET_OVRD | FET_CTRL), (FET_OVRD | FET_CTRL));
+                }
+            }
+        }
+    }
+}
 /*!
  * @brief Retrieves information about the hardware.
  *
@@ -708,10 +754,11 @@ static void __init initialize_atlas_registers (void)
     int i;
 
     /* Use correct register settings per product and per boardrev. */
-#if defined(CONFIG_ARCH_MXC91321)
+#if defined(CONFIG_ARCH_MXC91321) /*defined(CONFIG_MACH_ARGONLVREF)*/
 #if defined(CONFIG_MOT_FEAT_RF_PYTHON)
     init_tbl_ptr = &tab_init_reg_python_base;
 #elif defined(CONFIG_MACH_BUTEREF)
+        /* Use the correct BUTE settings according to which boardrev being used. */
     if(((boardrev() >= BOARDREV_P4AW) || (boardrev() >= BOARDREV_P5A)) && (boardrev() != BOARDREV_UNKNOWN))
     {
         init_tbl_ptr = &tab_init_reg_bute_p4aw;
@@ -728,6 +775,7 @@ static void __init initialize_atlas_registers (void)
     init_tbl_ptr = &tab_init_reg_argonref71_base;
 #endif
 #elif defined(CONFIG_MACH_ASCENSION)
+        /* Use the correct ASCENSION settings according to which boardrev being used. */
     if(boardrev() >= BOARDREV_P3A)
     {
         init_tbl_ptr = &tab_init_reg_ascension_p3a;
@@ -737,10 +785,13 @@ static void __init initialize_atlas_registers (void)
         init_tbl_ptr = &tab_init_reg_ascension_p2a;
     }
 #elif defined(CONFIG_MACH_SAIPAN)
+         /* Use the correct Saipan settings according to which boardrev being used. */  
     init_tbl_ptr = &tab_init_reg_saipan_base;
 #elif defined(CONFIG_MACH_LIDO)
+        /* Use the correct Lido settings according to which boardrev being used. */     
     init_tbl_ptr = &tab_init_reg_lido_base;
 #elif defined(CONFIG_MACH_ELBA)
+        /* Use base ELBA settings for ELBA. */
     init_tbl_ptr = &tab_init_reg_elba_base;
 #elif defined(CONFIG_MACH_PICO)
     init_tbl_ptr = &tab_init_reg_pico_base;
@@ -751,6 +802,7 @@ static void __init initialize_atlas_registers (void)
 #elif defined(CONFIG_MACH_NEVIS)
     init_tbl_ptr = &tab_init_reg_nevis_base;
 #else
+        /* Use the correct SCMA-11 settings according to which boardrev being used. */
     if(boardrev() >= BOARDREV_P3BW)
     {
         init_tbl_ptr = &tab_init_reg_scma11_p3bw;
@@ -850,6 +902,9 @@ int __init power_ic_init(void)
 
     /* Before initializing events or any sub-modules, determine the power-up reason */
     power_up_reason = determine_power_up_reason();
+
+    /*Determine the power mode */
+    determines_power_path();
 
     /* Initialize the event handling system */
     power_ic_event_initialize();

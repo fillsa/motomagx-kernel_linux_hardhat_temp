@@ -21,7 +21,12 @@
  *  Added devfs support: Richard Gooch <rgooch@atnf.csiro.au>, 13-JAN-1998
  *  Heavily rewritten for 'one fs - one tree' dcache architecture. AV, Mar 2000
  */
-
+ 
+/* ChangeLog:
+ * (mm-dd-yyyy)  Author    Comment
+ * 10-26-2007    Motorola  Change the sync sequency for LJ6.1
+ */
+ 
 /* Date         Author          Comment
  * ===========  ==============  ==============================================
  * 31-Oct-2006  Motorola        Added inotify    
@@ -38,7 +43,7 @@
 #include <linux/blkdev.h>
 #include <linux/quotaops.h>
 #include <linux/namei.h>
-#include <linux/buffer_head.h>		/* for f-2007sync_super() */
+#include <linux/buffer_head.h>		/* for fsync_super() */
 #include <linux/mount.h>
 #include <linux/security.h>
 #include <linux/syscalls.h>

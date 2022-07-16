@@ -23,6 +23,7 @@
 # 09-23-2008   Motorola   creat for shredding cards
 #
 
+echo "mxclay erase begin"
 if /etc/initservices/services/umountMMCSD.sh
 then
 	echo "umount ok"

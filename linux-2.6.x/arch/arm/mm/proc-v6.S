@@ -14,8 +14,12 @@
  * Date        Author            Comment
  * ==========  ================  ========================
  * 09/26/2006  Motorola          Initial creation
+ * 10/25/2006   Motorola        Modify the assembly check to include r1p1 as well.
  * 11/15/2006  Motorola          Added workaround errata 380532
+ * 12/21/2006   Motorola        Modify icache flushes to flush the icache using
+ *                                the recommended ARM errata workaround
  * 02/21/2007  Motorola          Added fix for errata 411920
+ * 03/14/2007   Motorola        Improve L2 Cache performance by changing the CPU wait time.
  * 03/28/2007  Motorola          Added cache optimization
  * 07/14/2008  Motorola          Invalidated main locked TLB.
  */

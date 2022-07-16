@@ -15,6 +15,9 @@
  * 
  * ChangeLog:
  * (mm-dd-yyyy)  Author    Comment
+ * 07-18-2007    Motorola  Added direct sync system call to FAT
+ * 10-26-2007    Motorola  Added conditional sync dirt mark for LJ6.1
+ * 10-31-2007    Motorola  Added hidden and system attr to inode for LJ6.1
  * 10-24-2007    Motorola  Added direct sync system call to FAT
  * 11-15-2007    Motorola  Upmerge from 6.1 (Added conditional sync dirt mark and added hidde and system attr to inode)
  * 02-20-2008    Motorola  remove sticky mode
@@ -1244,6 +1247,8 @@ static int fat_fill_inode(struct inode *inode, struct msdos_dir_entry *de)
 	if(de->attr & ATTR_SYS)
 		if (sbi->options.sys_immutable)
 			inode->i_flags |= S_IMMUTABLE;
+//        if(de->attr & ATTR_INV)
+//		inode->i_mode |= S_ISVTX; 
 	MSDOS_I(inode)->i_attrs = de->attr & ATTR_UNUSED;
 	/* this is as close to the truth as we can get ... */
 	inode->i_blksize = sbi->cluster_size;
@@ -1302,6 +1307,8 @@ retry:
 	}
 	raw_entry->attr |= MSDOS_MKATTR(inode->i_mode) |
 	    MSDOS_I(inode)->i_attrs;
+//	if(inode->i_mode & S_ISVTX)
+//		raw_entry->attr |= ATTR_INV; 
 	raw_entry->start = cpu_to_le16(MSDOS_I(inode)->i_logstart);
 	raw_entry->starthi = cpu_to_le16(MSDOS_I(inode)->i_logstart >> 16);
 	fat_date_unix2dos(inode->i_mtime.tv_sec, &raw_entry->time, &raw_entry->date);

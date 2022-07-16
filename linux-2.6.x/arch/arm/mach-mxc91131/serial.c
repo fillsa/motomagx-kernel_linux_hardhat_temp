@@ -1,4 +1,12 @@
 /*
+ * Copyright 2006 Motorola, Inc.
+ *
+ * Changelog:
+ * Date        Author         Comment
+ * 10/5/2006   Motorola       added support for Power Management, and for Bluetooth use of UART 
+*/
+
+/*
  * Copyright 2006 Freescale Semiconductor, Inc. All Rights Reserved.
  */
 /*

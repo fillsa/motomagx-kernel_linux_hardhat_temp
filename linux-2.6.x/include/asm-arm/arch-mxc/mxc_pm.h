@@ -36,8 +36,8 @@
  *                       to support PLL dithering.
  * 12/14/2006  Motorola  Added structures for better operating point
  *                       control.
- *
  * 02/15/2007  Motorola  Cache optimization changes
+ * 02/19/2007  Motorola  Added interface for LCD DVFS callback handler
  */
 
 /*!
@@ -404,6 +404,15 @@ int mxc_pm_dither_setup(u16 ap_core_normal_pll_ppm, u16 ap_core_turbo_pll_ppm, u
  * @return  Returns 0 on success, -1 on failure.
  */
 void mxc_pm_dither_report(ap_all_plls_mfn_values_t *pllvals);
+
+/*!
+ * mxc_pm_setup_lcd_callback: Set up a callback for LCD drivers that
+ * need to send SPI commands to the panel before and after DVFS 
+ * transitions to avoid flickers on the display.
+ *
+ * @param   enter_dvfs    true if entering DVFS, and false if exiting DVFS
+ */
+extern void mxc_pm_setup_lcd_callback(int (*mxc_pm_lcd_dvfs_handler)(bool enter_dvfs));
 
 #endif /* __ASSEMBLY__ */
 #endif /* CONFIG_MOT_FEAT_PM */

@@ -1,6 +1,6 @@
 /*
  * Copyright 2004-2006 Freescale Semiconductor, Inc. All Rights Reserved.
- * Copyright (C) 2006 Motorola Inc.
+ * Copyright (C) 2006-2007 Motorola Inc.
  */
 
 /*
@@ -17,6 +17,9 @@
  * 16-Jun-2006  Motorola        Use generic_32 data format during capture
  * 14-Aug-2006  Motorola        Generate dummy transfer from GEM_AP during
  *                              the 2MP image capture
+ * 09-Nov-2006  Motorola        Deactive the overlay during capture
+ * 07-Dec-2006  Motorola        Kernel changes for OSS EP part 1
+ * 20-Feb-2007  Motorola        Desense improvements
  */
 
 /*!
@@ -34,6 +37,10 @@
 
 #ifdef CONFIG_MOT_FEAT_2MP_CAMERA_WRKARND
 #include "capture_2mp_wrkarnd.h"
+extern void ipu_sdc_fg_init(void);
+extern void ipu_sdc_fg_uninit(void);
+extern void setup_dma_chan_priority(void);
+extern void restore_dma_chan_priority(void);
 #endif
 
 //#define MXC_PRP_STILL_DEBUG
@@ -59,12 +66,30 @@
 
 #endif				/* MXC_PRP_STILL_DEBUG */
 
+#ifdef CONFIG_VIDEO_MXC_V4L1
 extern void v4l1_camera_callback(u32);
+extern void mxc_camera_adjtime(int *); // extern void v4l1_camera_adjtime(int *);
+#endif
 
 static int callback_flag;
 /*
  * Function definitions
  */
+
+#ifdef CONFIG_VIDEO_MXC_V4L1
+static unsigned long bayer_overflow_cnt;
+
+static irqreturn_t
+bayer_overflow_callback(int irq, void *dev_id, struct pt_regs *regs)
+{
+  /* this ISR is used to detect that an overflow condition
+   * occurred at least once.
+   */
+  bayer_overflow_cnt++;
+  ipu_disable_irq(IPU_IRQ_BAYER_BUFOVF_ERR);
+  return IRQ_HANDLED;
+}
+#endif
 
 /*!
  * CSI EOF callback function.
@@ -86,12 +111,28 @@ prp_csi_eof_callback(int irq, void *dev_id, struct pt_regs *regs)
 	  enable_fake_sdram();
 	  start_gem();
 	  start_rtic();
+	  setup_dma_chan_priority();
 #endif
 
 	  ipu_select_buffer(CSI_MEM, IPU_OUTPUT_BUFFER, 0);
 	  ipu_enable_channel(CSI_MEM);
 	}
-
+#ifdef CONFIG_MOT_FEAT_2MP_CAMERA_WRKARND
+	else if(callback_flag == 3)
+	  {
+	    /* disable workarounds */
+	    restore_max_configuration();
+	    stop_gem();
+	    disable_gem_clock();
+	    stop_rtic();
+	    disable_rtic_clock();
+	    disable_fake_sdram();
+	    max_slave0_restore();
+	    restore_dma_chan_priority();
+	    /* Restore Foreground channel*/
+	    ipu_sdc_fg_init();
+	  }
+#endif
 	callback_flag++;
 	FUNC_END;
 	return IRQ_HANDLED;
@@ -113,6 +154,7 @@ prp_still_callback(int irq, void *dev_id, struct pt_regs *regs)
 	FUNC_START;
 
 #ifdef CONFIG_VIDEO_MXC_V4L1
+	/* Pass in the number of bayer overflow errors */
 	v4l1_camera_callback(irq);
 #else
 	cam->still_counter++;
@@ -164,12 +206,20 @@ static int prp_still_start(void *private)
 		return err;
 	}
 	callback_flag = 0;
+#ifdef CONFIG_VIDEO_MXC_V4L1
+	mxc_camera_adjtime(&callback_flag);
+#endif
 	err = ipu_request_irq(IPU_IRQ_SENSOR_EOF, prp_csi_eof_callback,
 			      0, "Mxc Camera", NULL);
 	if (err != 0) {
 		DPRINTK("Error IPU_IRQ_SENSOR_EOF \n");
 		return err;
 	}
+
+#ifdef CONFIG_VIDEO_MXC_V4L1
+	bayer_overflow_cnt = 0;
+	ipu_enable_irq(IPU_IRQ_BAYER_BUFOVF_ERR);
+#endif
 
 	FUNC_END;
 	return err;
@@ -189,6 +239,9 @@ static int prp_still_stop(void *private)
 
 	ipu_free_irq(IPU_IRQ_SENSOR_EOF, NULL);
 	ipu_free_irq(IPU_IRQ_SENSOR_OUT_EOF, cam);
+#ifdef CONFIG_VIDEO_MXC_V4L1
+	ipu_disable_irq(IPU_IRQ_BAYER_BUFOVF_ERR);
+#endif
 
 	ipu_uninit_channel(CSI_MEM);
 	ipu_disable_channel(CSI_MEM, true);
@@ -208,12 +261,24 @@ static int prp_still_stop(void *private)
 int prp_still_select(void *private)
 {
 	cam_data *cam = (cam_data *) private;
-
+#ifdef CONFIG_VIDEO_MXC_V4L1
+	int err;
+#endif
 	FUNC_START;
 	if (cam) {
 		cam->csi_start = prp_still_start;
 		cam->csi_stop = prp_still_stop;
 	}
+
+#ifdef CONFIG_VIDEO_MXC_V4L1
+	err = ipu_request_irq(IPU_IRQ_BAYER_BUFOVF_ERR, bayer_overflow_callback,
+			      0, "Mxc Camera", NULL);
+	if (err != 0) {
+		DPRINTK("Error IPU_IRQ_BAYER_BUFOVF_ERR \n");
+		return err;
+	}
+	ipu_disable_irq(IPU_IRQ_BAYER_BUFOVF_ERR);
+#endif
 
 	FUNC_END;
 	return 0;
@@ -233,6 +298,10 @@ int prp_still_deselect(void *private)
 	FUNC_START;
 
 	err = prp_still_stop(cam);
+
+#ifdef CONFIG_VIDEO_MXC_V4L1
+	ipu_free_irq(IPU_IRQ_BAYER_BUFOVF_ERR, NULL);
+#endif
 
 	if (cam) {
 		cam->csi_start = NULL;

@@ -23,8 +23,11 @@
  * Motorola 2006-Nov-01 - Support LJ7.1 Reference Design
  * Motorola 2006-Oct-06 - Update File
  * Motorola 2006-Jul-31 - Update comments
+ * Motorola 2006-Jul-26 - Add TransFlash support to BUTE
  * Motorola 2006-Jun-28 - Montavista header upmerge fixes
  * Motorola 2006-Jun-19 - Fix montavista upmerge conditionals
+ * Motorola 2006-Jun-14 - Fix TransFlash detection on Ascension
+ * Motorola 2006-May-12 - Add Zeus support for SD
  * Motorola 2006-Apr-04 - Confine all GPIO functions to this file
  */
 
@@ -68,10 +71,10 @@
 #if defined(CONFIG_ARCH_MXC91231)
 #define PM_INT      INT_EXT_INT5
 #define PM_EDIO     ED_INT5
-#elif defined(CONFIG_ARCH_MXC91321)
+#elif defined(CONFIG_ARCH_MXC91321) /*defined(CONFIG_MACH_ARGONLVREF)*/
 #define PM_INT      INT_EXT_INT1
 #define PM_EDIO     ED_INT1
-#endif /* MXC91321 */
+#endif /* MXC91321 */ /* ArgonLV */
 
 /******************************************************************************
 * Macros
@@ -91,7 +94,7 @@
 })
 
 /* Define GPIOs specific to BUTE */
-#elif defined(CONFIG_ARCH_MXC91321)
+#elif defined(CONFIG_ARCH_MXC91321) /*defined(CONFIG_MACH_ARGONLVREF)*/
 #define EMU_GET_D_PLUS() \
 ({\
     ((gpio_get_data(0, 4)) ? \

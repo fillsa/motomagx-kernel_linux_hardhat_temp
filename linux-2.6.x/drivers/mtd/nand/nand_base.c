@@ -568,6 +568,7 @@ static int nand_block_bad(struct mtd_info *mtd, loff_t ofs, int getchip)
  * return translated block from reserved pool - offset from device start
  */
 loff_t nand_translate_block(struct mtd_info *mtd, loff_t ofs)
+//old loff_t nand_replaced_block(struct mtd_info *mtd, loff_t ofs)
 {
 	struct nand_chip *this = mtd->priv;
 	int orig_block;
@@ -1346,6 +1347,17 @@ static int nand_verify_pages (struct mtd_info *mtd, struct nand_chip *this, int 
 	int	hweccbytes; 
 	u_char 	oobdata[64];
 
+#if defined(CONFIG_MTD_NAND_BBM)
+#ifdef CONFIG_MOT_FEAT_NAND_RDDIST
+	if (nand_rddist_check(mtd, page<<this->page_shift))
+		/* read disturb fix inprogress, don't do block replacement */
+		DEBUG (MTD_DEBUG_LEVEL0, "no block replacement\n");
+	else
+#endif
+	/* Check for block replacement if the given page is in bad block */
+	if (nand_isbad_bbt (mtd, page<<this->page_shift, 0)) 
+		page = nand_replaced_block(mtd, page<<this->page_shift) >> this->page_shift;
+#endif
 	hweccbytes = (this->options & NAND_HWECC_SYNDROME) ? (oobsel->eccbytes / eccsteps) : 0;
 
 #ifdef CONFIG_MOT_FEAT_NAND_RDDIST

@@ -28,6 +28,8 @@
    -----------  --------------   --------------------------------
    2006-May-17  Motorola         Adding support for HCI Suspend/Resume.  
    2006-Sep-07  Motorola         Changed suspend/resume to call uart_pm_functions.
+   2006-Oct-10  Motorola         added "#include <linux/serial_core.h>" for
+                                 uart_pm_functions() definition
 
 
 */
@@ -68,6 +70,7 @@
 #include <linux/signal.h>
 #include <linux/ioctl.h>
 #include <linux/skbuff.h>
+#include <linux/serial_core.h>
 
 #include <net/bluetooth/bluetooth.h>
 #include <net/bluetooth/hci_core.h>

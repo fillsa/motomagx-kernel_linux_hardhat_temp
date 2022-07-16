@@ -40,7 +40,10 @@
 #define MXC_TIMER_CLK           32768
 #define MXC_TIMER_DIVIDER	1
 #else
-#if defined(CONFIG_MACH_ARGONLVPHONE)
+#if defined(CONFIG_MACH_ARGONLVREF)
+#define MXC_TIMER_CLK           66516666
+#define MXC_TIMER_DIVIDER       4
+#elif defined(CONFIG_MACH_ARGONLVPHONE)
 #define MXC_TIMER_CLK           64250000
 #define MXC_TIMER_DIVIDER       4
 #else

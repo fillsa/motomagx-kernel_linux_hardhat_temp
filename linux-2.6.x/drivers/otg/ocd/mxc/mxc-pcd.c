@@ -2,7 +2,7 @@
  * otg/ocd/mxc/mxc-pcd.c -- Freescale USBOTG Peripheral Controller driver
  * @(#) tt@belcarra.com|otg/ocd/mxc/mxc-pcd.c|20060120155139|05944
  *
- *      Copyright (c) 2004-2005 Belcarra Technologies Corp
+ *      Copyright (c) 2004-2006 Belcarra Technologies Corp
  *
  * By:
  *      Stuart Lynne <sl@lbelcarra.com>,
@@ -17,6 +17,7 @@
  * 06/12/2006         Motorola         OTG name change
  * 08/09/2006         Motorola         nfs over USB
  * 10/18/2006         Motorola         Add Open Src Software language
+ * 12/12/2006         Motorola         Changes for Open Src compliance.
  * 04/11/2007         Motorola         DMA fix
  */
 /*

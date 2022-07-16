@@ -7,6 +7,7 @@
 obj-y			:= devices.o iomux.o system.o cpu.o mm.o time.o clock.o serial.o
 obj-$(CONFIG_MACH_MXC27530EVB)	+= mxc27530evb.o mxc27530evb_gpio.o
 obj-$(CONFIG_MACH_SCMA11PHONE)	+= scma11phone.o
+obj-$(CONFIG_MACH_ASCENSION)	+= scma11phone.o #временно
 
 obj-$(CONFIG_MOT_FEAT_GPIO_API) += mot-gpio/
 

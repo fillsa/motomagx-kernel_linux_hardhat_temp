@@ -14,6 +14,8 @@
  *
  * Date         Author            Comment
  * ===========  ==========  ====================================
+ * 08/30/2007    Motorola  Support do dosfsck when fat panic
+ * 10-26-2007    Motorola  Added conditional sync dirt mark for loop device for LJ6.1
  * 11/01/2007   Motorola    Fix for TF write protected issue.
  * 11-15-2007   Motorola    Upmerge from 6.1 (Added conditional sync dirt mark for loop device)
  */

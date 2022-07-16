@@ -22,7 +22,7 @@ ifeq ($(CONFIG_MACH_MXC30030ADS),y)
    initrd_phys-y	:= 0x90800000
 endif
 
-ifeq ($(CONFIG_MACH_ARGONLVPHONE),y)
+ifeq ($(CONFIG_MACH_ARGONLVPHONE),y) #ifeq ($(CONFIG_MACH_ARGONLVREF),y)
    zreladdr-y		:= 0x80008000
    params_phys-y	:= 0x80000100
    initrd_phys-y	:= 0x80800000

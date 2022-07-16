@@ -49,8 +49,8 @@
  * @ingroup NOR_MTD
  */
 
-#ifndef CONFIG_MACH_ARGONLVPHONE
-#error This is for ArgonLV architecture only
+#ifndef CONFIG_MACH_ARGONLVPHONE // #ifndef CONFIG_MACH_ARGONLVREF
+#error This is for ArgonLV BUTE architecture only
 #endif
 
 /*! 
@@ -218,6 +218,106 @@ out_err:
         return ret;
 }
 
+#if 0
+/****************** MTD over SDRAM implementation ********************/
+/* 
+ * Note: No doxygen comments on purpose. Mainly for initianl chip bringup.
+ */
+#define BB_SDRAM_MTD_BASE_PA   0x91600000      /* start from 22MB */
+#define BB_SDRAM_MTD_SIZE      0x00800000      /* 8MB */
+
+/* BB MTD over SDRAM information */
+static struct map_info bute_map_sdram = {
+        .name      =    "Freescale BB SDRAM",
+        .size      =    BB_SDRAM_MTD_SIZE,
+        .phys      =    BB_SDRAM_MTD_BASE_PA,
+        .bankwidth =    2,
+};
+
+static struct mtd_partition bute_part_sdram[] =
+{
+        {       .name       =   "root (cramfs)",
+                .size       =   8 * 1024 * 1024,
+                .offset     =   0x00000000,
+                .mask_flags =   MTD_WRITEABLE  /* force read-only */
+        },
+};
+
+static struct mtd_partition *parsed_parts_sdram = NULL;
+static struct mtd_info *sdram_mtd = NULL;
+static int nr_parsed_parts_sdram = 0;
+
+static int __init bute_mtd_init_sdram(void)
+{
+        int ret = 0;
+
+        if (!request_mem_region(BB_SDRAM_MTD_BASE_PA, 
+                                bute_map_sdram.size, "sdram")) {
+                printk(KERN_NOTICE "request_mem_region() failed - busy2)\n");
+                return -EBUSY;
+        }
+        
+        bute_map_sdram.virt = (unsigned long)ioremap(BB_SDRAM_MTD_BASE_PA, 
+                                                    bute_map_sdram.size);
+        if (!bute_map_sdram.virt) {
+                printk("Failed to ioremap SDRAM %s\n", bute_map_sdram.name);
+                goto out_err;
+        }
+        
+        simple_map_init(&bute_map_sdram);
+
+        printk(KERN_NOTICE "Probing %s at PA 0x%08lx (%d-bit)\n",
+               bute_map_sdram.name, bute_map_sdram.phys, 
+               bute_map_sdram.bankwidth * 8);
+
+        /*
+         * Now let's probe for the actual flash.  Do it here since
+         * specific machine settings might have been set above.
+         */
+        sdram_mtd = do_map_probe("map_ram", &bute_map_sdram);
+        if (!sdram_mtd) {
+                printk("bb do_map_probe() failed for SDRAM\n");
+                ret = MTD_PROBE_ERR;
+                goto out_err;
+        }
+
+        sdram_mtd->owner = THIS_MODULE;
+
+        ret = parse_mtd_partitions(sdram_mtd, probes, 
+                                   &parsed_parts_sdram, 0);
+        if (ret > 0)
+                nr_parsed_parts_sdram = ret;
+
+        if (nr_parsed_parts_sdram) {
+                printk(KERN_NOTICE "Using SDRAM dynamic partition\n");
+                ret = add_mtd_partitions(sdram_mtd, parsed_parts_sdram, 
+                                         nr_parsed_parts_sdram);
+        } else {
+                printk(KERN_NOTICE "Using SDRAM static partition\n");
+                ret = add_mtd_partitions(sdram_mtd, bute_part_sdram, 
+                                         ARRAY_SIZE(bute_part_sdram));
+        }
+
+        if (ret) {
+                printk(KERN_ERR "mtd SDRAM partition failed: %d\n", ret);
+                BUG();
+        }
+
+        return 0;
+
+out_err:
+        if (bute_map_sdram.map_priv_2 != -1) {
+                iounmap((void *)bute_map_sdram.map_priv_1);
+                release_mem_region(bute_map_sdram.map_priv_2, 
+                                   bute_map_sdram.size);
+        }
+        printk("bute_mtd_init_sdram() error \n");
+
+        return ret;
+}
+/****************** End of MTD over SDRAM implementation *******************/
+
+#endif
 
 /*!
  * This is the module's entry function and is called when the kernel starts.
@@ -226,6 +326,9 @@ out_err:
  */
 static int __init bute_init_maps(void)
 {
+#if 0
+	if (bute_mtd_init() == 0 || bute_mtd_init_sdram() == 0) {
+#endif
         int ret = bute_mtd_init();
 	if (ret == 0) {
                 return 0;
@@ -248,6 +351,15 @@ static void __exit bute_mtd_cleanup(void)
                 if (parsed_parts)
                         kfree(parsed_parts);
         }
+#if 0
+        if (sdram_mtd) {
+                del_mtd_partitions(sdram_mtd);
+                map_destroy(sdram_mtd);
+                iounmap((void *)bute_map_sdram.virt);
+                if (parsed_parts_sdram)
+                        kfree(parsed_parts_sdram);
+        }
+#endif
 }
 
 module_init(bute_init_maps);

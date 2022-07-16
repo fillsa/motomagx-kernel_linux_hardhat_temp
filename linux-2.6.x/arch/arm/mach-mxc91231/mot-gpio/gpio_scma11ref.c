@@ -22,7 +22,9 @@
 /* Date         Author          Comment
  * ===========  ==============  ==============================================
  * 04-Oct-2006  Motorola        Initial revision.
+ * 10-Nov-2006  Motorola        Update high speed USB API.
  * 13-Nov-2006  Motorola        Change pad group 25 settings.
+ * 06-Dec-2006  Motorola        Moved etm function to independent file.
  * 26-Jan-2007  Motorola        Bluetooth current drain improvements.
  * 29-Jan-2007  Motorola        Added support for P3C wingboards.
  * 02-Apr-2007  Motorola        Pad group 10 changed to 6.
@@ -35,10 +37,22 @@
 #endif /* CONFIG_MOT_FEAT_BRDREV */
 
 #include "../iomux.h"
+
+/*!
+ * @file scma11ref_gpio.c
+ *
+ * @brief This file contains all the GPIO setup functions for the board.
+ *
+ * @ingroup GPIO
+ */
 #include "mot-gpio-scma11.h"
 
 #ifdef CONFIG_MOT_FEAT_BRDREV
 /* adjust GPIO signals to reflect earlier hardware revisions */
+static void gpio_signal_fixup_p0c(void);
+static void iomux_setting_fixup_p0c(void);
+
+static void gpio_signal_fixup_p1a(void);
 static void gpio_signal_fixup_p2aw(void);
 static void gpio_signal_fixup_p2bw(void);
 
@@ -55,6 +69,8 @@ struct gpio_signal_settings initial_gpio_settings[MAX_GPIO_SIGNAL] = {
      * SCM-A11 Reference P1A Wingboard Signal: GPS_U3_RTS_B (GPS)
      * SCM-A11 Reference P1D Wingboard Signal: GPS_U3_RTS_B (GPS)
      * SCM-A11 Reference P2B Wingboard Signal: GPS_RESET (GPS)
+     * SCM-A11 Reference P3C Wingboard Signal: GPS_RESET (GPS)/LIN_VIB_AMP_EN
+     *                                           (Linear Vibrator)
      * Selected Primary Function: GP_SP_A2 (Output)
      *
      * Array index: 0   GPIO_SIGNAL_GPS_RESET
@@ -175,14 +191,26 @@ struct gpio_signal_settings initial_gpio_settings[MAX_GPIO_SIGNAL] = {
      * USB connected to Atlas when low.
      */
     { GPIO_SP_A_PORT,   11, GPIO_GDIR_OUTPUT,   GPIO_DATA_LOW },
-
+#if 0
+    /*
+     * SCM-A11 Package Pin Name: SD2_DAT1
+     * SCM-A11 Reference P1A Wingboard Signal: SD2_DATA(1) (WLAN)
+     * SCM-A11 Reference P1D Wingboard Signal: SD2_DATA(1) (WLAN)
+     * Selected Primary Function: SD2_DAT1 (Input/Output)
+     *
+     * Array index: 10  GPIO_SIGNAL_SD1_DET
+     *
+     * sdhc_intr_setup puts SD2_DAT1 into GPIO mode as GP_SP_A23.
+     */
+    { GPIO_SP_A_PORT,   23, GPIO_GDIR_INPUT,    GPIO_DATA_INVALID },
+#endif
     /*
      * SCM-A11 Package Pin Name: U2_RI_B
      * SCM-A11 Reference P1A Wingboard Signal: GPIO_DISP_CM/DAI_CLK (Display)
      * SCM-A11 Reference P1D Wingboard Signal: GPIO_DISP_CM/DAI_CLK (Display)
      * Selected Primary Function: GP_AP_C27 (Output)
      *
-     * Array index: 10  GPIO_SIGNAL_DISP_CM
+     * Array index: 11  GPIO_SIGNAL_DISP_CM
      *
      * Main display color mode; set low for high color mode.
      */
@@ -194,7 +222,7 @@ struct gpio_signal_settings initial_gpio_settings[MAX_GPIO_SIGNAL] = {
      * SCM-A11 Reference P1D Wingboard Signal: GPIO_DISP_SD (Display)
      * Selected Primary Function: GP_AP_A26 (Output)
      *
-     * Array index: 11  GPIO_SIGNAL_DISP_SD
+     * Array index: 12  GPIO_SIGNAL_DISP_SD
      *
      * Set low to enable main display; high to shut down. Set by MBM at boot.
      */
@@ -206,7 +234,7 @@ struct gpio_signal_settings initial_gpio_settings[MAX_GPIO_SIGNAL] = {
      * SCM-A11 Reference P1D Wingboard Signal: PWM_BKL (Backlight)
      * Selected Primary Function: GP_AP_B17 (Output)
      *
-     * Array index: 12  GPIO_SIGNAL_PWM_BKL
+     * Array index: 13  GPIO_SIGNAL_PWM_BKL
      *
      * This signal is no longer connected to the backlight driver for
      * P1A and later wingboards.
@@ -219,7 +247,7 @@ struct gpio_signal_settings initial_gpio_settings[MAX_GPIO_SIGNAL] = {
      * SCM-A11 Reference P1D Wingboard Signal: GPIO_MAIN_BKL (Backlight)
      * Selected Primary Function: GP_AP_A30 (Output)
      *
-     * Array index: 13  GPIO_SIGNAL_MAIN_BKL
+     * Array index: 14  GPIO_SIGNAL_MAIN_BKL
      *
      * Set high to turn on the main display backlight. Set by MBM at boot.
      */
@@ -231,7 +259,7 @@ struct gpio_signal_settings initial_gpio_settings[MAX_GPIO_SIGNAL] = {
      * SCM-A11 Reference P1D Wingboard Signal: GPIO_CAM_RST_B (camera)
      * Selected Primary Function: GP_AP_B24 (Output)
      *
-     * Array index: 14  GPIO_SIGNAL_CAM_RST_B
+     * Array index: 15  GPIO_SIGNAL_CAM_RST_B
      *
      * Take camera out of reset at boot.
      */
@@ -243,7 +271,7 @@ struct gpio_signal_settings initial_gpio_settings[MAX_GPIO_SIGNAL] = {
      * SCM-A11 Reference P1D Wingboard Signal: GPIO_CAM_PD (camera)
      * Selected Primary Function: GP_AP_B25 (Output)
      *
-     * Array index: 15  GPIO_SIGNAL_CAM_PD
+     * Array index: 16  GPIO_SIGNAL_CAM_PD
      *
      * Power down camera at boot.
      */
@@ -257,7 +285,7 @@ struct gpio_signal_settings initial_gpio_settings[MAX_GPIO_SIGNAL] = {
      * Selected Primary Function: GP_AP_C21 (Input)
      * Selected Secondary Function: ED_INT3 (Input)
      *
-     * Array index: 16  GPIO_SIGNAL_ENET_INT
+     * Array index: 17  GPIO_SIGNAL_ENET_INT
      */
     { GPIO_AP_B_PORT,   21, GPIO_GDIR_INPUT,    GPIO_DATA_INVALID },
 
@@ -267,7 +295,7 @@ struct gpio_signal_settings initial_gpio_settings[MAX_GPIO_SIGNAL] = {
      * SCM-A11 Reference P1D Wingboard Signal: GPIO_DISP_RST_B (CLI)
      * Selected Primary Function: GP_AP_B18 (Output)
      *
-     * Array index: 17  GPIO_SIGNAL_DISP_RST_B
+     * Array index: 18  GPIO_SIGNAL_DISP_RST_B
      *
      * This is described as the secondary display reset in the ICD; however, for
      * P2A closedphone this line is used as the LCD clock select.
@@ -281,7 +309,7 @@ struct gpio_signal_settings initial_gpio_settings[MAX_GPIO_SIGNAL] = {
      * SCM-A11 Reference P2B Wingboard Signal: SER_EN (Display)
      * Selected Primary Function: GP_AP_A29 (Output)
      *
-     * Array index: 18  GPIO_SIGNAL_SER_EN
+     * Array index: 19  GPIO_SIGNAL_SER_EN
      *
      * Serializer enable; set high to enable. (Configured at boot by MBM.)
      */
@@ -296,7 +324,7 @@ struct gpio_signal_settings initial_gpio_settings[MAX_GPIO_SIGNAL] = {
      *                                          (WLAN)/UI_IC_DBG (Morphing)
      * Selected Primary Function: GP_SP_A3 (Output)
      *
-     * Array index: 19  GPIO_SIGNAL_WLAN_CLIENT_WAKE_B
+     * Array index: 20  GPIO_SIGNAL_WLAN_CLIENT_WAKE_B
      *
      * Put WLAN to sleep at boot.
      */
@@ -309,7 +337,7 @@ struct gpio_signal_settings initial_gpio_settings[MAX_GPIO_SIGNAL] = {
      * SCM-A11 Reference P2B Wingboard Signal: CAM_TORCH_EN (Camera Flash)
      * Selected Primary Function: GP_SP_A13 (Output)
      *
-     * Array index: 20  GPIO_SIGNAL_CAM_TORCH_EN
+     * Array index: 21  GPIO_SIGNAL_CAM_TORCH_EN
      */
     { GPIO_SP_A_PORT,   13, GPIO_GDIR_OUTPUT,   GPIO_DATA_LOW },
 
@@ -320,7 +348,7 @@ struct gpio_signal_settings initial_gpio_settings[MAX_GPIO_SIGNAL] = {
      * SCM-A11 Reference P2B Wingboard Signal: WLAN_PWR_DWN_B (WLAN)
      * Selected Primary Function: GP_SP_A26 (Input)
      *
-     * Array index: 21  GPIO_SIGNAL_WLAN_PWR_DWN_B
+     * Array index: 22  GPIO_SIGNAL_WLAN_PWR_DWN_B
      */
     { GPIO_SP_A_PORT,       26, GPIO_GDIR_OUTPUT,    GPIO_DATA_LOW },
 
@@ -332,7 +360,7 @@ struct gpio_signal_settings initial_gpio_settings[MAX_GPIO_SIGNAL] = {
      * SCM-A11 Reference P3A Wingboard Signal: NC (NC)
      * Selected Primary Function: GP_SP_A27 (Output)
      *
-     * Array index: 22  GPIO_SIGNAL_EL_NUM_EN
+     * Array index: 23  GPIO_SIGNAL_EL_NUM_EN
      */
     { GPIO_INVALID_PORT,    27, GPIO_GDIR_OUTPUT,   GPIO_DATA_LOW },
 
@@ -344,7 +372,7 @@ struct gpio_signal_settings initial_gpio_settings[MAX_GPIO_SIGNAL] = {
      * SCM-A11 Reference P3A Wingboard Signal: EL_EN (Backlight)
      * Selected Primary Function: GP_SP_A29 (Output)
      *
-     * Array index: 23  GPIO_SIGNAL_EL_NAV_EN
+     * Array index: 24  GPIO_SIGNAL_EL_NAV_EN
      */
     { GPIO_INVALID_PORT,    29, GPIO_GDIR_OUTPUT,   GPIO_DATA_LOW },
 
@@ -356,7 +384,7 @@ struct gpio_signal_settings initial_gpio_settings[MAX_GPIO_SIGNAL] = {
      * SCM-A11 Reference P2B Wingboard Signal: WLAN_RESET (WLAN)
      * Selected Primary Function: GP_AP_C12 (Output)
      *
-     * Array index: 24   GPIO_SIGNAL_WLAN_RESET
+     * Array index: 25   GPIO_SIGNAL_WLAN_RESET
      *
      * Take WLAN out of reset. (Put to sleep by WLAN_CLIENT_WAKE_B.)
      */
@@ -370,7 +398,7 @@ struct gpio_signal_settings initial_gpio_settings[MAX_GPIO_SIGNAL] = {
      * Selected Primary Function: GP_AP_C22 (Input)
      * Selected Secondary Function: ED_INT4 (Input)
      *
-     * Array index: 25  GPIO_SIGNAL_TF_DET
+     * Array index: 26  GPIO_SIGNAL_TF_DET
      */
     { GPIO_AP_C_PORT,   22, GPIO_GDIR_INPUT,    GPIO_DATA_INVALID },
 
@@ -381,7 +409,7 @@ struct gpio_signal_settings initial_gpio_settings[MAX_GPIO_SIGNAL] = {
      * SCM-A11 Reference P2B Wingboard Signal: BT_WAKE_B (Bluetooth)
      * Selected Primary Function: GP_AP_C13 (Output)
      *
-     * Array index: 26  GPIO_SIGNAL_BT_WAKE_B
+     * Array index: 27  GPIO_SIGNAL_BT_WAKE_B
      *
      * Set low to wakeup blueooth.
      */
@@ -395,7 +423,7 @@ struct gpio_signal_settings initial_gpio_settings[MAX_GPIO_SIGNAL] = {
      * Selected Primary Function: GP_AP_C19 (Input)
      * Selected Secondary Function: ED_INT1 (Input)
      *
-     * Array index: 27  GPIO_SIGNAL_BT_HOST_WAKE_B
+     * Array index: 28  GPIO_SIGNAL_BT_HOST_WAKE_B
      *
      * Host wake interrupt from bluetooth controller.
      */
@@ -410,7 +438,7 @@ struct gpio_signal_settings initial_gpio_settings[MAX_GPIO_SIGNAL] = {
      *                                           (Linear Vibrator)
      * Selected Primary Function: GP_SP_A2 (Output)
      *
-     * Array index: 28  GPIO_SIGNAL_LIN_VIB_AMP_EN
+     * Array index: 29  GPIO_SIGNAL_LIN_VIB_AMP_EN
      *
      * Set high to enable vibrator.
      */
@@ -423,7 +451,7 @@ struct gpio_signal_settings initial_gpio_settings[MAX_GPIO_SIGNAL] = {
      * Selected Primary Function: GP_AP_C18 (Input)
      * Selected Secondary Function: ED_INT0 (Input)
      *
-     * Array index: 29  GPIO_SIGNAL_WLAN_HOST_WAKE_B
+     * Array index: 30  GPIO_SIGNAL_WLAN_HOST_WAKE_B
      */
     { GPIO_AP_C_PORT,   18, GPIO_GDIR_INPUT,    GPIO_DATA_INVALID },
 
@@ -435,7 +463,7 @@ struct gpio_signal_settings initial_gpio_settings[MAX_GPIO_SIGNAL] = {
      * SCM-A11 Reference P3A Wingboard Signal: EL_EN (Backlight)
      * Selected Primary Function: GP_SP_A29 (Output)
      *
-     * Array index: 30  GPIO_SIGNAL_EL_EN
+     * Array index: 31  GPIO_SIGNAL_EL_EN
      */
     { GPIO_SP_A_PORT,       29, GPIO_GDIR_OUTPUT,   GPIO_DATA_LOW },
 
@@ -448,7 +476,7 @@ struct gpio_signal_settings initial_gpio_settings[MAX_GPIO_SIGNAL] = {
      * SCM-A11 Reference P3A Wingboard Signal: FM_RESET (FM Radio)
      * Selected Primary Function: GP_SP_A9 (Output)
      *
-     * Array index: 31  GPIO_SIGNAL_FM_RESET
+     * Array index: 32  GPIO_SIGNAL_FM_RESET
      */
     { GPIO_SP_A_PORT,        9, GPIO_GDIR_OUTPUT,   GPIO_DATA_LOW },
 
@@ -460,7 +488,7 @@ struct gpio_signal_settings initial_gpio_settings[MAX_GPIO_SIGNAL] = {
      * SCM-A11 Reference P3A Wingboard Signal: FM_INTERRUPT (FM Radio)
      * Selected Primary Function: GP_AP_C11 (Input)
      *
-     * Array index: 32  GPIO_SIGNAL_FM_INTERRUPT
+     * Array index: 33  GPIO_SIGNAL_FM_INTERRUPT
      */
     { GPIO_AP_C_PORT,       11, GPIO_GDIR_INPUT,    GPIO_DATA_INVALID },
 
@@ -473,7 +501,7 @@ struct gpio_signal_settings initial_gpio_settings[MAX_GPIO_SIGNAL] = {
      * SCM-A11 Reference P3C Wingboard Signal: TNLC_KCHG_INT (Morphing)
      * Selected Primary Function: GP_SP_A12 (Output)
      *
-     * Array index: 33  GPIO_SIGNAL_TNLC_KCHG_INT
+     * Array index: 34  GPIO_SIGNAL_TNLC_KCHG_INT
      */
     { GPIO_SP_A_PORT,       12, GPIO_GDIR_INPUT,    GPIO_DATA_INVALID },
 
@@ -486,7 +514,7 @@ struct gpio_signal_settings initial_gpio_settings[MAX_GPIO_SIGNAL] = {
      *                                                  (Morphing)
      * Selected Primary Function: GP_SP_A31 (Output)
      *
-     * Array index: 34  GPIO_SIGNAL_TNLC_RESET
+     * Array index: 35  GPIO_SIGNAL_TNLC_RESET
      */
     { GPIO_INVALID_PORT,    31, GPIO_GDIR_OUTPUT,   GPIO_DATA_LOW },
 
@@ -498,7 +526,7 @@ struct gpio_signal_settings initial_gpio_settings[MAX_GPIO_SIGNAL] = {
      * SCM-A11 Reference P3A Wingboard Signal: UH2_RXDM (RESET) (Morphing)
      * Selected Primary Function: GP_SP_A15 (Output)
      * 
-     * Array index: 35  GPIO_SIGNAL_CAP_RESET
+     * Array index: 36  GPIO_SIGNAL_CAP_RESET
      */
     { GPIO_SP_A_PORT,       15, GPIO_GDIR_OUTPUT,   GPIO_DATA_LOW },
 
@@ -511,7 +539,7 @@ struct gpio_signal_settings initial_gpio_settings[MAX_GPIO_SIGNAL] = {
      * SCM-A11 Reference P3C Wingboard Signal: TNLC_RCHG (Morphing)
      * Selected Primary Function: GP_SP_A8 (Output)
      *
-     * Array index: 36  GPIO_SIGNAL_TNLC_RCHG
+     * Array index: 37  GPIO_SIGNAL_TNLC_RCHG
      */
     { GPIO_SP_A_PORT,        8, GPIO_GDIR_INPUT,    GPIO_DATA_INVALID },
 
@@ -525,7 +553,7 @@ struct gpio_signal_settings initial_gpio_settings[MAX_GPIO_SIGNAL] = {
      * internal pull downs, so drive BT pins low when inactive to decrease
      * current drain.
      *
-     * Array index: 37  GPIO_SIGNAL_U1_TXD
+     * Array index: 38  GPIO_SIGNAL_U1_TXD
      */
     { GPIO_AP_A_PORT,        7, GPIO_GDIR_OUTPUT,   GPIO_DATA_LOW },
 
@@ -539,7 +567,7 @@ struct gpio_signal_settings initial_gpio_settings[MAX_GPIO_SIGNAL] = {
      * internal pull downs, so drive BT pins low when inactive to decrease
      * current drain.
      *
-     * Array index: 38  GPIO_SIGNAL_U1_CTS_B
+     * Array index: 39  GPIO_SIGNAL_U1_CTS_B
      */
     { GPIO_AP_A_PORT,       10, GPIO_GDIR_OUTPUT,   GPIO_DATA_LOW },
 
@@ -551,7 +579,7 @@ struct gpio_signal_settings initial_gpio_settings[MAX_GPIO_SIGNAL] = {
      *                                          (WLAN)/UI_IC_DBG (Morphing)
      * Selected Primary Function: GP_SP_A3 (Output)
      *
-     * Array index: 39  GPIO_SIGNAL_UI_IC_DBG
+     * Array index: 40  GPIO_SIGNAL_UI_IC_DBG
      */
     { GPIO_INVALID_PORT,     3, GPIO_GDIR_OUTPUT,   GPIO_DATA_HIGH },
     
@@ -565,7 +593,7 @@ struct gpio_signal_settings initial_gpio_settings[MAX_GPIO_SIGNAL] = {
      * SCM-A11 Reference P3C Wingboard Signal: FSS_HYST (Morphing)
      * Selected Primary Function: GP_SP_A31 (Output)
      *
-     * Array index: 40  GPIO_SIGNAL_FSS_HYST
+     * Array index: 41  GPIO_SIGNAL_FSS_HYST
      */
     { GPIO_SP_A_PORT,   31, GPIO_GDIR_OUTPUT,   GPIO_DATA_HIGH },
 
@@ -575,7 +603,7 @@ struct gpio_signal_settings initial_gpio_settings[MAX_GPIO_SIGNAL] = {
      * SCM-A11 Reference P3C Signal: GPIO_SER_RST_B (Display)
      * Selected Primary Function: GP_AP_B1 (Output)
      *
-     * Array index: 41  GPIO_SIGNAL_SER_RST_B
+     * Array index: 42  GPIO_SIGNAL_SER_RST_B
      *
      * Low means serializer is in reset.
      */
@@ -722,6 +750,7 @@ void __init scma11ref_iomux_mux_fixup(void)
 {
     /*
      * SCM-A11 Package Pin Name: IPU_D3_SPL
+     * SCM-A11 Reference P1A Wingboard Signal: GPIO_MAIN_BKL (Backlight)
      * SCM-A11 Reference P1D Wingboard Signal: GPIO_MAIN_BKL (Backlight)
      * Selected Primary Function: GP_AP_A30 (Output)
      *
@@ -747,6 +776,174 @@ void __init scma11ref_iomux_mux_fixup(void)
 
 #ifdef CONFIG_MOT_FEAT_BRDREV
 /**
+ * Adjust GPIO settings to reflect those needed to support P0C+ and
+ * earlier wingboards.
+ */
+void __init gpio_signal_fixup_p0c(void)
+{
+    /*
+     * SCM-A11 Package Pin Name: GP_AP_B17
+     * SCM-A11 Reference P1A Wingboard Signal: PWM_BKL (Backlight)
+     * SCM-A11 Reference P1D Wingboard Signal: PWM_BKL (Backlight)
+     * Selected Primary Function: GP_AP_B17 (Output)
+     */
+    initial_gpio_settings[GPIO_SIGNAL_PWM_BKL].port     = GPIO_AP_B_PORT;
+    initial_gpio_settings[GPIO_SIGNAL_PWM_BKL].sig_no   = 17;
+    initial_gpio_settings[GPIO_SIGNAL_PWM_BKL].out      = GPIO_GDIR_OUTPUT;
+    initial_gpio_settings[GPIO_SIGNAL_PWM_BKL].data     = GPIO_DATA_INVALID;
+
+    /*
+     * SCM-A11 Package Pin Name: U2_DTR_B
+     * SCM-A11 Reference P1A Wingboard Signal: DAI_RX (Misc)
+     * SCM-A11 Reference P1D Wingboard Signal: DAI_RX (Misc)
+     * Selected Primary Function: AD4_RXD (Input)
+     *
+     * This must be IOMUXed to GPIO mode before turning on the display. See
+     * the function iomux_setting_fixup_p0c().
+     */
+    initial_gpio_settings[GPIO_SIGNAL_DISP_SD].port     = GPIO_AP_C_PORT;
+    initial_gpio_settings[GPIO_SIGNAL_DISP_SD].sig_no   = 29;
+    initial_gpio_settings[GPIO_SIGNAL_DISP_SD].out      = GPIO_GDIR_OUTPUT;
+    initial_gpio_settings[GPIO_SIGNAL_DISP_SD].data     = GPIO_DATA_INVALID;
+}
+
+
+/**
+ * Adjust the GPIO settings to reflect the P1 series of wing boards.
+ */
+void __init gpio_signal_fixup_p1a(void)
+{
+    /* revert to P2A wingboard state first */
+    gpio_signal_fixup_p2aw();
+    
+    /*
+     * SCM-A11 Package Pin Name: UH2_SUSPEND
+     * SCM-A11 Reference P1A Wingboard Signal: CAM_TORCH_EN (Camera Flash)
+     * SCM-A11 Reference P1D Wingboard Signal: CAM_TORCH_EN (Camera Flash)
+     * SCM-A11 Reference P2B Wingboard Signal: LIN_VIB_AMP_EN (Linear Vibrator)
+     * Selected Primary Function: GP_SP_A10 (Output)
+     */
+    initial_gpio_settings[GPIO_SIGNAL_LIN_VIB_AMP_EN].port  = GPIO_INVALID_PORT;
+    
+    /*
+     * SCM-A11 Package Pin Name: UH2_TXOE_B
+     * SCM-A11 Reference P1A Wingboard Signal: GPS_RESET (GPS)
+     * SCM-A11 Reference P1D Wingboard Signal: GPS_RESET (GPS)
+     * SCM-A11 Reference P2B Wingboard Signal: NC (NC)
+     * Selected Primary Function: GP_SP_A8 (Output)
+     *
+     * Power off GPS at boot to prevent conflict with UART3.
+     */
+    initial_gpio_settings[GPIO_SIGNAL_GPS_RESET].port   = GPIO_SP_A_PORT;
+    initial_gpio_settings[GPIO_SIGNAL_GPS_RESET].sig_no = 8;
+    initial_gpio_settings[GPIO_SIGNAL_GPS_RESET].out    = GPIO_GDIR_OUTPUT;
+    initial_gpio_settings[GPIO_SIGNAL_GPS_RESET].data   = GPIO_DATA_LOW;
+    
+    /*
+     * SCM-A11 Package Pin Name: GP_AP_C8
+     * SCM-A11 Reference P1A Wingboard Signal: BT_RESET_B (Bluetooth)
+     * SCM-A11 Reference P1D Wingboard Signal: BT_RESET_B (Bluetooth)
+     * SCM-A11 Reference P2B Wingboard Signal: BT_RESET_B (Bluetooth)
+     * Selected Primary Function: GP_AP_C8 (Output)
+     *
+     * Bring Bluetooth out of reset at boot. Power it down using BT_REG_CTL
+     * signal (GPIO_SIGNAL_BT_POWER).
+     */
+    initial_gpio_settings[GPIO_SIGNAL_BT_RESET_B].port   = GPIO_AP_C_PORT;
+    initial_gpio_settings[GPIO_SIGNAL_BT_RESET_B].sig_no = 8;
+    initial_gpio_settings[GPIO_SIGNAL_BT_RESET_B].out    = GPIO_GDIR_OUTPUT;
+    initial_gpio_settings[GPIO_SIGNAL_BT_RESET_B].data   = GPIO_DATA_HIGH;
+
+    /*
+     * SCM-A11 Package Pin Name: GP_AP_C12
+     * SCM-A11 Reference P1A Wingboard Signal: BT_REG_CTL (Bluetooth)
+     * SCM-A11 Reference P1D Wingboard Signal: BT_REG_CTL (Bluetooth)
+     * SCM-A11 Reference P2A Wingboard Signal: NC (NC)
+     * SCM-A11 Reference P2B Wingboard Signal: WLAN_RESET (WLAN)
+     * Selected Primary Function: GP_AP_C12 (Output)
+     *
+     * Power off Bluetooth at boot.
+     */
+    initial_gpio_settings[GPIO_SIGNAL_BT_POWER].port   = GPIO_AP_C_PORT;
+    initial_gpio_settings[GPIO_SIGNAL_BT_POWER].sig_no = 12;
+    initial_gpio_settings[GPIO_SIGNAL_BT_POWER].out    = GPIO_GDIR_OUTPUT;
+    initial_gpio_settings[GPIO_SIGNAL_BT_POWER].data   = GPIO_DATA_LOW;
+
+    /*
+     * SCM-A11 Package Pin Name: UH2_RXDP
+     * SCM-A11 Reference P1A Wingboard Signal: WLAN_CLIENT_WAKE_B (WLAN)
+     * SCM-A11 Reference P1D Wingboard Signal: WLAN_CLIENT_WAKE_B (WLAN)
+     * SCM-A11 Reference P2B Wingboard Signal: UH2_RXDP (Saipan Connector)
+     * Selected Primary Function: GP_SP_A12 (Output)
+     *
+     * Power off WLAN at boot.
+     */
+    initial_gpio_settings[GPIO_SIGNAL_WLAN_CLIENT_WAKE_B].port
+        = GPIO_SP_A_PORT;
+    initial_gpio_settings[GPIO_SIGNAL_WLAN_CLIENT_WAKE_B].sig_no = 12;
+    initial_gpio_settings[GPIO_SIGNAL_WLAN_CLIENT_WAKE_B].out
+        = GPIO_GDIR_OUTPUT;
+    initial_gpio_settings[GPIO_SIGNAL_WLAN_CLIENT_WAKE_B].data
+        = GPIO_DATA_HIGH;
+
+    /*
+     * SCM-A11 Package Pin Name: UH2_SUSPEND
+     * SCM-A11 Reference P1A Wingboard Signal: CAM_TORCH_EN (Camera Flash)
+     * SCM-A11 Reference P1D Wingboard Signal: CAM_TORCH_EN (Camera Flash)
+     * SCM-A11 Reference P2B Wingboard Signal: LIN_VIB_AMP_EN (Linear Vibrator)
+     * Selected Primary Function: GP_SP_A10 (Output)
+     */
+    initial_gpio_settings[GPIO_SIGNAL_CAM_TORCH_EN].port   = GPIO_SP_A_PORT;
+    initial_gpio_settings[GPIO_SIGNAL_CAM_TORCH_EN].sig_no = 10;
+    initial_gpio_settings[GPIO_SIGNAL_CAM_TORCH_EN].out    = GPIO_GDIR_OUTPUT;
+    initial_gpio_settings[GPIO_SIGNAL_CAM_TORCH_EN].data   = GPIO_DATA_LOW;
+
+    /*
+     * SCM-A11 Package Pin Name: UH2_PWR
+     * SCM-A11 Reference P1A Wingboard Signal: WLAN_PWR_DWN_B (WLAN)
+     * SCM-A11 Reference P1D Wingboard Signal: WLAN_PWR_DWN_B (WLAN)
+     * SCM-A11 Reference P2B Wingboard Signal: UH2_PWR (Saipan Connector)
+     * Selected Primary Function: GP_SP_A15 (Output)
+     */
+    initial_gpio_settings[GPIO_SIGNAL_WLAN_PWR_DWN_B].port   = GPIO_SP_A_PORT;
+    initial_gpio_settings[GPIO_SIGNAL_WLAN_PWR_DWN_B].sig_no = 15;
+    initial_gpio_settings[GPIO_SIGNAL_WLAN_PWR_DWN_B].out    = GPIO_GDIR_INPUT;
+    initial_gpio_settings[GPIO_SIGNAL_WLAN_PWR_DWN_B].data
+        = GPIO_DATA_INVALID;
+
+    /*
+     * SCM-A11 Package Pin Name: SPI1_CLK
+     * SCM-A11 Reference P1A Wingboard Signal: NC (NC)
+     * SCM-A11 Reference P1D Wingboard Signal: NC (NC)
+     * SCM-A11 Reference P2B Wingboard Signal: EL_NUM_EN (Backlight)
+     * SCM-A11 Reference P3A Wingboard Signal: NC (NC)
+     * Selected Primary Function: GP_SP_A27 (Output)
+     */
+    initial_gpio_settings[GPIO_SIGNAL_EL_NUM_EN].port = GPIO_INVALID_PORT;
+
+    /*
+     * SCM-A11 Package Pin Name: SPI1_MISO
+     * SCM-A11 Reference P1A Wingboard Signal: NC (NC)
+     * SCM-A11 Reference P1D Wingboard Signal: NC (NC)
+     * SCM-A11 Reference P2B Wingboard Signal: SPI1_MISO (Backlight)
+     * SCM-A11 Reference P3A Wingboard Signal: EL_EN (Backlight)
+     * Selected Primary Function: GP_SP_A29 (Output)
+     */
+    initial_gpio_settings[GPIO_SIGNAL_EL_NAV_EN].port = GPIO_INVALID_PORT;
+
+    /*
+     * SCM-A11 Package Pin Name: UH2_SPEED
+     * SCM-A11 Reference P1A Wingboard Signal: WLAN_RESET (WLAN)
+     * SCM-A11 Reference P1D Wingboard Signal: WLAN_RESET (WLAN)
+     * SCM-A11 Reference P2A Wingboard Signal: WLAN_RESET (WLAN)
+     * SCM-A11 Reference P2B Wingboard Signal: VFUSE_SELECT (Misc)
+     * Selected Primary Function: GP_SP_A9 (Output)
+     */
+    initial_gpio_settings[GPIO_SIGNAL_WLAN_RESET].port   = GPIO_SP_A_PORT;
+    initial_gpio_settings[GPIO_SIGNAL_WLAN_RESET].sig_no = 9;
+    initial_gpio_settings[GPIO_SIGNAL_WLAN_RESET].out    = GPIO_GDIR_OUTPUT;
+    initial_gpio_settings[GPIO_SIGNAL_WLAN_RESET].data   = GPIO_DATA_LOW;
+}
  * Adjust GPIO settings to reflect P3A Wingboard configuration.
  */
 void __init gpio_signal_fixup_p3aw(void)
@@ -906,5 +1103,43 @@ void __init gpio_signal_fixup_p2aw(void)
     initial_gpio_settings[GPIO_SIGNAL_WLAN_RESET].sig_no = 9;
     initial_gpio_settings[GPIO_SIGNAL_WLAN_RESET].out    = GPIO_GDIR_OUTPUT;
     initial_gpio_settings[GPIO_SIGNAL_WLAN_RESET].data   = GPIO_DATA_LOW;
+}
+
+/**
+ * Adjust IOMUX settings to reflect those needed to support P0C+ and
+ * earlier wingboards.
+ */
+void __init iomux_setting_fixup_p0c(void)
+{
+    /*
+     * SCM-A11 Package Pin Name: GP_AP_B17
+     * SCM-A11 Reference P1A Wingboard Signal: PWM_BKL (Backlight)
+     * SCM-A11 Reference P1D Wingboard Signal: PWM_BKL (Backlight)
+     * SCM-A11 Reference P2A Wingboard Signal: PWM_BKL (Linear Vibrator)
+     * SCM-A11 Reference P2B Wingboard Signal: PWM_BKL (Linear Vibrator)
+     * Selected Primary Function: GP_AP_B17 (Output)
+     */
+    iomux_config_mux(AP_GPIO_AP_B17, OUTPUTCONFIG_DEFAULT, INPUTCONFIG_NONE);
+
+    
+    /*
+     * SCM-A11 Package Pin Name: U2_DTR_B
+     * SCM-A11 Reference P1A Wingboard Signal: DAI_RX (Misc)
+     * SCM-A11 Reference P1D Wingboard Signal: DAI_RX (Misc)
+     * Selected Primary Function: GP_AP_C29 (Output)
+     */
+    iomux_config_mux(AP_U2_DTR_B, OUTPUTCONFIG_DEFAULT, INPUTCONFIG_NONE);
+
+
+    /*
+     * SPI1 IO/Pads are shared between UART1 and SPI1, we must adjust the
+     * IOMUX settings for the SPI1 pins so as not to interfere with UART1.
+     *
+     * This only applies to P0 wingboards.
+     */
+    iomux_config_mux(SP_SPI1_SS0, OUTPUTCONFIG_DEFAULT, INPUTCONFIG_NONE);
+    iomux_config_mux(SP_SPI1_MISO, OUTPUTCONFIG_DEFAULT, INPUTCONFIG_NONE);
+    iomux_config_mux(SP_SPI1_MOSI, OUTPUTCONFIG_DEFAULT, INPUTCONFIG_NONE);
+    iomux_config_mux(SP_SPI1_CLK, OUTPUTCONFIG_DEFAULT, INPUTCONFIG_NONE);
 }
 #endif /* CONFIG_MOT_FEAT_BRDREV */

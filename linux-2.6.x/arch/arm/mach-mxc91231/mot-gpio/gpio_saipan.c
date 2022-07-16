@@ -22,6 +22,7 @@
  * ===========  ==============  ==============================================
  * 04-Oct-2006  Motorola        Initial revision.
  * 13-Nov-2006  Motorola        Change pad group 25 settings.
+ * 16-Nov-2006  Motorola        Updated LCD serializer reset and stby functions
  * 26-Jan-2007  Motorola        Bluetooth current drain improvements.
  * 02-Apr-2007  Motorola        Pad group 10 changed to 6.
  */

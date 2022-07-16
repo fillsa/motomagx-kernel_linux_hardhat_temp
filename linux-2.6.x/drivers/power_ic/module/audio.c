@@ -134,7 +134,7 @@ unsigned int power_ic_audio_set_reg_rx0_data = 0;
 ==================================================================================================*/
 #ifndef DOXYGEN_SHOULD_SKIP_THIS
 EXPORT_SYMBOL(power_ic_audio_conn_mode_set);
-#ifdef CONFIG_CERAMICSPEAKER
+#if defined(CONFIG_CERAMICSPEAKER) || defined(CONFIG_MACH_SAIPAN)
 EXPORT_SYMBOL(power_ic_audio_ceramic_speaker_en);
 #endif
 EXPORT_SYMBOL(power_ic_audio_set_reg_mask_audio_rx_0);
@@ -261,7 +261,7 @@ int power_ic_audio_ceramic_speaker_en(bool en_val)
     int reg_val;
 
     /* Enable or disable the ceramic speaker bit(s). */
-    reg_val = (en_val) ? CERAMIC_SPEAKER_ENABLE : CERAMIC_SPEAKER_DISABLE;
+    reg_val &= (en_val) ? CERAMIC_SPEAKER_ENABLE : CERAMIC_SPEAKER_DISABLE;
 
     /* Write the new register value, and save pass/fail to reg_val. */
     reg_val = power_ic_set_reg_mask(POWER_IC_REG_ATLAS_PWR_MISC, CERAMIC_SPEAKER_ENABLE, reg_val);

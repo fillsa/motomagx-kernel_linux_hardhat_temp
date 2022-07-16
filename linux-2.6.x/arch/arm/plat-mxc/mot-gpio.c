@@ -21,6 +21,7 @@
 /* Date         Author          Comment
  * ===========  ==============  ==============================================
  * 04-Oct-2006  Motorola        Initial revision.
+ * 10-Nov-2006  Motorola        Update high speed USB API.
  * 30-Nov-2006  Motorola        remove exported gpio_sensor_active
  *                              and gpio_sensor_inactive interface
  * 06-Dec-2006  Motorola        Added etm_enable_trigger_clock export.

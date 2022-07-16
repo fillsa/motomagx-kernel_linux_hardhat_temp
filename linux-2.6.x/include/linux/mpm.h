@@ -29,6 +29,7 @@
  * 01/28/2007  Motorola  Add long IOI timeout API for SD Card
  * 02/06/2007  Motorola  Resolve race condition in DSM.
  * 04/12/2007  Motorola  Check in idle for busy drivers/modules.
+ * 06/07/2007  Motorola  Add notifier for flip and key events.
  * 03/31/2008  Motorola  Add function declaration of mpm_set_awake_state.
  */
 
@@ -39,6 +40,7 @@
  * ioctl operations
  */
 #include <linux/ioctl.h>
+#include <linux/notifier.h>
 #include <asm/types.h>
 
 #define MPM_MS_PER_SECOND       (1000)
@@ -518,6 +520,8 @@ struct mpm_callback_fns
     mpm_test_callback_t report_test_point;
 #endif
 };
+
+extern struct notifier_block *mpm_flipkey_notifier_list;
 
 extern int mpm_queue_empty(void);
 extern void mpm_get_queued_event(mpm_event_t *);

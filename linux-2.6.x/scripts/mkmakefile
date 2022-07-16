@@ -1,10 +1,12 @@
 #!/bin/sh
 
-# Copyright (C) 2007 Motorola, Inc.
+# Copyright (C) 2006-2007 Motorola, Inc.
 
 # Change Log:
 # Date         Author          Comment 
 # ===========  ==============  ==============================================
+# 10/13/2006   Motorola        Changed to interact with clearmake build system
+# 11/28/2006   Motorola        Changed to use saved toolprefix
 # 03/08/2007   Motorola        Changed to interact with clearmake build system
 # 03/08/2007   Motorola        Changed to use saved toolprefix
 

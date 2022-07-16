@@ -26,6 +26,8 @@ Motorola            11/16/2005     Momentarily disable both CSI
                                    and IC when reconfiguring CSI
                                    parameters.
 Motorola            06/09/2006     Upmerge to MV 05/12/2006
+Motorola            10/11/2006     Change camera clk src to PLL0
+Motorola            02/20/2007     Desense improvements
 Motorola            09/04/2008     Export CSI position and size functions
 */
 

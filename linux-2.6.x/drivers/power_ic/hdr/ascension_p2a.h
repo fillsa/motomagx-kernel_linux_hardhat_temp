@@ -16,6 +16,7 @@
  * 02111-1307, USA
  *
  * Motorola 2007-Apr-23 - Remove Power Control 1 initialization. 
+ * Motorola 2007-Mar-19 - Remove Charger0 initialization
  * Motorola 2007-Jan-08 - Updated copyright
  * Motorola 2006-Nov-09 - Remove LED initialization
  * Motorola 2006-Oct-09 - Update File
@@ -53,6 +54,7 @@
     {POWER_IC_REG_ATLAS_ARB_REG_0,         0x0000000},
     {POWER_IC_REG_ATLAS_ARB_REG_1,         0x0000000},
     {POWER_IC_REG_ATLAS_PWR_CONTROL_0,     0x0CA0E43},
+//2007-Apr-23 - Remove Power Control 1 initialization    {POWER_IC_REG_ATLAS_PWR_CONTROL_1,     0x000A005},
     {POWER_IC_REG_ATLAS_PWR_CONTROL_2,     0x0000000},
 
     {POWER_IC_REG_ATLAS_REGEN_ASSIGN,      0x0800000},
@@ -67,6 +69,11 @@
     {POWER_IC_REG_ATLAS_REG_SET_1,         0x0000FFC},
     {POWER_IC_REG_ATLAS_REG_MODE_0,        0x0E3F1FF},
 
+/*2006-Sep-13 - Moved Lido/Saipan support
+#ifdef CONFIG_MACH_LIDO || defined(CONFIG_MACH_SAIPAN)
+    {POWER_IC_REG_ATLAS_REG_MODE_1,        0x0E3F001},
+#else
+*/
     {POWER_IC_REG_ATLAS_REG_MODE_1,        0x0E3F039},
     {POWER_IC_REG_ATLAS_PWR_MISC,          0x0000000},
     {POWER_IC_REG_ATLAS_AUDIO_RX_0,        0x0003000},
@@ -81,6 +88,14 @@
 
     {POWER_IC_REG_ATLAS_USB_0,             0x0000060},
     {POWER_IC_REG_ATLAS_CHARGE_USB_1,      0x000000E}
+/*2006-Nov-09 - Remove LED initialization},
+    {POWER_IC_REG_ATLAS_LED_CONTROL_0,     0x0000001},
+    {POWER_IC_REG_ATLAS_LED_CONTROL_1,     0x0040000},
+    {POWER_IC_REG_ATLAS_LED_CONTROL_2,     0x0001E07},
+
+    {POWER_IC_REG_ATLAS_LED_CONTROL_3,     0x000000A},
+    {POWER_IC_REG_ATLAS_LED_CONTROL_4,     0x000000A},
+    {POWER_IC_REG_ATLAS_LED_CONTROL_5,     0x000000A}*/
 };
 
 #endif /* __POWER_IC_ASCENSION_P2A_H__ */

@@ -687,6 +687,7 @@ void fx2lp_pcd_disable(struct pcd_instance *pcd)
 
     // reset all the structure variables and pointers. 
     fx2lp_pcd_init();
+//printk("\n LYN disable finished \n");
 }
 
 //-----------------------------------------------------------------------------------
@@ -1719,12 +1720,12 @@ int fx2lp_pcd_mod_init_l26(void)
     }
     // wakeup the chip.. Check if this is working. Currently we use a non sleeping firmware.
     TRACE_MSG2(PCD,"Pulling the wakeup HIGH in %s at %d ", __FUNCTION__, __LINE__);
-    //printk("Pulling the wakeup HIGH in %s at %d ", __FUNCTION__, __LINE__);
+//	printk("Pulling the wakeup HIGH in %s at %d ", __FUNCTION__, __LINE__);
 
     gpio_usb_hs_wakeup_set_data(GPIO_HIGH);
     
     TRACE_MSG2(PCD,"Pulling the wakeup LOW in %s at %d ", __FUNCTION__, __LINE__);
-    //printk("Pulling the wakeup LOW in %s at %d ", __FUNCTION__, __LINE__);
+//	printk("Pulling the wakeup LOW in %s at %d ", __FUNCTION__, __LINE__);
     gpio_usb_hs_wakeup_set_data(GPIO_LOW); 
 
 #ifdef CONFIG_OTG_GENERIC_HOTPLUG
@@ -1759,7 +1760,7 @@ int fx2lp_pcd_mod_init_l26(void)
           else
           {
             TRACE_MSG0(PCD, "READY INTERRUPT GENERATED\n");
-            //printk("\n READY INTERRUPT GENERATED %s:%d \n ", __FUNCTION__, __LINE__);
+//			printk("\n READY INTERRUPT GENERATED %s:%d \n ", __FUNCTION__, __LINE__);
 
 
           }

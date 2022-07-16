@@ -552,7 +552,7 @@ int power_ic_write_reg_sec(POWER_IC_REGISTER_T reg,
     }
     else
     {
-        printk("POWER_IC: register number or value is invalid: reg=%d, reg_value=%d\n",
+        printk("POWER_IC: Atlas register number or value is invalid: reg=%d, reg_value=%d\n",
                reg,
                (unsigned int) reg_value);
         retval = -EINVAL;

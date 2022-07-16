@@ -19,6 +19,7 @@
  * Motorola 2008-Feb-18 - Support for external audio amplifier
  * Motorola 2008-Jan-29 - Added function to set morphing mode.
  * Motorola 2007-Jul-05 - Remove external access functions which toggle atod channel.
+ * Motorola 2007-May-31 - Add support for ring and vibrate PWM vibration.
  * Motorola 2007-May-08 - Add turbo indicator functions.
  * Motorola 2007-Mar-21 - Handle power cut.
  * Motorola 2007-Feb-14 - Removed old functions
@@ -213,11 +214,15 @@ void moto_accy_set_accessory_power (MOTO_ACCY_TYPE_T device, int on_off);
 /* @{ */
 int power_ic_atod_single_channel(POWER_IC_ATOD_CHANNEL_T channel, int * result);
 int power_ic_atod_general_conversion(POWER_IC_ATOD_RESULT_GENERAL_CONVERSION_T * result);
-/*Remove 2008-Feb-20 int power_ic_atod_current_and_batt_conversion(POWER_IC_ATOD_TIMING_T timing,
+#if defined(CONFIG_MACH_ASCENSION) || defined(CONFIG_MACH_LIDO) || defined(CONFIG_MACH_SAIPAN)
+//remove in LJ6.3  //remove 2008-Feb-20
+int power_ic_atod_current_and_batt_conversion(POWER_IC_ATOD_TIMING_T timing,
                                               int timeout_secs,
                                               POWER_IC_ATOD_CURR_POLARITY_T polarity,
                                               int * batt_result, int * curr_result);
-*/
+int power_ic_atod_set_therm(int on);
+int power_ic_atod_set_lithium_coin_cell_en(int value);
+#endif
 int power_ic_atod_raw_conversion(POWER_IC_ATOD_CHANNEL_T channel, int * samples, int * length);
 /* @} End of kernel atod functions -------------------------------------------------------------- */
 
@@ -377,6 +382,7 @@ int power_ic_periph_is_usb_pull_up_enabled (void);
 void power_ic_periph_set_usb_pull_up (int on);
 int power_ic_periph_set_sim_voltage(unsigned char sim_card_num, POWER_IC_SIM_VOLTAGE_T volt);
 int power_ic_periph_set_camera_on(int on);
+int power_ic_periph_set_ring_and_vib(int on);
 /* @} End of kernel peripheral functions -------------------------------------------------------- */
 
 /*!

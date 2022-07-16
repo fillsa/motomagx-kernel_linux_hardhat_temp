@@ -13,6 +13,7 @@
  *
  * Date     Author    Comment
  * 10/2006  Motorola  Added support to panel_info for the HVGA display driver.
+ * 02/2007  Motorola  Added ESD counter timeout 
  * 04/2007  Motorola  Removed support for the HVGA driver
  */
 
@@ -96,6 +97,10 @@ struct mxcfb_color_key {
 
 #include "../drivers/mxc/ipu/ipu.h"
 
+#if defined(CONFIG_MOT_FEAT_LCD_ESD_RECOVERY)
+/* esd_delay = ms * HZ / 1000 */
+#define esd_delay (5000 * HZ / 1000) 
+#endif
 enum {
 	MXCFB_REFRESH_OFF,
 	MXCFB_REFRESH_AUTO,
@@ -115,6 +120,12 @@ int mxcfb_set_refresh_mode(struct fb_info *fbi, int mode,
 struct panel_info {
 	char *name;
 	ipu_panel_t type;
+#if defined(CONFIG_FB_MXC_HVGA_PANEL)
+        int refresh_rate;
+        int top_offset;
+        int left_offset;
+        int middle_porch_lines;
+#endif
 	uint32_t pixel_fmt;
 	int width;
 	int height;

@@ -60,7 +60,7 @@
 
 #if defined(CONFIG_MACH_I30030EVB) || defined(CONFIG_MACH_I30030ADS) || \
     defined(CONFIG_MACH_MXC30030EVB) || defined(CONFIG_MACH_MXC30030ADS) ||  \
-    defined(CONFIG_MACH_ARGONLVPHONE)
+    defined(CONFIG_MACH_ARGONLVPHONE) /*  defined(CONFIG_MACH_ARGONLVREF)*/
 #define ZGPIO_PORT 0
 #define ZGPIO_PIN  2
 #endif              /* defined(CONFIG_MACH_I30030EVB) */
@@ -137,9 +137,9 @@ int mxc_iomux_gpio_isp1301_set (int usb_mode)
         iomux_config_mux(AP_GPIO_AP_C12, OUTPUTCONFIG_DEFAULT, INPUTCONFIG_NONE); // XXX INPUTCONFIG_DEFAULT?
         #endif /* CONFIG_MACH_MXC27530EVB */
 		
-        #ifdef CONFIG_MACH_ARGONLVPHONE
+        #ifdef CONFIG_MACH_ARGONLVPHONE /*#ifdef CONFIG_MACH_ARGONLVREF*/
         iomux_config_mux(PIN_GPIO2, OUTPUTCONFIG_FUNC, INPUTCONFIG_FUNC);
-        #endif /* CONFIG_MACH_ARGONLVPHONE */
+        #endif /* CONFIG_MACH_ARGONLVPHONE */ /* CONFIG_MACH_ARGONLVREF */
 		
         #ifdef CONFIG_MACH_MXC91131EVB
         iomux_config_mux(SPI2_SS1_PIN, MUX0_OUT, GPIO_MUX1_IN);
@@ -175,14 +175,14 @@ int mxc_iomux_gpio_isp1301_set (int usb_mode)
         #endif
         #endif /* CONFIG_ARCH_MXC91231 */
 						
-        #if defined(CONFIG_MACH_ARGONLVPHONE)
+        #if defined(CONFIG_MACH_ARGONLVPHONE) /*#if defined(CONFIG_MACH_ARGONLVREF)*/
         iomux_config_mux(PIN_USB_XRXD,  OUTPUTCONFIG_FUNC, INPUTCONFIG_FUNC);
         iomux_config_mux(PIN_USB_VMOUT, OUTPUTCONFIG_FUNC, INPUTCONFIG_FUNC);
         iomux_config_mux(PIN_USB_VPOUT, OUTPUTCONFIG_FUNC, INPUTCONFIG_FUNC);
         iomux_config_mux(PIN_USB_VPIN,  OUTPUTCONFIG_FUNC, INPUTCONFIG_FUNC);
         iomux_config_mux(PIN_USB_TXENB, OUTPUTCONFIG_FUNC, INPUTCONFIG_FUNC);
         iomux_config_mux(PIN_USB_VMIN,  OUTPUTCONFIG_FUNC, INPUTCONFIG_FUNC);
-        #endif /* CONFIG_MACH_ARGONLVPHONE */
+        #endif /* CONFIG_MACH_ARGONLVPHONE */ /* CONFIG_MACH_ARGONLVREF */
 							
 	
 	#ifdef CONFIG_ARCH_MXC91131
@@ -225,7 +225,7 @@ int mxc_iomux_gpio_mc13783_set (int usb_mode)
         iomux_config_mux(SP_USB_RXD,    OUTPUTCONFIG_FUNC1, INPUTCONFIG_FUNC1);
         #endif
 
-        #if defined(CONFIG_MACH_ARGONLVPHONE) 
+        #if defined(CONFIG_MACH_ARGONLVPHONE) /* #if defined(CONFIG_MACH_ARGONLVREF)*/
         printk(KERN_INFO"IOMUX setting for ARGONLV REF\n");
         iomux_config_mux(PIN_USB_XRXD,  OUTPUTCONFIG_FUNC, INPUTCONFIG_FUNC);
         iomux_config_mux(PIN_USB_VMOUT, OUTPUTCONFIG_FUNC, INPUTCONFIG_FUNC);
@@ -233,7 +233,7 @@ int mxc_iomux_gpio_mc13783_set (int usb_mode)
         iomux_config_mux(PIN_USB_VPIN,  OUTPUTCONFIG_FUNC, INPUTCONFIG_FUNC);
         iomux_config_mux(PIN_USB_TXENB, OUTPUTCONFIG_FUNC, INPUTCONFIG_FUNC);
         iomux_config_mux(PIN_USB_VMIN,  OUTPUTCONFIG_FUNC, INPUTCONFIG_FUNC);
-        #endif /* CONFIG_MACH_ARGONLVPHONE */
+        #endif /* CONFIG_MACH_ARGONLVPHONE */ /* CONFIG_MACH_ARGONLVREF */
 								
 	
 	return 0;
@@ -250,14 +250,14 @@ int mxc_iomux_gpio_mc13783_reset (void)
         iomux_config_mux(SP_USB_RXD,    OUTPUTCONFIG_FUNC2, INPUTCONFIG_FUNC2);
         #endif
 
-        #if defined(CONFIG_MACH_ARGONLVPHONE)
+        #if defined(CONFIG_MACH_ARGONLVPHONE) /* #if defined(CONFIG_MACH_ARGONLVREF)*/
         iomux_config_mux(PIN_USB_XRXD,  OUTPUTCONFIG_FUNC, INPUTCONFIG_FUNC);
         iomux_config_mux(PIN_USB_VMOUT, OUTPUTCONFIG_FUNC, INPUTCONFIG_FUNC);
         iomux_config_mux(PIN_USB_VPOUT, OUTPUTCONFIG_FUNC, INPUTCONFIG_FUNC);
         iomux_config_mux(PIN_USB_VPIN,  OUTPUTCONFIG_FUNC, INPUTCONFIG_FUNC);
         iomux_config_mux(PIN_USB_TXENB, OUTPUTCONFIG_FUNC, INPUTCONFIG_FUNC);
         iomux_config_mux(PIN_USB_VMIN,  OUTPUTCONFIG_FUNC, INPUTCONFIG_FUNC);
-        #endif /* CONFIG_MACH_ARGONLVPHONE */
+        #endif /* CONFIG_MACH_ARGONLVPHONE */ /* CONFIG_MACH_ARGONLVREF */
 											
 	
 	return 0;

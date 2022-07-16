@@ -15,6 +15,7 @@
  * 10/2006  Motorola  Added power-up logo support, additional pixel packing
  *                    formats, and functions for controlling the pixel clock.
  * 11/2006  Motorola  Updated ipu_enable_pixel_clock functions for ESD recovery.
+ * 01/2007  Motorola  Added routines to turn off/on SDC
  * 08/2007  Motorola  Use mdelay to replace msleep in ipu_disable_channel
  * 09/2007  Motorola  Fix problem that camera VF got tearing
  * 09/2007  Motorola  Add comments.
@@ -37,7 +38,6 @@
  * @ingroup IPU
  *
  */
-
 #include <linux/types.h>
 #include <linux/init.h>
 #include <linux/device.h>
@@ -55,7 +55,9 @@
 #include <asm/arch/board.h>
 #include "asm/arch/clock.h"
 
+#if 0 // #ifdef CONFIG_FIQ
 #define USE_FIQ_HANDLER 1
+#endif
 
 #define M3IFBASE IO_ADDRESS(M3IF_BASE_ADDR)
 
@@ -230,10 +232,13 @@ static void ipu_remove(void)
  * @return      This function returns 0 on success or negative error code on fail
  */
 
+ 
+#if 0 // #ifdef CONFIG_FIQ
 extern unsigned long ipu_reserved_buff_fiq[1201];
 extern void disable_fiq(int fiq);
 extern void enable_fiq(int fiq);
 extern int mxc_fiq_irq_switch(int vector, int irq2fiq);
+#endif
 
 int32_t ipu_init_channel(ipu_channel_t channel, ipu_channel_params_t * params)
 {
@@ -570,6 +575,7 @@ void ipu_uninit_channel(ipu_channel_t channel)
 
 static irqreturn_t ipu_4k_test_handler(int irq,void *dev_id,struct pt_regs *preg)
 {
+#if 0 // #ifdef CONFIG_FIQ
     volatile unsigned long buf_num =  ipu_reserved_buff_fiq[1200];
     volatile unsigned long reg=0;
     //disable SENSOR_EOF interrupts
@@ -623,6 +629,7 @@ static irqreturn_t ipu_4k_test_handler(int irq,void *dev_id,struct pt_regs *preg
     reg = __raw_readl(IPU_INT_CTRL_1)|(0x00000080);
     __raw_writel(reg,IPU_INT_CTRL_1);
     return IRQ_HANDLED;
+#endif
 }
 
 /*!
@@ -2140,7 +2147,7 @@ void ipu_enable_sdc(void)
  * DI_EN is 7th bit in the least-significant byte of the
  * IPU register
  * */
-void disable_ipu_pixel_clock(void)
+void disable_ipu_pixel_clock(void) //old  void ipu_disable_pixel_clock(void)
 {
     uint32_t ipu_conf;
     uint32_t lock_flags;
@@ -2151,7 +2158,7 @@ void disable_ipu_pixel_clock(void)
     spin_unlock_irqrestore(&ipu_lock, lock_flags);
 }
 
-void enable_ipu_pixel_clock(void)
+void enable_ipu_pixel_clock(void) //old void ipu_enable_pixel_clock(void)
 {
     uint32_t ipu_conf;
     uint32_t lock_flags;

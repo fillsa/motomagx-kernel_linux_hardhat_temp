@@ -19,6 +19,7 @@
 # Motorola 2006-Sep-29 - Ceramic Speaker Support
 # Motorola 2006-Aug-03 - Linear Vibrator Support
 # Motorola 2006-Jun-22 - Remove MOT_POWER_IC dependencies
+# Motorola 2006-May-12 - Add Zeus support for SD
 # Motorola 2005-Mar-25 - File re-written from scratch
 
 menu "Power IC support"
@@ -40,6 +41,18 @@ config MOT_FEAT_MAX6946
     ---help---
     This configuration enables Maxim MAX6946 LED Controller support for all platforms
 
+#
+## 2007-Feb-22 - Removed transflash driver
+#    
+#config USR_BLK_DEV
+#	tristate "SD TransFlash support"
+#	depends on MOT_POWER_IC
+#	---help---
+#	This configuration enables SD TransFlash driver support for SCM-A11 and MXC91131
+#
+# 
+# 
+  
 config MOT_FEAT_MAX7314
     tristate "Maxim MAX7314 LED Controller support"
     depends on MOT_POWER_IC

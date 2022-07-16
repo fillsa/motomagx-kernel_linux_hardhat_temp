@@ -326,7 +326,8 @@ int spi_hw_init(void)
 	spi_init_spba();
 
 	/* Setup SPI version specific defines */
-	if (machine_is_mxc27530evb() || machine_is_scma11phone()) {
+	if (machine_is_mxc27530evb() || machine_is_ascension() ) {	
+//	if (machine_is_mxc27530evb() || machine_is_scma11phone()) {
 		if (system_rev >= CHIP_REV_2_0) {
 			mxc_spi_unique_def = &spi_ver_0_7;
 		} else {
@@ -334,7 +335,8 @@ int spi_hw_init(void)
 		}
 	} else if (machine_is_mxc91131evb()) {
 		mxc_spi_unique_def = &spi_ver_0_5;
-	} else if (machine_is_mxc30030evb() || machine_is_mxc30030ads() || machine_is_argonlvphone()) {
+	} else if (machine_is_mxc30030evb() || machine_is_mxc30030ads() || machine_is_argonlvref()) {		
+//	} else if (machine_is_mxc30030evb() || machine_is_mxc30030ads() || machine_is_argonlvphone()) {
 		mxc_spi_unique_def = &spi_ver_0_7;
 	} else {
 		mxc_spi_unique_def = &spi_ver_0_4;

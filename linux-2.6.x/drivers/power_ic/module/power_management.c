@@ -17,7 +17,7 @@
  *
  * Motorola 2008-Jan-29 - Add support for xPIXL
  * Motorola 2007-Dec-06 - Support TF voltage disable for Pico. 
- * Motorola 2007-Jan-25 - Export transflash voltage interface. 
+ * Motorola 2007-Jan-25 - Export transflash voltage interface for LJ6.1. 
  * Motorola 2007-Jan-08 - Updated copyright
  * Motorola 2006-Nov-27 - Transflash voltage support for Pico.
  * Motorola 2006-Nov-10 - Add support for Marco.
@@ -113,8 +113,8 @@ EXPORT_SYMBOL(power_ic_set_transflash_voltage);
  * @note    This function does not turn supply off for Elba, Pico, or SCMA11 reference boards
  *          because the SDHC needs to be powered up for detection.
  *
- * @note    This function supports Pico, Ascension P2, Elba P0, Bute P4 and SCMA11 reference boards P2 and
- *          later.  Other platforms, products, and hardware revisions are not supported.
+ * @note    This function supports Martinique P3B, Pico, Ascension P2, Elba P0, Bute P4 and SCMA11 reference boards P2
+ *          and later.  Other platforms, products, and hardware revisions are not supported.
  */
 int power_ic_set_transflash_voltage(unsigned int millivolts)
 {
@@ -122,7 +122,8 @@ int power_ic_set_transflash_voltage(unsigned int millivolts)
 
     if (millivolts == 0)
     {
-#if defined(CONFIG_MACH_ASCENSION) || defined(CONFIG_MACH_MARCO) || defined(CONFIG_MACH_PICO) || defined(CONFIG_MACH_XPIXL)
+// может сразу поменять на #if defined(CONFIG_ARCH_MXC91231)		
+#if defined(CONFIG_MACH_ASCENSION) || defined(CONFIG_MACH_LIDO) || defined(CONFIG_MACH_MARCO) || defined(CONFIG_MACH_PICO) || defined(CONFIG_MACH_XPIXL)
         tracemsg(_k_d("power_ic_set_transflash_voltage: TransFlash powered OFF"));
         power_ic_set_reg_bit(POWER_IC_REG_ATLAS_REG_MODE_0, 12, 0);
 #elif defined(CONFIG_ARCH_MXC91321)
@@ -143,6 +144,7 @@ int power_ic_set_transflash_voltage(unsigned int millivolts)
 
     millivolts += SUPPLY_ERROR_OFFSET;
 
+// может сразу поменять на #if defined(CONFIG_ARCH_MXC91231) || defined(CONFIG_MACH_SCMA11REF)
 #if defined(CONFIG_MACH_ASCENSION) || defined(CONFIG_MACH_SCMA11REF) || defined(CONFIG_MACH_ELBA) \
     || defined(CONFIG_MACH_MARCO) || defined(CONFIG_MACH_PICO) || defined(CONFIG_MACH_XPIXL)
 # ifdef CONFIG_MACH_SCMA11REF

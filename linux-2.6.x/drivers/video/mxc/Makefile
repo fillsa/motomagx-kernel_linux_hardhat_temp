@@ -16,3 +16,4 @@ obj-$(CONFIG_FB_MXC_TVOUT)              += mxcfb_gd2.o gd2_func.o fs453.o
 else
 obj-$(CONFIG_FB_MXC_TVOUT)              += mxcfb.o fs453.o
 endif
+obj-$(CONFIG_FB_MXC_HVGA_PANEL)		+= mxcfb_hvga.o hvga_E02.o hvga_sharp.o

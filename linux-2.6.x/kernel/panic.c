@@ -10,6 +10,7 @@
  * 				of power_ic.h
  * 11/2006      Motorola        Changed timestamp to use secure clock
  * 11/2006      Motorola        Added memory dump support
+ * 02/2007      Motorola        Fixed merge issue with secure clock code
  * 02/2007      Motorola        Fixing PC value in panic
  * 05/2007      Motorola        Emit build label in kernel panic text
  * 03/2008	Motorola	Add mem print log in panic
@@ -229,9 +230,10 @@ NORET_TYPE void panic(const char * fmt, ...)
 			label_len = strlen(MOTO_BLD_FLAG"=UNKNOWN");
 			label_len = min(label_len, sizeof(buf) - 1);
 			memcpy(buf, MOTO_BLD_FLAG"=UNKNOWN", label_len);
-		}
+		}		
 		buf_len = label_len;
 		buf_len += snprintf(&(buf[buf_len]), sizeof(buf)-buf_len, "\nKernel panic - not syncing: ");
+//old		buf_len = snprintf(buf, sizeof(buf), "Kernel panic - not syncing: ");
 		va_start(args, fmt);
 		buf_len += vsnprintf(&(buf[buf_len]), sizeof(buf)-buf_len, fmt, args);
 		va_end(args);

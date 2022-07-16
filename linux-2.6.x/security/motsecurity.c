@@ -76,8 +76,8 @@ static inline int on_rootfs(struct dentry* dentry)
 #define JANUS_DRM_READ  0x00000002
 #define JANUS_DRM_RW    (JANUS_DRM_WRITE | JANUS_DRM_READ)
 
-#define SECURE_CLOCK_READ  0x00000004
-#define SECURE_CLOCK_WRITE 0x00000008
+#define SECURE_CLOCK_READ  0x00000004 //old #define SECURE_CLOCK_READ 0x000010
+#define SECURE_CLOCK_WRITE 0x00000008 //old #define SECURE_CLOCK_WRITE 0x000020
 #define SECURE_CLOCK_RW    (SECURE_CLOCK_WRITE | SECURE_CLOCK_READ)
 
 #define OMA2_DRM_READ      0x00000010
@@ -391,6 +391,7 @@ out:
             { "/usr/SYSqtapp/drmfs/drmfs", OMA2_DRM_RW },
             { "/usr/SYSqtapp/drmdaemon/udadaemon", OMA2_DRM_RW },
             { "/usr/SYSqtapp/email/email", USER_APPS_AUTH_RW},
+//            { "/usr/SYSqtapp/calendar/calendar", USER_APPS_AUTH_RW },
             { "/usr/SYSqtapp/motosync/motosync",  USER_APPS_AUTH_RW },
             { "/usr/SYSqtapp/motosync/airsync",  USER_APPS_AUTH_RW },
             { "/usr/SYSqtapp/provision/as_prov", USER_APPS_AUTH_RW },
