@@ -181,12 +181,16 @@ static long
 odev_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 {
 	seq_oss_devinfo_t *dp;
-
 	dp = file->private_data;
 	snd_assert(dp != NULL, return -EIO);
 	return snd_seq_oss_ioctl(dp, cmd, arg);
 }
 
+#ifdef CONFIG_COMPAT
+#define odev_ioctl_compat	odev_ioctl
+#else
+#define odev_ioctl_compat	NULL
+#endif
 
 static unsigned int
 odev_poll(struct file *file, poll_table * wait)
@@ -209,7 +213,8 @@ static struct file_operations seq_oss_f_ops =
 	.open =		odev_open,
 	.release =	odev_release,
 	.poll =		odev_poll,
-	.unlocked_ioctl = odev_ioctl,
+	.unlocked_ioctl =	odev_ioctl,
+	.compat_ioctl =	odev_ioctl_compat,
 };
 
 static snd_minor_t seq_oss_reg = {

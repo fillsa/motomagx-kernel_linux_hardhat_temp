@@ -10,8 +10,10 @@ pcmcia_core-y					+= cs.o cistpl.o rsrc_mgr.o socket_sysfs.o
 pcmcia_core-$(CONFIG_CARDBUS)			+= cardbus.o
 obj-$(CONFIG_PCCARD)				+= pcmcia_core.o
 
-pcmcia-y					+= ds.o bulkmem.o pcmcia_compat.o
+pcmcia-y					+= ds.o pcmcia_compat.o
 obj-$(CONFIG_PCMCIA)				+= pcmcia.o
+
+obj-$(CONFIG_PCCARD_NONSTATIC)			+= rsrc_nonstatic.o
 
 
 # socket drivers
@@ -30,14 +32,12 @@ obj-$(CONFIG_PCMCIA_MX31ADS)			+= mx31ads-pcmcia.o
 obj-$(CONFIG_PCMCIA_VRC4171)			+= vrc4171_card.o
 obj-$(CONFIG_PCMCIA_VRC4173)			+= vrc4173_cardu.o
 obj-$(CONFIG_PCMCIA_AU1X00)			+= au1x00_ss.o
+obj-$(CONFIG_PCMCIA_AU1X00)			+= au1x00_ss.o
+obj-$(CONFIG_PCMCIA_VRC4171)			+= vrc4171_card.o
+obj-$(CONFIG_PCMCIA_VRC4173)			+= vrc4173_cardu.o
 
 sa11xx_core-y					+= soc_common.o sa11xx_base.o
 pxa2xx_core-y					+= soc_common.o pxa2xx_base.o
-
-sa1111_cs-y					+= sa1111_generic.o
-sa1111_cs-$(CONFIG_ASSABET_NEPONSET)		+= sa1100_neponset.o
-sa1111_cs-$(CONFIG_SA1100_BADGE4)		+= sa1100_badge4.o
-sa1111_cs-$(CONFIG_SA1100_JORNADA720)		+= sa1100_jornada720.o
 
 au1x00_ss-y					+= au1000_generic.o
 au1x00_ss-$(CONFIG_MIPS_PB1000)			+= au1000_pb1x00.o
@@ -47,7 +47,12 @@ au1x00_ss-$(CONFIG_MIPS_DB1000)			+= au1000_db1x00.o
 au1x00_ss-$(CONFIG_MIPS_DB1100)			+= au1000_db1x00.o
 au1x00_ss-$(CONFIG_MIPS_DB1500)			+= au1000_db1x00.o
 au1x00_ss-$(CONFIG_MIPS_DB1550)			+= au1000_db1x00.o
-au1x00_ss-$(CONFIG_MIPS_XXS1500)	 	+= au1000_xxs1500.o
+au1x00_ss-$(CONFIG_MIPS_XXS1500)               += au1000_xxs1500.o
+
+sa1111_cs-y					+= sa1111_generic.o
+sa1111_cs-$(CONFIG_ASSABET_NEPONSET)		+= sa1100_neponset.o
+sa1111_cs-$(CONFIG_SA1100_BADGE4)		+= sa1100_badge4.o
+sa1111_cs-$(CONFIG_SA1100_JORNADA720)		+= sa1100_jornada720.o
 
 sa1100_cs-y					+= sa1100_generic.o
 sa1100_cs-$(CONFIG_SA1100_ASSABET)		+= sa1100_assabet.o
@@ -58,4 +63,5 @@ sa1100_cs-$(CONFIG_SA1100_SIMPAD)		+= sa1100_simpad.o
 
 pxa2xx_cs-$(CONFIG_ARCH_LUBBOCK)		+= pxa2xx_lubbock.o sa1111_generic.o
 pxa2xx_cs-$(CONFIG_MACH_MAINSTONE)		+= pxa2xx_mainstone.o
+pxa2xx_cs-$(CONFIG_PXA_SHARPSL)			+= pxa2xx_sharpsl.o
 

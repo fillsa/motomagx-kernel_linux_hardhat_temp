@@ -1,7 +1,7 @@
 /*
  * IA32 Architecture-specific signal handling support.
  *
- * Copyright (C) 1999, 2001-2002 Hewlett-Packard Co
+ * Copyright (C) 1999, 2001-2002, 2005 Hewlett-Packard Co
  *	David Mosberger-Tang <davidm@hpl.hp.com>
  * Copyright (C) 1999 Arun Sharma <arun.sharma@intel.com>
  * Copyright (C) 2000 VA Linux Co
@@ -59,19 +59,19 @@ struct rt_sigframe_ia32
        int sig;
        int pinfo;
        int puc;
-       siginfo_t32 info;
+       compat_siginfo_t info;
        struct ucontext_ia32 uc;
        struct _fpstate_ia32 fpstate;
        char retcode[8];
 };
 
 int
-copy_siginfo_from_user32 (siginfo_t *to, siginfo_t32 __user *from)
+copy_siginfo_from_user32 (siginfo_t *to, compat_siginfo_t __user *from)
 {
 	unsigned long tmp;
 	int err;
 
-	if (!access_ok(VERIFY_READ, from, sizeof(siginfo_t32)))
+	if (!access_ok(VERIFY_READ, from, sizeof(compat_siginfo_t)))
 		return -EFAULT;
 
 	err = __get_user(to->si_signo, &from->si_signo);
@@ -110,12 +110,12 @@ copy_siginfo_from_user32 (siginfo_t *to, siginfo_t32 __user *from)
 }
 
 int
-copy_siginfo_to_user32 (siginfo_t32 __user *to, siginfo_t *from)
+copy_siginfo_to_user32 (compat_siginfo_t __user *to, siginfo_t *from)
 {
 	unsigned int addr;
 	int err;
 
-	if (!access_ok(VERIFY_WRITE, to, sizeof(siginfo_t32)))
+	if (!access_ok(VERIFY_WRITE, to, sizeof(compat_siginfo_t)))
 		return -EFAULT;
 
 	/* If you change siginfo_t structure, please be sure
@@ -460,10 +460,9 @@ __ia32_rt_sigsuspend (compat_sigset_t *sset, unsigned int sigsetsize, struct sig
 	sigset_t oldset, set;
 
 	scr->scratch_unat = 0;	/* avoid leaking kernel bits to user level */
-	memset(&set, 0, sizeof(&set));
+	memset(&set, 0, sizeof(set));
 
-	if (memcpy(&set.sig, &sset->sig, sigsetsize))
-		return -EFAULT;
+	memcpy(&set.sig, &sset->sig, sigsetsize);
 
 	sigdelsetmask(&set, ~_BLOCKABLE);
 
@@ -589,34 +588,7 @@ sys32_rt_sigprocmask (int how, compat_sigset_t __user *set, compat_sigset_t __us
 }
 
 asmlinkage long
-sys32_rt_sigtimedwait (compat_sigset_t __user *uthese, siginfo_t32 __user *uinfo,
-		       struct compat_timespec __user *uts, unsigned int sigsetsize)
-{
-	mm_segment_t old_fs = get_fs();
-	struct timespec t;
-	siginfo_t info;
-	sigset_t s;
-	int ret;
-
-	if (copy_from_user(&s.sig, uthese, sizeof(compat_sigset_t)))
-		return -EFAULT;
-	if (uts && get_compat_timespec(&t, uts))
-		return -EFAULT;
-	set_fs(KERNEL_DS);
-	ret = sys_rt_sigtimedwait((sigset_t __user *) &s,
-				  uinfo ? (siginfo_t __user *) &info : NULL,
-				  uts ? (struct timespec __user *) &t : NULL,
-				  sigsetsize);
-	set_fs(old_fs);
-	if (ret >= 0 && uinfo) {
-		if (copy_siginfo_to_user32(uinfo, &info))
-			return -EFAULT;
-	}
-	return ret;
-}
-
-asmlinkage long
-sys32_rt_sigqueueinfo (int pid, int sig, siginfo_t32 __user *uinfo)
+sys32_rt_sigqueueinfo (int pid, int sig, compat_siginfo_t __user *uinfo)
 {
 	mm_segment_t old_fs = get_fs();
 	siginfo_t info;
@@ -805,7 +777,7 @@ restore_sigcontext_ia32 (struct pt_regs *regs, struct sigcontext_ia32 __user *sc
 		struct _fpstate * buf;
 		err |= __get_user(buf, &sc->fpstate);
 		if (buf) {
-			if (verify_area(VERIFY_READ, buf, sizeof(*buf)))
+			if (!access_ok(VERIFY_READ, buf, sizeof(*buf)))
 				goto badframe;
 			err |= restore_i387(buf);
 		}
@@ -997,16 +969,15 @@ ia32_setup_frame1 (int sig, struct k_sigaction *ka, siginfo_t *info,
 }
 
 asmlinkage long
-sys32_sigreturn (int arg0, int arg1, int arg2, int arg3, int arg4, int arg5, int arg6, int arg7,
-		 unsigned long stack)
+sys32_sigreturn (int arg0, int arg1, int arg2, int arg3, int arg4, int arg5,
+		 int arg6, int arg7, struct pt_regs regs)
 {
-	struct pt_regs *regs = (struct pt_regs *) &stack;
-	unsigned long esp = (unsigned int) regs->r12;
+	unsigned long esp = (unsigned int) regs.r12;
 	struct sigframe_ia32 __user *frame = (struct sigframe_ia32 __user *)(esp - 8);
 	sigset_t set;
 	int eax;
 
-	if (verify_area(VERIFY_READ, frame, sizeof(*frame)))
+	if (!access_ok(VERIFY_READ, frame, sizeof(*frame)))
 		goto badframe;
 
 	if (__get_user(set.sig[0], &frame->sc.oldmask)
@@ -1020,7 +991,7 @@ sys32_sigreturn (int arg0, int arg1, int arg2, int arg3, int arg4, int arg5, int
 	recalc_sigpending();
 	spin_unlock_irq(&current->sighand->siglock);
 
-	if (restore_sigcontext_ia32(regs, &frame->sc, &eax))
+	if (restore_sigcontext_ia32(&regs, &frame->sc, &eax))
 		goto badframe;
 	return eax;
 
@@ -1030,16 +1001,15 @@ sys32_sigreturn (int arg0, int arg1, int arg2, int arg3, int arg4, int arg5, int
 }
 
 asmlinkage long
-sys32_rt_sigreturn (int arg0, int arg1, int arg2, int arg3, int arg4, int arg5, int arg6, int arg7,
-		    unsigned long stack)
+sys32_rt_sigreturn (int arg0, int arg1, int arg2, int arg3, int arg4,
+		    int arg5, int arg6, int arg7, struct pt_regs regs)
 {
-	struct pt_regs *regs = (struct pt_regs *) &stack;
-	unsigned long esp = (unsigned int) regs->r12;
+	unsigned long esp = (unsigned int) regs.r12;
 	struct rt_sigframe_ia32 __user *frame = (struct rt_sigframe_ia32 __user *)(esp - 4);
 	sigset_t set;
 	int eax;
 
-	if (verify_area(VERIFY_READ, frame, sizeof(*frame)))
+	if (!access_ok(VERIFY_READ, frame, sizeof(*frame)))
 		goto badframe;
 	if (__copy_from_user(&set, &frame->uc.uc_sigmask, sizeof(set)))
 		goto badframe;
@@ -1050,7 +1020,7 @@ sys32_rt_sigreturn (int arg0, int arg1, int arg2, int arg3, int arg4, int arg5, 
 	recalc_sigpending();
 	spin_unlock_irq(&current->sighand->siglock);
 
-	if (restore_sigcontext_ia32(regs, &frame->uc.uc_mcontext, &eax))
+	if (restore_sigcontext_ia32(&regs, &frame->uc.uc_mcontext, &eax))
 		goto badframe;
 
 	/* It is more difficult to avoid calling this function than to

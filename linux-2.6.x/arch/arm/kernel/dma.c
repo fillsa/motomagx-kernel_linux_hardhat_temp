@@ -22,7 +22,7 @@
 
 #include <asm/mach/dma.h>
 
-DEFINE_RAW_SPINLOCK(dma_spin_lock);
+DEFINE_RAW_SPINLOCK(dma_spin_lock); //DEFINE_SPINLOCK(dma_spin_lock);
 
 #if MAX_DMA_CHANNELS > 0
 

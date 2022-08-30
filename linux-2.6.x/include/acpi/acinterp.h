@@ -5,7 +5,7 @@
  *****************************************************************************/
 
 /*
- * Copyright (C) 2000 - 2004, R. Byron Moore
+ * Copyright (C) 2000 - 2005, R. Byron Moore
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -217,8 +217,8 @@ acpi_ex_opcode_6A_0T_1R (
 u8
 acpi_ex_do_match (
 	u32                             match_op,
-	acpi_integer                    package_value,
-	acpi_integer                    match_value);
+	union acpi_operand_object       *package_obj,
+	union acpi_operand_object       *match_obj);
 
 acpi_status
 acpi_ex_get_object_reference (

@@ -17,7 +17,6 @@
 #include <asm/tlbflush.h>
 
 #ifdef CONFIG_CPU_CACHE_VIPT
-
 #define ALIAS_FLUSH_START	0xffff4000
 
 #define TOP_PTE(x)	pte_offset_kernel(top_pmd, x)
@@ -202,6 +201,42 @@ static void __flush_dcache_aliases(struct address_space *mapping, struct page *p
 	struct vm_area_struct *mpnt;
 	struct prio_tree_iter iter;
 	pgoff_t pgoff;
+
+	/*
+	 * This is a page cache page.  If we have a VIPT cache, we
+	 * only need to do one flush - which would be at the relevant
+	 * userspace colour, which is congruent with page->index.
+	 */
+	if (cache_is_vipt()) {
+		if (cache_is_vipt_aliasing())
+			flush_pfn_alias(page_to_pfn(page),
+					page->index << PAGE_CACHE_SHIFT);
+		return;
+	}
+
+	/*
+	 * This is a page cache page.  If we have a VIPT cache, we
+	 * only need to do one flush - which would be at the relevant
+	 * userspace colour, which is congruent with page->index.
+	 */
+	if (cache_is_vipt()) {
+		if (cache_is_vipt_aliasing())
+			flush_pfn_alias(page_to_pfn(page),
+					page->index << PAGE_CACHE_SHIFT);
+		return;
+	}
+
+	/*
+	 * This is a page cache page.  If we have a VIPT cache, we
+	 * only need to do one flush - which would be at the relevant
+	 * userspace colour, which is congruent with page->index.
+	 */
+	if (cache_is_vipt()) {
+		if (cache_is_vipt_aliasing())
+			flush_pfn_alias(page_to_pfn(page),
+					page->index << PAGE_CACHE_SHIFT);
+		return;
+	}
 
 	/*
 	 * There are possible user space mappings of this page:

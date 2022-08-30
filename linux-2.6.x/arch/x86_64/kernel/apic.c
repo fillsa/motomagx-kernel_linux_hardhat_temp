@@ -33,6 +33,7 @@
 #include <asm/mpspec.h>
 #include <asm/pgalloc.h>
 #include <asm/mach_apic.h>
+#include <asm/nmi.h>
 
 int apic_verbosity;
 
@@ -225,6 +226,11 @@ int __init verify_local_APIC(void)
 
 void __init sync_Arb_IDs(void)
 {
+	/* Unsupported on P4 - see Intel Dev. Manual Vol. 3, Ch. 8.6.1 */
+	unsigned int ver = GET_APIC_VERSION(apic_read(APIC_LVR));
+	if (ver >= 0x14)	/* P4 or higher */
+		return;
+
 	/*
 	 * Wait for idle.
 	 */
@@ -452,7 +458,7 @@ static struct {
 	unsigned int apic_thmr;
 } apic_pm_state;
 
-static int lapic_suspend(struct sys_device *dev, u32 state)
+static int lapic_suspend(struct sys_device *dev, pm_message_t state)
 {
 	unsigned long flags;
 
@@ -645,7 +651,7 @@ void __init init_apic_mappings(void)
 
 #define APIC_DIVISOR 16
 
-void __setup_APIC_LVTT(unsigned int clocks)
+static void __setup_APIC_LVTT(unsigned int clocks)
 {
 	unsigned int lvtt_value, tmp_value, ver;
 
@@ -718,7 +724,7 @@ static void setup_APIC_timer(unsigned int clocks)
 
 #define TICK_COUNT 100000000
 
-int __init calibrate_APIC_clock(void)
+static int __init calibrate_APIC_clock(void)
 {
 	int apic, apic_start, tsc, tsc_start;
 	int result;
@@ -920,7 +926,7 @@ __init int oem_force_hpet_timer(void)
 	unsigned id;
 	DECLARE_BITMAP(clustermap, NUM_APIC_CLUSTERS);
 
-	bitmap_empty(clustermap, NUM_APIC_CLUSTERS);
+	bitmap_zero(clustermap, NUM_APIC_CLUSTERS);
 
 	for (i = 0; i < NR_CPUS; i++) {
 		id = bios_cpu_apicid[i];
@@ -1051,7 +1057,7 @@ int __init APIC_init_uniprocessor (void)
 		nr_ioapics = 0;
 #endif
 	setup_boot_APIC_clock();
-
+	check_nmi_watchdog();
 	return 0;
 }
 

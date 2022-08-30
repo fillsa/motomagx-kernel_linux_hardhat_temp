@@ -151,8 +151,6 @@ typedef struct {
 
 #define rwlock_init(lp)	do { *(lp) = RW_LOCK_UNLOCKED; } while (0)
 
-#define rwlock_is_locked(lp) ((lp)->counter != 0)
-
 #define _raw_read_trylock(lock) generic_raw_read_trylock(lock)
 
 /* read_lock, read_unlock are pretty straightforward.  Of course it somehow
@@ -228,7 +226,7 @@ static  __inline__ void _raw_write_unlock(rwlock_t *rw)
 }
 
 #ifdef CONFIG_DEBUG_RWLOCK
-extern void _dbg_write_trylock(rwlock_t * rw, const char *bfile, int bline);
+extern int _dbg_write_trylock(rwlock_t * rw, const char *bfile, int bline);
 #define _raw_write_trylock(rw) _dbg_write_trylock(rw, __FILE__, __LINE__)
 #else
 static  __inline__ int _raw_write_trylock(rwlock_t *rw)

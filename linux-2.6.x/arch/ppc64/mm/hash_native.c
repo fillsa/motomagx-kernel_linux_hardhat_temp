@@ -52,7 +52,7 @@ long native_hpte_insert(unsigned long hpte_group, unsigned long va,
 			unsigned long hpteflags, int bolted, int large)
 {
 	unsigned long arpn = physRpn_to_absRpn(prpn);
-	HPTE *hptep = htab_data.htab + hpte_group;
+	HPTE *hptep = htab_address + hpte_group;
 	Hpte_dword0 dw0;
 	HPTE lhpte;
 	int i;
@@ -117,7 +117,7 @@ static long native_hpte_remove(unsigned long hpte_group)
 	slot_offset = mftb() & 0x7;
 
 	for (i = 0; i < HPTES_PER_GROUP; i++) {
-		hptep = htab_data.htab + hpte_group + slot_offset;
+		hptep = htab_address + hpte_group + slot_offset;
 		dw0 = hptep->dw0.dw0;
 
 		if (dw0.v && !dw0.bolted) {
@@ -172,9 +172,9 @@ static long native_hpte_find(unsigned long vpn)
 	hash = hpt_hash(vpn, 0);
 
 	for (j = 0; j < 2; j++) {
-		slot = (hash & htab_data.htab_hash_mask) * HPTES_PER_GROUP;
+		slot = (hash & htab_hash_mask) * HPTES_PER_GROUP;
 		for (i = 0; i < HPTES_PER_GROUP; i++) {
-			hptep = htab_data.htab + slot;
+			hptep = htab_address + slot;
 			dw0 = hptep->dw0.dw0;
 
 			if ((dw0.avpn == (vpn >> 11)) && dw0.v &&
@@ -195,7 +195,7 @@ static long native_hpte_find(unsigned long vpn)
 static long native_hpte_updatepp(unsigned long slot, unsigned long newpp,
 				 unsigned long va, int large, int local)
 {
-	HPTE *hptep = htab_data.htab + slot;
+	HPTE *hptep = htab_address + slot;
 	Hpte_dword0 dw0;
 	unsigned long avpn = va >> 23;
 	int ret = 0;
@@ -217,10 +217,10 @@ static long native_hpte_updatepp(unsigned long slot, unsigned long newpp,
 	}
 
 	/* Ensure it is out of the tlb too */
-	if ((cur_cpu_spec->cpu_features & CPU_FTR_TLBIEL) && !large && local) {
+	if (cpu_has_feature(CPU_FTR_TLBIEL) && !large && local) {
 		tlbiel(va);
 	} else {
-		int lock_tlbie = !(cur_cpu_spec->cpu_features & CPU_FTR_LOCKLESS_TLBIE);
+		int lock_tlbie = !cpu_has_feature(CPU_FTR_LOCKLESS_TLBIE);
 
 		if (lock_tlbie)
 			spin_lock(&native_tlbie_lock);
@@ -242,10 +242,10 @@ static long native_hpte_updatepp(unsigned long slot, unsigned long newpp,
  */
 static void native_hpte_updateboltedpp(unsigned long newpp, unsigned long ea)
 {
-	unsigned long vsid, va, vpn, flags;
+	unsigned long vsid, va, vpn, flags = 0;
 	long slot;
 	HPTE *hptep;
-	int lock_tlbie = !(cur_cpu_spec->cpu_features & CPU_FTR_LOCKLESS_TLBIE);
+	int lock_tlbie = !cpu_has_feature(CPU_FTR_LOCKLESS_TLBIE);
 
 	vsid = get_kernel_vsid(ea);
 	va = (vsid << 28) | (ea & 0x0fffffff);
@@ -254,7 +254,7 @@ static void native_hpte_updateboltedpp(unsigned long newpp, unsigned long ea)
 	slot = native_hpte_find(vpn);
 	if (slot == -1)
 		panic("could not find page to bolt\n");
-	hptep = htab_data.htab + slot;
+	hptep = htab_address + slot;
 
 	set_pp_bit(newpp, hptep);
 
@@ -269,11 +269,11 @@ static void native_hpte_updateboltedpp(unsigned long newpp, unsigned long ea)
 static void native_hpte_invalidate(unsigned long slot, unsigned long va,
 				    int large, int local)
 {
-	HPTE *hptep = htab_data.htab + slot;
+	HPTE *hptep = htab_address + slot;
 	Hpte_dword0 dw0;
 	unsigned long avpn = va >> 23;
 	unsigned long flags;
-	int lock_tlbie = !(cur_cpu_spec->cpu_features & CPU_FTR_LOCKLESS_TLBIE);
+	int lock_tlbie = !cpu_has_feature(CPU_FTR_LOCKLESS_TLBIE);
 
 	if (large)
 		avpn &= ~0x1UL;
@@ -292,7 +292,7 @@ static void native_hpte_invalidate(unsigned long slot, unsigned long va,
 	}
 
 	/* Invalidate the tlb */
-	if ((cur_cpu_spec->cpu_features & CPU_FTR_TLBIEL) && !large && local) {
+	if (cpu_has_feature(CPU_FTR_TLBIEL) && !large && local) {
 		tlbiel(va);
 	} else {
 		if (lock_tlbie)
@@ -320,8 +320,7 @@ static void native_flush_hash_range(unsigned long context,
 
 	j = 0;
 	for (i = 0; i < number; i++) {
-		if ((batch->addr[i] >= USER_START) &&
-		    (batch->addr[i] <= USER_END))
+		if (batch->addr[i] < KERNELBASE)
 			vsid = get_vsid(context, batch->addr[i]);
 		else
 			vsid = get_kernel_vsid(batch->addr[i]);
@@ -336,10 +335,10 @@ static void native_flush_hash_range(unsigned long context,
 		secondary = (pte_val(batch->pte[i]) & _PAGE_SECONDARY) >> 15;
 		if (secondary)
 			hash = ~hash;
-		slot = (hash & htab_data.htab_hash_mask) * HPTES_PER_GROUP;
+		slot = (hash & htab_hash_mask) * HPTES_PER_GROUP;
 		slot += (pte_val(batch->pte[i]) & _PAGE_GROUP_IX) >> 12;
 
-		hptep = htab_data.htab + slot;
+		hptep = htab_address + slot;
 
 		avpn = va >> 23;
 		if (large)
@@ -360,7 +359,7 @@ static void native_flush_hash_range(unsigned long context,
 		j++;
 	}
 
-	if ((cur_cpu_spec->cpu_features & CPU_FTR_TLBIEL) && !large && local) {
+	if (cpu_has_feature(CPU_FTR_TLBIEL) && !large && local) {
 		asm volatile("ptesync":::"memory");
 
 		for (i = 0; i < j; i++)
@@ -368,7 +367,7 @@ static void native_flush_hash_range(unsigned long context,
 
 		asm volatile("ptesync":::"memory");
 	} else {
-		int lock_tlbie = !(cur_cpu_spec->cpu_features & CPU_FTR_LOCKLESS_TLBIE);
+		int lock_tlbie = !cpu_has_feature(CPU_FTR_LOCKLESS_TLBIE);
 
 		if (lock_tlbie)
 			spin_lock(&native_tlbie_lock);

@@ -5,7 +5,7 @@
  *****************************************************************************/
 
 /*
- * Copyright (C) 2000 - 2004, R. Byron Moore
+ * Copyright (C) 2000 - 2005, R. Byron Moore
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -774,6 +774,7 @@ struct acpi_bit_register_info
 #define ACPI_BITMASK_POWER_BUTTON_STATUS        0x0100
 #define ACPI_BITMASK_SLEEP_BUTTON_STATUS        0x0200
 #define ACPI_BITMASK_RT_CLOCK_STATUS            0x0400
+#define ACPI_BITMASK_PCIEXP_WAKE_STATUS         0x4000    /* ACPI 3.0 */
 #define ACPI_BITMASK_WAKE_STATUS                0x8000
 
 #define ACPI_BITMASK_ALL_FIXED_STATUS           (ACPI_BITMASK_TIMER_STATUS          | \
@@ -789,6 +790,7 @@ struct acpi_bit_register_info
 #define ACPI_BITMASK_POWER_BUTTON_ENABLE        0x0100
 #define ACPI_BITMASK_SLEEP_BUTTON_ENABLE        0x0200
 #define ACPI_BITMASK_RT_CLOCK_ENABLE            0x0400
+#define ACPI_BITMASK_PCIEXP_WAKE_DISABLE        0x4000    /* ACPI 3.0 */
 
 #define ACPI_BITMASK_SCI_ENABLE                 0x0001
 #define ACPI_BITMASK_BUS_MASTER_RLD             0x0002
@@ -807,6 +809,7 @@ struct acpi_bit_register_info
 #define ACPI_BITPOSITION_POWER_BUTTON_STATUS    0x08
 #define ACPI_BITPOSITION_SLEEP_BUTTON_STATUS    0x09
 #define ACPI_BITPOSITION_RT_CLOCK_STATUS        0x0A
+#define ACPI_BITPOSITION_PCIEXP_WAKE_STATUS     0x0E    /* ACPI 3.0 */
 #define ACPI_BITPOSITION_WAKE_STATUS            0x0F
 
 #define ACPI_BITPOSITION_TIMER_ENABLE           0x00
@@ -814,6 +817,7 @@ struct acpi_bit_register_info
 #define ACPI_BITPOSITION_POWER_BUTTON_ENABLE    0x08
 #define ACPI_BITPOSITION_SLEEP_BUTTON_ENABLE    0x09
 #define ACPI_BITPOSITION_RT_CLOCK_ENABLE        0x0A
+#define ACPI_BITPOSITION_PCIEXP_WAKE_DISABLE    0x0E    /* ACPI 3.0 */
 
 #define ACPI_BITPOSITION_SCI_ENABLE             0x00
 #define ACPI_BITPOSITION_BUS_MASTER_RLD         0x01
@@ -862,7 +866,6 @@ struct acpi_bit_register_info
 /*
  * Large resource descriptor types
  */
-
 #define ACPI_RDESC_TYPE_MEMORY_24               0x81
 #define ACPI_RDESC_TYPE_GENERAL_REGISTER        0x82
 #define ACPI_RDESC_TYPE_LARGE_VENDOR            0x84
@@ -872,6 +875,7 @@ struct acpi_bit_register_info
 #define ACPI_RDESC_TYPE_WORD_ADDRESS_SPACE      0x88
 #define ACPI_RDESC_TYPE_EXTENDED_XRUPT          0x89
 #define ACPI_RDESC_TYPE_QWORD_ADDRESS_SPACE     0x8A
+#define ACPI_RDESC_TYPE_EXTENDED_ADDRESS_SPACE  0x8B
 
 
 /*****************************************************************************

@@ -1,6 +1,5 @@
 /*
  *  drivers/mtd/nand.c
- 
  *
  *  Overview:
  *   This is the generic MTD driver for NAND flash devices. It should be
@@ -1186,6 +1185,7 @@ static int nand_write_page (struct mtd_info *mtd, struct nand_chip *this, int pa
 	u_char *oob_buf,  struct nand_oobinfo *oobsel, int cached)
 {
 	int 	i, oobidx, status;
+//2.6.11	+	u_char	ecc_code[32];
 	u_char	ecc_code[40];
 	int	eccmode = oobsel->useecc ? this->eccmode : NAND_ECC_NONE;
 	int  	*oob_config = oobsel->eccpos;
@@ -1194,7 +1194,7 @@ static int nand_write_page (struct mtd_info *mtd, struct nand_chip *this, int pa
 	
 	/* FIXME: Enable cached programming */
 	cached = 0;
-
+	
 	/* Send command to begin auto page programming */
 	this->cmdfunc (mtd, NAND_CMD_SEQIN, 0x00, page);
 
@@ -1220,7 +1220,6 @@ static int nand_write_page (struct mtd_info *mtd, struct nand_chip *this, int pa
 		break;
 	default:
 		eccbytes = this->eccbytes;
-
 		if (! this->layout) {
 			for (; eccsteps; eccsteps--) {
 				/* enable hardware ecc logic for write */
@@ -1496,6 +1495,7 @@ static int nand_read_ecc (struct mtd_info *mtd, loff_t from, size_t len,
 #endif
 }
 
+
 /**
  * nand_do_read_ecc - [MTD Interface] Read data with ECC
  * @mtd:	MTD device structure
@@ -1520,6 +1520,7 @@ int nand_do_read_ecc (struct mtd_info *mtd, loff_t from, size_t len,
 			     struct nand_oobinfo *oobsel, int flags)
 #endif
 {
+
 	int i, j, col, realpage, page, end, ecc, chipnr, sndcmd = 1;
 	int read = 0, oob = 0, oobidx, ecc_status = 0, ecc_failed = 0, eccidx;
 	struct nand_chip *this = mtd->priv;
@@ -1798,7 +1799,7 @@ int nand_do_read_ecc (struct mtd_info *mtd, loff_t from, size_t len,
 				int *p = (int *)(&oob_data[mtd->oobsize]);
 				p[i] = ecc_status;
 			}
-
+			
 			if ((ecc_status == -1) || (ecc_status > (flags && 0xff))) {
 #ifdef CONFIG_MOT_FEAT_NAND_RDDIST
 				printk (KERN_NOTICE "nand_read_ecc:%d Failed ECC read, page 0x%08x\n",__LINE__, page);
@@ -2729,7 +2730,7 @@ static int nand_write_ecc (struct mtd_info *mtd, loff_t to, size_t len,
 	if (oobsel->useecc == MTD_NANDECC_AUTOPLACE) {
 		oobsel = this->autooob;
 		autoplace = 1;
-	}
+	}	
 	if (oobsel->useecc == MTD_NANDECC_AUTOPL_USR)
 		autoplace = 1;
 
@@ -3582,7 +3583,7 @@ int nand_erase_nand (struct mtd_info *mtd, struct erase_info *instr, int allowbb
 			goto erase_exit;
 		}
 #endif	
-
+		
 #ifdef CONFIG_MOT_FEAT_NAND_RDDIST
 		nand_increment_erasecnt (this, page);
 #endif
@@ -3591,6 +3592,7 @@ int nand_erase_nand (struct mtd_info *mtd, struct erase_info *instr, int allowbb
 		   the current cached page */
 		if (page <= this->pagebuf && this->pagebuf < (page + pages_per_block))
 			this->pagebuf = -1;
+
 #ifdef CONFIG_MOT_WFN455
 	retry:
 		start_erase = get_cycles();
@@ -3599,6 +3601,7 @@ int nand_erase_nand (struct mtd_info *mtd, struct erase_info *instr, int allowbb
 #else
 		this->erase_cmd (mtd, page & this->pagemask);
 #endif
+		
 		status = this->waitfunc (mtd, this, FL_ERASING);
 
 		/* See if operation failed and additional status checks are available */
@@ -3650,7 +3653,7 @@ int nand_erase_nand (struct mtd_info *mtd, struct erase_info *instr, int allowbb
 		/* Increment page address and decrement length */
 		len -= (1 << this->phys_erase_shift);
 		page += pages_per_block;
-		
+
 		/* Check, if we cross a chip boundary */
 		if (len && !(page & this->pagemask)) {
 			chipnr++;
@@ -3662,6 +3665,7 @@ int nand_erase_nand (struct mtd_info *mtd, struct erase_info *instr, int allowbb
 			if ((this->options & BBT_AUTO_REFRESH) && (this->bbt_td->options & NAND_BBT_PERCHIP)) {
 				bbt_masked_page = this->bbt_td->pages[chipnr] & BBT_PAGE_MASK;
 			}
+
 		}
 	}
 	instr->state = MTD_ERASE_DONE;
@@ -3884,7 +3888,7 @@ int nand_scan (struct mtd_info *mtd, int maxchips)
 {
 	int i, nand_maf_id, nand_dev_id, busw, maf_id;
 	struct nand_chip *this = mtd->priv;
-	
+
 	/* Get buswidth to select the correct functions*/
 	busw = this->options & NAND_BUSWIDTH_16;
 
@@ -3963,6 +3967,7 @@ int nand_scan (struct mtd_info *mtd, int maxchips)
 			extid >>= 2;
 			/* Get buswidth information */
 			busw = (extid & 0x01) ? NAND_BUSWIDTH_16 : 0;
+		
 		} else {
 			/* Old devices have this data hardcoded in the
 			 * device id table */

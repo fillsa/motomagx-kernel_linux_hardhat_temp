@@ -1,5 +1,5 @@
-/*
-   RFCOMM implementation for Linux Bluetooth(R) stack (BlueZ).
+/* 
+   RFCOMM implementation for Linux Bluetooth stack (BlueZ).
 
    Portions of this file were based on $Id: tty.c,v 1.24 2002/10/03 01:54:38 holtmann Exp $
    from kernel.org found in the release of linux-2.6.10 here www.kernel.org/pub/linux/kernel/v2.6/
@@ -22,13 +22,13 @@
    OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
    FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT OF THIRD PARTY RIGHTS.
    IN NO EVENT SHALL THE COPYRIGHT HOLDER(S) AND AUTHOR(S) BE LIABLE FOR ANY
-   CLAIM, OR ANY SPECIAL INDIRECT OR CONSEQUENTIAL DAMAGES, OR ANY DAMAGES
-   WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN
-   ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF
+   CLAIM, OR ANY SPECIAL INDIRECT OR CONSEQUENTIAL DAMAGES, OR ANY DAMAGES 
+   WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN 
+   ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF 
    OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
 
-   ALL LIABILITY, INCLUDING LIABILITY FOR INFRINGEMENT OF ANY PATENTS,
-   COPYRIGHTS, TRADEMARKS OR OTHER RIGHTS, RELATING TO USE OF THIS
+   ALL LIABILITY, INCLUDING LIABILITY FOR INFRINGEMENT OF ANY PATENTS, 
+   COPYRIGHTS, TRADEMARKS OR OTHER RIGHTS, RELATING TO USE OF THIS 
    SOFTWARE IS DISCLAIMED.
 
 
@@ -52,7 +52,6 @@
  *
  * $Id: tty.c,v 1.24 2002/10/03 01:54:38 holtmann Exp $
  */
-
 
 #include <linux/config.h>
 #ifdef MODKCONFIG
@@ -213,7 +212,7 @@ static int rfcomm_dev_add(struct rfcomm_dev_req *req, struct rfcomm_dlc *dlc)
 	int err = 0;
 
 	BT_DBG("id %d channel %d", req->dev_id, req->channel);
-
+	
 	dev = kmalloc(sizeof(struct rfcomm_dev), GFP_KERNEL);
 	if (!dev)
 		return -ENOMEM;
@@ -269,7 +268,7 @@ static int rfcomm_dev_add(struct rfcomm_dev_req *req, struct rfcomm_dlc *dlc)
 		((dlc->v24_sig_in & RFCOMM_V24_IC)  ? TIOCM_RI : 0) |
 		((dlc->v24_sig_in & RFCOMM_V24_DV)  ? TIOCM_CD : 0);
 
-	dev->flags = req->flags &
+	dev->flags = req->flags & 
 		((1 << RFCOMM_RELEASE_ONHUP) | (1 << RFCOMM_REUSE_DLC));
 
 	skb_queue_head_init(&dev->rx_queue);
@@ -322,7 +321,7 @@ static inline unsigned int rfcomm_room(struct rfcomm_dlc *dlc)
    * It will be assumed we always have enough kernel memory to handle 2 * mtu * RFCOMM_MAX_CREDITS
    * This accounts for transfer and receive buffers
    */
-  return dlc->mtu * RFCOMM_MAX_CREDITS;
+	return dlc->mtu * RFCOMM_MAX_CREDITS;
 }
 
 static void rfcomm_wfree(struct sk_buff *skb)
@@ -605,7 +604,7 @@ static void rfcomm_dev_data_ready(struct rfcomm_dlc *dlc, struct sk_buff *skb)
 {
 	struct rfcomm_dev *dev = dlc->owner;
 	struct tty_struct *tty;
-
+       
 	if (!dev) {
                 BT_ERR("%d bytes lost", skb->len);
 		kfree_skb(skb);
@@ -646,7 +645,7 @@ static void rfcomm_dev_state_change(struct rfcomm_dlc *dlc, int err)
 	struct rfcomm_dev *dev = dlc->owner;
 	if (!dev)
 		return;
-
+	
 	BT_DBG("dlc %p dev %p err %d", dlc, dev, err);
 
 	dev->err = err;
@@ -665,7 +664,7 @@ static void rfcomm_dev_state_change(struct rfcomm_dlc *dlc, int err)
 				rfcomm_dev_put(dev);
 				rfcomm_dlc_lock(dlc);
 			}
-		} else
+		} else 
 			tty_hangup(dev->tty);
 	}
 }
@@ -673,10 +672,9 @@ static void rfcomm_dev_state_change(struct rfcomm_dlc *dlc, int err)
 static void rfcomm_dev_modem_status(struct rfcomm_dlc *dlc)
 {
 	struct rfcomm_dev *dev = dlc->owner;
-
 	if (!dev)
 		return;
-
+	
 	BT_DBG("dlc %p dev %p v24_sig 0x%02x", dlc, dev, dlc->v24_sig_in);
 
 	if ((dev->modem_status & TIOCM_CD) && !(dlc->v24_sig_in & RFCOMM_V24_DV)) {
@@ -684,7 +682,7 @@ static void rfcomm_dev_modem_status(struct rfcomm_dlc *dlc)
 			tty_hangup(dev->tty);
 	}
 
-	dev->modem_status =
+	dev->modem_status = 
 		((dlc->v24_sig_in & RFCOMM_V24_RTC) ? (TIOCM_DSR | TIOCM_DTR) : 0) |
 		((dlc->v24_sig_in & RFCOMM_V24_RTR) ? (TIOCM_RTS | TIOCM_CTS) : 0) |
 		((dlc->v24_sig_in & RFCOMM_V24_IC)  ? TIOCM_RI : 0) |
@@ -814,7 +812,7 @@ static int rfcomm_tty_write(struct tty_struct *tty, const unsigned char *buf, in
 		size = min_t(uint, count, dlc->mtu);
 
 		skb = rfcomm_wmalloc(dev, size + RFCOMM_SKB_RESERVE, GFP_ATOMIC);
-
+		
 		if (!skb)
 			break;
 
@@ -909,7 +907,7 @@ static void rfcomm_tty_set_termios(struct tty_struct *tty, struct termios *old)
 
 	BT_DBG("tty %p termios %p", tty, old);
 
-	/* Handle turning off CRTSCTS */
+	/* handle turning off CRTSCTS */
 	if ((old->c_cflag & CRTSCTS) && !(new->c_cflag & CRTSCTS))
 		BT_DBG("Turning off CRTSCTS unsupported");
 
@@ -1040,7 +1038,7 @@ static void rfcomm_tty_throttle(struct tty_struct *tty)
 	struct rfcomm_dev *dev = (struct rfcomm_dev *) tty->driver_data;
 
 	BT_DBG("tty %p dev %p", tty, dev);
-
+	
 	rfcomm_dlc_throttle(dev->dlc);
 }
 
@@ -1049,7 +1047,7 @@ static void rfcomm_tty_unthrottle(struct tty_struct *tty)
 	struct rfcomm_dev *dev = (struct rfcomm_dev *) tty->driver_data;
 
 	BT_DBG("tty %p dev %p", tty, dev);
-
+	
 	rfcomm_dev_rxlock();
 
 	if (__rfcomm_dev_dequeue_rx(dev) == 0)
@@ -1125,13 +1123,13 @@ static int rfcomm_tty_tiocmget(struct tty_struct *tty, struct file *filp)
 
 static int rfcomm_tty_tiocmset(struct tty_struct *tty, struct file *filp, unsigned int set, unsigned int clear)
 {
-	struct rfcomm_dev *dev = (struct rfcomm_dev *) tty->driver_data;
-	struct rfcomm_dlc *dlc = dev->dlc;
-	u8 v24_sig;
+ 	struct rfcomm_dev *dev = (struct rfcomm_dev *) tty->driver_data;
+ 	struct rfcomm_dlc *dlc = dev->dlc;
+ 	u8 v24_sig;
 
 	BT_DBG("tty %p dev %p set 0x%02x clear 0x%02x", tty, dev, set, clear);
 
-	rfcomm_dlc_get_modem_status(dlc, &v24_sig);
+ 	rfcomm_dlc_get_modem_status(dlc, &v24_sig);
 
 	/* tty_io tty_tiocmset function filters out all control signals except
 	 * TIOCM_DTR, TIOCM_RTS, TIOCM_OUT1, TIOCM_OUT2, and TIOCM_LOOP.
@@ -1153,9 +1151,9 @@ static int rfcomm_tty_tiocmset(struct tty_struct *tty, struct file *filp, unsign
 	if (clear & TIOCM_OUT1)
 		v24_sig &= ~RFCOMM_V24_IC;
 
-	rfcomm_dlc_set_modem_status(dlc, v24_sig);
+ 	rfcomm_dlc_set_modem_status(dlc, v24_sig);
 
-	return 0;
+ 	return 0;
 }
 
 /* ---- TTY structure ---- */

@@ -176,6 +176,8 @@ STATIC void NCR_700_chip_setup(struct Scsi_Host *host);
 STATIC void NCR_700_chip_reset(struct Scsi_Host *host);
 STATIC int NCR_700_slave_configure(struct scsi_device *SDpnt);
 STATIC void NCR_700_slave_destroy(struct scsi_device *SDpnt);
+static int NCR_700_change_queue_depth(struct scsi_device *SDpnt, int depth);
+static int NCR_700_change_queue_type(struct scsi_device *SDpnt, int depth);
 
 STATIC struct device_attribute *NCR_700_dev_attrs[];
 
@@ -294,8 +296,7 @@ NCR_700_get_SXFER(struct scsi_device *SDp)
 
 struct Scsi_Host *
 NCR_700_detect(struct scsi_host_template *tpnt,
-	       struct NCR_700_Host_Parameters *hostdata, struct device *dev,
-	       unsigned long irq, u8 scsi_id)
+	       struct NCR_700_Host_Parameters *hostdata, struct device *dev)
 {
 	dma_addr_t pScript, pSlots;
 	__u8 *memory;
@@ -338,6 +339,8 @@ NCR_700_detect(struct scsi_host_template *tpnt,
 	tpnt->use_clustering = ENABLE_CLUSTERING;
 	tpnt->slave_configure = NCR_700_slave_configure;
 	tpnt->slave_destroy = NCR_700_slave_destroy;
+	tpnt->change_queue_depth = NCR_700_change_queue_depth;
+	tpnt->change_queue_type = NCR_700_change_queue_type;
 	
 	if(tpnt->name == NULL)
 		tpnt->name = "53c700";
@@ -386,11 +389,8 @@ NCR_700_detect(struct scsi_host_template *tpnt,
 	host->max_lun = NCR_700_MAX_LUNS;
 	BUG_ON(NCR_700_transport_template == NULL);
 	host->transportt = NCR_700_transport_template;
-	host->unique_id = hostdata->base;
-	host->base = hostdata->base;
+	host->unique_id = (unsigned long)hostdata->base;
 	hostdata->eh_complete = NULL;
-	host->irq = irq;
-	host->this_id = scsi_id;
 	host->hostdata[0] = (unsigned long)hostdata;
 	/* kick the chip */
 	NCR_700_writeb(0xff, host, CTEST9_REG);
@@ -411,28 +411,16 @@ NCR_700_detect(struct scsi_host_template *tpnt,
 	/* reset the chip */
 	NCR_700_chip_reset(host);
 
-	if (request_irq(irq, NCR_700_intr, SA_SHIRQ, dev->bus_id, host)) {
-		dev_printk(KERN_ERR, dev, "53c700: irq %lu request failed\n ",
-			   irq);
-		goto out_put_host;
-	}
-
 	if (scsi_add_host(host, dev)) {
 		dev_printk(KERN_ERR, dev, "53c700: scsi_add_host failed\n");
-		goto out_release_irq;
+		scsi_host_put(host);
+		return NULL;
 	}
 
 	spi_signalling(host) = hostdata->differential ? SPI_SIGNAL_HVD :
 		SPI_SIGNAL_SE;
 
 	return host;
-
- out_release_irq:
-	free_irq(irq, host);
- out_put_host:
-	scsi_host_put(host);
-
-	return NULL;
 }
 
 int
@@ -820,6 +808,7 @@ process_extended_message(struct Scsi_Host *host,
 	switch(hostdata->msgin[2]) {
 	case A_SDTR_MSG:
 		if(SCp != NULL && NCR_700_is_flag_set(SCp->device, NCR_700_DEV_BEGIN_SYNC_NEGOTIATION)) {
+			struct scsi_target *starget = SCp->device->sdev_target;
 			__u8 period = hostdata->msgin[3];
 			__u8 offset = hostdata->msgin[4];
 
@@ -827,22 +816,15 @@ process_extended_message(struct Scsi_Host *host,
 				offset = 0;
 				period = 0;
 			}
+
+			spi_offset(starget) = offset;
+			spi_period(starget) = period;
 			
 			if(NCR_700_is_flag_set(SCp->device, NCR_700_DEV_PRINT_SYNC_NEGOTIATION)) {
-				if(spi_offset(SCp->device->sdev_target) != 0)
-					printk(KERN_INFO "scsi%d: (%d:%d) Synchronous at offset %d, period %dns\n",
-					       host->host_no, pun, lun,
-					       offset, period*4);
-				else
-					printk(KERN_INFO "scsi%d: (%d:%d) Asynchronous\n",
-					       host->host_no, pun, lun);
+				spi_display_xfer_agreement(starget);
 				NCR_700_clear_flag(SCp->device, NCR_700_DEV_PRINT_SYNC_NEGOTIATION);
 			}
-				
-			spi_offset(SCp->device->sdev_target) = offset;
-			spi_period(SCp->device->sdev_target) = period;
 			
-
 			NCR_700_set_flag(SCp->device, NCR_700_DEV_NEGOTIATED_SYNC);
 			NCR_700_clear_flag(SCp->device, NCR_700_DEV_BEGIN_SYNC_NEGOTIATION);
 			
@@ -924,10 +906,11 @@ process_message(struct Scsi_Host *host,	struct NCR_700_Host_Parameters *hostdata
 				spi_offset(SCp->device->sdev_target) = 0;
 			NCR_700_set_flag(SCp->device, NCR_700_DEV_NEGOTIATED_SYNC);
 			NCR_700_clear_flag(SCp->device, NCR_700_DEV_BEGIN_SYNC_NEGOTIATION);
-		} else if(SCp != NULL && NCR_700_is_flag_set(SCp->device, NCR_700_DEV_BEGIN_TAG_QUEUEING)) {
+		} else if(SCp != NULL && NCR_700_get_tag_neg_state(SCp->device) == NCR_700_DURING_TAG_NEGOTIATION) {
 			/* rejected our first simple tag message */
 			printk(KERN_WARNING "scsi%d (%d:%d) Rejected first tag queue attempt, turning off tag queueing\n", host->host_no, pun, lun);
-			NCR_700_clear_flag(SCp->device, NCR_700_DEV_BEGIN_TAG_QUEUEING);
+			/* we're done negotiating */
+			NCR_700_set_tag_neg_state(SCp->device, NCR_700_FINISHED_TAG_NEGOTIATION);
 			hostdata->tag_negotiated &= ~(1<<SCp->device->id);
 			SCp->device->tagged_supported = 0;
 			scsi_deactivate_tcq(SCp->device, host->cmd_per_lun);
@@ -989,8 +972,11 @@ process_script_interrupt(__u32 dsps, __u32 dsp, struct scsi_cmnd *SCp,
 	if(dsps == A_GOOD_STATUS_AFTER_STATUS) {
 		DEBUG(("  COMMAND COMPLETE, status=%02x\n",
 		       hostdata->status[0]));
-		/* OK, if TCQ still on, we know it works */
-		NCR_700_clear_flag(SCp->device, NCR_700_DEV_BEGIN_TAG_QUEUEING);
+		/* OK, if TCQ still under negotiation, we now know it works */
+		if (NCR_700_get_tag_neg_state(SCp->device) == NCR_700_DURING_TAG_NEGOTIATION)
+			NCR_700_set_tag_neg_state(SCp->device,
+						  NCR_700_FINISHED_TAG_NEGOTIATION);
+			
 		/* check for contingent allegiance contitions */
 		if(status_byte(hostdata->status[0]) == CHECK_CONDITION ||
 		   status_byte(hostdata->status[0]) == COMMAND_TERMINATED) {
@@ -1811,23 +1797,12 @@ NCR_700_queuecommand(struct scsi_cmnd *SCp, void (*done)(struct scsi_cmnd *))
 	printk("53c700: scsi%d, command ", SCp->device->host->host_no);
 	scsi_print_command(SCp);
 #endif
-	if(SCp->device->tagged_supported && !SCp->device->simple_tags
-	   && (hostdata->tag_negotiated &(1<<SCp->device->id)) == 0
-	   && NCR_700_is_flag_clear(SCp->device, NCR_700_DEV_BEGIN_TAG_QUEUEING)) {
-		/* upper layer has indicated tags are supported.  We don't
-		 * necessarily believe it yet.
-		 *
-		 * NOTE: There is a danger here: the mid layer supports
-		 * tag queuing per LUN.  We only support it per PUN because
-		 * of potential reselection issues */
-		scsi_activate_tcq(SCp->device, NCR_700_DEFAULT_TAGS);
-	}
-
 	if(blk_rq_tagged(SCp->request)
-	   && (hostdata->tag_negotiated &(1<<SCp->device->id)) == 0) {
-		printk(KERN_INFO "scsi%d: (%d:%d) Enabling Tag Command Queuing\n", SCp->device->host->host_no, SCp->device->id, SCp->device->lun);
+	   && (hostdata->tag_negotiated &(1<<SCp->device->id)) == 0
+	   && NCR_700_get_tag_neg_state(SCp->device) == NCR_700_START_TAG_NEGOTIATION) {
+		printk(KERN_ERR "scsi%d: (%d:%d) Enabling Tag Command Queuing\n", SCp->device->host->host_no, SCp->device->id, SCp->device->lun);
 		hostdata->tag_negotiated |= (1<<SCp->device->id);
-		NCR_700_set_flag(SCp->device, NCR_700_DEV_BEGIN_TAG_QUEUEING);
+		NCR_700_set_tag_neg_state(SCp->device, NCR_700_DURING_TAG_NEGOTIATION);
 	}
 
 	/* here we may have to process an untagged command.  The gate
@@ -1842,7 +1817,8 @@ NCR_700_queuecommand(struct scsi_cmnd *SCp, void (*done)(struct scsi_cmnd *))
 		hostdata->tag_negotiated &= ~(1<<SCp->device->id);
 	}
 
-	if((hostdata->tag_negotiated &(1<<SCp->device->id))) {
+	if((hostdata->tag_negotiated &(1<<SCp->device->id))
+	   && scsi_get_tag_type(SCp->device)) {
 		slot->tag = SCp->request->tag;
 		DEBUG(("53c700 %d:%d:%d, sending out tag %d, slot %p\n",
 		       SCp->device->host->host_no, SCp->device->id, SCp->device->lun, slot->tag,
@@ -2080,7 +2056,9 @@ NCR_700_slave_configure(struct scsi_device *SDp)
 
 	/* to do here: allocate memory; build a queue_full list */
 	if(SDp->tagged_supported) {
-		/* do TCQ stuff here */
+		scsi_set_tag_type(SDp, MSG_ORDERED_TAG);
+		scsi_activate_tcq(SDp, NCR_700_DEFAULT_TAGS);
+		NCR_700_set_tag_neg_state(SDp, NCR_700_START_TAG_NEGOTIATION);
 	} else {
 		/* initialise to default depth */
 		scsi_adjust_queue_depth(SDp, 0, SDp->host->cmd_per_lun);
@@ -2102,18 +2080,48 @@ NCR_700_slave_destroy(struct scsi_device *SDp)
 	/* to do here: deallocate memory */
 }
 
-static ssize_t
-NCR_700_store_queue_depth(struct device *dev, const char *buf, size_t count)
+static int
+NCR_700_change_queue_depth(struct scsi_device *SDp, int depth)
 {
-	int depth;
+	if (depth > NCR_700_MAX_TAGS)
+		depth = NCR_700_MAX_TAGS;
 
-	struct scsi_device *SDp = to_scsi_device(dev);
-	depth = simple_strtoul(buf, NULL, 0);
-	if(depth > NCR_700_MAX_TAGS)
-		return -EINVAL;
-	scsi_adjust_queue_depth(SDp, MSG_ORDERED_TAG, depth);
+	scsi_adjust_queue_depth(SDp, scsi_get_tag_type(SDp), depth);
+	return depth;
+}
 
-	return count;
+static int NCR_700_change_queue_type(struct scsi_device *SDp, int tag_type)
+{
+	int change_tag = ((tag_type ==0 &&  scsi_get_tag_type(SDp) != 0)
+			  || (tag_type != 0 && scsi_get_tag_type(SDp) == 0));
+	struct NCR_700_Host_Parameters *hostdata = 
+		(struct NCR_700_Host_Parameters *)SDp->host->hostdata[0];
+
+	scsi_set_tag_type(SDp, tag_type);
+
+	/* We have a global (per target) flag to track whether TCQ is
+	 * enabled, so we'll be turning it off for the entire target here.
+	 * our tag algorithm will fail if we mix tagged and untagged commands,
+	 * so quiesce the device before doing this */
+	if (change_tag)
+		scsi_target_quiesce(SDp->sdev_target);
+
+	if (!tag_type) {
+		/* shift back to the default unqueued number of commands
+		 * (the user can still raise this) */
+		scsi_deactivate_tcq(SDp, SDp->host->cmd_per_lun);
+		hostdata->tag_negotiated &= ~(1 << SDp->id);
+	} else {
+		/* Here, we cleared the negotiation flag above, so this
+		 * will force the driver to renegotiate */
+		scsi_activate_tcq(SDp, SDp->queue_depth);
+		if (change_tag)
+			NCR_700_set_tag_neg_state(SDp, NCR_700_START_TAG_NEGOTIATION);
+	}
+	if (change_tag)
+		scsi_target_resume(SDp->sdev_target);
+
+	return tag_type;
 }
 
 static ssize_t
@@ -2124,14 +2132,6 @@ NCR_700_show_active_tags(struct device *dev, char *buf)
 	return snprintf(buf, 20, "%d\n", NCR_700_get_depth(SDp));
 }
 
-static struct device_attribute NCR_700_queue_depth_attr = {
-	.attr = {
-		.name = 	"queue_depth",
-		.mode =		S_IWUSR,
-	},
-	.store = NCR_700_store_queue_depth,
-};
-
 static struct device_attribute NCR_700_active_tags_attr = {
 	.attr = {
 		.name =		"active_tags",
@@ -2141,7 +2141,6 @@ static struct device_attribute NCR_700_active_tags_attr = {
 };
 
 STATIC struct device_attribute *NCR_700_dev_attrs[] = {
-	&NCR_700_queue_depth_attr,
 	&NCR_700_active_tags_attr,
 	NULL,
 };

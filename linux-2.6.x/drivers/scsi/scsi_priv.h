@@ -30,11 +30,6 @@ struct Scsi_Host;
 #define SCSI_REQ_MAGIC		0x75F6D354
 
 /*
- *  Flag bit for the internal_timeout array
- */
-#define NORMAL_TIMEOUT		0
-
-/*
  * Scsi Error Handler Flags
  */
 #define scsi_eh_eflags_chk(scp, flags) \
@@ -146,7 +141,7 @@ extern int scsi_sysfs_add_sdev(struct scsi_device *);
 extern int scsi_sysfs_add_host(struct Scsi_Host *);
 extern int scsi_sysfs_register(void);
 extern void scsi_sysfs_unregister(void);
-extern int scsi_sysfs_device_initialize(struct scsi_device *);
+extern void scsi_sysfs_device_initialize(struct scsi_device *);
 extern int scsi_sysfs_target_initialize(struct scsi_device *);
 extern struct scsi_transport_template blank_transport_template;
 

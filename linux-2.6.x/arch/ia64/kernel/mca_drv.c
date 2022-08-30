@@ -45,14 +45,14 @@ static ia64_mca_os_to_sal_state_t *os_to_sal_handoff_state;
 /* from mca_drv_asm.S */
 extern void *mca_handler_bhhook(void);
 
-static spinlock_t mca_bh_lock = SPIN_LOCK_UNLOCKED;
+static DEFINE_SPINLOCK(mca_bh_lock);
 
 typedef enum {
 	MCA_IS_LOCAL  = 0,
 	MCA_IS_GLOBAL = 1
 } mca_type_t;
 
-#define MAX_PAGE_ISOLATE 32
+#define MAX_PAGE_ISOLATE 1024
 
 static struct page *page_isolate[MAX_PAGE_ISOLATE];
 static int num_page_isolate = 0;
@@ -132,8 +132,7 @@ mca_handler_bh(unsigned long paddr)
 	spin_unlock(&mca_bh_lock);
 
 	/* This process is about to be killed itself */
-	force_sig(SIGKILL, current);
-	schedule();
+	do_exit(SIGKILL);
 }
 
 /**
@@ -439,6 +438,7 @@ recover_from_read_error(slidx_table_t *slidx, peidx_table_t *peidx, pal_bus_chec
 			psr2 = (struct ia64_psr *)&pmsa->pmsa_ipsr;
 			psr2->cpl = 0;
 			psr2->ri  = 0;
+			psr2->i  = 0;
 
 			return 1;
 		}

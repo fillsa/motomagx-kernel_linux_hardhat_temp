@@ -169,6 +169,8 @@ struct dst_entry *dst_destroy(struct dst_entry * dst)
 	struct neighbour *neigh;
 	struct hh_cache *hh;
 
+	smp_rmb();
+
 again:
 	neigh = dst->neighbour;
 	hh = dst->hh;
@@ -196,13 +198,15 @@ again:
 
 	dst = child;
 	if (dst) {
+		int nohash = dst->flags & DST_NOHASH;
+
 		if (atomic_dec_and_test(&dst->__refcnt)) {
 			/* We were real parent of this dst, so kill child. */
-			if (dst->flags&DST_NOHASH)
+			if (nohash)
 				goto again;
 		} else {
 			/* Child is still referenced, return it for freeing. */
-			if (dst->flags&DST_NOHASH)
+			if (nohash)
 				return dst;
 			/* Child is still in his hash table */
 		}
@@ -218,12 +222,14 @@ again:
  *
  * Commented and originally written by Alexey.
  */
-static inline void dst_ifdown(struct dst_entry *dst, int unregister)
+static inline void dst_ifdown(struct dst_entry *dst, struct net_device *dev,
+			      int unregister)
 {
-	struct net_device *dev = dst->dev;
-
 	if (dst->ops->ifdown)
-		dst->ops->ifdown(dst, unregister);
+		dst->ops->ifdown(dst, dev, unregister); //mvl		dst->ops->ifdown(dst, unregister);
+
+	if (dev != dst->dev)
+		return;
 
 	if (!unregister) {
 		dst->input = dst_discard_in;
@@ -250,8 +256,7 @@ static int dst_dev_event(struct notifier_block *this, unsigned long event, void 
 	case NETDEV_DOWN:
 		spin_lock_bh(&dst_lock);
 		for (dst = dst_garbage_list; dst; dst = dst->next) {
-			if (dst->dev == dev)
-				dst_ifdown(dst, event != NETDEV_DOWN);
+			dst_ifdown(dst, dev, event != NETDEV_DOWN);
 		}
 		spin_unlock_bh(&dst_lock);
 		break;
@@ -259,7 +264,7 @@ static int dst_dev_event(struct notifier_block *this, unsigned long event, void 
 	return NOTIFY_DONE;
 }
 
-struct notifier_block dst_dev_notifier = {
+static struct notifier_block dst_dev_notifier = {
 	.notifier_call	= dst_dev_event,
 };
 

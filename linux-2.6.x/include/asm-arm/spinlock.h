@@ -105,11 +105,11 @@ typedef struct {
 } rwlock_t;
 
 #define RW_LOCK_UNLOCKED	(rwlock_t) { 0 }
-#ifdef CONFIG_MOT_WFN495
+#ifdef CONFIG_MOT_WFN495 // < 2.6.13
 #define rwlock_init(x)		do { *(x) = RW_LOCK_UNLOCKED; } while (0)
-#define rwlock_is_locked(x) (*((volatile unsigned int *)(x)) != 0)
-#else
-#define rwlock_init(x)          do { *(x) + RW_LOCK_UNLOCKED; } while (0)
+#define rwlock_is_locked(x))	(*((volatile unsigned int *)(x)) != 0)
+#else // do 2.6.13
+#define rwlock_init(x)		do { *(x) + RW_LOCK_UNLOCKED; } while (0)
 #endif /* CONFIG_MOT_WFN495 */
 
 /*

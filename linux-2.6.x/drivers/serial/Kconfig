@@ -345,7 +345,7 @@ config SERIAL_UART00
 	select SERIAL_CORE
 	help
 	  Say Y here if you want to use the hard logic uart on Excalibur. This
-	  driver also supports soft logic implentations of this uart core.
+	  driver also supports soft logic implementations of this uart core.
 
 config SERIAL_UART00_CONSOLE
 	bool "Support for console on Excalibur serial port"
@@ -553,7 +553,6 @@ config SERIAL_IP22_ZILOG_CONSOLE
 	bool "Console on IP22 Zilog8530 serial port"
 	depends on SERIAL_IP22_ZILOG=y
 	select SERIAL_CORE_CONSOLE
-	help
 
 config V850E_UART
 	bool "NEC V850E on-chip UART support"
@@ -640,7 +639,7 @@ config SERIAL_68360
 
 config SERIAL_PMACZILOG
 	tristate "PowerMac z85c30 ESCC support"
-	depends on PPC_OF
+	depends on PPC_OF && PPC_PMAC
 	select SERIAL_CORE
 	help
 	  This driver supports the Zilog z85C30 serial ports found on
@@ -665,7 +664,7 @@ config SERIAL_LH7A40X
 	  Sharp LH7A40X series CPUs.  Choose Y or M.
 
 config SERIAL_LH7A40X_CONSOLE
-	bool "Support for connsole on Sharp LH7A40X serial port"
+	bool "Support for console on Sharp LH7A40X serial port"
 	depends on SERIAL_LH7A40X=y
 	select SERIAL_CORE_CONSOLE
 	help
@@ -826,5 +825,56 @@ config MOT_FEAT_SERIAL
           code.
 
           If unsure, please say Y.
+
+config SERIAL_TXX9
+	bool "TMPTX39XX/49XX SIO support"
+	depends HAS_TXX9_SERIAL
+	select SERIAL_CORE
+	default y
+
+config HAS_TXX9_SERIAL
+	bool
+
+config SERIAL_TXX9_CONSOLE
+	bool "TMPTX39XX/49XX SIO Console support"
+	depends on SERIAL_TXX9=y
+	select SERIAL_CORE_CONSOLE
+
+config SERIAL_TXX9_STDSERIAL
+	bool "TX39XX/49XX SIO act as standard serial"
+	depends on !SERIAL_8250 && SERIAL_TXX9
+
+config SERIAL_VR41XX
+	tristate "NEC VR4100 series Serial Interface Unit support"
+	depends on CPU_VR41XX
+	select SERIAL_CORE
+	help
+	  If you have a NEC VR4100 series processor and you want to use
+	  Serial Interface Unit(SIU) or Debug Serial Interface Unit(DSIU)
+	  (not include VR4111/VR4121 DSIU), say Y.  Otherwise, say N.
+
+config SERIAL_VR41XX_CONSOLE
+	bool "Enable NEC VR4100 series Serial Interface Unit console"
+	depends on SERIAL_VR41XX
+	select SERIAL_CORE_CONSOLE
+	help
+	  If you have a NEC VR4100 series processor and you want to use
+	  a console on a serial port, say Y.  Otherwise, say N.
+
+config SERIAL_JSM
+        tristate "Digi International NEO PCI Support"
+	depends on PCI
+        select SERIAL_CORE
+        help
+          This is a driver for Digi International's Neo series
+          of cards which provide multiple serial ports. You would need
+          something like this to connect more than two modems to your Linux
+          box, for instance in order to become a dial-in server. This driver
+          supports PCI boards only.
+          If you have a card like this, say Y here and read the file
+          <file:Documentation/jsm.txt>.
+
+          To compile this driver as a module, choose M here: the
+          module will be called jsm.
 
 endmenu

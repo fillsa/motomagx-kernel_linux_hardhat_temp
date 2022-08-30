@@ -59,6 +59,7 @@
 #include <linux/usbdevice_fs.h>
 #include <asm/uaccess.h>
 
+#include "usb.h"
 #include "hcd.h"
 
 #define MAX_TOPO_LEVEL		6
@@ -180,7 +181,7 @@ static char *usb_dump_endpoint_descriptor (
 	in = (desc->bEndpointAddress & USB_DIR_IN);
 	dir = in ? 'I' : 'O';
 	if (speed == USB_SPEED_HIGH) {
-		switch (desc->wMaxPacketSize & (0x03 << 11)) {
+		switch (le16_to_cpu(desc->wMaxPacketSize) & (0x03 << 11)) {
 		case 1 << 11:	bandwidth = 2; break;
 		case 2 << 11:	bandwidth = 3; break;
 		}
@@ -227,7 +228,7 @@ static char *usb_dump_endpoint_descriptor (
 
 	start += sprintf(start, format_endpt, desc->bEndpointAddress, dir,
 			 desc->bmAttributes, type,
-			 (desc->wMaxPacketSize & 0x07ff) * bandwidth,
+			 (le16_to_cpu(desc->wMaxPacketSize) & 0x07ff) * bandwidth,
 			 interval, unit);
 	return start;
 }
@@ -335,10 +336,13 @@ static char *usb_dump_config (
  */
 static char *usb_dump_device_descriptor(char *start, char *end, const struct usb_device_descriptor *desc)
 {
+	u16 bcdUSB = le16_to_cpu(desc->bcdUSB);
+	u16 bcdDevice = le16_to_cpu(desc->bcdDevice);
+
 	if (start > end)
 		return start;
 	start += sprintf (start, format_device1,
-			  desc->bcdUSB >> 8, desc->bcdUSB & 0xff,
+			  bcdUSB >> 8, bcdUSB & 0xff,
 			  desc->bDeviceClass,
 			  class_decode (desc->bDeviceClass),
 			  desc->bDeviceSubClass,
@@ -348,8 +352,9 @@ static char *usb_dump_device_descriptor(char *start, char *end, const struct usb
 	if (start > end)
 		return start;
 	start += sprintf(start, format_device2,
-			 desc->idVendor, desc->idProduct,
-			 desc->bcdDevice >> 8, desc->bcdDevice & 0xff);
+			 le16_to_cpu(desc->idVendor),
+			 le16_to_cpu(desc->idProduct),
+			 bcdDevice >> 8, bcdDevice & 0xff);
 	return start;
 }
 
@@ -358,33 +363,21 @@ static char *usb_dump_device_descriptor(char *start, char *end, const struct usb
  */
 static char *usb_dump_device_strings (char *start, char *end, struct usb_device *dev)
 {
-	char *buf;
-
 	if (start > end)
 		return start;
-	buf = kmalloc(128, GFP_KERNEL);
-	if (!buf)
-		return start;
-	if (dev->descriptor.iManufacturer) {
-		if (usb_string(dev, dev->descriptor.iManufacturer, buf, 128) > 0)
-			start += sprintf(start, format_string_manufacturer, buf);
-	}				
+	if (dev->manufacturer)
+		start += sprintf(start, format_string_manufacturer, dev->manufacturer);
 	if (start > end)
 		goto out;
-	if (dev->descriptor.iProduct) {
-		if (usb_string(dev, dev->descriptor.iProduct, buf, 128) > 0)
-			start += sprintf(start, format_string_product, buf);
-	}
+	if (dev->product)
+		start += sprintf(start, format_string_product, dev->product);
 	if (start > end)
 		goto out;
 #ifdef ALLOW_SERIAL_NUMBER
-	if (dev->descriptor.iSerialNumber) {
-		if (usb_string(dev, dev->descriptor.iSerialNumber, buf, 128) > 0)
-			start += sprintf(start, format_string_serialnumber, buf);
-	}
+	if (dev->serial)
+		start += sprintf(start, format_string_serialnumber, dev->serial);
 #endif
  out:
-	kfree(buf);
 	return start;
 }
 
@@ -468,7 +461,7 @@ static ssize_t usb_device_dump(char __user **buffer, size_t *nbytes, loff_t *ski
 		return 0;
 	
 	if (level > MAX_TOPO_LEVEL)
-		return total_written;
+		return 0;
 	/* allocate 2^1 pages = 8K (on i386); should be more than enough for one device */
         if (!(pages_start = (char*) __get_free_pages(GFP_KERNEL,1)))
                 return -ENOMEM;
@@ -535,10 +528,7 @@ static ssize_t usb_device_dump(char __user **buffer, size_t *nbytes, loff_t *ski
 			length = *nbytes;
 		if (copy_to_user(*buffer, pages_start + *skip_bytes, length)) {
 			free_pages((unsigned long)pages_start, 1);
-			
-			if (total_written == 0)
-				return -EFAULT;
-			return total_written;
+			return -EFAULT;
 		}
 		*nbytes -= length;
 		*file_offset += length;
@@ -616,6 +606,7 @@ static unsigned int usb_device_poll(struct file *file, struct poll_table_struct 
 		/* we may have dropped BKL - need to check for having lost the race */
 		if (file->private_data) {
 			kfree(st);
+			st = file->private_data;
 			goto lost_race;
 		}
 
@@ -646,11 +637,8 @@ static int usb_device_open(struct inode *inode, struct file *file)
 
 static int usb_device_release(struct inode *inode, struct file *file)
 {
-	if (file->private_data) {
-		kfree(file->private_data);
-		file->private_data = NULL;
-	}
-
+	kfree(file->private_data);
+	file->private_data = NULL;
         return 0;
 }
 

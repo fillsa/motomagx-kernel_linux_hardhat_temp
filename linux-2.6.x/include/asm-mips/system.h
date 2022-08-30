@@ -435,4 +435,6 @@ do {						\
 #define task_running(rq, p) 		((rq)->curr == (p) || spin_is_locked(&(p)->switch_lock))
 #endif
 
+#define arch_align_stack(x) (x)
+
 #endif /* _ASM_SYSTEM_H */

@@ -1,5 +1,5 @@
 /*
-    $Id: bttv-driver.c,v 1.27 2004/11/07 14:44:59 kraxel Exp $
+    $Id: bttv-driver.c,v 1.37 2005/02/21 13:57:59 kraxel Exp $
 
     bttv - Bt848 frame grabber driver
 
@@ -27,6 +27,7 @@
 
 #include <linux/init.h>
 #include <linux/module.h>
+#include <linux/moduleparam.h>
 #include <linux/delay.h>
 #include <linux/errno.h>
 #include <linux/fs.h>
@@ -105,6 +106,7 @@ module_param(adc_crush,         int, 0444);
 module_param(whitecrush_upper,  int, 0444);
 module_param(whitecrush_lower,  int, 0444);
 module_param(vcr_hack,          int, 0444);
+
 module_param_array(radio, int, NULL, 0444);
 
 MODULE_PARM_DESC(radio,"The TV card supports radio, default is 0 (no)");
@@ -313,12 +315,12 @@ const struct bttv_tvnorm bttv_tvnorms[] = {
 		.sram           = -1,
 	}
 };
-const unsigned int BTTV_TVNORMS = ARRAY_SIZE(bttv_tvnorms);
+static const unsigned int BTTV_TVNORMS = ARRAY_SIZE(bttv_tvnorms);
 
 /* ----------------------------------------------------------------------- */
 /* bttv format list
    packed pixel formats must come first */
-const struct bttv_format bttv_formats[] = {
+static const struct bttv_format bttv_formats[] = {
 	{
 		.name     = "8 bpp, gray",
 		.palette  = VIDEO_PALETTE_GREY,
@@ -470,7 +472,7 @@ const struct bttv_format bttv_formats[] = {
 		.flags    = FORMAT_FLAGS_RAW,
 	}
 };
-const unsigned int BTTV_FORMATS = ARRAY_SIZE(bttv_formats);
+static const unsigned int BTTV_FORMATS = ARRAY_SIZE(bttv_formats);
 
 /* ----------------------------------------------------------------------- */
 
@@ -619,7 +621,7 @@ static const struct v4l2_queryctrl bttv_ctls[] = {
 	}
 
 };
-const int BTTV_CTLS = ARRAY_SIZE(bttv_ctls);
+static const int BTTV_CTLS = ARRAY_SIZE(bttv_ctls);
 
 /* ----------------------------------------------------------------------- */
 /* resource management                                                     */
@@ -755,7 +757,7 @@ static void set_pll(struct bttv *btv)
 }
 
 /* used to switch between the bt848's analog/digital video capture modes */
-void bt848A_set_timing(struct bttv *btv)
+static void bt848A_set_timing(struct bttv *btv)
 {
 	int i, len;
 	int table_idx = bttv_tvnorms[btv->tvnorm].sram;
@@ -1063,7 +1065,7 @@ static void init_bt848(struct bttv *btv)
 	init_irqreg(btv);
 }
 
-void bttv_reinit_bt848(struct bttv *btv)
+static void bttv_reinit_bt848(struct bttv *btv)
 {
 	unsigned long flags;
 
@@ -1267,7 +1269,7 @@ void bttv_gpio_tracking(struct bttv *btv, char *comment)
 	       btv->c.nr,outbits,data & outbits, data & ~outbits, comment);
 }
 
-void bttv_field_count(struct bttv *btv)
+static void bttv_field_count(struct bttv *btv)
 {
 	int need_count = 0;
 
@@ -1467,7 +1469,7 @@ static const char *v4l1_ioctls[] = {
 	"SMICROCODE", "GVBIFMT", "SVBIFMT" };
 #define V4L1_IOCTLS ARRAY_SIZE(v4l1_ioctls)
 
-int bttv_common_ioctls(struct bttv *btv, unsigned int cmd, void *arg)
+static int bttv_common_ioctls(struct bttv *btv, unsigned int cmd, void *arg)
 {
 	switch (cmd) {
         case BTTV_VERSION:
@@ -2531,9 +2533,11 @@ static int bttv_do_ioctl(struct inode *inode, struct file *file,
 			V4L2_CAP_VIDEO_CAPTURE |
 			V4L2_CAP_VIDEO_OVERLAY |
 			V4L2_CAP_VBI_CAPTURE |
-			V4L2_CAP_TUNER |
 			V4L2_CAP_READWRITE |
 			V4L2_CAP_STREAMING;
+		if (bttv_tvcards[btv->c.type].tuner != UNSET &&
+		    bttv_tvcards[btv->c.type].tuner != TUNER_ABSENT)
+			cap->capabilities |= V4L2_CAP_TUNER;
 		return 0;
 	}
 
@@ -2988,6 +2992,9 @@ static int bttv_release(struct inode *inode, struct file *file)
 		free_btres(btv,fh,RESOURCE_VBI);
 	}
 
+	/* free stuff */
+	videobuf_mmap_free(&fh->cap);
+	videobuf_mmap_free(&fh->vbi);
 	v4l2_prio_close(&btv->prio,&fh->prio);
 	file->private_data = NULL;
 	kfree(fh);
@@ -3030,7 +3037,7 @@ static struct video_device bttv_video_template =
 	.minor    = -1,
 };
 
-struct video_device bttv_vbi_template =
+static struct video_device bttv_vbi_template =
 {
 	.name     = "bt848/878 vbi",
 	.type     = VID_TYPE_TUNER|VID_TYPE_TELETEXT,
@@ -3160,6 +3167,82 @@ static struct video_device radio_template =
 };
 
 /* ----------------------------------------------------------------------- */
+/* some debug code                                                         */
+
+static int bttv_risc_decode(u32 risc)
+{
+	static char *instr[16] = {
+		[ BT848_RISC_WRITE     >> 28 ] = "write",
+		[ BT848_RISC_SKIP      >> 28 ] = "skip",
+		[ BT848_RISC_WRITEC    >> 28 ] = "writec",
+		[ BT848_RISC_JUMP      >> 28 ] = "jump",
+		[ BT848_RISC_SYNC      >> 28 ] = "sync",
+		[ BT848_RISC_WRITE123  >> 28 ] = "write123",
+		[ BT848_RISC_SKIP123   >> 28 ] = "skip123",
+		[ BT848_RISC_WRITE1S23 >> 28 ] = "write1s23",
+	};
+	static int incr[16] = {
+		[ BT848_RISC_WRITE     >> 28 ] = 2,
+		[ BT848_RISC_JUMP      >> 28 ] = 2,
+		[ BT848_RISC_SYNC      >> 28 ] = 2,
+		[ BT848_RISC_WRITE123  >> 28 ] = 5,
+		[ BT848_RISC_SKIP123   >> 28 ] = 2,
+		[ BT848_RISC_WRITE1S23 >> 28 ] = 3,
+	};
+	static char *bits[] = {
+		"be0",  "be1",  "be2",  "be3/resync",
+		"set0", "set1", "set2", "set3",
+		"clr0", "clr1", "clr2", "clr3",
+		"irq",  "res",  "eol",  "sol",
+	};
+	int i;
+
+	printk("0x%08x [ %s", risc,
+	       instr[risc >> 28] ? instr[risc >> 28] : "INVALID");
+	for (i = ARRAY_SIZE(bits)-1; i >= 0; i--)
+		if (risc & (1 << (i + 12)))
+			printk(" %s",bits[i]);
+	printk(" count=%d ]\n", risc & 0xfff);
+	return incr[risc >> 28] ? incr[risc >> 28] : 1;
+}
+
+static void bttv_risc_disasm(struct bttv *btv,
+			     struct btcx_riscmem *risc)
+{
+	unsigned int i,j,n;
+
+	printk("%s: risc disasm: %p [dma=0x%08lx]\n",
+	       btv->c.name, risc->cpu, (unsigned long)risc->dma);
+	for (i = 0; i < (risc->size >> 2); i += n) {
+		printk("%s:   0x%lx: ", btv->c.name,
+		       (unsigned long)(risc->dma + (i<<2)));
+		n = bttv_risc_decode(risc->cpu[i]);
+		for (j = 1; j < n; j++)
+			printk("%s:   0x%lx: 0x%08x [ arg #%d ]\n",
+			       btv->c.name, (unsigned long)(risc->dma + ((i+j)<<2)),
+			       risc->cpu[i+j], j);
+		if (0 == risc->cpu[i])
+			break;
+	}
+}
+
+static void bttv_print_riscaddr(struct bttv *btv)
+{
+	printk("  main: %08Lx\n",
+	       (unsigned long long)btv->main.dma);
+	printk("  vbi : o=%08Lx e=%08Lx\n",
+	       btv->cvbi ? (unsigned long long)btv->cvbi->top.dma : 0,
+	       btv->cvbi ? (unsigned long long)btv->cvbi->bottom.dma : 0);
+	printk("  cap : o=%08Lx e=%08Lx\n",
+	       btv->curr.top    ? (unsigned long long)btv->curr.top->top.dma : 0,
+	       btv->curr.bottom ? (unsigned long long)btv->curr.bottom->bottom.dma : 0);
+	printk("  scr : o=%08Lx e=%08Lx\n",
+	       btv->screen ? (unsigned long long)btv->screen->top.dma : 0,
+	       btv->screen ? (unsigned long long)btv->screen->bottom.dma : 0);
+	bttv_risc_disasm(btv, &btv->main);
+}
+
+/* ----------------------------------------------------------------------- */
 /* irq handler                                                             */
 
 static char *irq_name[] = {
@@ -3195,21 +3278,6 @@ static void bttv_print_irqbits(u32 print, u32 mark)
 		if (mark & (1 << i))
 			printk("*");
 	}
-}
-
-static void bttv_print_riscaddr(struct bttv *btv)
-{
-	printk("  main: %08Lx\n",
-	       (unsigned long long)btv->main.dma);
-	printk("  vbi : o=%08Lx e=%08Lx\n",
-	       btv->cvbi ? (unsigned long long)btv->cvbi->top.dma : 0,
-	       btv->cvbi ? (unsigned long long)btv->cvbi->bottom.dma : 0);
-	printk("  cap : o=%08Lx e=%08Lx\n",
-	       btv->curr.top    ? (unsigned long long)btv->curr.top->top.dma : 0,
-	       btv->curr.bottom ? (unsigned long long)btv->curr.bottom->bottom.dma : 0);
-	printk("  scr : o=%08Lx e=%08Lx\n",
-	       btv->screen ? (unsigned long long)btv->screen->top.dma  : 0,
-	       btv->screen ? (unsigned long long)btv->screen->bottom.dma : 0);
 }
 
 static void bttv_irq_debug_low_latency(struct bttv *btv, u32 rc)
@@ -3914,7 +3982,7 @@ static void __devexit bttv_remove(struct pci_dev *pci_dev)
         return;
 }
 
-static int bttv_suspend(struct pci_dev *pci_dev, u32 state)
+static int bttv_suspend(struct pci_dev *pci_dev, pm_message_t state)
 {
         struct bttv *btv = pci_get_drvdata(pci_dev);
 	struct bttv_buffer_set idle;
@@ -3942,7 +4010,7 @@ static int bttv_suspend(struct pci_dev *pci_dev, u32 state)
 
 	/* save pci state */
 	pci_save_state(pci_dev);
-	if (0 != pci_set_power_state(pci_dev, state)) {
+	if (0 != pci_set_power_state(pci_dev, pci_choose_state(pci_dev, state))) {
 		pci_disable_device(pci_dev);
 		btv->state.disabled = 1;
 	}
@@ -3961,7 +4029,7 @@ static int bttv_resume(struct pci_dev *pci_dev)
 		pci_enable_device(pci_dev);
 		btv->state.disabled = 0;
 	}
-	pci_set_power_state(pci_dev, 0);
+	pci_set_power_state(pci_dev, PCI_D0);
 	pci_restore_state(pci_dev);
 
 	/* restore bt878 state */

@@ -50,6 +50,7 @@
 #include <asm/ioctls.h>
 
 static atomic_t inotify_cookie;
+
 static kmem_cache_t *watch_cachep;
 static kmem_cache_t *event_cachep;
 static kmem_cache_t *inode_data_cachep;
@@ -74,42 +75,46 @@ static unsigned int sysfs_attrib_max_queued_events;
  * 	inode->i_lock (only needed for getting ref on inode_data)
  * 		dev->lock (protects dev)
  *
- * # This structure is protected by 'lock'.  Lock ordering:
- * #
- * # dev->lock (protects dev)
- * #	inode_lock (used to safely walk inode_in_use list)
- * #		inode->i_lock (only needed for getting ref on inode_data)
+ * This structure is protected by 'lock'.
+ * Lock ordering:
+ *
+ * dev->lock (protects dev)
+ *	inode_lock (used to safely walk inode_in_use list)
+ *		inode->i_lock (only needed for getting ref on inode_data)
  */
 struct inotify_device {
-	wait_queue_head_t 	wait;
-	struct idr		idr;
-	struct list_head 	events;
-	struct list_head 	watches;
+	wait_queue_head_t 	wait;		/* wait queue for i/o */
+	struct idr		idr;		/* idr mapping wd -> watch */
+	struct list_head 	events;		/* list of queued events */
+	struct list_head	watches;	/* list of watches */
 	spinlock_t		lock;
-	unsigned int		queue_size;
-	unsigned int		event_count;
-	unsigned int		max_events;
+	unsigned int		queue_size;	/* size of the queue (bytes) */
+	unsigned int		event_count;	/* number of pending events */
+	unsigned int		max_events;	/* maximum number of events */
 	struct user_struct	*user;
 	u32			last_wd;	/* the last wd allocated */
 };
 
-struct inotify_watch {
-	s32 			wd;	/* watch descriptor */
-	u32			mask;	/* event mask for this watch */
-	struct inode		*inode;	/* associated inode */
-	struct inotify_device	*dev;	/* associated device */
-	struct list_head	d_list;	/* entry in device's list */
-	struct list_head	i_list; /* entry in inotify_data's list */
-};
-
 /*
- * A list of these is attached to each instance of the driver.  In read(), this
- * this list is walked and all events that can fit in the buffer are returned.
+ * struct inotify_kernel_event - An inotify event, originating from a watch and
+ * queued for user-space.  A list of these is attached to each instance of the
+ * driver.  In read(), this list is walked and all events that can fit in the
+ * buffer are returned.
+ *
  */
 struct inotify_kernel_event {
-	struct inotify_event	event;
-	struct list_head        list;
-	char			*filename;
+	struct inotify_event	event;	/* the user-space event */
+	struct list_head        list;	/* entry in inotify_device's list */
+	char			*filename;	/* filename, if any */
+};
+
+struct inotify_watch {
+	struct list_head	d_list;	/* entry in device's list */
+	struct list_head	i_list;	/* entry in inotify_data's list */
+	struct inotify_device	*dev;	/* associated device */
+	struct inode		*inode;	/* associated inode */
+	s32 			wd;	/* watch descriptor */
+	u32			mask;	/* event mask for this watch */
 };
 
 static ssize_t show_max_queued_events(struct class_device *class, char *buf)
@@ -208,21 +213,6 @@ static inline void put_inode_data(struct inode *inode)
         //spin_unlock(&inode->i_lock);
 }
 
-/*
- * find_inode - resolve a user-given path to a specific inode and return a nd
- */
-static int find_inode(const char __user *dirname, struct nameidata *nd)
-{
-	int error;
-
-	error = __user_walk(dirname, LOOKUP_FOLLOW, nd);
-	if (error)
-		return error;
-
-	/* you can only watch an inode if you have read permissions on it */
-	return permission(nd->dentry->d_inode, MAY_READ, NULL);
-}
-
 static struct inotify_kernel_event * kernel_event(s32 wd, u32 mask, u32 cookie,
 						  const char *filename)
 {
@@ -238,6 +228,7 @@ static struct inotify_kernel_event * kernel_event(s32 wd, u32 mask, u32 cookie,
 	kevent->event.wd = wd;
 	kevent->event.mask = mask;
 	kevent->event.cookie = cookie;
+
 	INIT_LIST_HEAD(&kevent->list);
 
 	if (filename) {
@@ -292,10 +283,10 @@ static void inotify_dev_queue_event(struct inotify_device *dev,
 {
 	struct inotify_kernel_event *kevent, *last;
 
-	/* drop this event if it is a dupe of the previous */
+	/* coalescing: drop this event if it is a dupe of the previous */
 	last = inotify_dev_get_event(dev);
-	if (dev->event_count && last->event.mask == mask &&
-			last->event.wd == watch->wd) {
+	if (dev->event_count && last->event.mask == mask && last->event.wd == watch->wd
+						) {
 		const char *lastname = last->filename;
 
 		if (!filename && !lastname)
@@ -304,10 +295,7 @@ static void inotify_dev_queue_event(struct inotify_device *dev,
 			return;
 	}
 
-	/*
-	 * the queue has already overflowed and we have already sent the
-	 * Q_OVERFLOW event
-	 */
+	/* the queue has already overflowed and we have already sent the Q_OVERFLOW event */
 	if (dev->event_count > dev->max_events)
 		return;
 
@@ -316,8 +304,7 @@ static void inotify_dev_queue_event(struct inotify_device *dev,
 		kevent = kernel_event(-1, IN_Q_OVERFLOW, cookie, NULL);
 		goto add_event_to_queue;
 	}
-
-	kevent = kernel_event(watch->wd, mask, cookie, filename);
+		kevent = kernel_event(watch->wd, mask, cookie, filename);
 
 add_event_to_queue:
 	if (!kevent)
@@ -364,7 +351,7 @@ static void inotify_dev_event_dequeue(struct inotify_device *dev)
  * This function can sleep.
  */
 static int inotify_dev_get_wd(struct inotify_device *dev,
-			     struct inotify_watch *watch)
+			      struct inotify_watch *watch)
 {
 	int ret;
 
@@ -406,6 +393,20 @@ static int inotify_dev_put_wd(struct inotify_device *dev, s32 wd)
 	idr_remove(&dev->idr, wd);
 
 	return 0;
+}
+
+/*
+ * find_inode - resolve a user-given path to a specific inode and return a nd
+ */
+static int find_inode(const char __user *dirname, struct nameidata *nd)
+{
+	int error;
+
+	error = __user_walk(dirname, LOOKUP_FOLLOW, nd);
+	if (error)
+		return error;
+	/* you can only watch an inode if you have read permissions on it */
+	return permission(nd->dentry->d_inode, MAY_READ, NULL);
 }
 
 /*
@@ -627,6 +628,7 @@ void inotify_dentry_parent_queue_event(struct dentry *dentry, u32 mask,
 	spin_lock(&dentry->d_lock);
 	parent = dentry->d_parent;
 	inode = parent->d_inode;
+
 	if (inode->inotify_data) {
 		dget(parent);
 		spin_unlock(&dentry->d_lock);
@@ -738,7 +740,7 @@ void inotify_super_block_umount(struct super_block *sb)
 }
 EXPORT_SYMBOL_GPL(inotify_super_block_umount);
 
-/*
+/**
  * inotify_inode_is_dead - an inode has been deleted, cleanup any watches
  */
 void inotify_inode_is_dead(struct inode *inode)
@@ -758,20 +760,43 @@ void inotify_inode_is_dead(struct inode *inode)
 }
 EXPORT_SYMBOL_GPL(inotify_inode_is_dead);
 
+/*
+ * inotify_release_all_watches - destroy all watches on a given device
+ *
+ * FIXME: We need a lock on the watch here.
+ */
+static void inotify_release_all_watches(struct inotify_device *dev)
+{
+	struct inotify_watch *watch, *next;
+
+	list_for_each_entry_safe(watch, next, &dev->watches, d_list)
+		remove_watch(watch);
+}
+
+/*
+ * inotify_release_all_events - destroy all of the events on a given device
+ */
+static void inotify_release_all_events(struct inotify_device *dev)
+{
+	spin_lock(&dev->lock);
+	while (inotify_dev_has_events(dev))
+		inotify_dev_event_dequeue(dev);
+	spin_unlock(&dev->lock);
+}
+
 /* The driver interface is implemented below */
 
 static unsigned int inotify_poll(struct file *file, poll_table *wait)
 {
-        struct inotify_device *dev;
+	struct inotify_device *dev;
 
-        dev = file->private_data;
+	dev = file->private_data;
 
-        poll_wait(file, &dev->wait, wait);
+	poll_wait(file, &dev->wait, wait);
+	if (inotify_dev_has_events(dev))
+		return POLLIN | POLLRDNORM;
 
-        if (inotify_dev_has_events(dev))
-                return POLLIN | POLLRDNORM;
-
-        return 0;
+	return 0;
 }
 
 static ssize_t inotify_read(struct file *file, char __user *buf,
@@ -830,9 +855,9 @@ static ssize_t inotify_read(struct file *file, char __user *buf,
 			break;
 
 		/* Copy the entire event except the string to user space */
-		if (copy_to_user(buf, &kevent->event, event_size)) 
+		if (copy_to_user(buf, &kevent->event, event_size)) {
 			return -EFAULT;
-
+		}
 		buf += event_size;
 		count -= event_size;
 
@@ -851,6 +876,23 @@ static ssize_t inotify_read(struct file *file, char __user *buf,
 	}
 
 	return buf - start;
+}
+
+static int inotify_release(struct inode *inode, struct file *file)
+{
+	struct inotify_device *dev;
+
+	dev = file->private_data;
+
+	inotify_release_all_watches(dev);
+	inotify_release_all_events(dev);
+
+	atomic_dec(&dev->user->inotify_devs);
+	free_uid(dev->user);
+
+	kfree(dev);
+
+	return 0;
 }
 
 static int inotify_open(struct inode *inode, struct file *file)
@@ -893,47 +935,6 @@ static int inotify_open(struct inode *inode, struct file *file)
 out_err:
 	free_uid(current->user);
 	return ret;
-}
-
-/*
- * inotify_release_all_watches - destroy all watches on a given device
- *
- * FIXME: We need a lock on the watch here.
- */
-static void inotify_release_all_watches(struct inotify_device *dev)
-{
-	struct inotify_watch *watch, *next;
-
-	list_for_each_entry_safe(watch, next, &dev->watches, d_list)
-		remove_watch(watch);
-}
-
-/*
- * inotify_release_all_events - destroy all of the events on a given device
- */
-static void inotify_release_all_events(struct inotify_device *dev)
-{
-	spin_lock(&dev->lock);
-	while (inotify_dev_has_events(dev))
-		inotify_dev_event_dequeue(dev);
-	spin_unlock(&dev->lock);
-}
-
-static int inotify_release(struct inode *inode, struct file *file)
-{
-	struct inotify_device *dev;
-
-	dev = file->private_data;
-
-	inotify_release_all_watches(dev);
-	inotify_release_all_events(dev);
-
-	atomic_dec(&dev->user->inotify_devs);
-	free_uid(dev->user);
-
-	kfree(dev);
-
-	return 0;
 }
 
 static int inotify_add_watch(struct inotify_device *dev,
@@ -1119,12 +1120,12 @@ static int __init inotify_init(void)
 			NULL, NULL);
 
 	event_cachep = kmem_cache_create("inotify_event_cache",
-			sizeof(struct inotify_kernel_event), 0,
-			SLAB_PANIC, NULL, NULL);
+					 sizeof(struct inotify_kernel_event), 0,
+					 SLAB_PANIC, NULL, NULL);
 
 	inode_data_cachep = kmem_cache_create("inotify_inode_data_cache",
-			sizeof(struct inotify_inode_data), 0, SLAB_PANIC,
-			NULL, NULL);
+					 sizeof(struct inotify_inode_data), 0, SLAB_PANIC,
+					 NULL, NULL);
 
 	printk(KERN_INFO "inotify device minor=%d\n", inotify_device.minor);
 

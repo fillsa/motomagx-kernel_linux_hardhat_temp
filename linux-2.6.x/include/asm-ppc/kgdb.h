@@ -41,6 +41,7 @@ extern int (*debugger_sstep)(struct pt_regs *regs);
 extern int (*debugger_iabr_match)(struct pt_regs *regs);
 extern int (*debugger_dabr_match)(struct pt_regs *regs);
 extern void (*debugger_fault_handler)(struct pt_regs *regs);
+
 #endif /* !(__ASSEMBLY__) */
 #endif /* !(_PPC_KGDB_H) */
 #endif /* __KERNEL__ */

@@ -12,7 +12,6 @@
  */
 
 
-
 /*
  * Copyright (C) 2007 Motorola, Inc.
  * ChangeLog:

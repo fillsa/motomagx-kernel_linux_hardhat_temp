@@ -272,6 +272,7 @@ static void rtc_from4_nand_select_chip(struct mtd_info *mtd, int chip)
 }
 
 
+
 /*
  * rtc_from4_nand_device_ready - hardware specific ready/busy check
  * @mtd:	MTD device structure
@@ -367,7 +368,6 @@ static void rtc_from4_enable_hwecc(struct mtd_info *mtd, int mode)
 
 }
 
-
 /*
  * rtc_from4_calculate_ecc - hardware specific code to read ECC code
  * @mtd:	MTD device structure
@@ -394,7 +394,6 @@ static void rtc_from4_calculate_ecc(struct mtd_info *mtd, const u_char *dat, u_c
 	}
 	ecc_code[7] |= 0x0f;	/* set the last four bits (not used) */
 }
-
 
 /*
  * rtc_from4_correct_data - hardware specific code to correct data using ECC code
@@ -532,7 +531,6 @@ static int rtc_from4_errstat(struct mtd_info *mtd, struct nand_chip *this, int s
 	return rtn;
 }
 #endif
-
 
 /*
  * Main initialization routine

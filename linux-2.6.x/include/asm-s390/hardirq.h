@@ -16,6 +16,7 @@
 #include <linux/threads.h>
 #include <linux/sched.h>
 #include <linux/cache.h>
+#include <linux/interrupt.h>
 #include <asm/lowcore.h>
 
 /* irq_cpustat_t is unused currently, but could be converted
@@ -26,15 +27,6 @@ typedef struct {
 } irq_cpustat_t;
 
 #define local_softirq_pending() (S390_lowcore.softirq_pending)
-
-/* this is always called with cpu == smp_processor_id() at the moment */
-static inline __u32
-softirq_pending(unsigned int cpu)
-{
-	if (cpu == smp_processor_id())
-		return local_softirq_pending();
-	return lowcore_ptr[cpu]->softirq_pending;
-}
 
 #define __ARCH_IRQ_STAT
 #define __ARCH_HAS_DO_SOFTIRQ

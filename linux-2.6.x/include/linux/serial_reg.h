@@ -129,11 +129,13 @@
 #define UART_MSR_ANY_DELTA	0x0F /* Any of the delta bits! */
 
 #define UART_SCR	7	/* I/O: Scratch Register */
+
 /*
  * DLAB=1
  */
 #define UART_DLL	0	/* Out: Divisor Latch Low */
 #define UART_DLM	1	/* Out: Divisor Latch High */
+
 /*
  * LCR=0xBF (or DLAB=1 for 16C660)
  */
@@ -306,7 +308,7 @@
 #define SERIAL_RSA_BAUD_BASE_LO (SERIAL_RSA_BAUD_BASE / 8)
 
 /*
- * Extra serial register definitions for the internal UARTs 
+ * Extra serial register definitions for the internal UARTs
  * in TI OMAP processors.
  */
 #define UART_OMAP_MDR1		0x08	/* Mode definition register */

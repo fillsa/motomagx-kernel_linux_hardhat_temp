@@ -28,6 +28,7 @@
 #include <linux/mm.h>
 #include <linux/init.h>
 #include <linux/completion.h>
+#include <linux/transport_class.h>
 
 #include <scsi/scsi_device.h>
 #include <scsi/scsi_host.h>
@@ -79,11 +80,11 @@ void scsi_remove_host(struct Scsi_Host *shost)
 
 	set_bit(SHOST_DEL, &shost->shost_state);
 
+	transport_unregister_device(&shost->shost_gendev);
 	class_device_unregister(&shost->shost_classdev);
-	if (shost->transport_classdev.class)
-		class_device_unregister(&shost->transport_classdev);
 	device_del(&shost->shost_gendev);
 }
+EXPORT_SYMBOL(scsi_remove_host);
 
 /**
  * scsi_add_host - add a scsi host
@@ -128,16 +129,27 @@ int scsi_add_host(struct Scsi_Host *shost, struct device *dev)
 					 GFP_KERNEL)) == NULL)
 		goto out_del_classdev;
 
-	if (shost->transportt->host_setup)
-		shost->transportt->host_setup(shost);
+	if (shost->transportt->create_work_queue) {
+		snprintf(shost->work_q_name, KOBJ_NAME_LEN, "scsi_wq_%d",
+			shost->host_no);
+		shost->work_q = create_singlethread_workqueue(
+					shost->work_q_name);
+		if (!shost->work_q)
+			goto out_free_shost_data;
+	}
 
 	error = scsi_sysfs_add_host(shost);
 	if (error)
-		goto out_del_classdev;
+		goto out_destroy_host;
 
 	scsi_proc_host_add(shost);
 	return error;
 
+ out_destroy_host:
+	if (shost->work_q)
+		destroy_workqueue(shost->work_q);
+ out_free_shost_data:
+	kfree(shost->shost_data);
  out_del_classdev:
 	class_device_del(&shost->shost_classdev);
  out_del_gendev:
@@ -145,6 +157,7 @@ int scsi_add_host(struct Scsi_Host *shost, struct device *dev)
  out:
 	return error;
 }
+EXPORT_SYMBOL(scsi_add_host);
 
 static void scsi_host_dev_release(struct device *dev)
 {
@@ -159,6 +172,9 @@ static void scsi_host_dev_release(struct device *dev)
 		wait_for_completion(&sem);
 		shost->eh_notify = NULL;
 	}
+
+	if (shost->work_q)
+		destroy_workqueue(shost->work_q);
 
 	scsi_proc_hostdir_rm(shost->hostt);
 	scsi_destroy_command_freelist(shost);
@@ -216,6 +232,7 @@ struct Scsi_Host *scsi_host_alloc(struct scsi_host_template *sht, int privsize)
 	spin_lock_init(&shost->default_lock);
 	scsi_assign_lock(shost, &shost->default_lock);
 	INIT_LIST_HEAD(&shost->__devices);
+	INIT_LIST_HEAD(&shost->__targets);
 	INIT_LIST_HEAD(&shost->eh_cmd_q);
 	INIT_LIST_HEAD(&shost->starved_list);
 	init_waitqueue_head(&shost->host_wait);
@@ -247,6 +264,16 @@ struct Scsi_Host *scsi_host_alloc(struct scsi_host_template *sht, int privsize)
 	shost->cmd_per_lun = sht->cmd_per_lun;
 	shost->unchecked_isa_dma = sht->unchecked_isa_dma;
 	shost->use_clustering = sht->use_clustering;
+	shost->ordered_flush = sht->ordered_flush;
+	shost->ordered_tag = sht->ordered_tag;
+
+	/*
+	 * hosts/devices that do queueing must support ordered tags
+	 */
+	if (shost->can_queue > 1 && shost->ordered_flush) {
+		printk(KERN_ERR "scsi: ordered flushes don't support queueing\n");
+		shost->ordered_flush = 0;
+	}
 
 	if (sht->max_host_blocked)
 		shost->max_host_blocked = sht->max_host_blocked;
@@ -301,6 +328,7 @@ struct Scsi_Host *scsi_host_alloc(struct scsi_host_template *sht, int privsize)
 	kfree(shost);
 	return NULL;
 }
+EXPORT_SYMBOL(scsi_host_alloc);
 
 struct Scsi_Host *scsi_register(struct scsi_host_template *sht, int privsize)
 {
@@ -316,12 +344,14 @@ struct Scsi_Host *scsi_register(struct scsi_host_template *sht, int privsize)
 		list_add_tail(&shost->sht_legacy_list, &sht->legacy_hosts);
 	return shost;
 }
+EXPORT_SYMBOL(scsi_register);
 
 void scsi_unregister(struct Scsi_Host *shost)
 {
 	list_del(&shost->sht_legacy_list);
 	scsi_host_put(shost);
 }
+EXPORT_SYMBOL(scsi_unregister);
 
 /**
  * scsi_host_lookup - get a reference to a Scsi_Host by host no
@@ -349,6 +379,7 @@ struct Scsi_Host *scsi_host_lookup(unsigned short hostnum)
 
 	return shost;
 }
+EXPORT_SYMBOL(scsi_host_lookup);
 
 /**
  * scsi_host_get - inc a Scsi_Host ref count
@@ -361,6 +392,7 @@ struct Scsi_Host *scsi_host_get(struct Scsi_Host *shost)
 		return NULL;
 	return shost;
 }
+EXPORT_SYMBOL(scsi_host_get);
 
 /**
  * scsi_host_put - dec a Scsi_Host ref count
@@ -370,6 +402,7 @@ void scsi_host_put(struct Scsi_Host *shost)
 {
 	put_device(&shost->shost_gendev);
 }
+EXPORT_SYMBOL(scsi_host_put);
 
 int scsi_init_hosts(void)
 {
@@ -380,3 +413,50 @@ void scsi_exit_hosts(void)
 {
 	class_unregister(&shost_class);
 }
+
+int scsi_is_host_device(const struct device *dev)
+{
+	return dev->release == scsi_host_dev_release;
+}
+EXPORT_SYMBOL(scsi_is_host_device);
+
+/**
+ * scsi_queue_work - Queue work to the Scsi_Host workqueue.
+ * @shost:	Pointer to Scsi_Host.
+ * @work:	Work to queue for execution.
+ *
+ * Return value:
+ * 	0 on success / != 0 for error
+ **/
+int scsi_queue_work(struct Scsi_Host *shost, struct work_struct *work)
+{
+	if (unlikely(!shost->work_q)) {
+		printk(KERN_ERR
+			"ERROR: Scsi host '%s' attempted to queue scsi-work, "
+			"when no workqueue created.\n", shost->hostt->name);
+		dump_stack();
+
+		return -EINVAL;
+	}
+
+	return queue_work(shost->work_q, work);
+}
+EXPORT_SYMBOL_GPL(scsi_queue_work);
+
+/**
+ * scsi_flush_work - Flush a Scsi_Host's workqueue.
+ * @shost:	Pointer to Scsi_Host.
+ **/
+void scsi_flush_work(struct Scsi_Host *shost)
+{
+	if (!shost->work_q) {
+		printk(KERN_ERR
+			"ERROR: Scsi host '%s' attempted to flush scsi-work, "
+			"when no workqueue created.\n", shost->hostt->name);
+		dump_stack();
+		return;
+	}
+
+	flush_workqueue(shost->work_q);
+}
+EXPORT_SYMBOL_GPL(scsi_flush_work);

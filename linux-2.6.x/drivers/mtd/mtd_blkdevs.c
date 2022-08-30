@@ -91,9 +91,7 @@ static int mtd_blktrans_thread(void *arg)
 	/* we might get involved when memory gets low, so use PF_MEMALLOC */
 	current->flags |= PF_MEMALLOC | PF_NOFREEZE;
 
-
 	daemonize("%sd", tr->name);
-
 
 	/* daemonize() doesn't do this for us since some kernel threads
 	   actually want to deal with signals. We can't just call 

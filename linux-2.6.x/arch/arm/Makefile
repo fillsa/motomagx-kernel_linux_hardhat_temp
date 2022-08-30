@@ -20,15 +20,13 @@ CFLAGS		+=-fno-omit-frame-pointer -mapcs -mno-sched-prolog
 endif
 
 ifeq ($(CONFIG_CPU_BIG_ENDIAN),y)
-CFLAGS		+= -mbig-endian
+CPPFLAGS	+= -mbig-endian
 AS		+= -EB
 LD		+= -EB
-AFLAGS		+= -mbig-endian
 else
-CFLAGS		+= -mlittle-endian
+CPPFLAGS	+= -mlittle-endian
 AS		+= -EL
 LD		+= -EL
-AFLAGS		+= -mlittle-endian
 endif
 
 comma = ,
@@ -154,8 +152,8 @@ FASTFPE_OBJ	:=$(FASTFPE)/
 endif
 
 # If we have a machine-specific directory, then include it in the build.
-core-y				+= arch/arm/kernel/ arch/arm/mm/ \
-				arch/arm/common/ arch/arm/ktools/
+core-y				+= arch/arm/kernel/ arch/arm/mm/ arch/arm/common/ \
+				arch/arm/ktools/
 core-y				+= $(MACHINE)
 core-$(CONFIG_FPE_NWFPE)	+= arch/arm/nwfpe/
 core-$(CONFIG_FPE_FASTFPE)	+= $(FASTFPE_OBJ)

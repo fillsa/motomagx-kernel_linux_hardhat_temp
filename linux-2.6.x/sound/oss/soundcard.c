@@ -333,7 +333,7 @@ static int sound_mixer_ioctl(int mixdev, unsigned int cmd, void __user *arg)
 static int sound_ioctl(struct inode *inode, struct file *file,
 		       unsigned int cmd, unsigned long arg)
 {
-	int err, len = 0, dtype;
+	int len = 0, dtype;
 	int dev = iminor(inode);
 	void __user *p = (void __user *)arg;
 
@@ -345,11 +345,11 @@ static int sound_ioctl(struct inode *inode, struct file *file,
 		if (len < 1 || len > 65536 || !p)
 			return -EFAULT;
 		if (_SIOC_DIR(cmd) & _SIOC_WRITE)
-			if ((err = verify_area(VERIFY_READ, p, len)) < 0)
-				return err;
+			if (!access_ok(VERIFY_READ, p, len))
+				return -EFAULT;
 		if (_SIOC_DIR(cmd) & _SIOC_READ)
-			if ((err = verify_area(VERIFY_WRITE, p, len)) < 0)
-				return err;
+			if (!access_ok(VERIFY_WRITE, p, len))
+				return -EFAULT;
 	}
 	DEB(printk("sound_ioctl(dev=%d, cmd=0x%x, arg=0x%x)\n", dev, cmd, arg));
 	if (cmd == OSS_GETVERSION)
@@ -537,11 +537,11 @@ static const struct {
 };
 
 static int dmabuf;
-MODULE_PARM(dmabuf, "i");
+module_param(dmabuf, int, 0444);
 
 #ifdef CONFIG_PCI
 static int dmabug;
-MODULE_PARM(dmabug, "i");
+module_param(dmabug, int, 0444);
 #endif
 
 static int __init oss_init(void)

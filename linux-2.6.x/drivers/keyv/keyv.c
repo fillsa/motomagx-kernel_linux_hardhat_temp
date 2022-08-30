@@ -182,7 +182,7 @@ static int interrupt_thread_loop (void *unused)
     daemonize("kkeyvd");
     strcpy(current->comm, "kkeyvd");
 
-    reparent_to_init();
+///del 2.6.12    reparent_to_init();
     /* Ignore all signals, but those which terminate the thread. */
     siginitsetinv(&current->blocked, sigmask(SIGKILL)|sigmask(SIGINT)|sigmask(SIGTERM));
     unlock_kernel();

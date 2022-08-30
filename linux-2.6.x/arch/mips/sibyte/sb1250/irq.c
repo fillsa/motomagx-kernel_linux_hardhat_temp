@@ -79,7 +79,7 @@ static struct hw_interrupt_type sb1250_irq_type = {
 /* Store the CPU id (not the logical number) */
 int sb1250_irq_owner[SB1250_NR_IRQS];
 
-raw_spinlock_t sb1250_imr_lock = RAW_SPIN_LOCK_UNLOCKED;
+DEFINE_RAW_SPINLOCK(sb1250_imr_lock); // DEFINE_SPINLOCK(sb1250_imr_lock);
 
 void sb1250_mask_irq(int cpu, int irq)
 {
@@ -215,7 +215,7 @@ static void ack_sb1250_irq(unsigned int irq)
 			 * Clear for all CPUs so an affinity switch
 			 * doesn't find an old status
 			 */
-			bus_writeq(pending, 
+			bus_writeq(pending,
 				   IOADDR(A_IMR_REGISTER(cpu,
 						R_IMR_LDT_INTERRUPT_CLR)));
 		}

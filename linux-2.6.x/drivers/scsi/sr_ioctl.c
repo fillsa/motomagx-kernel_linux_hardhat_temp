@@ -29,6 +29,9 @@
  * It is off by default and can be turned on with this module parameter */
 static int xa_test = 0;
 
+module_param(xa_test, int, S_IRUGO | S_IWUSR);
+
+
 #define IOCTL_RETRIES 3
 
 /* ATAPI drives don't have a SCMD_PLAYAUDIO_TI command.  When these drives
@@ -277,6 +280,9 @@ int sr_get_mcn(struct cdrom_device_info *cdi, struct cdrom_mcn *mcn)
 	struct packet_command cgc;
 	char *buffer = kmalloc(32, GFP_KERNEL | SR_GFP_DMA(cd));
 	int result;
+
+	if (!buffer)
+		return -ENOMEM;
 
 	memset(&cgc, 0, sizeof(struct packet_command));
 	cgc.cmd[0] = GPCMD_READ_SUBCHANNEL;

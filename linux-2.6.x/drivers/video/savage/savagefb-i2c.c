@@ -163,12 +163,15 @@ static int savage_setup_i2c_bus(struct savagefb_i2c_chan *chan,
 		udelay(20);
 
 		rc = add_bus(&chan->adapter);
+
 		if (rc == 0)
 			dev_dbg(&chan->par->pcidev->dev,
 				"I2C bus %s registered.\n", name);
 		else
 			dev_warn(&chan->par->pcidev->dev,
 				 "Failed to register I2C bus %s.\n", name);
+
+		symbol_put(i2c_bit_add_bus);
 	} else
 		chan->par = NULL;
 
@@ -204,7 +207,6 @@ void savagefb_create_i2c_busses(struct fb_info *info)
 
 	savage_setup_i2c_bus(&par->chan, "SAVAGE DDC2");
 }
-EXPORT_SYMBOL(savagefb_create_i2c_busses);
 
 void savagefb_delete_i2c_busses(struct fb_info *info)
 {
@@ -212,12 +214,13 @@ void savagefb_delete_i2c_busses(struct fb_info *info)
 	int (*del_bus)(struct i2c_adapter *) =
 		symbol_get(i2c_bit_del_bus);
 
-	if (del_bus && par->chan.par)
+	if (del_bus && par->chan.par) {
 		del_bus(&par->chan.adapter);
+		symbol_put(i2c_bit_del_bus);
+	}
 
 	par->chan.par = NULL;
 }
-EXPORT_SYMBOL(savagefb_delete_i2c_busses);
 
 static u8 *savage_do_probe_i2c_edid(struct savagefb_i2c_chan *chan)
 {
@@ -239,6 +242,7 @@ static u8 *savage_do_probe_i2c_edid(struct savagefb_i2c_chan *chan)
 
 	if (transfer && chan->par) {
 		buf = kmalloc(EDID_LENGTH, GFP_KERNEL);
+
 		if (buf) {
 			msgs[1].buf = buf;
 
@@ -249,6 +253,8 @@ static u8 *savage_do_probe_i2c_edid(struct savagefb_i2c_chan *chan)
 				buf = NULL;
 			}
 		}
+
+		symbol_put(i2c_transfer);
 	}
 
 	return buf;
@@ -272,6 +278,5 @@ int savagefb_probe_i2c_connector(struct savagefb_par *par, u8 **out_edid)
 
 	return 0;
 }
-EXPORT_SYMBOL(savagefb_probe_i2c_connector);
 
 MODULE_LICENSE("GPL");

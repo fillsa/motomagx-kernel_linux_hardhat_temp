@@ -42,7 +42,7 @@
 #include <asm/mach/time.h>
 #include <asm/mach/irq.h>
 
-static DEFINE_RAW_SPINLOCK(ixp2000_slowport_lock);
+static DEFINE_RAW_SPINLOCK(ixp2000_slowport_lock); //static DEFINE_SPINLOCK(ixp2000_slowport_lock);
 static unsigned long ixp2000_slowport_irq_flags;
 
 /*************************************************************************
@@ -81,31 +81,11 @@ void ixp2000_release_slowport(struct slowport_cfg *old_cfg)
 /*************************************************************************
  * Chip specific mappings shared by all IXP2000 systems
  *************************************************************************/
-static struct map_desc ixp2000_small_io_desc[] __initdata = {
+static struct map_desc ixp2000_io_desc[] __initdata = {
 	{
-		.virtual	= IXP2000_GLOBAL_REG_VIRT_BASE,
-		.physical	= IXP2000_GLOBAL_REG_PHYS_BASE,
-		.length		= IXP2000_GLOBAL_REG_SIZE,
-		.type		= MT_DEVICE
-	}, {
-		.virtual	= IXP2000_GPIO_VIRT_BASE,
-		.physical	= IXP2000_GPIO_PHYS_BASE,
-		.length		= IXP2000_GPIO_SIZE,
-		.type		= MT_DEVICE
-	}, {
-		.virtual	= IXP2000_TIMER_VIRT_BASE,
-		.physical	= IXP2000_TIMER_PHYS_BASE,
-		.length		= IXP2000_TIMER_SIZE,
-		.type		= MT_DEVICE
-	}, {
-		.virtual	= IXP2000_UART_VIRT_BASE,
-		.physical	= IXP2000_UART_PHYS_BASE,
-		.length		= IXP2000_UART_SIZE,
-		.type		= MT_DEVICE
-	}, {
-		.virtual	= IXP2000_SLOWPORT_CSR_VIRT_BASE,
-		.physical	= IXP2000_SLOWPORT_CSR_PHYS_BASE,
-		.length		= IXP2000_SLOWPORT_CSR_SIZE,
+		.virtual	= IXP2000_CAP_VIRT_BASE,
+		.physical	= IXP2000_CAP_PHYS_BASE,
+		.length		= IXP2000_CAP_SIZE,
 		.type		= MT_DEVICE
 	}, {
 		.virtual	= IXP2000_INTCTL_VIRT_BASE,
@@ -117,11 +97,7 @@ static struct map_desc ixp2000_small_io_desc[] __initdata = {
 		.physical	= IXP2000_PCI_CREG_PHYS_BASE,
 		.length		= IXP2000_PCI_CREG_SIZE,
 		.type		= MT_DEVICE
-	}
-};
-
-static struct map_desc ixp2000_large_io_desc[] __initdata = {
-	{
+	}, {
 		.virtual	= IXP2000_PCI_CSR_VIRT_BASE,
 		.physical	= IXP2000_PCI_CSR_PHYS_BASE,
 		.length		= IXP2000_PCI_CSR_SIZE,
@@ -160,12 +136,30 @@ static struct uart_port ixp2000_serial_port = {
 
 void __init ixp2000_map_io(void)
 {
-	iotable_init(ixp2000_small_io_desc, ARRAY_SIZE(ixp2000_small_io_desc));
-	iotable_init(ixp2000_large_io_desc, ARRAY_SIZE(ixp2000_large_io_desc));
+	extern unsigned int processor_id;
+
+	/*
+	 * On IXP2400 CPUs we need to use MT_IXP2000_DEVICE for
+	 * tweaking the PMDs so XCB=101. On IXP2800s we use the normal
+	 * PMD flags.
+	 */
+	if ((processor_id & 0xfffffff0) == 0x69054190) {
+		int i;
+
+		printk(KERN_INFO "Enabling IXP2400 erratum #66 workaround\n");
+
+		for(i=0;i<ARRAY_SIZE(ixp2000_io_desc);i++)
+			ixp2000_io_desc[i].type = MT_IXP2000_DEVICE;
+	}
+
+	iotable_init(ixp2000_io_desc, ARRAY_SIZE(ixp2000_io_desc));
 	early_serial_setup(&ixp2000_serial_port);
 #ifdef CONFIG_KGDB_8250
 	kgdb8250_add_port(0, &ixp2000_serial_port);
 #endif
+
+	/* Set slowport to 8-bit mode.  */
+	ixp2000_reg_write(IXP2000_SLOWPORT_FRM, 1);
 }
 
 /*************************************************************************
@@ -219,7 +213,7 @@ void __init ixp2000_init_time(unsigned long tick_rate)
 	ticks_per_jiffy = (tick_rate + HZ/2) / HZ;
 	ixp2000_ticks_per_usec = tick_rate / 1000000;
 
-	ixp2000_reg_write(IXP2000_T1_CLD, ticks_per_jiffy);
+	ixp2000_reg_write(IXP2000_T1_CLD, ticks_per_jiffy - 1);
 	ixp2000_reg_write(IXP2000_T1_CTL, (1 << 7));
 
 	/*
@@ -406,7 +400,9 @@ void __init ixp2000_init_irq(void)
 	set_irq_chained_handler(IRQ_IXP2000_GPIO, ixp2000_GPIO_irq_handler);
 
 	/*
-	 * Enable PCI irq
+	 * Enable PCI irqs.  The actual PCI[AB] decoding is done in
+	 * entry-macro.S, so we don't need a chained handler for the
+	 * PCI interrupt source.
 	 */
 	ixp2000_reg_write(IXP2000_IRQ_ENABLE_SET, (1 << IRQ_IXP2000_PCI));
 	for (irq = IRQ_IXP2000_PCIA; irq <= IRQ_IXP2000_PCIB; irq++) {

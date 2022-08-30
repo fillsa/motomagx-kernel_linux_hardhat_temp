@@ -17,7 +17,6 @@
  * 12/14/2006   Motorola  Added new ATAGs.
  * 05/01/2007   Motorola  Added cli logo support
  */
-
 #include <linux/config.h>
 #include <linux/module.h>
 #include <linux/kernel.h>
@@ -109,8 +108,6 @@ struct cpu_user_fns cpu_user;
 #ifdef MULTI_CACHE
 struct cpu_cache_fns cpu_cache;
 #endif
-
-unsigned char aux_device_present;
 
 char elf_platform[ELF_PLATFORM_SIZE];
 EXPORT_SYMBOL(elf_platform);

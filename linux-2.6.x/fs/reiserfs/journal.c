@@ -50,7 +50,6 @@
 #include <linux/stat.h>
 #include <linux/string.h>
 #include <linux/smp_lock.h>
-#include <linux/suspend.h>
 #include <linux/buffer_head.h>
 #include <linux/workqueue.h>
 #include <linux/writeback.h>
@@ -436,19 +435,6 @@ get_journal_hash_dev(struct super_block *sb,
   return (struct reiserfs_journal_cnode *)0 ;
 }
 
-/* returns a cnode with same size, block number and dev as bh in the current transaction hash.  NULL if not found */
-static inline struct reiserfs_journal_cnode *get_journal_hash(struct super_block *p_s_sb, struct buffer_head *bh) {
-  struct reiserfs_journal *journal = SB_JOURNAL (p_s_sb);
-  struct reiserfs_journal_cnode *cn ;
-  if (bh) {
-    cn =  get_journal_hash_dev(p_s_sb, journal->j_hash_table, bh->b_blocknr);
-  }
-  else {
-    return (struct reiserfs_journal_cnode *)0 ;
-  }
-  return cn ;
-}
-
 /*
 ** this actually means 'can this block be reallocated yet?'.  If you set search_all, a block can only be allocated
 ** if it is not in the current transaction, was not freed by the current transaction, and has no chance of ever
@@ -516,7 +502,7 @@ int reiserfs_in_journal(struct super_block *p_s_sb,
 
 /* insert cn into table
 */
-inline void insert_journal_hash(struct reiserfs_journal_cnode **table, struct reiserfs_journal_cnode *cn) {
+static inline void insert_journal_hash(struct reiserfs_journal_cnode **table, struct reiserfs_journal_cnode *cn) {
   struct reiserfs_journal_cnode *cn_orig ;
 
   cn_orig = journal_hash(table, cn->sb, cn->blocknr) ;
@@ -693,7 +679,7 @@ static int add_to_chunk(struct buffer_chunk *chunk, struct buffer_head *bh,
 }
 
 
-atomic_t nr_reiserfs_jh = ATOMIC_INIT(0);
+static atomic_t nr_reiserfs_jh = ATOMIC_INIT(0);
 static struct reiserfs_jh *alloc_jh(void) {
     struct reiserfs_jh *jh;
     while(1) {
@@ -1090,7 +1076,7 @@ static struct reiserfs_journal_list *find_newer_jl_for_cn(struct reiserfs_journa
   return NULL ;
 }
 
-void remove_journal_hash(struct super_block *, struct reiserfs_journal_cnode **,
+static void remove_journal_hash(struct super_block *, struct reiserfs_journal_cnode **,
 struct reiserfs_journal_list *, unsigned long, int);
 
 /*
@@ -2028,7 +2014,7 @@ abort_replay:
    Right now it is only used from journal code. But later we might use it
    from other places.
    Note: Do not use journal_getblk/sb_getblk functions here! */
-struct buffer_head * reiserfs_breada (struct block_device *dev, int block, int bufsize,
+static struct buffer_head * reiserfs_breada (struct block_device *dev, int block, int bufsize,
 			    unsigned int max_block)
 {
 	struct buffer_head * bhlist[BUFNR];
@@ -2320,13 +2306,16 @@ static int journal_init_dev( struct super_block *super,
 	if( !IS_ERR( journal -> j_dev_file ) ) {
 		struct inode *jdev_inode = journal->j_dev_file->f_mapping->host;
 		if( !S_ISBLK( jdev_inode -> i_mode ) ) {
-			reiserfs_warning  (super, "journal_init_dev: '%s' is "
-					   "not a block device", jdev_name );
+			reiserfs_warning(super, "journal_init_dev: '%s' is "
+					 "not a block device", jdev_name );
 			result = -ENOTBLK;
+			release_journal_dev( super, journal );
 		} else  {
 			/* ok */
 			journal->j_dev_bd = I_BDEV(jdev_inode);
 			set_blocksize(journal->j_dev_bd, super->s_blocksize);
+			reiserfs_info(super, "journal_init_dev: journal device: %s\n",
+				      bdevname(journal->j_dev_bd, b));
 		}
 	} else {
 		result = PTR_ERR( journal -> j_dev_file );
@@ -2335,11 +2324,6 @@ static int journal_init_dev( struct super_block *super,
 				  "journal_init_dev: Cannot open '%s': %i",
 				  jdev_name, result );
 	}
-	if( result != 0 ) {
-		release_journal_dev( super, journal );
-	}
-	reiserfs_info(super, "journal_init_dev: journal device: %s\n",
-		bdevname(journal->j_dev_bd, b));
 	return result;
 }
 
@@ -2407,7 +2391,7 @@ int journal_init(struct super_block *p_s_sb, const char * j_dev_name, int old_fo
      jh = (struct reiserfs_journal_header *)(bhjh->b_data);
      
      /* make sure that journal matches to the super block */
-     if (is_reiserfs_jr(rs) && (jh->jh_journal.jp_journal_magic != sb_jp_journal_magic(rs))) {
+     if (is_reiserfs_jr(rs) && (le32_to_cpu(jh->jh_journal.jp_journal_magic) != sb_jp_journal_magic(rs))) {
 	 reiserfs_warning (p_s_sb, "sh-460: journal header magic %x "
 			   "(device %s) does not match to magic found in super "
 			   "block %x",
@@ -3025,6 +3009,8 @@ static int remove_from_transaction(struct super_block *p_s_sb, b_blocknr_t block
 
   if (!already_cleaned) {
     clear_buffer_journal_dirty (bh);
+    clear_buffer_dirty(bh);
+    clear_buffer_journal_test (bh);
     put_bh(bh) ;
     if (atomic_read(&(bh->b_count)) < 0) {
       reiserfs_warning (p_s_sb, "journal-1752: remove from trans, b_count < 0");
@@ -3331,6 +3317,8 @@ int journal_mark_freed(struct reiserfs_transaction_handle *th, struct super_bloc
 	    ** in the current trans
 	    */
             clear_buffer_journal_dirty (cn->bh);
+	    clear_buffer_dirty(cn->bh);
+	    clear_buffer_journal_test(cn->bh);
 	    cleaned = 1 ;
 	    put_bh(cn->bh) ;
 	    if (atomic_read(&(cn->bh->b_count)) < 0) {
@@ -3848,7 +3836,7 @@ out:
   return journal->j_errno;
 }
 
-void
+static void
 __reiserfs_journal_abort_hard (struct super_block *sb)
 {
     struct reiserfs_journal *journal = SB_JOURNAL (sb);
@@ -3866,7 +3854,7 @@ __reiserfs_journal_abort_hard (struct super_block *sb)
 #endif
 }
 
-void
+static void
 __reiserfs_journal_abort_soft (struct super_block *sb, int errno)
 {
     struct reiserfs_journal *journal = SB_JOURNAL (sb);

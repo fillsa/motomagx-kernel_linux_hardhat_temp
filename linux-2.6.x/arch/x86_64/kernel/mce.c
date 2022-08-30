@@ -31,6 +31,9 @@ static int mce_dont_init;
 static int tolerant = 1;
 static int banks;
 static unsigned long bank[NR_BANKS] = { [0 ... NR_BANKS-1] = ~0UL };
+static unsigned long console_logged;
+static int notify_user;
+static int rip_msr;
 
 /*
  * Lockless MCE logging infrastructure.
@@ -43,7 +46,7 @@ struct mce_log mcelog = {
 	MCE_LOG_LEN,
 }; 
 
-static void mce_log(struct mce *mce)
+void mce_log(struct mce *mce)
 {
 	unsigned next, entry;
 	mce->finished = 0;
@@ -68,6 +71,9 @@ static void mce_log(struct mce *mce)
 	smp_wmb();
 	mcelog.entry[entry].finished = 1;
 	smp_wmb();
+
+	if (!test_and_set_bit(0, &console_logged))
+		notify_user = 1;
 }
 
 static void print_mce(struct mce *m)
@@ -117,6 +123,23 @@ static int mce_available(struct cpuinfo_x86 *c)
 {
 	return test_bit(X86_FEATURE_MCE, &c->x86_capability) &&
 	       test_bit(X86_FEATURE_MCA, &c->x86_capability);
+}
+
+static inline void mce_get_rip(struct mce *m, struct pt_regs *regs)
+{
+	if (regs && (m->mcgstatus & MCG_STATUS_RIPV)) {
+		m->rip = regs->rip;
+		m->cs = regs->cs;
+	} else {
+		m->rip = 0;
+		m->cs = 0;
+	}
+	if (rip_msr) {
+		/* Assume the RIP in the MSR is exact. Is this true? */
+		m->mcgstatus |= MCG_STATUS_EIPV;
+		rdmsrl(rip_msr, m->rip);
+		m->cs = 0;
+	}
 }
 
 /* 
@@ -171,14 +194,7 @@ void do_machine_check(struct pt_regs * regs, long error_code)
 		if (m.status & MCI_STATUS_ADDRV)
 			rdmsrl(MSR_IA32_MC0_ADDR + i*4, m.addr);
 
-		if (regs && (m.mcgstatus & MCG_STATUS_RIPV)) {
-			m.rip = regs->rip;
-			m.cs = regs->cs;
-		} else {
-			m.rip = 0;
-			m.cs = 0;
-		}
-
+		mce_get_rip(&m, regs);
 		if (error_code != -1)
 			rdtscll(m.tsc);
 		wrmsrl(MSR_IA32_MC0_STATUS + i*4, 0);
@@ -252,6 +268,19 @@ static void mcheck_timer(void *data)
 {
 	on_each_cpu(mcheck_check_cpu, NULL, 1, 1);
 	schedule_delayed_work(&mcheck_work, check_interval * HZ);
+
+	/*
+	 * It's ok to read stale data here for notify_user and
+	 * console_logged as we'll simply get the updated versions
+	 * on the next mcheck_timer execution and atomic operations
+	 * on console_logged act as synchronization for notify_user
+	 * writes.
+	 */
+	if (notify_user && console_logged) {
+		notify_user = 0;
+		clear_bit(0, &console_logged);
+		printk(KERN_INFO "Machine check events logged\n");
+	}
 }
 
 
@@ -278,6 +307,9 @@ static void mce_init(void *dummy)
 		printk(KERN_INFO "MCE: warning: using only %d banks\n", banks);
 		banks = NR_BANKS; 
 	}
+	/* Use accurate RIP reporting if available. */
+	if ((cap & (1<<9)) && ((cap >> 16) & 0xff) >= 9)
+		rip_msr = MSR_IA32_MCG_EIP;
 
 	/* Log the machine checks left over from the previous reset.
 	   This also clears all registers */
@@ -305,22 +337,34 @@ static void __init mce_cpu_quirks(struct cpuinfo_x86 *c)
 	}
 }			
 
+static void __init mce_cpu_features(struct cpuinfo_x86 *c)
+{
+	switch (c->x86_vendor) {
+	case X86_VENDOR_INTEL:
+		mce_intel_feature_init(c);
+		break;
+	default:
+		break;
+	}
+}
+
 /* 
  * Called for each booted CPU to set up machine checks.
  * Must be called with preempt off. 
  */
 void __init mcheck_init(struct cpuinfo_x86 *c)
 {
-	static unsigned long mce_cpus __initdata = 0;
+	static cpumask_t mce_cpus __initdata = CPU_MASK_NONE;
 
 	mce_cpu_quirks(c); 
 
 	if (mce_dont_init ||
-	    test_and_set_bit(smp_processor_id(), &mce_cpus) ||
+	    cpu_test_and_set(smp_processor_id(), mce_cpus) ||
 	    !mce_available(c))
 		return;
 
 	mce_init(NULL);
+	mce_cpu_features(c);
 }
 
 /*
@@ -335,11 +379,15 @@ static void collect_tscs(void *data)
 
 static ssize_t mce_read(struct file *filp, char __user *ubuf, size_t usize, loff_t *off)
 {
-	unsigned long cpu_tsc[NR_CPUS];
+	unsigned long *cpu_tsc;
 	static DECLARE_MUTEX(mce_read_sem);
 	unsigned next;
 	char __user *buf = ubuf;
 	int i, err;
+
+	cpu_tsc = kmalloc(NR_CPUS * sizeof(long), GFP_KERNEL);
+	if (!cpu_tsc)
+		return -ENOMEM;
 
 	down(&mce_read_sem); 
 	next = rcu_dereference(mcelog.next);
@@ -347,6 +395,7 @@ static ssize_t mce_read(struct file *filp, char __user *ubuf, size_t usize, loff
 	/* Only supports full reads right now */
 	if (*off != 0 || usize < MCE_LOG_LEN*sizeof(struct mce)) { 
 		up(&mce_read_sem);
+		kfree(cpu_tsc);
 		return -EINVAL;
 	}
 
@@ -377,6 +426,7 @@ static ssize_t mce_read(struct file *filp, char __user *ubuf, size_t usize, loff
 		}
 	} 	
 	up(&mce_read_sem);
+	kfree(cpu_tsc);
 	return err ? -EFAULT : buf - ubuf; 
 }
 

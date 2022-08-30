@@ -96,9 +96,13 @@ enum {
 	RTM_GETANYCAST	= 62,
 #define RTM_GETANYCAST	RTM_GETANYCAST
 
-	RTM_MAX,
-#define RTM_MAX		RTM_MAX
+	__RTM_MAX,
+#define RTM_MAX		(((__RTM_MAX + 3) & ~3) - 1)
 };
+
+#define RTM_NR_MSGTYPES	(RTM_MAX + 1 - RTM_BASE)
+#define RTM_NR_FAMILIES	(RTM_NR_MSGTYPES >> 2)
+#define RTM_FAM(cmd)	(((cmd) - RTM_BASE) >> 2)
 
 /* 
    Generic structure for encapsulation of optional route information.
@@ -257,6 +261,7 @@ enum rtattr_type_t
 	RTA_FLOW,
 	RTA_CACHEINFO,
 	RTA_SESSION,
+	RTA_MP_ALGO,
 	__RTA_MAX
 };
 
@@ -353,6 +358,7 @@ enum
 #define RTAX_FEATURE_ECN	0x00000001
 #define RTAX_FEATURE_SACK	0x00000002
 #define RTAX_FEATURE_TIMESTAMP	0x00000004
+#define RTAX_FEATURE_ALLFRAG	0x00000008
 
 struct rta_session
 {
@@ -454,6 +460,7 @@ enum
 	NDA_DST,
 	NDA_LLADDR,
 	NDA_CACHEINFO,
+	NDA_PROBES,
 	__NDA_MAX
 };
 
@@ -707,7 +714,6 @@ enum
 	TCA_RATE,
 	TCA_FCNT,
 	TCA_STATS2,
-	TCA_ACT_STATS,
 	__TCA_MAX
 };
 
@@ -756,6 +762,7 @@ struct tcamsg
 
 #include <linux/config.h>
 
+extern size_t rtattr_strlcpy(char *dest, const struct rtattr *rta, size_t size);
 static __inline__ int rtattr_strcmp(const struct rtattr *rta, const char *str)
 {
 	int len = strlen(str) + 1;
@@ -763,6 +770,9 @@ static __inline__ int rtattr_strcmp(const struct rtattr *rta, const char *str)
 }
 
 extern int rtattr_parse(struct rtattr *tb[], int maxattr, struct rtattr *rta, int len);
+
+#define rtattr_parse_nested(tb, max, rta) \
+	rtattr_parse((tb), (max), RTA_DATA((rta)), RTA_PAYLOAD((rta)))
 
 extern struct sock *rtnl;
 
@@ -773,7 +783,6 @@ struct rtnetlink_link
 };
 
 extern struct rtnetlink_link * rtnetlink_links[NPROTO];
-extern int rtnetlink_dump_ifinfo(struct sk_buff *skb, struct netlink_callback *cb);
 extern int rtnetlink_send(struct sk_buff *skb, u32 pid, u32 group, int echo);
 extern int rtnetlink_put_metrics(struct sk_buff *skb, u32 *metrics);
 
@@ -784,6 +793,11 @@ extern void __rta_fill(struct sk_buff *skb, int attrtype, int attrlen, const voi
 		 goto rtattr_failure; \
    	__rta_fill(skb, attrtype, attrlen, data); }) 
 
+#define RTA_PUT_NOHDR(skb, attrlen, data) \
+({	if (unlikely(skb_tailroom(skb) < (int)(attrlen))) \
+		goto rtattr_failure; \
+	memcpy(skb_put(skb, RTA_ALIGN(attrlen)), data, attrlen); })
+		
 static inline struct rtattr *
 __rta_reserve(struct sk_buff *skb, int attrtype, int attrlen)
 {
@@ -814,6 +828,7 @@ extern struct semaphore rtnl_sem;
 		        } while(0)
 
 extern void rtnl_lock(void);
+extern int rtnl_lock_interruptible(void);
 extern void rtnl_unlock(void);
 extern void rtnetlink_init(void);
 

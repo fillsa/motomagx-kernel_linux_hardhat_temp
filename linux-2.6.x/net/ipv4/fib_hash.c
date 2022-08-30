@@ -93,6 +93,7 @@ static inline u32 fz_key(u32 dst, struct fn_zone *fz)
 }
 
 static DEFINE_RWLOCK(fib_hash_lock);
+static unsigned int fib_hash_genid;
 
 #define FZ_MAX_DIVISOR ((PAGE_SIZE<<MAX_ORDER) / sizeof(struct hlist_head))
 
@@ -181,6 +182,7 @@ static void fn_rehash_zone(struct fn_zone *fz)
 		fz->fz_hashmask = new_hashmask;
 		fz->fz_divisor = new_divisor;
 		fn_rebuild_zone(fz, old_ht, old_divisor);
+		fib_hash_genid++;
 		write_unlock_bh(&fib_hash_lock);
 
 		fz_hash_free(old_ht, old_divisor);
@@ -236,6 +238,7 @@ fn_new_zone(struct fn_hash *table, int z)
 		table->fn_zones[i]->fz_next = fz;
 	}
 	table->fn_zones[z] = fz;
+	fib_hash_genid++;
 	write_unlock_bh(&fib_hash_lock);
 	return fz;
 }
@@ -261,6 +264,7 @@ fn_hash_lookup(struct fib_table *tb, const struct flowi *flp, struct fib_result 
 
 			err = fib_semantic_match(&f->fn_alias,
 						 flp, res,
+						 f->fn_key, fz->fz_mask,
 						 fz->fz_order);
 			if (err <= 0)
 				goto out;
@@ -273,29 +277,6 @@ out:
 }
 
 static int fn_hash_last_dflt=-1;
-
-static int fib_detect_death(struct fib_info *fi, int order,
-			    struct fib_info **last_resort, int *last_idx)
-{
-	struct neighbour *n;
-	int state = NUD_NONE;
-
-	n = neigh_lookup(&arp_tbl, &fi->fib_nh[0].nh_gw, fi->fib_dev);
-	if (n) {
-		state = n->nud_state;
-		neigh_release(n);
-	}
-	if (state==NUD_REACHABLE)
-		return 0;
-	if ((state&NUD_VALID) && order != fn_hash_last_dflt)
-		return 0;
-	if ((state&NUD_VALID) ||
-	    (*last_idx<0 && order > fn_hash_last_dflt)) {
-		*last_resort = fi;
-		*last_idx = order;
-	}
-	return 1;
-}
 
 static void
 fn_hash_select_default(struct fib_table *tb, const struct flowi *flp, struct fib_result *res)
@@ -337,7 +318,7 @@ fn_hash_select_default(struct fib_table *tb, const struct flowi *flp, struct fib
 				if (next_fi != res->fi)
 					break;
 			} else if (!fib_detect_death(fi, order, &last_resort,
-						     &last_idx)) {
+						     &last_idx, &fn_hash_last_dflt)) {
 				if (res->fi)
 					fib_info_put(res->fi);
 				res->fi = fi;
@@ -355,7 +336,7 @@ fn_hash_select_default(struct fib_table *tb, const struct flowi *flp, struct fib
 		goto out;
 	}
 
-	if (!fib_detect_death(fi, order, &last_resort, &last_idx)) {
+	if (!fib_detect_death(fi, order, &last_resort, &last_idx, &fn_hash_last_dflt)) {
 		if (res->fi)
 			fib_info_put(res->fi);
 		res->fi = fi;
@@ -375,11 +356,6 @@ fn_hash_select_default(struct fib_table *tb, const struct flowi *flp, struct fib
 out:
 	read_unlock(&fib_hash_lock);
 }
-
-static void rtmsg_fib(int, struct fib_node *, struct fib_alias *,
-		      int, int,
-		      struct nlmsghdr *n,
-		      struct netlink_skb_parms *);
 
 /* Insert node F to FZ. */
 static inline void fib_insert_node(struct fn_zone *fz, struct fib_node *f)
@@ -401,26 +377,6 @@ static struct fib_node *fib_find_node(struct fn_zone *fz, u32 key)
 			return f;
 	}
 
-	return NULL;
-}
-
-/* Return the first fib alias matching TOS with
- * priority less than or equal to PRIO.
- */
-static struct fib_alias *fib_find_alias(struct fib_node *fn, u8 tos, u32 prio)
-{
-	if (fn) {
-		struct list_head *head = &fn->fn_alias;
-		struct fib_alias *fa;
-
-		list_for_each_entry(fa, head, fa_list) {
-			if (fa->fa_tos > tos)
-				continue;
-			if (fa->fa_info->fib_priority >= prio ||
-			    fa->fa_tos < tos)
-				return fa;
-		}
-	}
 	return NULL;
 }
 
@@ -463,7 +419,11 @@ fn_hash_insert(struct fib_table *tb, struct rtmsg *r, struct kern_rta *rta,
 		fn_rehash_zone(fz);
 
 	f = fib_find_node(fz, key);
-	fa = fib_find_alias(f, tos, fi->fib_priority);
+
+	if (!f)
+		fa = NULL;
+	else
+		fa = fib_find_alias(&f->fn_alias, tos, fi->fib_priority);
 
 	/* Now fa, if non-NULL, points to the first fib alias
 	 * with the same keys [prefix,tos,priority], if such key already
@@ -495,6 +455,7 @@ fn_hash_insert(struct fib_table *tb, struct rtmsg *r, struct kern_rta *rta,
 			fa->fa_scope = r->rtm_scope;
 			state = fa->fa_state;
 			fa->fa_state &= ~FA_S_ACCESSED;
+			fib_hash_genid++;
 			write_unlock_bh(&fib_hash_lock);
 
 			fib_release_info(fi_drop);
@@ -559,13 +520,14 @@ fn_hash_insert(struct fib_table *tb, struct rtmsg *r, struct kern_rta *rta,
 		fib_insert_node(fz, new_f);
 	list_add_tail(&new_fa->fa_list,
 		 (fa ? &fa->fa_list : &f->fn_alias));
+	fib_hash_genid++;
 	write_unlock_bh(&fib_hash_lock);
 
 	if (new_f)
 		fz->fz_nent++;
 	rt_cache_flush(-1);
 
-	rtmsg_fib(RTM_NEWROUTE, f, new_fa, z, tb->tb_id, n, req);
+	rtmsg_fib(RTM_NEWROUTE, key, new_fa, z, tb->tb_id, n, req);
 	return 0;
 
 out_free_new_fa:
@@ -603,7 +565,11 @@ fn_hash_delete(struct fib_table *tb, struct rtmsg *r, struct kern_rta *rta,
 	}
 
 	f = fib_find_node(fz, key);
-	fa = fib_find_alias(f, tos, 0);
+
+	if (!f)
+		fa = NULL;
+	else
+		fa = fib_find_alias(&f->fn_alias, tos, 0);
 	if (!fa)
 		return -ESRCH;
 
@@ -631,7 +597,7 @@ fn_hash_delete(struct fib_table *tb, struct rtmsg *r, struct kern_rta *rta,
 		int kill_fn;
 
 		fa = fa_to_delete;
-		rtmsg_fib(RTM_DELROUTE, f, fa, z, tb->tb_id, n, req);
+		rtmsg_fib(RTM_DELROUTE, key, fa, z, tb->tb_id, n, req);
 
 		kill_fn = 0;
 		write_lock_bh(&fib_hash_lock);
@@ -640,6 +606,7 @@ fn_hash_delete(struct fib_table *tb, struct rtmsg *r, struct kern_rta *rta,
 			hlist_del(&f->fn_hash);
 			kill_fn = 1;
 		}
+		fib_hash_genid++;
 		write_unlock_bh(&fib_hash_lock);
 
 		if (fa->fa_state & FA_S_ACCESSED)
@@ -677,6 +644,7 @@ static int fn_flush_list(struct fn_zone *fz, int idx)
 					hlist_del(&f->fn_hash);
 					kill_f = 1;
 				}
+				fib_hash_genid++;
 				write_unlock_bh(&fib_hash_lock);
 
 				fn_free_alias(fa);
@@ -724,7 +692,7 @@ fn_hash_dump_bucket(struct sk_buff *skb, struct netlink_callback *cb,
 
 		list_for_each_entry(fa, &f->fn_alias, fa_list) {
 			if (i < s_i)
-				continue;
+				goto next;
 
 			if (fib_dump_info(skb, NETLINK_CB(cb->skb).pid,
 					  cb->nlh->nlmsg_seq,
@@ -739,7 +707,7 @@ fn_hash_dump_bucket(struct sk_buff *skb, struct netlink_callback *cb,
 				cb->args[3] = i;
 				return -1;
 			}
-
+		next:
 			i++;
 		}
 	}
@@ -796,33 +764,6 @@ static int fn_hash_dump(struct fib_table *tb, struct sk_buff *skb, struct netlin
 	return skb->len;
 }
 
-static void rtmsg_fib(int event, struct fib_node *f, struct fib_alias *fa,
-		      int z, int tb_id,
-		      struct nlmsghdr *n, struct netlink_skb_parms *req)
-{
-	struct sk_buff *skb;
-	u32 pid = req ? req->pid : 0;
-	int size = NLMSG_SPACE(sizeof(struct rtmsg)+256);
-
-	skb = alloc_skb(size, GFP_KERNEL);
-	if (!skb)
-		return;
-
-	if (fib_dump_info(skb, pid, n->nlmsg_seq, event, tb_id,
-			  fa->fa_type, fa->fa_scope, &f->fn_key, z,
-			  fa->fa_tos,
-			  fa->fa_info) < 0) {
-		kfree_skb(skb);
-		return;
-	}
-	NETLINK_CB(skb).dst_groups = RTMGRP_IPV4_ROUTE;
-	if (n->nlmsg_flags&NLM_F_ECHO)
-		atomic_inc(&skb->users);
-	netlink_broadcast(rtnl, skb, pid, RTMGRP_IPV4_ROUTE, GFP_KERNEL);
-	if (n->nlmsg_flags&NLM_F_ECHO)
-		netlink_unicast(rtnl, skb, pid, MSG_DONTWAIT);
-}
-
 #ifdef CONFIG_IP_MULTIPLE_TABLES
 struct fib_table * fib_hash_init(int id)
 #else
@@ -868,6 +809,9 @@ struct fib_iter_state {
 	struct hlist_head *hash_head;
 	struct fib_node *fn;
 	struct fib_alias *fa;
+	loff_t pos;
+	unsigned int genid;
+	int valid;
 };
 
 static struct fib_alias *fib_get_first(struct seq_file *seq)
@@ -879,6 +823,9 @@ static struct fib_alias *fib_get_first(struct seq_file *seq)
 	iter->hash_head = NULL;
 	iter->fn        = NULL;
 	iter->fa        = NULL;
+	iter->pos	= 0;
+	iter->genid	= fib_hash_genid;
+	iter->valid	= 1;
 
 	for (iter->zone = table->fn_zone_list; iter->zone;
 	     iter->zone = iter->zone->fz_next) {
@@ -983,12 +930,20 @@ static struct fib_alias *fib_get_next(struct seq_file *seq)
 		}
 	}
 out:
+	iter->pos++;
 	return fa;
 }
 
 static struct fib_alias *fib_get_idx(struct seq_file *seq, loff_t pos)
 {
-	struct fib_alias *fa = fib_get_first(seq);
+	struct fib_iter_state *iter = seq->private;
+	struct fib_alias *fa;
+	
+	if (iter->valid && pos >= iter->pos && iter->genid == fib_hash_genid) {
+		fa   = iter->fa;
+		pos -= iter->pos;
+	} else
+		fa = fib_get_first(seq);
 
 	if (fa)
 		while (pos && (fa = fib_get_next(seq)))

@@ -28,7 +28,7 @@
 
 static struct backing_dev_info pram_backing_dev_info = {
 	.ra_pages       = 0,    /* No readahead */
-	.memory_backed  = 1,    /* Does not contribute to dirty memory */
+	.capabilities	= BDI_CAP_NO_ACCT_DIRTY | BDI_CAP_NO_WRITEBACK,
 };
 
 /*

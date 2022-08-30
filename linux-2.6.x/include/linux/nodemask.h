@@ -10,6 +10,8 @@
  *
  * For details of nodemask_scnprintf() and nodemask_parse(),
  * see bitmap_scnprintf() and bitmap_parse() in lib/bitmap.c.
+ * For details of nodelist_scnprintf() and nodelist_parse(), see
+ * bitmap_scnlistprintf() and bitmap_parselist(), also in bitmap.c.
  *
  * The available nodemask operations are:
  *
@@ -38,6 +40,8 @@
  *
  * int first_node(mask)			Number lowest set bit, or MAX_NUMNODES
  * int next_node(node, mask)		Next node past 'node', or MAX_NUMNODES
+ * int first_unset_node(mask)		First node not set in mask, or 
+ *					MAX_NUMNODES.
  *
  * nodemask_t nodemask_of_node(node)	Return nodemask with bit 'node' set
  * NODE_MASK_ALL			Initializer - all bits set
@@ -46,6 +50,8 @@
  *
  * int nodemask_scnprintf(buf, len, mask) Format nodemask for printing
  * int nodemask_parse(ubuf, ulen, mask)	Parse ascii string as nodemask
+ * int nodelist_scnprintf(buf, len, mask) Format nodemask as list for printing
+ * int nodelist_parse(buf, map)		Parse ascii string as nodelist
  *
  * for_each_node_mask(node, mask)	for-loop node over mask
  *
@@ -211,16 +217,19 @@ static inline void __nodes_shift_left(nodemask_t *dstp,
 	bitmap_shift_left(dstp->bits, srcp->bits, n, nbits);
 }
 
-#define first_node(src) __first_node(&(src), MAX_NUMNODES)
-static inline int __first_node(const nodemask_t *srcp, int nbits)
+/* FIXME: better would be to fix all architectures to never return
+          > MAX_NUMNODES, then the silly min_ts could be dropped. */
+
+#define first_node(src) __first_node(&(src))
+static inline int __first_node(const nodemask_t *srcp)
 {
-	return min_t(int, nbits, find_first_bit(srcp->bits, nbits));
+	return min_t(int, MAX_NUMNODES, find_first_bit(srcp->bits, MAX_NUMNODES));
 }
 
-#define next_node(n, src) __next_node((n), &(src), MAX_NUMNODES)
-static inline int __next_node(int n, const nodemask_t *srcp, int nbits)
+#define next_node(n, src) __next_node((n), &(src))
+static inline int __next_node(int n, const nodemask_t *srcp)
 {
-	return min_t(int, nbits, find_next_bit(srcp->bits, nbits, n+1));
+	return min_t(int,MAX_NUMNODES,find_next_bit(srcp->bits, MAX_NUMNODES, n+1));
 }
 
 #define nodemask_of_node(node)						\
@@ -234,6 +243,13 @@ static inline int __next_node(int n, const nodemask_t *srcp, int nbits)
 	}								\
 	m;								\
 })
+
+#define first_unset_node(mask) __first_unset_node(&(mask))
+static inline int __first_unset_node(const nodemask_t *maskp)
+{
+	return min_t(int,MAX_NUMNODES,
+			find_first_zero_bit(maskp->bits, MAX_NUMNODES));
+}
 
 #define NODE_MASK_LAST_WORD BITMAP_LAST_WORD_MASK(MAX_NUMNODES)
 
@@ -269,12 +285,26 @@ static inline int __nodemask_scnprintf(char *buf, int len,
 	return bitmap_scnprintf(buf, len, srcp->bits, nbits);
 }
 
-#define nodemask_parse(ubuf, ulen, src) \
-			__nodemask_parse((ubuf), (ulen), &(src), MAX_NUMNODES)
+#define nodemask_parse(ubuf, ulen, dst) \
+			__nodemask_parse((ubuf), (ulen), &(dst), MAX_NUMNODES)
 static inline int __nodemask_parse(const char __user *buf, int len,
 					nodemask_t *dstp, int nbits)
 {
 	return bitmap_parse(buf, len, dstp->bits, nbits);
+}
+
+#define nodelist_scnprintf(buf, len, src) \
+			__nodelist_scnprintf((buf), (len), &(src), MAX_NUMNODES)
+static inline int __nodelist_scnprintf(char *buf, int len,
+					const nodemask_t *srcp, int nbits)
+{
+	return bitmap_scnlistprintf(buf, len, srcp->bits, nbits);
+}
+
+#define nodelist_parse(buf, dst) __nodelist_parse((buf), &(dst), MAX_NUMNODES)
+static inline int __nodelist_parse(const char *buf, nodemask_t *dstp, int nbits)
+{
+	return bitmap_parselist(buf, dstp->bits, nbits);
 }
 
 #if MAX_NUMNODES > 1

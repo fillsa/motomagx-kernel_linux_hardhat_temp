@@ -13,31 +13,6 @@
 #ifndef __DIB3000MC_PRIV_H__
 #define __DIB3000MC_PRIV_H__
 
-/* info and err, taken from usb.h, if there is anything available like by default,
- * please change !
- */
-#define err(format, arg...) printk(KERN_ERR "%s: " format "\n" , __FILE__ , ## arg)
-#define info(format, arg...) printk(KERN_INFO "%s: " format "\n" , __FILE__ , ## arg)
-#define warn(format, arg...) printk(KERN_WARNING "%s: " format "\n" , __FILE__ , ## arg)
-
-// defines the phase noise algorithm to be used (O:Inhib, 1:CPE on)
-#define DEF_PHASE_NOISE_MODE                0
-
-// define Mobille algorithms
-#define DEF_MOBILE_MODE      Auto_Reception
-
-// defines the tuner type
-#define DEF_TUNER_TYPE   TUNER_PANASONIC_ENV57H13D5
-
-// defines the impule noise algorithm to be used
-#define DEF_IMPULSE_NOISE_MODE      0
-
-// defines the MPEG2 data output format
-#define DEF_MPEG2_OUTPUT_188       0
-
-// defines the MPEG2 data output format
-#define DEF_OUTPUT_MODE       MPEG2_PARALLEL_CONTINUOUS_CLOCK
-
 /*
  * Demodulator parameters
  * reg: 0  1 1  1 11 11 111
@@ -115,7 +90,7 @@ static u16 dib3000mc_bandwidth_7mhz[] =
 	{ 0x1c, 0xfba5, 0x60, 0x9c25, 0x1e3, 0x0cb7, 0x1, 0xb0d0 };
 
 static u16 dib3000mc_bandwidth_8mhz[] =
-	{ 0x19, 0x5c30, 0x54, 0x88a0, 0x1a6, 0xab20, 0x1, 0xb0b0 };
+	{ 0x19, 0x5c30, 0x54, 0x88a0, 0x1a6, 0xab20, 0x1, 0xb0d0 };
 
 static u16 dib3000mc_reg_bandwidth_general[] = { 12,13,14,15 };
 static u16 dib3000mc_bandwidth_general[] = { 0x0000, 0x03e8, 0x0000, 0x03f2 };
@@ -173,11 +148,11 @@ static u16 dib3000mc_offset[][2] = {
 static u16 dib3000mc_reg_imp_noise_ctl[] = { 34,35 };
 
 static u16 dib3000mc_imp_noise_ctl[][2] = {
-	{ 0x1294, 0xfff8 }, /* mode 0 */
-	{ 0x1294, 0xfff8 }, /* mode 1 */
-	{ 0x1294, 0xfff8 }, /* mode 2 */
-	{ 0x1294, 0xfff8 }, /* mode 3 */
-	{ 0x1294, 0xfff8 }, /* mode 4 */
+	{ 0x1294, 0x1ff8 }, /* mode 0 */
+	{ 0x1294, 0x1ff8 }, /* mode 1 */
+	{ 0x1294, 0x1ff8 }, /* mode 2 */
+	{ 0x1294, 0x1ff8 }, /* mode 3 */
+	{ 0x1294, 0x1ff8 }, /* mode 4 */
 };
 
 /* AGC registers */
@@ -212,7 +187,7 @@ static u16 dib3000mc_reg_agc_bandwidth_general[] = { 50,51,52,53,54 };
 static u16 dib3000mc_agc_bandwidth_general[] =
 	{ 0x8000, 0x91ca, 0x01ba, 0x0087, 0x0087 };
 
-#define DIB3000MC_REG_IMP_NOISE_55 		(    55)
+#define DIB3000MC_REG_IMP_NOISE_55		(    55)
 #define DIB3000MC_IMP_NEW_ALGO(w)		(w | (1<<10))
 
 /* Impulse noise params */
@@ -234,14 +209,14 @@ static u16 dib3000mc_fft_modes[][29] = {
 	{	0x38, 0x6d9, 0x3f28, 0x7a7, 0x3a74, 0x196, 0x32a, 0x48c,
 		0x3ffe, 0x7f3, 0x2d94, 0x76, 0x53d,
 		0x3ff8, 0x7e3, 0x3320, 0x76, 0x5b3,
-	  	0x3feb, 0x7d2, 0x365e, 0x76, 0x48c,
-	  	0x3ffe, 0x5b3, 0x3feb, 0x76,   0x0, 0xd
+		0x3feb, 0x7d2, 0x365e, 0x76, 0x48c,
+		0x3ffe, 0x5b3, 0x3feb, 0x76,   0x0, 0xd
 	}, /* fft mode 0 */
 	{	0x3b, 0x6d9, 0x3f28, 0x7a7, 0x3a74, 0x196, 0x32a, 0x48c,
 		0x3ffe, 0x7f3, 0x2d94, 0x76, 0x53d,
 		0x3ff8, 0x7e3, 0x3320, 0x76, 0x5b3,
-	  	0x3feb, 0x7d2, 0x365e, 0x76, 0x48c,
-	  	0x3ffe, 0x5b3, 0x3feb, 0x0,  0x8200, 0xd
+		0x3feb, 0x7d2, 0x365e, 0x76, 0x48c,
+		0x3ffe, 0x5b3, 0x3feb, 0x0,  0x8200, 0xd
 	}, /* fft mode 1 */
 };
 
@@ -314,12 +289,26 @@ static u16 dib3000mc_mobile_mode[][5] = {
 #define DIB3000MC_REG_FEC_CFG			(   195)
 #define DIB3000MC_FEC_CFG				(  0x10)
 
+/*
+ * reg 206, output mode
+ *              1111 1111
+ *              |||| ||||
+ *              |||| |||+- unk
+ *              |||| ||+-- unk
+ *              |||| |+--- unk (on by default)
+ *              |||| +---- fifo_ctrl (1 = inhibit (flushed), 0 = active (unflushed))
+ *              |||+------ pid_parse (1 = enabled, 0 = disabled)
+ *              ||+------- outp_188  (1 = TS packet size 188, 0 = packet size 204)
+ *              |+-------- unk
+ *              +--------- unk
+ */
+
 #define DIB3000MC_REG_SMO_MODE			(   206)
 #define DIB3000MC_SMO_MODE_DEFAULT		(1 << 2)
 #define DIB3000MC_SMO_MODE_FIFO_FLUSH	(1 << 3)
-#define DIB3000MC_SMO_MODE_FIFO_UNFLUSH	~DIB3000MC_SMO_MODE_FIFO_FLUSH
+#define DIB3000MC_SMO_MODE_FIFO_UNFLUSH	(0xfff7)
 #define DIB3000MC_SMO_MODE_PID_PARSE	(1 << 4)
-#define DIB3000MC_SMO_MODE_NO_PID_PARSE	~DIB3000MC_SMO_MODE_PID_PARSE
+#define DIB3000MC_SMO_MODE_NO_PID_PARSE	(0xffef)
 #define DIB3000MC_SMO_MODE_188			(1 << 5)
 #define DIB3000MC_SMO_MODE_SLAVE		(DIB3000MC_SMO_MODE_DEFAULT | \
 			DIB3000MC_SMO_MODE_188 | DIB3000MC_SMO_MODE_PID_PARSE | (1<<1))
@@ -331,7 +320,7 @@ static u16 dib3000mc_mobile_mode[][5] = {
  * pidfilter
  * it is not a hardware pidfilter but a filter which drops all pids
  * except the ones set. When connected to USB1.1 bandwidth this is important.
- * DiB3000-MC/P can filter up to 32 PIDs
+ * DiB3000P/M-C can filter up to 32 PIDs
  */
 #define DIB3000MC_REG_FIRST_PID			(   212)
 #define DIB3000MC_NUM_PIDS				(    32)
@@ -392,7 +381,7 @@ static u16 dib3000mc_mobile_mode[][5] = {
 
 #define DIB3000MC_REG_RST_I2C_ADDR		(  1024)
 #define DIB3000MC_DEMOD_ADDR_ON			(     1)
-#define DIB3000MC_DEMOD_ADDR(a)			((a << 3) & 0x03F0)
+#define DIB3000MC_DEMOD_ADDR(a)			((a << 4) & 0x03F0)
 
 #define DIB3000MC_REG_RESTART			(  1027)
 #define DIB3000MC_RESTART_OFF			(0x0000)

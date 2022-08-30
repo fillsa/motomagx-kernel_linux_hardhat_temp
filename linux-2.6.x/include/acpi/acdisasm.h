@@ -5,7 +5,7 @@
  *****************************************************************************/
 
 /*
- * Copyright (C) 2000 - 2004, R. Byron Moore
+ * Copyright (C) 2000 - 2005, R. Byron Moore
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -75,6 +75,11 @@ extern const char                       *acpi_gbl_SHRdecode[2];
 extern const char                       *acpi_gbl_TYPdecode[4];
 extern const char                       *acpi_gbl_BMdecode[2];
 extern const char                       *acpi_gbl_SIZdecode[4];
+extern const char                       *acpi_gbl_TTPdecode[2];
+extern const char                       *acpi_gbl_MTPdecode[4];
+extern const char                       *acpi_gbl_TRSdecode[2];
+
+
 extern const char                       *acpi_gbl_lock_rule[ACPI_NUM_LOCK_RULES];
 extern const char                       *acpi_gbl_access_types[ACPI_NUM_ACCESS_TYPES];
 extern const char                       *acpi_gbl_update_rules[ACPI_NUM_UPDATE_RULES];
@@ -313,6 +318,12 @@ acpi_dm_word_descriptor (
 void
 acpi_dm_dword_descriptor (
 	struct asl_dword_address_desc   *resource,
+	u32                             length,
+	u32                             level);
+
+void
+acpi_dm_extended_descriptor (
+	struct asl_extended_address_desc   *resource,
 	u32                             length,
 	u32                             level);
 

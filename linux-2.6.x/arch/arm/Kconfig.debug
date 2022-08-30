@@ -47,6 +47,7 @@ config DEBUG_ERRORS
 	  you are concerned with the code size or don't want to see these
 	  messages.
 
+
 # These options are only for real kernel hackers who want to get their hands dirty.
 config DEBUG_LL
 	bool "Kernel low-level debugging functions"

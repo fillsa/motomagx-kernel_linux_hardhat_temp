@@ -62,8 +62,8 @@ struct cpuinfo_x86 {
 	int	x86_tlbsize;	/* number of 4K pages in DTLB/ITLB combined(in pages)*/
         __u8    x86_virt_bits, x86_phys_bits;
 	__u8	x86_num_cores;
-	__u8	x86_apicid;
         __u32   x86_power; 	
+	__u32   extended_cpuid_level;	/* Max extended CPUID function supported */
 	unsigned long loops_per_jiffy;
 } ____cacheline_aligned;
 
@@ -91,7 +91,6 @@ extern char ignore_irq13;
 extern void identify_cpu(struct cpuinfo_x86 *);
 extern void print_cpu_info(struct cpuinfo_x86 *);
 extern unsigned int init_intel_cacheinfo(struct cpuinfo_x86 *c);
-extern void dodgy_tsc(void);
 
 /*
  * EFLAGS bits
@@ -157,17 +156,11 @@ static inline void clear_in_cr4 (unsigned long mask)
 		:"ax");
 }
 
-/*
- * Bus types
- */
-#define MCA_bus 0
-#define MCA_bus__is_a_macro
-
 
 /*
- * User space process size: 512GB - 1GB (default).
+ * User space process size. 47bits minus one guard page.
  */
-#define TASK_SIZE	(0x0000007fc0000000UL)
+#define TASK_SIZE	(0x800000000000UL - 4096)
 
 /* This decides where the kernel will search for a free chunk of vm
  * space during mmap's.
@@ -462,5 +455,7 @@ static inline void __mwait(unsigned long eax, unsigned long ecx)
 #define cache_line_size() (boot_cpu_data.x86_cache_alignment)
 
 extern unsigned long boot_option_idle_override;
+/* Boot loader type from the setup header */
+extern int bootloader_type;
 
 #endif /* __ASM_X86_64_PROCESSOR_H */

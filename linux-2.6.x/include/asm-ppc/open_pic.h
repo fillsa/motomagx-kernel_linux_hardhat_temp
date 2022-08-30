@@ -35,11 +35,11 @@ extern struct hw_interrupt_type open_pic_ipi;
 
 extern u_int OpenPIC_NumInitSenses;
 extern u_char *OpenPIC_InitSenses;
-extern void* OpenPIC_Addr;
+extern void __iomem * OpenPIC_Addr;
 extern int epic_serial_mode;
 
 /* Exported functions */
-extern void openpic_set_sources(int first_irq, int num_irqs, void *isr);
+extern void openpic_set_sources(int first_irq, int num_irqs, void __iomem *isr);
 extern void openpic_init(int linux_irq_offset);
 extern void openpic_init_nmi_irq(u_int irq);
 extern void openpic_hookup_cascade(u_int irq, char *name,
@@ -56,6 +56,7 @@ extern void smp_openpic_message_pass(int target, int msg, unsigned long data,
 				     int wait);
 extern void openpic_set_k2_cascade(int irq);
 extern void openpic_set_priority(u_int pri);
+extern u_int openpic_get_priority(void);
 
 extern inline int openpic_to_irq(int irq)
 {

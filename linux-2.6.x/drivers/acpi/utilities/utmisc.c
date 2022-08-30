@@ -5,7 +5,7 @@
  ******************************************************************************/
 
 /*
- * Copyright (C) 2000 - 2004, R. Byron Moore
+ * Copyright (C) 2000 - 2005, R. Byron Moore
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -372,13 +372,17 @@ acpi_ut_strtoul64 (
 	u32                             base,
 	acpi_integer                    *ret_integer)
 {
-	u32                             this_digit;
+	u32                             this_digit = 0;
 	acpi_integer                    return_value = 0;
 	acpi_integer                    quotient;
 
 
 	ACPI_FUNCTION_TRACE ("ut_stroul64");
 
+
+	if ((!string) || !(*string)) {
+		goto error_exit;
+	}
 
 	switch (base) {
 	case ACPI_ANY_BASE:
@@ -394,7 +398,7 @@ acpi_ut_strtoul64 (
 	/* Skip over any white space in the buffer */
 
 	while (ACPI_IS_SPACE (*string) || *string == '\t') {
-		++string;
+		string++;
 	}
 
 	/*
@@ -403,9 +407,9 @@ acpi_ut_strtoul64 (
 	 */
 	if (base == 0) {
 		if ((*string == '0') &&
-			(ACPI_TOLOWER (*(++string)) == 'x')) {
+			(ACPI_TOLOWER (*(string + 1)) == 'x')) {
 			base = 16;
-			++string;
+			string += 2;
 		}
 		else {
 			base = 10;
@@ -416,10 +420,16 @@ acpi_ut_strtoul64 (
 	 * For hexadecimal base, skip over the leading
 	 * 0 or 0x, if they are present.
 	 */
-	if (base == 16 &&
-		*string == '0' &&
-		ACPI_TOLOWER (*(++string)) == 'x') {
-		string++;
+	if ((base == 16) &&
+		(*string == '0') &&
+		(ACPI_TOLOWER (*(string + 1)) == 'x')) {
+		string += 2;
+	}
+
+	/* Any string left? */
+
+	if (!(*string)) {
+		goto error_exit;
 	}
 
 	/* Main loop: convert the string to a 64-bit integer */
@@ -431,21 +441,25 @@ acpi_ut_strtoul64 (
 			this_digit = ((u8) *string) - '0';
 		}
 		else {
+			if (base == 10) {
+				/* Digit is out of range */
+
+				goto error_exit;
+			}
+
 			this_digit = (u8) ACPI_TOUPPER (*string);
-			if (ACPI_IS_UPPER ((char) this_digit)) {
+			if (ACPI_IS_XDIGIT ((char) this_digit)) {
 				/* Convert ASCII Hex char to value */
 
 				this_digit = this_digit - 'A' + 10;
 			}
 			else {
-				goto error_exit;
+				/*
+				 * We allow non-hex chars, just stop now, same as end-of-string.
+				 * See ACPI spec, string-to-integer conversion.
+				 */
+				break;
 			}
-		}
-
-		/* Check to see if digit is out of range */
-
-		if (this_digit >= base) {
-			goto error_exit;
 		}
 
 		/* Divide the digit into the correct position */
@@ -458,8 +472,10 @@ acpi_ut_strtoul64 (
 
 		return_value *= base;
 		return_value += this_digit;
-		++string;
+		string++;
 	}
+
+	/* All done, normal exit */
 
 	*ret_integer = return_value;
 	return_ACPI_STATUS (AE_OK);
@@ -672,7 +688,6 @@ acpi_ut_acquire_mutex (
 	acpi_mutex_handle               mutex_id)
 {
 	acpi_status                     status;
-	u32                             i;
 	u32                             this_thread_id;
 
 
@@ -685,30 +700,37 @@ acpi_ut_acquire_mutex (
 
 	this_thread_id = acpi_os_get_thread_id ();
 
-	/*
-	 * Deadlock prevention.  Check if this thread owns any mutexes of value
-	 * greater than or equal to this one.  If so, the thread has violated
-	 * the mutex ordering rule.  This indicates a coding error somewhere in
-	 * the ACPI subsystem code.
-	 */
-	for (i = mutex_id; i < MAX_MUTEX; i++) {
-		if (acpi_gbl_mutex_info[i].owner_id == this_thread_id) {
-			if (i == mutex_id) {
+#ifdef ACPI_MUTEX_DEBUG
+	{
+		u32                             i;
+		/*
+		 * Mutex debug code, for internal debugging only.
+		 *
+		 * Deadlock prevention.  Check if this thread owns any mutexes of value
+		 * greater than or equal to this one.  If so, the thread has violated
+		 * the mutex ordering rule.  This indicates a coding error somewhere in
+		 * the ACPI subsystem code.
+		 */
+		for (i = mutex_id; i < MAX_MUTEX; i++) {
+			if (acpi_gbl_mutex_info[i].owner_id == this_thread_id) {
+				if (i == mutex_id) {
+					ACPI_DEBUG_PRINT ((ACPI_DB_ERROR,
+							"Mutex [%s] already acquired by this thread [%X]\n",
+							acpi_ut_get_mutex_name (mutex_id), this_thread_id));
+
+					return (AE_ALREADY_ACQUIRED);
+				}
+
 				ACPI_DEBUG_PRINT ((ACPI_DB_ERROR,
-						"Mutex [%s] already acquired by this thread [%X]\n",
-						acpi_ut_get_mutex_name (mutex_id), this_thread_id));
+						"Invalid acquire order: Thread %X owns [%s], wants [%s]\n",
+						this_thread_id, acpi_ut_get_mutex_name (i),
+						acpi_ut_get_mutex_name (mutex_id)));
 
-				return (AE_ALREADY_ACQUIRED);
+				return (AE_ACQUIRE_DEADLOCK);
 			}
-
-			ACPI_DEBUG_PRINT ((ACPI_DB_ERROR,
-					"Invalid acquire order: Thread %X owns [%s], wants [%s]\n",
-					this_thread_id, acpi_ut_get_mutex_name (i),
-					acpi_ut_get_mutex_name (mutex_id)));
-
-			return (AE_ACQUIRE_DEADLOCK);
 		}
 	}
+#endif
 
 	ACPI_DEBUG_PRINT ((ACPI_DB_MUTEX,
 			 "Thread %X attempting to acquire Mutex [%s]\n",
@@ -750,7 +772,6 @@ acpi_ut_release_mutex (
 	acpi_mutex_handle               mutex_id)
 {
 	acpi_status                     status;
-	u32                             i;
 	u32                             this_thread_id;
 
 
@@ -872,7 +893,7 @@ acpi_ut_create_update_state_and_push (
  * DESCRIPTION: Create a new state and push it
  *
  ******************************************************************************/
-
+#ifdef ACPI_FUTURE_USAGE
 acpi_status
 acpi_ut_create_pkg_state_and_push (
 	void                            *internal_object,
@@ -894,7 +915,7 @@ acpi_ut_create_pkg_state_and_push (
 	acpi_ut_push_generic_state (state_list, state);
 	return (AE_OK);
 }
-
+#endif  /*  ACPI_FUTURE_USAGE  */
 
 /*******************************************************************************
  *
@@ -1187,6 +1208,7 @@ acpi_ut_delete_generic_state (
 }
 
 
+#ifdef ACPI_ENABLE_OBJECT_CACHE
 /*******************************************************************************
  *
  * FUNCTION:    acpi_ut_delete_generic_state_cache
@@ -1210,6 +1232,7 @@ acpi_ut_delete_generic_state_cache (
 	acpi_ut_delete_generic_cache (ACPI_MEM_LIST_STATE);
 	return_VOID;
 }
+#endif
 
 
 /*******************************************************************************

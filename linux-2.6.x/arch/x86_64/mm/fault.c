@@ -63,21 +63,19 @@ void bust_spinlocks(int yes)
 static noinline int is_prefetch(struct pt_regs *regs, unsigned long addr,
 				unsigned long error_code)
 { 
-	unsigned char *instr = (unsigned char *)(regs->rip);
+	unsigned char *instr;
 	int scan_more = 1;
 	int prefetch = 0; 
-	unsigned char *max_instr = instr + 15;
+	unsigned char *max_instr;
 
 	/* If it was a exec fault ignore */
 	if (error_code & (1<<4))
 		return 0;
 	
-	/* Code segments in LDT could have a non zero base. Don't check
-	   when that's possible */
-	if (regs->cs & (1<<2))
-		return 0;
+	instr = (unsigned char *)convert_rip_to_linear(current, regs);
+	max_instr = instr + 15;
 
-	if ((regs->cs & 3) != 0 && regs->rip >= TASK_SIZE)
+	if ((regs->cs & 3) != 0 && instr >= (unsigned char *)TASK_SIZE)
 		return 0;
 
 	while (scan_more && instr < max_instr) { 
@@ -144,25 +142,25 @@ static int bad_address(void *p)
 
 void dump_pagetable(unsigned long address)
 {
-	pml4_t *pml4;
 	pgd_t *pgd;
+	pud_t *pud;
 	pmd_t *pmd;
 	pte_t *pte;
 
-	asm("movq %%cr3,%0" : "=r" (pml4));
+	asm("movq %%cr3,%0" : "=r" (pgd));
 
-	pml4 = __va((unsigned long)pml4 & PHYSICAL_PAGE_MASK); 
-	pml4 += pml4_index(address);
-	printk("PML4 %lx ", pml4_val(*pml4));
-	if (bad_address(pml4)) goto bad;
-	if (!pml4_present(*pml4)) goto ret; 
-
-	pgd = __pgd_offset_k((pgd_t *)pml4_page(*pml4), address);
+	pgd = __va((unsigned long)pgd & PHYSICAL_PAGE_MASK); 
+	pgd += pgd_index(address);
+	printk("PGD %lx ", pgd_val(*pgd));
 	if (bad_address(pgd)) goto bad;
-	printk("PGD %lx ", pgd_val(*pgd)); 
-	if (!pgd_present(*pgd))	goto ret;
+	if (!pgd_present(*pgd)) goto ret; 
 
-	pmd = pmd_offset(pgd, address);
+	pud = __pud_offset_k((pud_t *)pgd_page(*pgd), address);
+	if (bad_address(pud)) goto bad;
+	printk("PUD %lx ", pud_val(*pud));
+	if (!pud_present(*pud))	goto ret;
+
+	pmd = pmd_offset(pud, address);
 	if (bad_address(pmd)) goto bad;
 	printk("PMD %lx ", pmd_val(*pmd));
 	if (!pmd_present(*pmd))	goto ret;	 
@@ -213,6 +211,8 @@ static int is_errata93(struct pt_regs *regs, unsigned long address)
 
 int unhandled_signal(struct task_struct *tsk, int sig)
 {
+	if (tsk->pid == 1)
+		return 1;
 	/* Warn for strace, but not for gdb */
 	if (!test_ti_thread_flag(tsk->thread_info, TIF_SYSCALL_TRACE) &&
 	    (tsk->ptrace & PT_PTRACED))
@@ -233,7 +233,58 @@ static noinline void pgtable_bad(unsigned long address, struct pt_regs *regs,
 	do_exit(SIGKILL);
 }
 
-int page_fault_trace; 
+/*
+ * Handle a fault on the vmalloc or module mapping area
+ *
+ * This assumes no large pages in there.
+ */
+static int vmalloc_fault(unsigned long address)
+{
+	pgd_t *pgd, *pgd_ref;
+	pud_t *pud, *pud_ref;
+	pmd_t *pmd, *pmd_ref;
+	pte_t *pte, *pte_ref;
+
+	/* Copy kernel mappings over when needed. This can also
+	   happen within a race in page table update. In the later
+	   case just flush. */
+
+	pgd = pgd_offset(current->mm ?: &init_mm, address);
+	pgd_ref = pgd_offset_k(address);
+	if (pgd_none(*pgd_ref))
+		return -1;
+	if (pgd_none(*pgd))
+		set_pgd(pgd, *pgd_ref);
+
+	/* Below here mismatches are bugs because these lower tables
+	   are shared */
+
+	pud = pud_offset(pgd, address);
+	pud_ref = pud_offset(pgd_ref, address);
+	if (pud_none(*pud_ref))
+		return -1;
+	if (pud_none(*pud) || pud_page(*pud) != pud_page(*pud_ref))
+		BUG();
+	pmd = pmd_offset(pud, address);
+	pmd_ref = pmd_offset(pud_ref, address);
+	if (pmd_none(*pmd_ref))
+		return -1;
+	if (pmd_none(*pmd) || pmd_page(*pmd) != pmd_page(*pmd_ref))
+		BUG();
+	pte_ref = pte_offset_kernel(pmd_ref, address);
+	if (!pte_present(*pte_ref))
+		return -1;
+	pte = pte_offset_kernel(pmd, address);
+	/* Don't use pte_page here, because the mappings can point
+	   outside mem_map, and the NUMA hash lookup cannot handle
+	   that. */
+	if (!pte_present(*pte) || pte_pfn(*pte) != pte_pfn(*pte_ref))
+		BUG();
+	__flush_tlb_all();
+	return 0;
+}
+
+int page_fault_trace = 0;
 int exception_trace = 1;
 
 /*
@@ -301,8 +352,13 @@ asmlinkage void do_page_fault(struct pt_regs *regs, unsigned long error_code)
 	 * protection error (error_code & 1) == 0.
 	 */
 	if (unlikely(address >= TASK_SIZE)) {
-		if (!(error_code & 5))
-			goto vmalloc_fault;
+		if (!(error_code & 5) &&
+		      ((address >= VMALLOC_START && address < VMALLOC_END) ||
+		       (address >= MODULES_VADDR && address < MODULES_END))) {
+			if (vmalloc_fault(address) < 0)
+				goto bad_area_nosemaphore;
+			return;
+		}
 		/*
 		 * Don't take the mm semaphore here. If we fixup a prefetch
 		 * fault we could otherwise deadlock.
@@ -311,7 +367,7 @@ asmlinkage void do_page_fault(struct pt_regs *regs, unsigned long error_code)
 	}
 
 	if (unlikely(error_code & (1 << 3)))
-		goto page_table_corruption;
+		pgtable_bad(address, regs, error_code);
 
 	/*
 	 * If we're in an interrupt or have no user
@@ -408,17 +464,6 @@ bad_area:
 	up_read(&mm->mmap_sem);
 
 bad_area_nosemaphore:
-
-#ifdef CONFIG_IA32_EMULATION
-	/* 32bit vsyscall. map on demand. */
-	if (test_thread_flag(TIF_IA32) &&
-	    address >= 0xffffe000 && address < 0xffffe000 + PAGE_SIZE) { 
-		if (map_syscall32(mm, address) < 0)
-			goto out_of_memory2;
-		return;
-	}
-#endif
-
 	/* User mode accesses just cause a SIGSEGV */
 	if (error_code & 4) {
 		if (is_prefetch(regs, address, error_code))
@@ -435,8 +480,9 @@ bad_area_nosemaphore:
 			return;
 
 		if (exception_trace && unhandled_signal(tsk, SIGSEGV)) {
-			printk(KERN_INFO
-		       "%s[%d]: segfault at %016lx rip %016lx rsp %016lx error %lx\n",
+			printk(
+		       "%s%s[%d]: segfault at %016lx rip %016lx rsp %016lx error %lx\n",
+					tsk->pid > 1 ? KERN_INFO : KERN_EMERG,
 					tsk->comm, tsk->pid, address, regs->rip,
 					regs->rsp, error_code);
 		}
@@ -503,7 +549,6 @@ no_context:
  */
 out_of_memory:
 	up_read(&mm->mmap_sem);
-out_of_memory2:
 	if (current->pid == 1) { 
 		yield();
 		goto again;
@@ -529,34 +574,4 @@ do_sigbus:
 	info.si_addr = (void __user *)address;
 	force_sig_info(SIGBUS, &info, tsk);
 	return;
-
-vmalloc_fault:
-	{
-		pgd_t *pgd;
-		pmd_t *pmd;
-		pte_t *pte; 
-
-		/*
-		 * x86-64 has the same kernel 3rd level pages for all CPUs.
-		 * But for vmalloc/modules the TLB synchronization works lazily,
-		 * so it can happen that we get a page fault for something
-		 * that is really already in the page table. Just check if it
-		 * is really there and when yes flush the local TLB. 
-		 */
-		pgd = pgd_offset_k(address);
-		if (!pgd_present(*pgd))
-			goto bad_area_nosemaphore;
-		pmd = pmd_offset(pgd, address);
-		if (!pmd_present(*pmd))
-			goto bad_area_nosemaphore;
-		pte = pte_offset_kernel(pmd, address); 
-		if (!pte_present(*pte))
-			goto bad_area_nosemaphore;
-
-		__flush_tlb_all();		
-		return;
-	}
-
-page_table_corruption:
-	pgtable_bad(address, regs, error_code);
 }

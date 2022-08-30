@@ -21,9 +21,9 @@
  * is really simple on x86 ...
  */
 #ifndef CONFIG_PREEMPT_RT
-# include <asm-generic/tlb.h>
+#include <asm-generic/tlb.h>
 #else
-# include <asm-generic/tlb-simple.h>
+#include <asm-generic/tlb-simple.h>
 #endif
 
 #endif

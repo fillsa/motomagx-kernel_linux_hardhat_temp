@@ -29,7 +29,7 @@
  *  675 Mass Ave, Cambridge, MA 02139, USA.
  *
  */
-
+#include <linux/config.h>
 #include <linux/kernel.h>
 #include <linux/errno.h>
 #include <linux/sched.h>
@@ -55,7 +55,7 @@
  * functions.  The drivers allocate the data buffers and assign them
  * to the descriptors.
  */
-static spinlock_t au1xxx_dbdma_spin_lock = SPIN_LOCK_UNLOCKED;
+static DEFINE_SPINLOCK(au1xxx_dbdma_spin_lock);
 
 /* I couldn't find a macro that did this......
 */

@@ -20,7 +20,7 @@
 #define DEFINE_PER_CPU_LOCKED(type, name) \
     __attribute__((__section__(".data.percpu"))) spinlock_t per_cpu_lock__##name##_locked = SPIN_LOCK_UNLOCKED; \
     __attribute__((__section__(".data.percpu"))) __typeof__(type) per_cpu__##name##_locked
- 
+
 /* var is in discarded region: offset to particular copy we want */
 #define per_cpu(var, cpu) (*RELOC_HIDE(&per_cpu__##var, __per_cpu_offset(cpu)))
 #define __get_cpu_var(var) (*RELOC_HIDE(&per_cpu__##var, __my_cpu_offset()))

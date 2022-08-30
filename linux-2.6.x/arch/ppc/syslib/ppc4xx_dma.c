@@ -48,7 +48,7 @@ ppc4xx_set_src_addr(int dmanr, phys_addr_t src_addr)
 		return;
 	}
 
-#ifdef PPC4xx_DMA64BIT
+#ifdef PPC4xx_DMA_64BIT
 	mtdcr(DCRN_DMASAH0 + dmanr*2, (u32)(src_addr >> 32));
 #else
 	mtdcr(DCRN_DMASA0 + dmanr*2, (u32)src_addr);
@@ -63,7 +63,7 @@ ppc4xx_set_dst_addr(int dmanr, phys_addr_t dst_addr)
 		return;
 	}
 
-#ifdef PPC4xx_DMA64BIT
+#ifdef PPC4xx_DMA_64BIT
 	mtdcr(DCRN_DMADAH0 + dmanr*2, (u32)(dst_addr >> 32));
 #else
 	mtdcr(DCRN_DMADA0 + dmanr*2, (u32)dst_addr);
@@ -451,6 +451,8 @@ ppc4xx_init_dma_channel(unsigned int dmanr, ppc_dma_ch_t * p_init)
 		printk("ppc4xx_init_dma_channel: bad channel %d\n", dmanr);
 		return DMA_STATUS_BAD_CHANNEL;
 	}
+
+	memcpy(p_dma_ch, &dma_channels[dmanr], sizeof (ppc_dma_ch_t));
 
 #if DCRN_POL > 0
 	polarity = mfdcr(DCRN_POL);

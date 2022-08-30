@@ -21,13 +21,13 @@ static char *icn_id2 = "\0";
 MODULE_DESCRIPTION("ISDN4Linux: Driver for ICN active ISDN card");
 MODULE_AUTHOR("Fritz Elfert");
 MODULE_LICENSE("GPL");
-MODULE_PARM(portbase, "i");
+module_param(portbase, int, 0);
 MODULE_PARM_DESC(portbase, "Port address of first card");
-MODULE_PARM(membase, "l");
+module_param(membase, ulong, 0);
 MODULE_PARM_DESC(membase, "Shared memory address of all cards");
-MODULE_PARM(icn_id, "s");
+module_param(icn_id, charp, 0);
 MODULE_PARM_DESC(icn_id, "ID-String of first card");
-MODULE_PARM(icn_id2, "s");
+module_param(icn_id2, charp, 0);
 MODULE_PARM_DESC(icn_id2, "ID-String of first card, second S0 (4B only)");
 
 /*
@@ -908,14 +908,13 @@ icn_loadproto(u_char __user * buffer, icn_card * card)
 	uint left = ICN_CODE_STAGE2;
 	uint cnt;
 	int timer;
-	int ret;
 	unsigned long flags;
 
 #ifdef BOOT_DEBUG
 	printk(KERN_DEBUG "icn_loadproto called\n");
 #endif
-	if ((ret = verify_area(VERIFY_READ, buffer, ICN_CODE_STAGE2)))
-		return ret;
+	if (!access_ok(VERIFY_READ, buffer, ICN_CODE_STAGE2))
+		return -EFAULT;
 	timer = 0;
 	spin_lock_irqsave(&dev.devlock, flags);
 	if (card->secondhalf) {

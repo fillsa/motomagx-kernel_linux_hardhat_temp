@@ -47,10 +47,10 @@ static DECLARE_RAW_SEQLOCK(monotonic_lock);
 
 /* convert from cycles(64bits) => nanoseconds (64bits)
  *  basic equation:
- *	ns = cycles / (freq / ns_per_sec)
- *	ns = cycles / (cpu_cycles_in_time_X / time_X) / ns_per_sec
- *	ns = cycles / cpu_cycles_in_time_X / (time_X * ns_per_sec)
- *	ns = cycles * (time_X * ns_per_sec) / cpu_cycles_in_time_X
+ *		ns = cycles / (freq / ns_per_sec)
+ *		ns = cycles / (cpu_cycles_in_time_X / time_X) / ns_per_sec
+ *		ns = cycles / cpu_cycles_in_time_X / (time_X * ns_per_sec)
+ *		ns = cycles * (time_X * ns_per_sec) / cpu_cycles_in_time_X
  *
  *     Here time_X = CALIBRATE_TIME (in USEC) * NSEC_PER_USEC
  *       and cpu_cycles_in_time_X is tsc_cycles_per_50_ms so...
@@ -59,9 +59,9 @@ static DECLARE_RAW_SEQLOCK(monotonic_lock);
  *
  *	Then we use scaling math (suggested by george@mvista.com) to get:
  *
- *	ns = cycles * CALIBRATE_TIME * NSEC_PER_USEC * SC / tsc_cycles_per_50_ms / SC
- *      cyc2ns_scale = CALIBRATE_TIME * NSEC_PER_USEC * SC / tsc_cycles_per_50_ms
- *	ns = cycles * cyc2ns_scale / SC
+ *		ns = cycles * CALIBRATE_TIME * NSEC_PER_USEC * SC / tsc_cycles_per_50_ms / SC
+ *		cyc2ns_scale = CALIBRATE_TIME * NSEC_PER_USEC * SC / tsc_cycles_per_50_ms
+ *		ns = cycles * cyc2ns_scale / SC
  *
  *	And since SC is a constant power of two, we can convert the div
  *  into a shift.   
@@ -332,6 +332,26 @@ core_initcall(cpufreq_tsc);
 static inline void cpufreq_delayed_get(void) { return; }
 #endif 
 
+int recalibrate_cpu_khz(void)
+{
+#ifndef CONFIG_SMP
+	unsigned long cpu_khz_old = cpu_khz;
+
+	if (cpu_has_tsc) {
+		init_cpu_khz();
+		cpu_data[0].loops_per_jiffy =
+		    cpufreq_scale(cpu_data[0].loops_per_jiffy,
+			          cpu_khz_old,
+				  cpu_khz);
+		return 0;
+	} else
+		return -ENODEV;
+#else
+	return -ENODEV;
+#endif
+}
+EXPORT_SYMBOL(recalibrate_cpu_khz);
+
 static void mark_offset_tsc(void)
 {
 	unsigned long lost,delay, flags, flags2;
@@ -491,7 +511,7 @@ static int __init init_tsc(char* override)
 	if (cpu_has_tsc) {
 		unsigned long tsc_quotient;
 #ifdef CONFIG_HPET_TIMER
-		if (is_hpet_enabled()){
+		if (is_hpet_enabled() && hpet_use_timer) {
 			unsigned long result, remain;
 			printk("Using TSC for gettimeofday\n");
 			tsc_quotient = calibrate_tsc_hpet(NULL);

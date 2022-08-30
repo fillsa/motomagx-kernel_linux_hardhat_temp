@@ -1018,7 +1018,7 @@ static int __xipram do_write_oneword(struct map_info *map, struct flchip *chip, 
 			xip_enable(map, chip, adr);
 			printk(KERN_WARNING "MTD %s(): software timeout\n", __func__);
 			xip_disable(map, chip, adr);
-			break;
+                        break;
 		}
 
 		if (chip_ready(map, adr))

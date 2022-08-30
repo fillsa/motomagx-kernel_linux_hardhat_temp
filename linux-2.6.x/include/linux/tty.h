@@ -45,7 +45,7 @@
 #ifdef CONFIG_MOT_FEAT_MODEM_RELAY
 #define NR_LDISCS		17
 #else
-#define NR_LDISCS               16
+#define NR_LDISCS		16
 #endif /* CONFIG_MOT_FEAT_MODEM_RELAY */
 
 /*

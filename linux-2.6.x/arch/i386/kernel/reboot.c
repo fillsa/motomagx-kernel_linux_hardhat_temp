@@ -13,6 +13,7 @@
 #include <asm/uaccess.h>
 #include <asm/apic.h>
 #include "mach_reboot.h"
+#include <linux/reboot_fixups.h>
 
 /*
  * Power off function, if any
@@ -20,7 +21,7 @@
 void (*pm_power_off)(void);
 
 static int reboot_mode;
-int reboot_thru_bios;
+static int reboot_thru_bios;
 
 #ifdef CONFIG_SMP
 int reboot_smp = 0;
@@ -348,6 +349,7 @@ void machine_restart(char * __unused)
 		/* rebooting needs to touch the page at absolute addr 0 */
 		*((unsigned short *)__va(0x472)) = reboot_mode;
 		for (;;) {
+			mach_reboot_fixups(); /* for board specific fixups */
 			mach_reboot();
 			/* That didn't work - force a triple fault.. */
 			__asm__ __volatile__("lidt %0": :"m" (no_idt));

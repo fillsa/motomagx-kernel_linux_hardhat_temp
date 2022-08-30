@@ -26,6 +26,7 @@
 #include <asm/semaphore.h>		/* struct semaphore */
 #include <linux/rwsem.h>		/* struct rw_semaphore */
 #include <linux/workqueue.h>		/* struct workqueue_struct */
+#include <linux/pm.h>			/* pm_message_t */
 
 /* Typedef's */
 typedef struct timespec snd_timestamp_t;
@@ -49,6 +50,7 @@ struct sbus_dev;
 
 typedef enum {
 	SNDRV_DEV_TOPLEVEL =		(0*SNDRV_DEV_TYPE_RANGE_SIZE),
+	SNDRV_DEV_CONTROL,
 	SNDRV_DEV_LOWLEVEL_PRE,
 	SNDRV_DEV_LOWLEVEL_NORMAL =	(1*SNDRV_DEV_TYPE_RANGE_SIZE),
 	SNDRV_DEV_PCM,
@@ -57,6 +59,8 @@ typedef enum {
 	SNDRV_DEV_SEQUENCER,
 	SNDRV_DEV_HWDEP,
 	SNDRV_DEV_INFO,
+	SNDRV_DEV_BUS,
+	SNDRV_DEV_CODEC,
 	SNDRV_DEV_LOWLEVEL =		(2*SNDRV_DEV_TYPE_RANGE_SIZE)
 } snd_device_type_t;
 
@@ -147,6 +151,7 @@ struct _snd_card {
 	struct rw_semaphore controls_rwsem;	/* controls list lock */
 	rwlock_t ctl_files_rwlock;	/* ctl_files list lock */
 	int controls_count;		/* count of all controls */
+	int user_ctl_count;		/* count of all user controls */
 	struct list_head controls;	/* all controls for this card */
 	struct list_head ctl_files;	/* active control files */
 
@@ -163,13 +168,15 @@ struct _snd_card {
 	struct device *dev;
 
 #ifdef CONFIG_PM
-	int (*pm_suspend)(snd_card_t *card, unsigned int state);
-	int (*pm_resume)(snd_card_t *card, unsigned int state);
-	struct pm_dev *pm_dev;		/* for ISA */
+	int (*pm_suspend)(snd_card_t *card, pm_message_t state);
+	int (*pm_resume)(snd_card_t *card);
 	void *pm_private_data;
 	unsigned int power_state;	/* power state */
 	struct semaphore power_lock;	/* power lock */
 	wait_queue_head_t power_sleep;
+#ifdef CONFIG_SND_GENERIC_PM
+	struct snd_generic_device *pm_dev;	/* for ISA */
+#endif
 #endif
 
 #if defined(CONFIG_SND_MIXER_OSS) || defined(CONFIG_SND_MIXER_OSS_MODULE)
@@ -202,36 +209,34 @@ static inline void snd_power_change_state(snd_card_t *card, unsigned int state)
 	wake_up(&card->power_sleep);
 }
 int snd_card_set_pm_callback(snd_card_t *card,
-			     int (*suspend)(snd_card_t *, unsigned int),
-			     int (*resume)(snd_card_t *, unsigned int),
+			     int (*suspend)(snd_card_t *, pm_message_t),
+			     int (*resume)(snd_card_t *),
 			     void *private_data);
-int snd_card_set_dev_pm_callback(snd_card_t *card, int type,
-				 int (*suspend)(snd_card_t *, unsigned int),
-				 int (*resume)(snd_card_t *, unsigned int),
-				 void *private_data);
+int snd_card_set_generic_pm_callback(snd_card_t *card,
+				     int (*suspend)(snd_card_t *, pm_message_t),
+				     int (*resume)(snd_card_t *),
+				     void *private_data);
 #define snd_card_set_isa_pm_callback(card,suspend,resume,data) \
-	snd_card_set_dev_pm_callback(card, PM_ISA_DEV, suspend, resume, data)
-#ifdef CONFIG_PCI
-#ifndef SND_PCI_PM_CALLBACKS
-int snd_card_pci_suspend(struct pci_dev *dev, u32 state);
+	snd_card_set_generic_pm_callback(card, suspend, resume, data)
+struct pci_dev;
+int snd_card_pci_suspend(struct pci_dev *dev, pm_message_t state);
 int snd_card_pci_resume(struct pci_dev *dev);
 #define SND_PCI_PM_CALLBACKS \
 	.suspend = snd_card_pci_suspend,  .resume = snd_card_pci_resume
-#endif
-#endif
-#else
+
+#else /* ! CONFIG_PM */
+
 #define snd_power_lock(card)		do { (void)(card); } while (0)
 #define snd_power_unlock(card)		do { (void)(card); } while (0)
 static inline int snd_power_wait(snd_card_t *card, unsigned int state, struct file *file) { return 0; }
 #define snd_power_get_state(card)	SNDRV_CTL_POWER_D0
 #define snd_power_change_state(card, state)	do { (void)(card); } while (0)
 #define snd_card_set_pm_callback(card,suspend,resume,data)
-#define snd_card_set_dev_pm_callback(card,suspend,resume,data)
+#define snd_card_set_generic_pm_callback(card,suspend,resume,data)
 #define snd_card_set_isa_pm_callback(card,suspend,resume,data)
-#ifdef CONFIG_PCI
 #define SND_PCI_PM_CALLBACKS
-#endif
-#endif
+
+#endif /* CONFIG_PM */
 
 /* device.c */
 
@@ -307,12 +312,11 @@ void snd_hidden_vfree(void *obj);
 #define vfree_nocheck(obj) vfree(obj)
 #endif
 char *snd_kmalloc_strdup(const char *string, int flags);
-int copy_to_user_fromio(void __user *dst, const void __iomem *src, size_t count);
-int copy_from_user_toio(void __iomem *dst, const void __user *src, size_t count);
+int copy_to_user_fromio(void __user *dst, const volatile void __iomem *src, size_t count);
+int copy_from_user_toio(volatile void __iomem *dst, const void __user *src, size_t count);
 
 /* init.c */
 
-extern int snd_cards_count;
 extern unsigned int snd_cards_lock;
 extern snd_card_t *snd_cards[SNDRV_CARDS];
 extern rwlock_t snd_card_rwlock;
@@ -485,5 +489,14 @@ static inline int snd_timestamp_null(struct timespec *tstamp)
 }
 
 #define SNDRV_OSS_VERSION         ((3<<16)|(8<<8)|(1<<4)|(0))	/* 3.8.1a */
+
+/* for easier backward-porting */
+#if defined(CONFIG_GAMEPORT) || defined(CONFIG_GAMEPORT_MODULE)
+#ifndef gameport_set_dev_parent
+#define gameport_set_dev_parent(gp,xdev) ((gp)->dev.parent = (xdev))
+#define gameport_set_port_data(gp,r) ((gp)->port_data = (r))
+#define gameport_get_port_data(gp) (gp)->port_data
+#endif
+#endif
 
 #endif /* __SOUND_CORE_H */

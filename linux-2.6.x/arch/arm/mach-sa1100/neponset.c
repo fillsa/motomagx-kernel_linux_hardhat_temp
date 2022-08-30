@@ -178,7 +178,7 @@ static int neponset_probe(struct device *dev)
 /*
  * LDM power management.
  */
-static int neponset_suspend(struct device *dev, u32 state, u32 level)
+static int neponset_suspend(struct device *dev, pm_message_t state, u32 level)
 {
 	/*
 	 * Save state.
@@ -211,8 +211,8 @@ static int neponset_resume(struct device *dev, u32 level)
 }
 
 #else
-#define	neponset_suspend	NULL
-#define	neponset_resume	NULL
+#define neponset_suspend NULL
+#define neponset_resume  NULL
 #endif
 
 static struct device_driver neponset_device_driver = {
@@ -266,6 +266,7 @@ static struct platform_device sa1111_device = {
 
 static struct resource smc91x_resources[] = {
 	[0] = {
+		.name	= "smc91x-regs",
 		.start	= SA1100_CS3_PHYS,
 		.end	= SA1100_CS3_PHYS + 0x01ffffff,
 		.flags	= IORESOURCE_MEM,
@@ -276,6 +277,7 @@ static struct resource smc91x_resources[] = {
 		.flags	= IORESOURCE_IRQ,
 	},
 	[2] = {
+		.name	= "smc91x-attrib",
 		.start	= SA1100_CS3_PHYS + 0x02000000,
 		.end	= SA1100_CS3_PHYS + 0x03ffffff,
 		.flags	= IORESOURCE_MEM,

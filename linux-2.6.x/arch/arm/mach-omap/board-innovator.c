@@ -31,9 +31,8 @@
 #include <asm/mach/flash.h>
 #include <asm/mach/map.h>
 
-#include <asm/arch/clocks.h>
-#include <asm/arch/gpio.h>
 #include <asm/arch/fpga.h>
+#include <asm/arch/gpio.h>
 #include <asm/arch/tc.h>
 #include <asm/arch/usb.h>
 

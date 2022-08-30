@@ -65,7 +65,7 @@ __do_irq(unsigned int irq, struct irqaction *action, struct pt_regs *regs);
 
 static int noirqdebug;
 static volatile unsigned long irq_err_count;
-static DEFINE_RAW_SPINLOCK(irq_controller_lock);
+static DEFINE_RAW_SPINLOCK(irq_controller_lock); //static DEFINE_SPINLOCK(irq_controller_lock);
 static LIST_HEAD(irq_pending);
 
 struct irqdesc irq_desc[NR_IRQS];
@@ -82,6 +82,20 @@ struct timer_update_handler timer_update = {
 	.function	= NULL,
 	.skip		= 0,
 };
+
+/*
+ * No architecture-specific irq_finish function defined in arm/arch/irqs.h.
+ */
+#ifndef irq_finish
+#define irq_finish(irq) do { } while (0)
+#endif
+
+/*
+ * No architecture-specific irq_finish function defined in arm/arch/irqs.h.
+ */
+#ifndef irq_finish
+#define irq_finish(irq) do { } while (0)
+#endif
 
 /*
  * Dummy mask/unmask handler
@@ -209,6 +223,8 @@ void enable_irq(unsigned int irq)
 			    desc->chip->retrigger(irq))
 				list_add(&desc->pend, &irq_pending);
 		}
+
+		smp_clear_running(desc);
 	}
 	spin_unlock_irqrestore(&irq_controller_lock, flags);
 }
@@ -314,6 +330,8 @@ int ltt_snapshot_irqs(int rchan)
 				relay_error = 1;
 				goto relay_write_err;
 			}
+
+		smp_clear_running(desc);
 		}
 		spin_unlock_irqrestore(&irq_controller_lock, flags);	
 	}
@@ -781,6 +799,8 @@ asmlinkage notrace void asm_do_IRQ(unsigned int irq, struct pt_regs *regs)
 	 */
 	if (!list_empty(&irq_pending))
 		do_pending_irqs(regs);
+
+	irq_finish(irq);
 
 	spin_unlock(&irq_controller_lock);
 	irq_exit();

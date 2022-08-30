@@ -25,8 +25,6 @@ extern void * memchr(const void *, int, __kernel_size_t);
 #define __HAVE_ARCH_MEMSET
 extern void * memset(void *, int, __kernel_size_t);
 
-#define __HAVE_ARCH_BCOPY
-
 extern void __memzero(void *ptr, __kernel_size_t n);
 
 #define memset(p,v,n)							\
@@ -47,6 +45,6 @@ extern void __memzero(void *ptr, __kernel_size_t n);
 	 	if ((__n) != 0) 					\
 	 		__memzero((__p),(__n)); 			\
 	 	(__p); 							\
-	 })		
+	 })
 
 #endif

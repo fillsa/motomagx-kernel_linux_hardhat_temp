@@ -1,8 +1,9 @@
 /*
- * $Id: cx88-vbi.c,v 1.14 2004/11/07 13:17:15 kraxel Exp $
+ * $Id: cx88-vbi.c,v 1.16 2004/12/10 12:33:39 kraxel Exp $
  */
 #include <linux/kernel.h>
 #include <linux/module.h>
+#include <linux/moduleparam.h>
 #include <linux/init.h>
 #include <linux/slab.h>
 
@@ -45,9 +46,9 @@ void cx8800_vbi_fmt(struct cx8800_dev *dev, struct v4l2_format *f)
 	}
 }
 
-int cx8800_start_vbi_dma(struct cx8800_dev    *dev,
-			 struct cx88_dmaqueue *q,
-			 struct cx88_buffer   *buf)
+static int cx8800_start_vbi_dma(struct cx8800_dev    *dev,
+				struct cx88_dmaqueue *q,
+				struct cx88_buffer   *buf)
 {
 	struct cx88_core *core = dev->core;
 
@@ -64,7 +65,7 @@ int cx8800_start_vbi_dma(struct cx8800_dev    *dev,
 	q->count = 1;
 
 	/* enable irqs */
-	cx_set(MO_PCI_INTMSK, 0x00fc01);
+	cx_set(MO_PCI_INTMSK, core->pci_irqmask | 0x01);
 	cx_set(MO_VID_INTMSK, 0x0f0088);
 
 	/* enable capture */

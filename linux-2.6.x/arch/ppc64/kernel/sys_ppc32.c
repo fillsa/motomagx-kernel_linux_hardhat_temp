@@ -73,6 +73,7 @@
 #include <asm/ppcdebug.h>
 #include <asm/time.h>
 #include <asm/mmu_context.h>
+#include <asm/systemcfg.h>
 
 #include "pci.h"
 
@@ -240,7 +241,7 @@ int cp_compat_stat(struct kstat *stat, struct compat_stat __user *statbuf)
 	    !new_valid_dev(stat->rdev))
 		return -EOVERFLOW;
 
-	err  = verify_area(VERIFY_WRITE, statbuf, sizeof(*statbuf));
+	err  = access_ok(VERIFY_WRITE, statbuf, sizeof(*statbuf)) ? 0 : -EFAULT;
 	err |= __put_user(new_encode_dev(stat->dev), &statbuf->st_dev);
 	err |= __put_user(stat->ino, &statbuf->st_ino);
 	err |= __put_user(stat->mode, &statbuf->st_mode);
@@ -491,6 +492,7 @@ asmlinkage long sys32_settimeofday(struct compat_timeval __user *tv, struct time
 	return do_sys_settimeofday(tv ? &kts : NULL, tz ? &ktz : NULL);
 }
 
+#ifdef CONFIG_SYSVIPC
 long sys32_ipc(u32 call, u32 first, u32 second, u32 third, compat_uptr_t ptr,
 	       u32 fifth)
 {
@@ -502,11 +504,11 @@ long sys32_ipc(u32 call, u32 first, u32 second, u32 third, compat_uptr_t ptr,
 	switch (call) {
 
 	case SEMTIMEDOP:
-		if (third)
+		if (fifth)
 			/* sign extend semid */
 			return compat_sys_semtimedop((int)first,
 						     compat_ptr(ptr), second,
-						     compat_ptr(third));
+						     compat_ptr(fifth));
 		/* else fall through for normal semop() */
 	case SEMOP:
 		/* struct sembuf is the same on 32 and 64bit :)) */
@@ -555,6 +557,7 @@ long sys32_ipc(u32 call, u32 first, u32 second, u32 third, compat_uptr_t ptr,
 
 	return -ENOSYS;
 }
+#endif
 
 /* Note: it is necessary to treat out_fd and in_fd as unsigned ints, 
  * with the corresponding cast to a signed int to insure that the 
@@ -786,31 +789,6 @@ asmlinkage int sys32_pciconfig_iobase(u32 which, u32 in_bus, u32 in_devfn)
 
 	return -EOPNOTSUPP;
 }
-
-
-asmlinkage int ppc64_newuname(struct new_utsname __user * name)
-{
-	int errno = sys_newuname(name);
-
-	if (current->personality == PER_LINUX32 && !errno) {
-		if(copy_to_user(name->machine, "ppc\0\0", 8)) {
-			errno = -EFAULT;
-		}
-	}
-	return errno;
-}
-
-asmlinkage int ppc64_personality(unsigned long personality)
-{
-	int ret;
-	if (current->personality == PER_LINUX32 && personality == PER_LINUX)
-		personality = PER_LINUX32;
-	ret = sys_personality(personality);
-	if (ret == PER_LINUX32)
-		ret = PER_LINUX;
-	return ret;
-}
-
 
 
 /* Note: it is necessary to treat mode as an unsigned int,
@@ -1103,6 +1081,7 @@ asmlinkage long sys32_umask(u32 mask)
 	return sys_umask((int)mask);
 }
 
+#ifdef CONFIG_SYSCTL
 struct __sysctl_args32 {
 	u32 name;
 	int nlen;
@@ -1152,44 +1131,49 @@ asmlinkage long sys32_sysctl(struct __sysctl_args32 __user *args)
 	}
 	return error;
 }
+#endif
 
-asmlinkage long sys32_time(compat_time_t __user * tloc)
+asmlinkage int sys32_uname(struct old_utsname __user * name)
 {
-	compat_time_t secs;
-
-	struct timeval tv;
-
-	do_gettimeofday( &tv );
-	secs = tv.tv_sec;
-
-	if (tloc) {
-		if (put_user(secs,tloc))
-			secs = -EFAULT;
+	int err = 0;
+	
+	down_read(&uts_sem);
+	if (copy_to_user(name, &system_utsname, sizeof(*name)))
+		err = -EFAULT;
+	up_read(&uts_sem);
+	if (!err && personality(current->personality) == PER_LINUX32) {
+		/* change "ppc64" to "ppc" */
+		if (__put_user(0, name->machine + 3)
+		    || __put_user(0, name->machine + 4))
+			err = -EFAULT;
 	}
-
-	return secs;
+	return err;
 }
 
 asmlinkage int sys32_olduname(struct oldold_utsname __user * name)
 {
 	int error;
-	
-	if (!name)
-		return -EFAULT;
+
 	if (!access_ok(VERIFY_WRITE,name,sizeof(struct oldold_utsname)))
 		return -EFAULT;
   
 	down_read(&uts_sem);
 	error = __copy_to_user(&name->sysname,&system_utsname.sysname,__OLD_UTS_LEN);
-	error -= __put_user(0,name->sysname+__OLD_UTS_LEN);
-	error -= __copy_to_user(&name->nodename,&system_utsname.nodename,__OLD_UTS_LEN);
-	error -= __put_user(0,name->nodename+__OLD_UTS_LEN);
-	error -= __copy_to_user(&name->release,&system_utsname.release,__OLD_UTS_LEN);
-	error -= __put_user(0,name->release+__OLD_UTS_LEN);
-	error -= __copy_to_user(&name->version,&system_utsname.version,__OLD_UTS_LEN);
-	error -= __put_user(0,name->version+__OLD_UTS_LEN);
-	error -= __copy_to_user(&name->machine,&system_utsname.machine,__OLD_UTS_LEN);
-	error = __put_user(0,name->machine+__OLD_UTS_LEN);
+	error |= __put_user(0,name->sysname+__OLD_UTS_LEN);
+	error |= __copy_to_user(&name->nodename,&system_utsname.nodename,__OLD_UTS_LEN);
+	error |= __put_user(0,name->nodename+__OLD_UTS_LEN);
+	error |= __copy_to_user(&name->release,&system_utsname.release,__OLD_UTS_LEN);
+	error |= __put_user(0,name->release+__OLD_UTS_LEN);
+	error |= __copy_to_user(&name->version,&system_utsname.version,__OLD_UTS_LEN);
+	error |= __put_user(0,name->version+__OLD_UTS_LEN);
+	error |= __copy_to_user(&name->machine,&system_utsname.machine,__OLD_UTS_LEN);
+	error |= __put_user(0,name->machine+__OLD_UTS_LEN);
+	if (personality(current->personality) == PER_LINUX32) {
+		/* change "ppc64" to "ppc" */
+		error |= __put_user(0, name->machine + 3);
+		error |= __put_user(0, name->machine + 4);
+	}
+	
 	up_read(&uts_sem);
 
 	error = error ? -EFAULT : 0;
@@ -1207,7 +1191,7 @@ unsigned long sys32_mmap2(unsigned long addr, size_t len,
 
 int get_compat_timeval(struct timeval *tv, struct compat_timeval __user *ctv)
 {
-	return (verify_area(VERIFY_READ, ctv, sizeof(*ctv)) ||
+	return (!access_ok(VERIFY_READ, ctv, sizeof(*ctv)) ||
 		__get_user(tv->tv_sec, &ctv->tv_sec) ||
 		__get_user(tv->tv_usec, &ctv->tv_usec)) ? -EFAULT : 0;
 }
@@ -1302,14 +1286,7 @@ long ppc32_timer_create(clockid_t clock,
 	if (ev32 == NULL)
 		return sys_timer_create(clock, NULL, timer_id);
 
-	memset(&event, 0, sizeof(event));
-	if (!access_ok(VERIFY_READ, ev32, sizeof(struct compat_sigevent))
-	    || __get_user(event.sigev_value.sival_int,
-			  &ev32->sigev_value.sival_int)
-	    || __get_user(event.sigev_signo, &ev32->sigev_signo)
-	    || __get_user(event.sigev_notify, &ev32->sigev_notify)
-	    || __get_user(event.sigev_notify_thread_id,
-			  &ev32->sigev_notify_thread_id))
+	if (get_compat_sigevent(&event, ev32))
 		return -EFAULT;
 
 	if (!access_ok(VERIFY_WRITE, timer_id, sizeof(timer_t)))

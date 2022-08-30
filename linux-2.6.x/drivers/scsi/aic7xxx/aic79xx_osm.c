@@ -407,18 +407,12 @@ uint32_t aic79xx_periodic_otag;
  * Module information and settable options.
  */
 static char *aic79xx = NULL;
-/*
- * Just in case someone uses commas to separate items on the insmod
- * command line, we define a dummy buffer here to avoid having insmod
- * write wild stuff into our code segment
- */
-static char dummy_buffer[60] = "Please don't trounce on me insmod!!\n";
 
 MODULE_AUTHOR("Maintainer: Justin T. Gibbs <gibbs@scsiguy.com>");
 MODULE_DESCRIPTION("Adaptec Aic790X U320 SCSI Host Bus Adapter driver");
 MODULE_LICENSE("Dual BSD/GPL");
 MODULE_VERSION(AIC79XX_DRIVER_VERSION);
-MODULE_PARM(aic79xx, "s");
+module_param(aic79xx, charp, 0);
 MODULE_PARM_DESC(aic79xx,
 "period delimited, options string.\n"
 "	verbose			Enable verbose/diagnostic logging\n"
@@ -548,10 +542,6 @@ static __inline struct ahd_linux_device *
 		     ahd_linux_next_device_to_run(struct ahd_softc *ahd);
 static __inline void ahd_linux_run_device_queues(struct ahd_softc *ahd);
 static __inline void ahd_linux_unmap_scb(struct ahd_softc*, struct scb*);
-
-static __inline int ahd_linux_map_seg(struct ahd_softc *ahd, struct scb *scb,
-		 		      struct ahd_dma_seg *sg,
-				      dma_addr_t addr, bus_size_t len);
 
 static __inline void
 ahd_schedule_completeq(struct ahd_softc *ahd)
@@ -697,7 +687,7 @@ ahd_linux_unmap_scb(struct ahd_softc *ahd, struct scb *scb)
 	int direction;
 
 	cmd = scb->io_ctx;
-	direction = scsi_to_pci_dma_dir(cmd->sc_data_direction);
+	direction = cmd->sc_data_direction;
 	ahd_sync_sglist(ahd, scb, BUS_DMASYNC_POSTWRITE);
 	if (cmd->use_sg != 0) {
 		struct scatterlist *sg;
@@ -709,28 +699,6 @@ ahd_linux_unmap_scb(struct ahd_softc *ahd, struct scb *scb)
 				 scb->platform_data->buf_busaddr,
 				 cmd->request_bufflen, direction);
 	}
-}
-
-static __inline int
-ahd_linux_map_seg(struct ahd_softc *ahd, struct scb *scb,
-		  struct ahd_dma_seg *sg, dma_addr_t addr, bus_size_t len)
-{
-	int	 consumed;
-
-	if ((scb->sg_count + 1) > AHD_NSEG)
-		panic("Too few segs for dma mapping.  "
-		      "Increase AHD_NSEG\n");
-
-	consumed = 1;
-	sg->addr = ahd_htole32(addr & 0xFFFFFFFF);
-	scb->platform_data->xfer_len += len;
-
-	if (sizeof(dma_addr_t) > 4
-	 && (ahd->flags & AHD_39BIT_ADDRESSING) != 0)
-		len |= (addr >> 8) & AHD_SG_HIGH_ADDR_MASK;
-
-	sg->len = ahd_htole32(len);
-	return (consumed);
 }
 
 /******************************** Macros **************************************/
@@ -861,12 +829,6 @@ ahd_linux_detect(Scsi_Host_Template *template)
 	 */
 	if (aic79xx)
 		aic79xx_setup(aic79xx);
-	if (dummy_buffer[0] != 'P')
-		printk(KERN_WARNING
-"aic79xx: Please read the file /usr/src/linux/drivers/scsi/README.aic79xx\n"
-"aic79xx: to see the proper way to specify options to the aic79xx module\n"
-"aic79xx: Specifically, don't use any commas when passing arguments to\n"
-"aic79xx: insmod or else it might trash certain memory areas.\n");
 #endif
 
 	template->proc_name = "aic79xx";
@@ -2526,7 +2488,7 @@ ahd_linux_dv_thread(void *data)
 	sprintf(current->comm, "ahd_dv_%d", ahd->unit);
 #else
 	daemonize("ahd_dv_%d", ahd->unit);
-	current->flags |= PF_FREEZE;
+	current->flags |= PF_NOFREEZE;
 #endif
 	unlock_kernel();
 
@@ -3376,7 +3338,7 @@ ahd_linux_dv_inq(struct ahd_softc *ahd, struct scsi_cmnd *cmd,
 	}
 
 	ahd_linux_dv_fill_cmd(ahd, cmd, devinfo);
-	cmd->sc_data_direction = SCSI_DATA_READ;
+	cmd->sc_data_direction = DMA_FROM_DEVICE;
 	cmd->cmd_len = 6;
 	cmd->cmnd[0] = INQUIRY;
 	cmd->cmnd[4] = request_length;
@@ -3401,7 +3363,7 @@ ahd_linux_dv_tur(struct ahd_softc *ahd, struct scsi_cmnd *cmd,
 #endif
 	/* Do a TUR to clear out any non-fatal transitional state */
 	ahd_linux_dv_fill_cmd(ahd, cmd, devinfo);
-	cmd->sc_data_direction = SCSI_DATA_NONE;
+	cmd->sc_data_direction = DMA_NONE;
 	cmd->cmd_len = 6;
 	cmd->cmnd[0] = TEST_UNIT_READY;
 }
@@ -3423,7 +3385,7 @@ ahd_linux_dv_rebd(struct ahd_softc *ahd, struct scsi_cmnd *cmd,
 		free(targ->dv_buffer, M_DEVBUF);
 	targ->dv_buffer = malloc(AHD_REBD_LEN, M_DEVBUF, M_WAITOK);
 	ahd_linux_dv_fill_cmd(ahd, cmd, devinfo);
-	cmd->sc_data_direction = SCSI_DATA_READ;
+	cmd->sc_data_direction = DMA_FROM_DEVICE;
 	cmd->cmd_len = 10;
 	cmd->cmnd[0] = READ_BUFFER;
 	cmd->cmnd[1] = 0x0b;
@@ -3445,7 +3407,7 @@ ahd_linux_dv_web(struct ahd_softc *ahd, struct scsi_cmnd *cmd,
 	}
 #endif
 	ahd_linux_dv_fill_cmd(ahd, cmd, devinfo);
-	cmd->sc_data_direction = SCSI_DATA_WRITE;
+	cmd->sc_data_direction = DMA_TO_DEVICE;
 	cmd->cmd_len = 10;
 	cmd->cmnd[0] = WRITE_BUFFER;
 	cmd->cmnd[1] = 0x0a;
@@ -3467,7 +3429,7 @@ ahd_linux_dv_reb(struct ahd_softc *ahd, struct scsi_cmnd *cmd,
 	}
 #endif
 	ahd_linux_dv_fill_cmd(ahd, cmd, devinfo);
-	cmd->sc_data_direction = SCSI_DATA_READ;
+	cmd->sc_data_direction = DMA_FROM_DEVICE;
 	cmd->cmd_len = 10;
 	cmd->cmnd[0] = READ_BUFFER;
 	cmd->cmnd[1] = 0x0a;
@@ -3493,7 +3455,7 @@ ahd_linux_dv_su(struct ahd_softc *ahd, struct scsi_cmnd *cmd,
 	}
 #endif
 	ahd_linux_dv_fill_cmd(ahd, cmd, devinfo);
-	cmd->sc_data_direction = SCSI_DATA_NONE;
+	cmd->sc_data_direction = DMA_NONE;
 	cmd->cmd_len = 6;
 	cmd->cmnd[0] = START_STOP_UNIT;
 	cmd->cmnd[4] = le | SSS_START;
@@ -4056,7 +4018,7 @@ ahd_linux_run_device_queue(struct ahd_softc *ahd, struct ahd_linux_device *dev)
 			int	 dir;
 
 			cur_seg = (struct scatterlist *)cmd->request_buffer;
-			dir = scsi_to_pci_dma_dir(cmd->sc_data_direction);
+			dir = cmd->sc_data_direction;
 			nseg = pci_map_sg(ahd->dev_softc, cur_seg,
 					  cmd->use_sg, dir);
 			scb->platform_data->xfer_len = 0;
@@ -4076,7 +4038,7 @@ ahd_linux_run_device_queue(struct ahd_softc *ahd, struct ahd_linux_device *dev)
 			int dir;
 
 			sg = scb->sg_list;
-			dir = scsi_to_pci_dma_dir(cmd->sc_data_direction);
+			dir = cmd->sc_data_direction;
 			addr = pci_map_single(ahd->dev_softc,
 					      cmd->request_buffer,
 					      cmd->request_bufflen, dir);

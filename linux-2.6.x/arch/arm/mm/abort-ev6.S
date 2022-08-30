@@ -12,6 +12,7 @@
 
 #include <linux/linkage.h>
 #include <asm/assembler.h>
+#include "abort-macro.S"
 /*
  * Function: v6_early_abort
  *
@@ -51,3 +52,5 @@ ENTRY(v6_early_abort)
 	cmp	r3, r2
 	orreq	r1, r1, #1 << 11		@ SWP/SWPB, so set write bit.
 	mov	pc, lr
+
+

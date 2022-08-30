@@ -21,7 +21,7 @@
  * Date         Author          Comment
  * 04/2007      Motorola        UMA DSCP support - extract dscp map from SP to
  *                              populate outer ip header dscp
-*/
+ */
 
 #include <linux/skbuff.h>
 #include <linux/spinlock.h>
@@ -48,7 +48,7 @@ static void xfrm4_encap(struct sk_buff *skb)
 	struct dst_entry *dst = skb->dst;
 	struct xfrm_state *x = dst->xfrm;
 	struct iphdr *iph, *top_iph;
-        
+
 	iph = skb->nh.iph;
 	skb->h.ipiph = iph;
 
@@ -77,7 +77,7 @@ static void xfrm4_encap(struct sk_buff *skb)
 	if (!top_iph->frag_off)
 		__ip_select_ident(top_iph, dst, 0);
 
-	top_iph->ttl = dst_path_metric(dst, RTAX_HOPLIMIT);
+	top_iph->ttl = dst_metric(dst->child, RTAX_HOPLIMIT);
 
 	top_iph->saddr = x->props.saddr.a4;
 	top_iph->daddr = x->id.daddr.a4;
@@ -101,7 +101,7 @@ static int xfrm4_tunnel_check_size(struct sk_buff *skb)
 		goto out;
 
 	dst = skb->dst;
-	mtu = dst_pmtu(dst) - dst->header_len - dst->trailer_len;
+	mtu = dst_mtu(dst);
 	if (skb->len > mtu) {
 		icmp_send(skb, ICMP_DEST_UNREACH, ICMP_FRAG_NEEDED, htonl(mtu));
 		ret = -EMSGSIZE;
@@ -135,7 +135,7 @@ int xfrm4_output(struct sk_buff *skb)
 
 	xfrm4_encap(skb);
 
-	err = x->type->output(skb);
+	err = x->type->output(x, skb);
 	if (err)
 		goto error;
 

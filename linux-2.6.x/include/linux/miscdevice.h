@@ -48,16 +48,16 @@
 #define	HPET_MINOR	     228
 
 struct device;
+struct class_device;
 
-struct miscdevice 
-{
+struct miscdevice  {
 	int minor;
 	const char *name;
 	struct file_operations *fops;
 	struct list_head list;
 	struct device *dev;
 #ifdef CONFIG_MOT_FEAT_INOTIFY
-	struct class_device *class;
+	struct class_device *class; //add  2.6.11
 #endif
 	char devfs_name[64];
 };

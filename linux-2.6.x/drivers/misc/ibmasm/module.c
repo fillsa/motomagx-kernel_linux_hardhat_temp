@@ -57,7 +57,7 @@
 #include "remote.h"
 
 
-static int __init ibmasm_init_one(struct pci_dev *pdev, const struct pci_device_id *id)
+static int __devinit ibmasm_init_one(struct pci_dev *pdev, const struct pci_device_id *id)
 {
 	int err, result = -ENOMEM;
 	struct service_processor *sp;
@@ -161,7 +161,7 @@ error_kmalloc:
 	return result;
 }
 
-static void __exit ibmasm_remove_one(struct pci_dev *pdev)
+static void __devexit ibmasm_remove_one(struct pci_dev *pdev)
 {
 	struct service_processor *sp = (struct service_processor *)pci_get_drvdata(pdev);
 
@@ -224,4 +224,5 @@ module_exit(ibmasm_exit);
 MODULE_AUTHOR(DRIVER_AUTHOR);
 MODULE_DESCRIPTION(DRIVER_DESC);
 MODULE_LICENSE("GPL");
+MODULE_DEVICE_TABLE(pci, ibmasm_pci_table);
 

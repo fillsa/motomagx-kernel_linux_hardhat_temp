@@ -140,67 +140,80 @@ static void snd_emu10k1_proc_read(snd_info_entry_t *entry,
 		/* 29 */ "???",
 		/* 30 */ "???",
 		/* 31 */ "???",
-		/* 32 */ "???",
-		/* 33 */ "???",
-		/* 34 */ "???",
-		/* 35 */ "???",
-		/* 36 */ "???",
-		/* 37 */ "???",
-		/* 38 */ "???",
-		/* 39 */ "???",
-		/* 40 */ "???",
-		/* 41 */ "???",
-		/* 42 */ "???",
-		/* 43 */ "???",
-		/* 44 */ "???",
-		/* 45 */ "???",
-		/* 46 */ "???",
-		/* 47 */ "???",
-		/* 48 */ "???",
-		/* 49 */ "???",
-		/* 50 */ "???",
-		/* 51 */ "???",
-		/* 52 */ "???",
-		/* 53 */ "???",
-		/* 54 */ "???",
-		/* 55 */ "???",
-		/* 56 */ "???",
-		/* 57 */ "???",
-		/* 58 */ "???",
-		/* 59 */ "???",
-		/* 60 */ "???",
-		/* 61 */ "???",
-		/* 62 */ "???",
-		/* 33 */ "???"
+		/* 32 */ "FXBUS2_0",
+		/* 33 */ "FXBUS2_1",
+		/* 34 */ "FXBUS2_2",
+		/* 35 */ "FXBUS2_3",
+		/* 36 */ "FXBUS2_4",
+		/* 37 */ "FXBUS2_5",
+		/* 38 */ "FXBUS2_6",
+		/* 39 */ "FXBUS2_7",
+		/* 40 */ "FXBUS2_8",
+		/* 41 */ "FXBUS2_9",
+		/* 42 */ "FXBUS2_10",
+		/* 43 */ "FXBUS2_11",
+		/* 44 */ "FXBUS2_12",
+		/* 45 */ "FXBUS2_13",
+		/* 46 */ "FXBUS2_14",
+		/* 47 */ "FXBUS2_15",
+		/* 48 */ "FXBUS2_16",
+		/* 49 */ "FXBUS2_17",
+		/* 50 */ "FXBUS2_18",
+		/* 51 */ "FXBUS2_19",
+		/* 52 */ "FXBUS2_20",
+		/* 53 */ "FXBUS2_21",
+		/* 54 */ "FXBUS2_22",
+		/* 55 */ "FXBUS2_23",
+		/* 56 */ "FXBUS2_24",
+		/* 57 */ "FXBUS2_25",
+		/* 58 */ "FXBUS2_26",
+		/* 59 */ "FXBUS2_27",
+		/* 60 */ "FXBUS2_28",
+		/* 61 */ "FXBUS2_29",
+		/* 62 */ "FXBUS2_30",
+		/* 63 */ "FXBUS2_31"
 	};
 
 	emu10k1_t *emu = entry->private_data;
-	unsigned int val;
+	unsigned int val, val1;
 	int nefx = emu->audigy ? 64 : 32;
 	char **outputs = emu->audigy ? audigy_outs : creative_outs;
 	int idx;
 	
 	snd_iprintf(buffer, "EMU10K1\n\n");
-	val = emu->audigy ?
-		snd_emu10k1_ptr_read(emu, A_FXRT1, 0) :
-		snd_emu10k1_ptr_read(emu, FXRT, 0);
 	snd_iprintf(buffer, "Card                  : %s\n",
 		    emu->audigy ? "Audigy" : (emu->APS ? "EMU APS" : "Creative"));
 	snd_iprintf(buffer, "Internal TRAM (words) : 0x%x\n", emu->fx8010.itram_size);
-	snd_iprintf(buffer, "External TRAM (words) : 0x%x\n", (int)emu->fx8010.etram_pages.bytes);
+	snd_iprintf(buffer, "External TRAM (words) : 0x%x\n", (int)emu->fx8010.etram_pages.bytes / 2);
 	snd_iprintf(buffer, "\n");
-	if (emu->audigy) {
-		snd_iprintf(buffer, "Effect Send Routing   : A=%i, B=%i, C=%i, D=%i\n",
-			    val & 0x3f,
-			    (val >> 8) & 0x3f,
-			    (val >> 16) & 0x3f,
-			    (val >> 24) & 0x3f);
-	} else {
-		snd_iprintf(buffer, "Effect Send Routing   : A=%i, B=%i, C=%i, D=%i\n",
-			    (val >> 16) & 0x0f,
-			    (val >> 20) & 0x0f,
-			    (val >> 24) & 0x0f,
-			    (val >> 28) & 0x0f);
+	snd_iprintf(buffer, "Effect Send Routing   :\n");
+	for (idx = 0; idx < NUM_G; idx++) {
+		val = emu->audigy ?
+			snd_emu10k1_ptr_read(emu, A_FXRT1, idx) :
+			snd_emu10k1_ptr_read(emu, FXRT, idx);
+		val1 = emu->audigy ?
+			snd_emu10k1_ptr_read(emu, A_FXRT2, idx) :
+			0;
+		if (emu->audigy) {
+			snd_iprintf(buffer, "Ch%i: A=%i, B=%i, C=%i, D=%i, ",
+				idx,
+				val & 0x3f,
+				(val >> 8) & 0x3f,
+				(val >> 16) & 0x3f,
+				(val >> 24) & 0x3f);
+			snd_iprintf(buffer, "E=%i, F=%i, G=%i, H=%i\n",
+				val1 & 0x3f,
+				(val1 >> 8) & 0x3f,
+				(val1 >> 16) & 0x3f,
+				(val1 >> 24) & 0x3f);
+		} else {
+			snd_iprintf(buffer, "Ch%i: A=%i, B=%i, C=%i, D=%i\n",
+				idx,
+				(val >> 16) & 0x0f,
+				(val >> 20) & 0x0f,
+				(val >> 24) & 0x0f,
+				(val >> 28) & 0x0f);
+		}
 	}
 	snd_iprintf(buffer, "\nCaptured FX Outputs   :\n");
 	for (idx = 0; idx < nefx; idx++) {
@@ -208,7 +221,7 @@ static void snd_emu10k1_proc_read(snd_info_entry_t *entry,
 			snd_iprintf(buffer, "  Output %02i [%s]\n", idx, outputs[idx]);
 	}
 	snd_iprintf(buffer, "\nAll FX Outputs        :\n");
-	for (idx = 0; idx < 32; idx++)
+	for (idx = 0; idx < (emu->audigy ? 64 : 32); idx++)
 		snd_iprintf(buffer, "  Output %02i [%s]\n", idx, outputs[idx]);
 	snd_emu10k1_proc_spdif_status(emu, buffer, "S/PDIF Output 0", SPCS0, -1);
 	snd_emu10k1_proc_spdif_status(emu, buffer, "S/PDIF Output 1", SPCS1, -1);
@@ -309,6 +322,172 @@ static long snd_emu10k1_fx8010_read(snd_info_entry_t *entry, void *file_private_
 	return 0;
 }
 
+static void snd_emu10k1_proc_voices_read(snd_info_entry_t *entry, 
+				  snd_info_buffer_t * buffer)
+{
+	emu10k1_t *emu = entry->private_data;
+	emu10k1_voice_t *voice;
+	int idx;
+	
+	snd_iprintf(buffer, "ch\tuse\tpcm\tefx\tsynth\tmidi\n");
+	for (idx = 0; idx < NUM_G; idx++) {
+		voice = &emu->voices[idx];
+		snd_iprintf(buffer, "%i\t%i\t%i\t%i\t%i\t%i\n",
+			idx,
+			voice->use,
+			voice->pcm,
+			voice->efx,
+			voice->synth,
+			voice->midi);
+	}
+}
+
+#ifdef CONFIG_SND_DEBUG
+static void snd_emu_proc_io_reg_read(snd_info_entry_t *entry,
+				     snd_info_buffer_t * buffer)
+{
+	emu10k1_t *emu = entry->private_data;
+	unsigned long value;
+	unsigned long flags;
+	int i;
+	snd_iprintf(buffer, "IO Registers:\n\n");
+	for(i = 0; i < 0x40; i+=4) {
+		spin_lock_irqsave(&emu->emu_lock, flags);
+		value = inl(emu->port + i);
+		spin_unlock_irqrestore(&emu->emu_lock, flags);
+		snd_iprintf(buffer, "%02X: %08lX\n", i, value);
+	}
+}
+
+static void snd_emu_proc_io_reg_write(snd_info_entry_t *entry,
+                                      snd_info_buffer_t * buffer)
+{
+	emu10k1_t *emu = entry->private_data;
+	unsigned long flags;
+	char line[64];
+	u32 reg, val;
+	while (!snd_info_get_line(buffer, line, sizeof(line))) {
+		if (sscanf(line, "%x %x", &reg, &val) != 2)
+			continue;
+		if ((reg < 0x40) && (reg >=0) && (val <= 0xffffffff) ) {
+			spin_lock_irqsave(&emu->emu_lock, flags);
+			outl(val, emu->port + (reg & 0xfffffffc));
+			spin_unlock_irqrestore(&emu->emu_lock, flags);
+		}
+	}
+}
+
+static unsigned int snd_ptr_read(emu10k1_t * emu,
+				 unsigned int iobase,
+				 unsigned int reg,
+				 unsigned int chn)
+{
+	unsigned long flags;
+	unsigned int regptr, val;
+
+	regptr = (reg << 16) | chn;
+
+	spin_lock_irqsave(&emu->emu_lock, flags);
+	outl(regptr, emu->port + iobase + PTR);
+	val = inl(emu->port + iobase + DATA);
+	spin_unlock_irqrestore(&emu->emu_lock, flags);
+	return val;
+}
+
+static void snd_ptr_write(emu10k1_t *emu,
+			  unsigned int iobase,
+			  unsigned int reg,
+			  unsigned int chn,
+			  unsigned int data)
+{
+	unsigned int regptr;
+	unsigned long flags;
+
+	regptr = (reg << 16) | chn;
+
+	spin_lock_irqsave(&emu->emu_lock, flags);
+	outl(regptr, emu->port + iobase + PTR);
+	outl(data, emu->port + iobase + DATA);
+	spin_unlock_irqrestore(&emu->emu_lock, flags);
+}
+
+
+static void snd_emu_proc_ptr_reg_read(snd_info_entry_t *entry,
+				      snd_info_buffer_t * buffer, int iobase, int offset, int length, int voices)
+{
+	emu10k1_t *emu = entry->private_data;
+	unsigned long value;
+	int i,j;
+	if (offset+length > 0x80) {
+		snd_iprintf(buffer, "Input values out of range\n");
+		return;
+	}
+	snd_iprintf(buffer, "Registers 0x%x\n", iobase);
+	for(i = offset; i < offset+length; i++) {
+		snd_iprintf(buffer, "%02X: ",i);
+		for (j = 0; j < voices; j++) {
+			if(iobase == 0)
+                		value = snd_ptr_read(emu, 0, i, j);
+			else
+                		value = snd_ptr_read(emu, 0x20, i, j);
+			snd_iprintf(buffer, "%08lX ", value);
+		}
+		snd_iprintf(buffer, "\n");
+	}
+}
+
+static void snd_emu_proc_ptr_reg_write(snd_info_entry_t *entry,
+				       snd_info_buffer_t * buffer, int iobase)
+{
+	emu10k1_t *emu = entry->private_data;
+	char line[64];
+	unsigned int reg, channel_id , val;
+	while (!snd_info_get_line(buffer, line, sizeof(line))) {
+		if (sscanf(line, "%x %x %x", &reg, &channel_id, &val) != 3)
+			continue;
+		if ((reg < 0x80) && (reg >=0) && (val <= 0xffffffff) && (channel_id >=0) && (channel_id <= 3) )
+			snd_ptr_write(emu, iobase, reg, channel_id, val);
+	}
+}
+
+static void snd_emu_proc_ptr_reg_write00(snd_info_entry_t *entry,
+					 snd_info_buffer_t * buffer)
+{
+	snd_emu_proc_ptr_reg_write(entry, buffer, 0);
+}
+
+static void snd_emu_proc_ptr_reg_write20(snd_info_entry_t *entry,
+					 snd_info_buffer_t * buffer)
+{
+	snd_emu_proc_ptr_reg_write(entry, buffer, 0x20);
+}
+	
+
+static void snd_emu_proc_ptr_reg_read00a(snd_info_entry_t *entry,
+					 snd_info_buffer_t * buffer)
+{
+	snd_emu_proc_ptr_reg_read(entry, buffer, 0, 0, 0x40, 64);
+}
+
+static void snd_emu_proc_ptr_reg_read00b(snd_info_entry_t *entry,
+					 snd_info_buffer_t * buffer)
+{
+	snd_emu_proc_ptr_reg_read(entry, buffer, 0, 0x40, 0x40, 64);
+}
+
+static void snd_emu_proc_ptr_reg_read20a(snd_info_entry_t *entry,
+					 snd_info_buffer_t * buffer)
+{
+	snd_emu_proc_ptr_reg_read(entry, buffer, 0x20, 0, 0x40, 4);
+}
+
+static void snd_emu_proc_ptr_reg_read20b(snd_info_entry_t *entry,
+					 snd_info_buffer_t * buffer)
+{
+	snd_emu_proc_ptr_reg_read(entry, buffer, 0x20, 0x40, 0x40, 4);
+}
+#endif
+
 static struct snd_info_entry_ops snd_emu10k1_proc_ops_fx8010 = {
 	.read = snd_emu10k1_fx8010_read,
 };
@@ -316,9 +495,39 @@ static struct snd_info_entry_ops snd_emu10k1_proc_ops_fx8010 = {
 int __devinit snd_emu10k1_proc_init(emu10k1_t * emu)
 {
 	snd_info_entry_t *entry;
+#ifdef CONFIG_SND_DEBUG
+	if (! snd_card_proc_new(emu->card, "io_regs", &entry)) {
+		snd_info_set_text_ops(entry, emu, 1024, snd_emu_proc_io_reg_read);
+		entry->c.text.write_size = 64;
+		entry->c.text.write = snd_emu_proc_io_reg_write;
+	}
+	if (! snd_card_proc_new(emu->card, "ptr_regs00a", &entry)) {
+		snd_info_set_text_ops(entry, emu, 65536, snd_emu_proc_ptr_reg_read00a);
+		entry->c.text.write_size = 64;
+		entry->c.text.write = snd_emu_proc_ptr_reg_write00;
+	}
+	if (! snd_card_proc_new(emu->card, "ptr_regs00b", &entry)) {
+		snd_info_set_text_ops(entry, emu, 65536, snd_emu_proc_ptr_reg_read00b);
+		entry->c.text.write_size = 64;
+		entry->c.text.write = snd_emu_proc_ptr_reg_write00;
+	}
+	if (! snd_card_proc_new(emu->card, "ptr_regs20a", &entry)) {
+		snd_info_set_text_ops(entry, emu, 65536, snd_emu_proc_ptr_reg_read20a);
+		entry->c.text.write_size = 64;
+		entry->c.text.write = snd_emu_proc_ptr_reg_write20;
+	}
+	if (! snd_card_proc_new(emu->card, "ptr_regs20b", &entry)) {
+		snd_info_set_text_ops(entry, emu, 65536, snd_emu_proc_ptr_reg_read20b);
+		entry->c.text.write_size = 64;
+		entry->c.text.write = snd_emu_proc_ptr_reg_write20;
+	}
+#endif
 	
 	if (! snd_card_proc_new(emu->card, "emu10k1", &entry))
-		snd_info_set_text_ops(entry, emu, 1024, snd_emu10k1_proc_read);
+		snd_info_set_text_ops(entry, emu, 2048, snd_emu10k1_proc_read);
+
+	if (! snd_card_proc_new(emu->card, "voices", &entry))
+		snd_info_set_text_ops(entry, emu, 2048, snd_emu10k1_proc_voices_read);
 
 	if (! snd_card_proc_new(emu->card, "fx8010_gpr", &entry)) {
 		entry->content = SNDRV_INFO_CONTENT_DATA;

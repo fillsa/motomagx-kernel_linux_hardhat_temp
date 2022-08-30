@@ -29,6 +29,7 @@ restrictions referred to are that the relevant option is valid if:
 	CD	Appropriate CD support is enabled.
 	DEVFS	devfs support is enabled. 
 	DRM	Direct Rendering Management support is enabled. 
+	EDD	BIOS Enhanced Disk Drive Services (EDD) is enabled
 	EFI	EFI Partitioning (GPT) is enabled
 	EIDE	EIDE/ATAPI support is enabled.
 	FB	The frame buffer device is enabled.
@@ -50,6 +51,7 @@ restrictions referred to are that the relevant option is valid if:
 	MOUSE	Appropriate mouse support is enabled.
 	MTD	MTD support is enabled.
 	NET	Appropriate network support is enabled.
+	NUMA	NUMA support is enabled.
 	NFS	Appropriate NFS support is enabled.
 	OSS	OSS sound support is enabled.
 	PARIDE	The ParIDE subsystem is enabled.
@@ -65,17 +67,22 @@ restrictions referred to are that the relevant option is valid if:
 	SCSI	Appropriate SCSI support is enabled.
 			A lot of drivers has their options described inside of
 			Documentation/scsi/.
+	SELINUX SELinux support is enabled.
 	SERIAL	Serial support is enabled.
 	SMP	The kernel is an SMP kernel.
 	SPARC	Sparc architecture is enabled.
 	SWSUSP	Software suspension is enabled.
 	TS	Appropriate touchscreen support is enabled.
 	USB	USB support is enabled.
+	USBHID	USB Human Interface Device support is enabled.
 	V4L	Video For Linux support is enabled.
 	VGA	The VGA console has been enabled.
 	VT	Virtual terminal support is enabled.
 	WDT	Watchdog support is enabled.
 	XT	IBM PC/XT MFM hard disk support is enabled.
+	X86-64	X86-64 architecture is enabled.
+			More X86-64 boot options can be found in
+			Documentation/x86_64/boot-options.txt .
 
 In addition, the following text indicates that the option:
 
@@ -150,6 +157,8 @@ running once the system is up.
 			debugging. After system has booted up, it can be set
 			via /proc/acpi/debug_level.
 
+	acpi_fake_ecdt	[HW,ACPI] Workaround failure due to BIOS lacking ECDT
+
 	ad1816=		[HW,OSS]
 			Format: <io>,<irq>,<dma>,<dma2>
 			See also Documentation/sound/oss/AD1816.
@@ -222,15 +231,19 @@ running once the system is up.
 
 	atascsi=	[HW,SCSI] Atari SCSI
 
-	atkbd.extra=	[HW] Enable extra LEDs and keys on IBM RapidAccess, EzKey
-			and similar keyboards
+	atkbd.extra=	[HW] Enable extra LEDs and keys on IBM RapidAccess,
+			EzKey and similar keyboards
 
 	atkbd.reset=	[HW] Reset keyboard during initialization
 
 	atkbd.set=	[HW] Select keyboard code set 
 			Format: <int> (2 = AT (default) 3 = PS/2)
 
-	atkbd.scroll=	[HW] Enable scroll wheel on MS Office and similar keyboards
+	atkbd.scroll=	[HW] Enable scroll wheel on MS Office and similar
+			keyboards
+
+	atkbd.softraw=	[HW] Choose between synthetic and real raw mode
+			Format: <bool> (0 = real, 1 = synthetic (default))
 	
 	atkbd.softrepeat=
 			[HW] Use software keyboard repeat
@@ -287,6 +300,14 @@ running once the system is up.
 			See header of drivers/cdrom/cdu31a.c.
 
 	chandev=	[HW,NET] Generic channel device initialisation
+
+	checkreqprot	[SELINUX] Set initial checkreqprot flag value.
+			Format: { "0" | "1" }
+			See security/selinux/Kconfig help text.
+			0 -- check protection applied by kernel (includes any implied execute protection).
+			1 -- check protection requested by application.
+			Default value is set via a kernel config option.
+			Value can be changed at runtime via /selinux/checkreqprot.
  
  	clock=		[BUGS=IA-32, HW] gettimeofday timesource override. 
 			Forces specified timesource (if avaliable) to be used
@@ -385,7 +406,7 @@ running once the system is up.
 
 	dtc3181e=	[HW,SCSI]
 
-	earlyprintk=	[x86, x86_64]
+	earlyprintk=	[IA-32, X86-64]
 			earlyprintk=vga
 			earlyprintk=serial[,ttySn[,baudrate]]
 
@@ -408,6 +429,10 @@ running once the system is up.
 
 	edb=		[HW,PS2]
 
+	edd=		[EDD]
+			Format: {"of[f]" | "sk[ipmbr]"}
+			See comment in arch/i386/boot/edd.S
+
 	eicon=		[HW,ISDN] 
 			Format: <id>,<membase>,<irq>
 
@@ -422,6 +447,14 @@ running once the system is up.
 			Format: {"as"|"cfq"|"deadline"|"noop"}
 			See Documentation/block/as-iosched.txt
 			and Documentation/block/deadline-iosched.txt for details.
+
+	enforcing	[SELINUX] Set initial enforcing status.
+			Format: {"0" | "1"}
+			See security/selinux/Kconfig help text.
+			0 -- permissive (log only, no denials).
+			1 -- enforcing (deny and log).
+			Default value is 0.
+			Value can be changed at runtime via /selinux/enforce.
 
 	es1370=		[HW,OSS]
 			Format: <lineout>[,<micbias>]
@@ -474,6 +507,10 @@ running once the system is up.
  
 	gvp11=		[HW,SCSI]
 
+	hashdist=	[KNL,NUMA] Large hashes allocated during boot
+			are distributed across NUMA nodes.  Defaults on
+			for IA-64, off otherwise.
+
 	hcl=		[IA-64] SGI's Hardware Graph compatibility layer
 
 	hd=		[EIDE] (E)IDE hard drive subsystem geometry
@@ -501,6 +538,11 @@ running once the system is up.
 	i8042.noaux	[HW] Don't check for auxiliary (== mouse) port
 	i8042.nomux	[HW] Don't check presence of an active multiplexing
 			     controller
+	i8042.nopnp	[HW] Don't use ACPIPnP / PnPBIOS to discover KBD/AUX
+			     controllers
+	i8042.panicblink=
+			[HW] Frequency with which keyboard LEDs should blink
+			     when kernel panics (default is 0.5 sec)
 	i8042.reset	[HW] Reset the controller during init and cleanup
 	i8042.unlock	[HW] Unlock (ignore) the keylock
 
@@ -573,11 +615,13 @@ running once the system is up.
 			Format: <RDP>, <reset>, <pci_scan>, <verbosity>
 
 	isolcpus=	[KNL,SMP] Isolate CPUs from the general scheduler.
-			Format: <cpu number>, ..., <cpu number>
+			Format: <cpu number>,...,<cpu number>
 			This option can be used to specify one or more CPUs
 			to isolate from the general SMP balancing and scheduling
 			algorithms. The only way to move a process onto or off
 			an "isolated" CPU is via the CPU affinity syscalls.
+			<cpu number> begins at 0 and the maximum value is
+			"number of CPUs in system - 1".
 
 			This option is the preferred way to isolate CPUs. The
 			alternative - manually setting the CPU mask of all tasks
@@ -593,6 +637,9 @@ running once the system is up.
 			See Documentation/input/joystick.txt.
 
 	keepinitrd	[HW,ARM]
+
+	kstack=N	[IA-32, X86-64] Print N words from the kernel stack
+			in oops dumps.
 
 	l2cr=		[PPC]
 
@@ -613,6 +660,20 @@ running once the system is up.
 
 	logibm.irq=	[HW,MOUSE] Logitech Bus Mouse Driver
 			Format: <irq>
+
+	loglevel=	All Kernel Messages with a loglevel smaller than the
+			console loglevel will be printed to the console. It can
+			also be changed with klogd or other programs. The
+			loglevels are defined as follows:
+
+			0 (KERN_EMERG)		system is unusable
+			1 (KERN_ALERT)		action must be taken immediately
+			2 (KERN_CRIT)		critical conditions
+			3 (KERN_ERR)		error conditions
+			4 (KERN_WARNING)	warning conditions
+			5 (KERN_NOTICE)		normal but significant condition
+			6 (KERN_INFO)		informational
+			7 (KERN_DEBUG)		debug-level messages
 
 	log_buf_len=n	Sets the size of the printk ring buffer, in bytes.
 			Format is n, nk, nM.  n must be a power of two.  The
@@ -657,7 +718,11 @@ running once the system is up.
 
 	mac53c9x=	[HW,SCSI]
 			Format: <num_esps>,<disconnect>,<nosync>,<can_queue>,<cmd_per_lun>,<sg_tablesize>,<hostid>,<use_tags>
-	
+
+	machvec=	[IA64]
+			Force the use of a particular machine-vector (machvec) in a generic
+			kernel.  Example: machvec=hpzx1_swiotlb
+
 	mad16=		[HW,OSS]
 			Format: <io>,<irq>,<dma>,<dma16>,<mpu_io>,<mpu_irq>,<joystick>
 
@@ -752,6 +817,10 @@ running once the system is up.
 	mtdparts=	[MTD]
 			See drivers/mtd/cmdline.c.
 
+	mtouchusb.raw_coordinates=
+			[HW] Make the MicroTouch USB driver use raw coordinates ('y', default)
+			or cooked coordinates ('n')
+
 	n2=		[NET] SDL Inc. RISCom/N2 synchronous serial card
 
 	NCR_D700=	[HW,SCSI]
@@ -801,7 +870,7 @@ running once the system is up.
 
 	noexec		[IA-64]
 
-	noexec		[i386, x86_64]
+	noexec		[IA-32, X86-64]
 			noexec=on: enable non-executable mappings (default)
 			noexec=off: disable nn-executable mappings
 
@@ -812,6 +881,13 @@ running once the system is up.
 	no-hlt		[BUGS=IA-32] Tells the kernel that the hlt
 			instruction doesn't work correctly and not to
 			use it.
+
+	nohalt		[IA-64] Tells the kernel not to use the power saving
+			function PAL_HALT_LIGHT when idle. This increases
+			power-consumption. On the positive side, it reduces
+			interrupt wake-up latency, which may improve performance
+			in certain environments such as networked servers or
+			real-time systems.
 
 	noirqdebug	[IA-32] Disables the code which attempts to detect and
 			disable unhandled interrupt sources.
@@ -871,6 +947,13 @@ running once the system is up.
 
 	panic=		[KNL] Kernel behaviour on panic
 			Format: <timeout>
+
+	parkbd.port=	[HW] Parallel port number the keyboard adapter is
+			connected to, default is 0.
+			Format: <parport#>
+	parkbd.mode=	[HW] Parallel port keyboard adapter mode of operation,
+			0 for XT, 1 for AT (default is AT).
+			Format: <mode> 
 
 	parport=0	[HW,PPT]	Specify parallel ports. 0 disables.
 	parport=auto			Use 'auto' to force the driver to use
@@ -986,6 +1069,9 @@ running once the system is up.
 	plip=		[PPT,NET] Parallel port network link
 			Format: { parport<nr> | timid | 0 }
 			See also Documentation/parport.txt.
+
+	pnpacpi=	[ACPI]
+			{ off }
 
 	pnpbios=	[ISAPNP]
 			{ on | off | curr | res | no-curr | no-res }
@@ -1112,10 +1198,16 @@ running once the system is up.
 
 	scsi_logging=	[SCSI]
 
-	serialnumber	[BUGS=IA-32]
+	selinux		[SELINUX] Disable or enable SELinux at boot time.
+			Format: { "0" | "1" }
+			See security/selinux/Kconfig help text.
+			0 -- disable.
+			1 -- enable.
+			Default value is set via kernel config option.
+			If enabled at boot time, /selinux/disable can be used
+			later to disable prior to initial policy load.
 
-	sf16fm=		[HW] SF16FMI radio driver for Linux
-			Format: <io>
+	serialnumber	[BUGS=IA-32]
 
 	sg_def_reserved_size=
 			[SCSI]
@@ -1311,9 +1403,6 @@ running once the system is up.
 	sym53c416=	[HW,SCSI]
 			See header of drivers/scsi/sym53c416.c.
 
-	sym53c8xx=	[HW,SCSI]
-			See Documentation/scsi/ncr53c8xx.txt.
-
 	t128=		[HW,SCSI]
 			See header of drivers/scsi/t128.c.
 
@@ -1322,14 +1411,15 @@ running once the system is up.
 	thash_entries=	[KNL,NET]
 			Set number of hash buckets for TCP connection
 
-	time            Show timing data prefixed to each printk message line
+	time		Show timing data prefixed to each printk message line
 
-	tipar=		[HW]
-			See header of drivers/char/tipar.c.
+	tipar.timeout=	[HW,PPT]
+			Set communications timeout in tenths of a second
+			(default 15).
 
-	tiusb=		[HW,USB] Texas Instruments' USB GraphLink (aka SilverLink)
-			Format: <timeout>
- 
+	tipar.delay=	[HW,PPT]
+			Set inter-bit delay in microseconds (default 10).
+
 	tmc8xx=		[HW,SCSI]
 			See header of drivers/scsi/seagate.c.
 
@@ -1360,6 +1450,9 @@ running once the system is up.
 			Format: <io>,<irq>
 
 	usb-handoff	[HW] Enable early USB BIOS -> OS handoff
+
+	usbhid.mousepoll=
+			[USBHID] The interval which mice are to be polled at.
  
 	video=		[FB] Frame buffer configuration
 			See Documentation/fb/modedb.txt.

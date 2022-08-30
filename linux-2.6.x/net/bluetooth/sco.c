@@ -41,7 +41,6 @@
 #include <linux/types.h>
 #include <linux/errno.h>
 #include <linux/kernel.h>
-#include <linux/major.h>
 #include <linux/sched.h>
 #include <linux/slab.h>
 #include <linux/poll.h>
@@ -67,7 +66,7 @@
 #define BT_DBG(D...)
 #endif
 
-#define VERSION "0.3"
+#define VERSION "0.4"
 
 static struct proto_ops sco_sock_ops;
 
@@ -345,9 +344,6 @@ static void sco_sock_destruct(struct sock *sk)
 
 	skb_queue_purge(&sk->sk_receive_queue);
 	skb_queue_purge(&sk->sk_write_queue);
-
-	if (sk->sk_protinfo)
-		kfree(sk->sk_protinfo);
 }
 
 static void sco_sock_cleanup_listen(struct sock *parent)
@@ -363,7 +359,7 @@ static void sco_sock_cleanup_listen(struct sock *parent)
 	}
 
 	parent->sk_state  = BT_CLOSED;
-	parent->sk_zapped = 1;
+	sock_set_flag(parent, SOCK_ZAPPED);
 }
 
 /* Kill socket (only if zapped and orphan)
@@ -371,7 +367,7 @@ static void sco_sock_cleanup_listen(struct sock *parent)
  */
 static void sco_sock_kill(struct sock *sk)
 {
-	if (!sk->sk_zapped || sk->sk_socket)
+	if (!sock_flag(sk, SOCK_ZAPPED) || sk->sk_socket)
 		return;
 
 	BT_DBG("sk %p state %d", sk, sk->sk_state);
@@ -410,7 +406,7 @@ static void sco_sock_close(struct sock *sk)
 		break;
 
 	default:
-		sk->sk_zapped = 1;
+		sock_set_flag(sk, SOCK_ZAPPED);
 		break;
 	};
 
@@ -427,18 +423,29 @@ static void sco_sock_init(struct sock *sk, struct sock *parent)
 		sk->sk_type = parent->sk_type;
 }
 
+static struct proto sco_proto = {
+	.name		= "SCO",
+	.owner		= THIS_MODULE,
+	.obj_size	= sizeof(struct sco_pinfo)
+};
+
 static struct sock *sco_sock_alloc(struct socket *sock, int proto, int prio)
 {
 	struct sock *sk;
 
-	sk = bt_sock_alloc(sock, proto, sizeof(struct sco_pinfo), prio);
+	sk = sk_alloc(PF_BLUETOOTH, prio, &sco_proto, 1);
 	if (!sk)
 		return NULL;
 
-	sk_set_owner(sk, THIS_MODULE);
+	sock_init_data(sock, sk);
+	INIT_LIST_HEAD(&bt_sk(sk)->accept_q);
 
 	sk->sk_destruct = sco_sock_destruct;
 	sk->sk_sndtimeo = SCO_CONN_TIMEOUT;
+
+	sock_reset_flag(sk, SOCK_ZAPPED);
+
+	sk->sk_protocol = proto;
 	sk->sk_state    = BT_OPEN;
 
 	sco_sock_init_timer(sk);
@@ -716,6 +723,7 @@ static int sco_sock_getsockopt(struct socket *sock, int level, int optname, char
 		}
 
 		cinfo.hci_handle = sco_pi(sk)->conn->hcon->handle;
+		memcpy(cinfo.dev_class, sco_pi(sk)->conn->hcon->dev_class, 3);
 
 		len = min_t(unsigned int, len, sizeof(cinfo));
 		if (copy_to_user(optval, (char *)&cinfo, len))
@@ -788,7 +796,7 @@ static void sco_chan_del(struct sock *sk, int err)
 	sk->sk_err   = err;
 	sk->sk_state_change(sk);
 
-	sk->sk_zapped = 1;
+	sock_set_flag(sk, SOCK_ZAPPED);
 }
 
 static void sco_conn_ready(struct sco_conn *conn)
@@ -1021,14 +1029,21 @@ static int __init sco_init(void)
 {
 	int err;
 
-	if ((err = bt_sock_register(BTPROTO_SCO, &sco_sock_family_ops))) {
-		BT_ERR("SCO socket registration failed");
+	err = proto_register(&sco_proto, 0);
+	if (err < 0)
 		return err;
+
+	err = bt_sock_register(BTPROTO_SCO, &sco_sock_family_ops);
+	if (err < 0) {
+		BT_ERR("SCO socket registration failed");
+		goto error;
 	}
 
-	if ((err = hci_register_proto(&sco_hci_proto))) {
+	err = hci_register_proto(&sco_hci_proto);
+	if (err < 0) {
 		BT_ERR("SCO protocol registration failed");
-		return err;
+		bt_sock_unregister(BTPROTO_SCO);
+		goto error;
 	}
 
 	sco_proc_init();
@@ -1037,26 +1052,29 @@ static int __init sco_init(void)
 	BT_INFO("SCO socket layer initialized");
 
 	return 0;
+
+error:
+	proto_unregister(&sco_proto);
+	return err;
 }
 
 static void __exit sco_exit(void)
 {
-	int err;
-
 	sco_proc_cleanup();
 
-	/* Unregister socket, protocol and notifier */
-	if ((err = bt_sock_unregister(BTPROTO_SCO)))
-		BT_ERR("SCO socket unregistration failed. %d", err);
+	if (bt_sock_unregister(BTPROTO_SCO) < 0)
+		BT_ERR("SCO socket unregistration failed");
 
-	if ((err = hci_unregister_proto(&sco_hci_proto)))
-		BT_ERR("SCO protocol unregistration failed. %d", err);
+	if (hci_unregister_proto(&sco_hci_proto) < 0)
+		BT_ERR("SCO protocol unregistration failed");
+
+	proto_unregister(&sco_proto);
 }
 
 module_init(sco_init);
 module_exit(sco_exit);
 
-MODULE_AUTHOR("Maxim Krasnyansky <maxk@qualcomm.com>");
+MODULE_AUTHOR("Maxim Krasnyansky <maxk@qualcomm.com>, Marcel Holtmann <marcel@holtmann.org>");
 MODULE_DESCRIPTION("Bluetooth SCO ver " VERSION);
 MODULE_VERSION(VERSION);
 MODULE_LICENSE("GPL");

@@ -1131,10 +1131,7 @@ uart_ioctl(struct tty_struct *tty, struct file *filp, unsigned int cmd,
 	case TIOCGICOUNT:
 		ret = uart_get_count(state, uarg);
 		break;
-	
 	}
-	
-
 
 	if (ret != -ENOIOCTLCMD)
 		goto out;
@@ -1971,6 +1968,7 @@ int uart_suspend_port(struct uart_driver *drv, struct uart_port *port)
 
 		ops->shutdown(port);
 	}
+
 	/*
 	 * Disable the console device before suspending.
 	 */
@@ -1998,14 +1996,14 @@ int uart_resume_port(struct uart_driver *drv, struct uart_port *port)
 	if (state->info && state->info->flags & UIF_INITIALIZED) {
 		struct uart_ops *ops = port->ops;
 
-                ops->startup(port);
-                /*
-                 * Re-enable the console device after suspending.
-                 */
-                if (uart_console(port)) {
+	 ops->startup(port);
+	 /*
+	 * Re-enable the console device after suspending.
+	 */
+	if (uart_console(port)) {
                         uart_change_speed(state, NULL);
                         console_start(port->cons);
-                }
+	}
                 ops->set_mctrl(port, 0);
                 uart_change_speed(state, NULL);
                 spin_lock_irq(&port->lock);
@@ -2016,21 +2014,37 @@ int uart_resume_port(struct uart_driver *drv, struct uart_port *port)
 #else
 	/*
 	 * Re-enable the console device after suspending.
- 	 */
-        if (uart_console(port)) {
-                uart_change_speed(state, NULL);
-                console_start(port->cons);
-        }
-        if (state->info && state->info->flags & UIF_INITIALIZED) {
-                struct uart_ops *ops = port->ops;
-                ops->set_mctrl(port, 0);
-                ops->startup(port);
-                uart_change_speed(state, NULL);
-                spin_lock_irq(&port->lock);
-                ops->set_mctrl(port, port->mctrl);
-                ops->start_tx(port, 0);
-                spin_unlock_irq(&port->lock);
-       }
+	 */
+	if (uart_console(port)) {
+		struct termios termios;
+
+		/*
+		 * First try to use the console cflag setting.
+		 */
+		memset(&termios, 0, sizeof(struct termios));
+		termios.c_cflag = port->cons->cflag;
+
+		/*
+		 * If that's unset, use the tty termios setting.
+		 */
+		if (state->info && state->info->tty && termios.c_cflag == 0)
+			termios = *state->info->tty->termios;
+
+		port->ops->set_termios(port, &termios, NULL);
+		console_start(port->cons);
+	}
+
+	if (state->info && state->info->flags & UIF_INITIALIZED) {
+		struct uart_ops *ops = port->ops;
+
+		ops->set_mctrl(port, 0);
+		ops->startup(port);
+		uart_change_speed(state, NULL);
+		spin_lock_irq(&port->lock);
+		ops->set_mctrl(port, port->mctrl);
+		ops->start_tx(port, 0);
+		spin_unlock_irq(&port->lock);
+	}
 #endif
 	up(&state->sem);
 
@@ -2358,7 +2372,7 @@ int uart_remove_one_port(struct uart_driver *drv, struct uart_port *port)
 /*
  *	Are the two ports equivalent?
  */
-static int uart_match_port(struct uart_port *port1, struct uart_port *port2)
+int uart_match_port(struct uart_port *port1, struct uart_port *port2)
 {
 	if (port1->iotype != port2->iotype)
 		return 0;
@@ -2374,6 +2388,7 @@ static int uart_match_port(struct uart_port *port1, struct uart_port *port2)
 	}
 	return 0;
 }
+EXPORT_SYMBOL(uart_match_port);
 
 /*
  *	Try to find an unused uart_state slot for a port.
@@ -2517,5 +2532,6 @@ EXPORT_SYMBOL(uart_remove_one_port);
 #ifdef CONFIG_MOT_FEAT_SERIAL 
 EXPORT_SYMBOL(uart_pm_functions);
 #endif
+
 MODULE_DESCRIPTION("Serial driver core");
 MODULE_LICENSE("GPL");

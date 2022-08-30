@@ -214,9 +214,12 @@ static int nvidia_insert_memory(struct agp_memory *mem, off_t pg_start, int type
 		global_cache_flush();
 		mem->is_flushed = TRUE;
 	}
-	for (i = 0, j = pg_start; i < mem->page_count; i++, j++)
-		writel(agp_bridge->driver->mask_memory(mem->memory[i], mem->type),
+	for (i = 0, j = pg_start; i < mem->page_count; i++, j++) {
+		writel(agp_bridge->driver->mask_memory(agp_bridge,
+			mem->memory[i], mem->type),
 			agp_bridge->gatt_table+nvidia_private.pg_offset+j);
+		readl(agp_bridge->gatt_table+nvidia_private.pg_offset+j);	/* PCI Posting. */
+	}
 	agp_bridge->driver->tlb_flush(mem);
 	return 0;
 }
@@ -285,7 +288,7 @@ static struct gatt_mask nvidia_generic_masks[] =
 };
 
 
-struct agp_bridge_driver nvidia_driver = {
+static struct agp_bridge_driver nvidia_driver = {
 	.owner			= THIS_MODULE,
 	.aperture_sizes		= nvidia_generic_sizes,
 	.size_type		= U8_APER_SIZE,
@@ -403,7 +406,9 @@ static struct pci_driver agp_nvidia_pci_driver = {
 
 static int __init agp_nvidia_init(void)
 {
-	return pci_module_init(&agp_nvidia_pci_driver);
+	if (agp_off)
+		return -EINVAL;
+	return pci_register_driver(&agp_nvidia_pci_driver);
 }
 
 static void __exit agp_nvidia_cleanup(void)

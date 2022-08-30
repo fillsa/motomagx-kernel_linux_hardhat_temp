@@ -194,7 +194,7 @@ struct page_layout_item {
 
 /*
  * Constants for Hardware ECC
- */
+*/
 /* Reset Hardware ECC for read */
 #define NAND_ECC_READ		0
 /* Reset Hardware ECC for write */
@@ -260,6 +260,7 @@ struct page_layout_item {
  * nand_write_oob. This is needed for some HW ECC generators that need a
  * whole page to be written to generate ECC properly */
 #define NAND_COMPLEX_OOB_WRITE	0x00080000
+
 
 /* Options set by nand scan */
 /* Nand scan has allocated oob_buf */

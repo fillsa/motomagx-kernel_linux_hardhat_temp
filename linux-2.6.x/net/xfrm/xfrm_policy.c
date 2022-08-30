@@ -10,7 +10,7 @@
  * 	YOSHIFUJI Hideaki
  * 		Split up af-specific portion
  *	Derek Atkins <derek@ihtfp.com>		Add the post_input processor
- *
+ * 	
  * Copyright (C) 2007 Motorola Inc.
  *
  * This program is free software; you can redistribute it and/or modify
@@ -41,19 +41,22 @@
 #include <linux/workqueue.h>
 #include <linux/notifier.h>
 #include <linux/netdevice.h>
+#include <linux/module.h>
 #include <net/xfrm.h>
 #include <net/ip.h>
 
 DECLARE_MUTEX(xfrm_cfg_sem);
+EXPORT_SYMBOL(xfrm_cfg_sem);
 
 static DEFINE_RWLOCK(xfrm_policy_lock);
 
 struct xfrm_policy *xfrm_policy_list[XFRM_POLICY_MAX*2];
+// in exposrt.h EXPORT_SYMBOL(xfrm_policy_list);
 
 static DEFINE_RWLOCK(xfrm_policy_afinfo_lock);
 static struct xfrm_policy_afinfo *xfrm_policy_afinfo[NPROTO];
 
-kmem_cache_t *xfrm_dst_cache;
+static kmem_cache_t *xfrm_dst_cache;
 
 static struct work_struct xfrm_policy_gc_work;
 static struct list_head xfrm_policy_gc_list =
@@ -82,6 +85,7 @@ int xfrm_register_type(struct xfrm_type *type, unsigned short family)
 	xfrm_policy_put_afinfo(afinfo);
 	return err;
 }
+EXPORT_SYMBOL(xfrm_register_type);
 
 int xfrm_unregister_type(struct xfrm_type *type, unsigned short family)
 {
@@ -102,6 +106,7 @@ int xfrm_unregister_type(struct xfrm_type *type, unsigned short family)
 	xfrm_policy_put_afinfo(afinfo);
 	return err;
 }
+EXPORT_SYMBOL(xfrm_unregister_type);
 
 struct xfrm_type *xfrm_get_type(u8 proto, unsigned short family)
 {
@@ -132,6 +137,7 @@ retry:
 	xfrm_policy_put_afinfo(afinfo);
 	return type;
 }
+EXPORT_SYMBOL(xfrm_get_type);
 
 int xfrm_dst_lookup(struct xfrm_dst **dst, struct flowi *fl, 
 		    unsigned short family)
@@ -149,6 +155,7 @@ int xfrm_dst_lookup(struct xfrm_dst **dst, struct flowi *fl,
 	xfrm_policy_put_afinfo(afinfo);
 	return err;
 }
+EXPORT_SYMBOL(xfrm_dst_lookup);
 
 void xfrm_put_type(struct xfrm_type *type)
 {
@@ -254,6 +261,7 @@ struct xfrm_policy *xfrm_policy_alloc(int gfp)
 	}
 	return policy;
 }
+EXPORT_SYMBOL(xfrm_policy_alloc);
 
 /* Destroy xfrm_policy: descendant resources must be released to this moment. */
 
@@ -270,6 +278,7 @@ void __xfrm_policy_destroy(struct xfrm_policy *policy)
 
 	kfree(policy);
 }
+EXPORT_SYMBOL(__xfrm_policy_destroy);
 
 static void xfrm_policy_gc_kill(struct xfrm_policy *policy)
 {
@@ -398,6 +407,7 @@ int xfrm_policy_insert(int dir, struct xfrm_policy *policy, int excl)
 	}
 	return 0;
 }
+EXPORT_SYMBOL(xfrm_policy_insert);
 
 #ifdef CONFIG_XFRM_ENHANCEMENT
 /* Allows comparison of selectors with wildcard user value */
@@ -435,6 +445,7 @@ struct xfrm_policy *xfrm_policy_bysel(int dir, struct xfrm_selector *sel,
 	}
 	return pol;
 }
+EXPORT_SYMBOL(xfrm_policy_bysel);
 
 struct xfrm_policy *xfrm_policy_byid(int dir, u32 id, int delete)
 {
@@ -457,6 +468,7 @@ struct xfrm_policy *xfrm_policy_byid(int dir, u32 id, int delete)
 	}
 	return pol;
 }
+EXPORT_SYMBOL(xfrm_policy_byid);
 
 void xfrm_policy_flush(void)
 {
@@ -477,6 +489,7 @@ void xfrm_policy_flush(void)
 	atomic_inc(&flow_cache_genid);
 	write_unlock_bh(&xfrm_policy_lock);
 }
+EXPORT_SYMBOL(xfrm_policy_flush);
 
 int xfrm_policy_walk(int (*func)(struct xfrm_policy *, int, int, void*),
 		     void *data)
@@ -509,16 +522,15 @@ out:
 	read_unlock_bh(&xfrm_policy_lock);
 	return error;
 }
-
-
+EXPORT_SYMBOL(xfrm_policy_walk);
 
 /* Find policy to apply to this flow. */
 #ifdef CONFIG_MOT_FEAT_DSCP_UMA
 void xfrm_policy_lookup(struct flowi *fl, u16 family, u8 dir,
-                        void **objp, atomic_t **obj_refp)
+			       void **objp, atomic_t **obj_refp)
 #else
 static void xfrm_policy_lookup(struct flowi *fl, u16 family, u8 dir,
-                               void **objp, atomic_t **obj_refp)
+			       void **objp, atomic_t **obj_refp)
 #endif
 {
 	struct xfrm_policy *pol;
@@ -547,7 +559,7 @@ static void xfrm_policy_lookup(struct flowi *fl, u16 family, u8 dir,
 
 }
 
-struct xfrm_policy *xfrm_sk_policy_lookup(struct sock *sk, int dir, struct flowi *fl)
+static struct xfrm_policy *xfrm_sk_policy_lookup(struct sock *sk, int dir, struct flowi *fl)
 {
 	struct xfrm_policy *pol;
 
@@ -913,13 +925,13 @@ restart:
 	return 0;
 
 error:
- 	XFRM_DBG("%s: error = %d, policy index = %u\n", __FUNCTION__, err,
- 		 policy->index);
+ 	XFRM_DBG("%s: error = %d, policy index = %u\n", __FUNCTION__, err, policy->index);
 	dst_release(dst_orig);
 	xfrm_pol_put(policy);
 	*dst_p = NULL;
 	return err;
 }
+EXPORT_SYMBOL(xfrm_lookup);
 
 /* When skb is transformed back to its "native" form, we have to
  * check policy restrictions. At the moment we make this in maximally
@@ -959,7 +971,6 @@ xfrm_policy_ok(struct xfrm_tmpl *tmpl, struct sec_path *sp, int start,
 			return start;
 	} else
 		start = -1;
-
 	for (; idx < sp->len; idx++) {
 		if (xfrm_state_ok(tmpl, sp->x[idx].xvec, family))
 			return ++idx;
@@ -1006,8 +1017,9 @@ int __xfrm_policy_check(struct sock *sk, int dir, struct sk_buff *skb,
 	/* First, check used SA against their selectors. */
 	if (skb->sp) {
 		int i;
+
 		for (i=skb->sp->len-1; i>=0; i--) {
-			struct sec_decap_state *xvec = &(skb->sp->x[i]);
+		  struct sec_decap_state *xvec = &(skb->sp->x[i]);
 			if (!xfrm_selector_match(&xvec->xvec->sel, &fl, family)) {
 				XFRM_DBG("%s: mismatch selector at sec proto = %u\n", __FUNCTION__, xvec->xvec->id.proto);
 				goto reject;
@@ -1090,6 +1102,7 @@ reject:
 
 	return 0;
 }
+EXPORT_SYMBOL(__xfrm_policy_check);
 
 int __xfrm_route_forward(struct sk_buff *skb, unsigned short family)
 {
@@ -1100,6 +1113,7 @@ int __xfrm_route_forward(struct sk_buff *skb, unsigned short family)
 
 	return xfrm_lookup(&skb->dst, &fl, NULL, 0) == 0;
 }
+EXPORT_SYMBOL(__xfrm_route_forward);
 
 /* Optimize later using cookies and generation ids. */
 
@@ -1108,40 +1122,17 @@ static struct dst_entry *xfrm_dst_check(struct dst_entry *dst, u32 cookie)
 	if (!stale_bundle(dst))
 		return dst;
 
-	dst_release(dst);
 	return NULL;
 }
 
 static int stale_bundle(struct dst_entry *dst)
 {
-	struct dst_entry *child = dst;
-
-	while (child) {
-		if (child->obsolete > 0 ||
-		    (child->dev && !netif_running(child->dev)) ||
-		    (child->xfrm && child->xfrm->km.state != XFRM_STATE_VALID)) {
-			return 1;
-		}
-		child = child->child;
-	}
-
-	return 0;
+	return !xfrm_bundle_ok((struct xfrm_dst *)dst, NULL, AF_UNSPEC);
 }
 
-static void xfrm_dst_destroy(struct dst_entry *dst)
+void xfrm_dst_ifdown(struct dst_entry *dst, struct net_device *dev) //mvl void xfrm_dst_ifdown(struct dst_entry *dst)
 {
-	if (!dst->xfrm)
-		return;
-	xfrm_state_put(dst->xfrm);
-	dst->xfrm = NULL;
-}
-
-static void xfrm_dst_ifdown(struct dst_entry *dst, int unregister)
-{
-	struct net_device *dev = dst->dev;
-
-	if (!unregister)
-		return;
+//mvl	struct net_device *dev = dst->dev;
 
 	while ((dst = dst->child) && dst->xfrm && dst->dev == dev) {
 		dst->dev = &loopback_dev;
@@ -1149,6 +1140,7 @@ static void xfrm_dst_ifdown(struct dst_entry *dst, int unregister)
 		dev_put(dev);
 	}
 }
+EXPORT_SYMBOL(xfrm_dst_ifdown);
 
 static void xfrm_link_failure(struct sk_buff *skb)
 {
@@ -1215,6 +1207,94 @@ int xfrm_flush_bundles(void)
 	return 0;
 }
 
+void xfrm_init_pmtu(struct dst_entry *dst)
+{
+	do {
+		struct xfrm_dst *xdst = (struct xfrm_dst *)dst;
+		u32 pmtu, route_mtu_cached;
+
+		pmtu = dst_mtu(dst->child);
+		xdst->child_mtu_cached = pmtu;
+
+		pmtu = xfrm_state_mtu(dst->xfrm, pmtu);
+
+		route_mtu_cached = dst_mtu(xdst->route);
+		xdst->route_mtu_cached = route_mtu_cached;
+
+		if (pmtu > route_mtu_cached)
+			pmtu = route_mtu_cached;
+
+		dst->metrics[RTAX_MTU-1] = pmtu;
+	} while ((dst = dst->next));
+}
+
+EXPORT_SYMBOL(xfrm_init_pmtu);
+
+/* Check that the bundle accepts the flow and its components are
+ * still valid.
+ */
+
+int xfrm_bundle_ok(struct xfrm_dst *first, struct flowi *fl, int family)
+{
+	struct dst_entry *dst = &first->u.dst;
+	struct xfrm_dst *last;
+	u32 mtu;
+
+	if (!dst_check(dst->path, ((struct xfrm_dst *)dst)->path_cookie) ||
+	    (dst->dev && !netif_running(dst->dev)))
+		return 0;
+
+	last = NULL;
+
+	do {
+		struct xfrm_dst *xdst = (struct xfrm_dst *)dst;
+
+		if (fl && !xfrm_selector_match(&dst->xfrm->sel, fl, family))
+			return 0;
+		if (dst->xfrm->km.state != XFRM_STATE_VALID)
+			return 0;
+
+		mtu = dst_mtu(dst->child);
+		if (xdst->child_mtu_cached != mtu) {
+			last = xdst;
+			xdst->child_mtu_cached = mtu;
+		}
+
+		if (!dst_check(xdst->route, xdst->route_cookie))
+			return 0;
+		mtu = dst_mtu(xdst->route);
+		if (xdst->route_mtu_cached != mtu) {
+			last = xdst;
+			xdst->route_mtu_cached = mtu;
+		}
+
+		dst = dst->child;
+	} while (dst->xfrm);
+
+	if (likely(!last))
+		return 1;
+
+	mtu = last->child_mtu_cached;
+	for (;;) {
+		dst = &last->u.dst;
+
+		mtu = xfrm_state_mtu(dst->xfrm, mtu);
+		if (mtu > last->route_mtu_cached)
+			mtu = last->route_mtu_cached;
+		dst->metrics[RTAX_MTU-1] = mtu;
+
+		if (last == first)
+			break;
+
+		last = last->u.next;
+		last->child_mtu_cached = mtu;
+	}
+
+	return 1;
+}
+
+EXPORT_SYMBOL(xfrm_bundle_ok);
+
 /* Well... that's _TASK_. We need to scan through transformation
  * list and figure out what mss tcp should generate in order to
  * final datagram fit to mtu. Mama mia... :-)
@@ -1271,10 +1351,6 @@ int xfrm_policy_register_afinfo(struct xfrm_policy_afinfo *afinfo)
 			dst_ops->kmem_cachep = xfrm_dst_cache;
 		if (likely(dst_ops->check == NULL))
 			dst_ops->check = xfrm_dst_check;
-		if (likely(dst_ops->destroy == NULL))
-			dst_ops->destroy = xfrm_dst_destroy;
-		if (likely(dst_ops->ifdown == NULL))
-			dst_ops->ifdown = xfrm_dst_ifdown;
 		if (likely(dst_ops->negative_advice == NULL))
 			dst_ops->negative_advice = xfrm_negative_advice;
 		if (likely(dst_ops->link_failure == NULL))
@@ -1288,6 +1364,7 @@ int xfrm_policy_register_afinfo(struct xfrm_policy_afinfo *afinfo)
 	write_unlock(&xfrm_policy_afinfo_lock);
 	return err;
 }
+EXPORT_SYMBOL(xfrm_policy_register_afinfo);
 
 int xfrm_policy_unregister_afinfo(struct xfrm_policy_afinfo *afinfo)
 {
@@ -1305,8 +1382,6 @@ int xfrm_policy_unregister_afinfo(struct xfrm_policy_afinfo *afinfo)
 			xfrm_policy_afinfo[afinfo->family] = NULL;
 			dst_ops->kmem_cachep = NULL;
 			dst_ops->check = NULL;
-			dst_ops->destroy = NULL;
-			dst_ops->ifdown = NULL;
 			dst_ops->negative_advice = NULL;
 			dst_ops->link_failure = NULL;
 			dst_ops->get_mss = NULL;
@@ -1316,6 +1391,7 @@ int xfrm_policy_unregister_afinfo(struct xfrm_policy_afinfo *afinfo)
 	write_unlock(&xfrm_policy_afinfo_lock);
 	return err;
 }
+EXPORT_SYMBOL(xfrm_policy_unregister_afinfo);
 
 static struct xfrm_policy_afinfo *xfrm_policy_get_afinfo(unsigned short family)
 {
@@ -1346,13 +1422,13 @@ static int xfrm_dev_event(struct notifier_block *this, unsigned long event, void
 	return NOTIFY_DONE;
 }
 
-struct notifier_block xfrm_dev_notifier = {
+static struct notifier_block xfrm_dev_notifier = {
 	xfrm_dev_event,
 	NULL,
 	0
 };
 
-void __init xfrm_policy_init(void)
+static void __init xfrm_policy_init(void)
 {
 	xfrm_dst_cache = kmem_cache_create("xfrm_dst_cache",
 					   sizeof(struct xfrm_dst),

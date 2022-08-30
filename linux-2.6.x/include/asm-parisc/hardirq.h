@@ -15,15 +15,11 @@
 #ifndef _PARISC_HARDIRQ_H
 #define _PARISC_HARDIRQ_H
 
-#include <linux/config.h>
 #include <linux/threads.h>
-#include <linux/cache.h>
+#include <linux/irq.h>
 
 typedef struct {
 	unsigned long __softirq_pending; /* set_bit is used on this */
-	unsigned int __syscall_count;
-	struct task_struct * __ksoftirqd_task;
-	unsigned long idle_timestamp;
 } ____cacheline_aligned irq_cpustat_t;
 
 #include <linux/irq_cpustat.h>	/* Standard mappings for irq_cpustat_t above */
@@ -37,5 +33,7 @@ typedef struct {
 #if (1 << HARDIRQ_BITS) < NR_IRQS
 # error HARDIRQ_BITS is too low!
 #endif
+
+void ack_bad_irq(unsigned int irq);
 
 #endif /* _PARISC_HARDIRQ_H */

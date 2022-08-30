@@ -8,6 +8,8 @@
 
 #include <linux/config.h>
 
+extern void cpu_idle(void);
+
 #ifdef CONFIG_SMP
 
 #include <linux/preempt.h>
@@ -74,11 +76,6 @@ static inline int on_each_cpu(void (*func) (void *info), void *info,
 	return ret;
 }
 
-/*
- * True once the per process idle is forked
- */
-extern int smp_threads_ready;
-
 #define MSG_ALL_BUT_SELF	0x8000	/* Assume <32768 CPU's */
 #define MSG_ALL			0x8001
 
@@ -105,7 +102,6 @@ void smp_prepare_boot_cpu(void);
 # define smp_processor_id()			0
 #endif
 #define hard_smp_processor_id()			0
-#define smp_threads_ready			1
 #define smp_call_function(func,info,retry,wait)	({ 0; })
 #define on_each_cpu(func,info,retry,wait)	({ func(info); 0; })
 static inline void smp_send_reschedule(int cpu) { }

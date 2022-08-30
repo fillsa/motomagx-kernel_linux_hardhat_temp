@@ -275,7 +275,7 @@ static const char *CHIP;
  *
  * After opening, configure non-control endpoints.  Then use normal
  * stream read() and write() requests; and maybe ioctl() to get more
- * precise FIFO status when recovering from cancelation.
+ * precise FIFO status when recovering from cancellation.
  */
 
 static void epio_complete (struct usb_ep *ep, struct usb_request *req)
@@ -1318,8 +1318,8 @@ gadgetfs_setup (struct usb_gadget *gadget, const struct usb_ctrlrequest *ctrl)
 	struct usb_request		*req = dev->req;
 	int				value = -EOPNOTSUPP;
 	struct usb_gadgetfs_event	*event;
-	u16				wValue = le16_to_cpu(ctrl->wValue);
-	u16				wLength = le16_to_cpu(ctrl->wLength);
+	u16				w_value = ctrl->wValue;
+	u16				w_length = ctrl->wLength;
 
 	spin_lock (&dev->lock);
 	dev->setup_abort = 0;
@@ -1380,17 +1380,17 @@ gadgetfs_setup (struct usb_gadget *gadget, const struct usb_ctrlrequest *ctrl)
 	case USB_REQ_GET_DESCRIPTOR:
 		if (ctrl->bRequestType != USB_DIR_IN)
 			goto unrecognized;
-		switch (wValue >> 8) {
+		switch (w_value >> 8) {
 
 		case USB_DT_DEVICE:
-			value = min (wLength, (u16) sizeof *dev->dev);
+			value = min (w_length, (u16) sizeof *dev->dev);
 			req->buf = dev->dev;
 			break;
 #ifdef	HIGHSPEED
 		case USB_DT_DEVICE_QUALIFIER:
 			if (!dev->hs_config)
 				break;
-			value = min (wLength, (u16)
+			value = min (w_length, (u16)
 				sizeof (struct usb_qualifier_descriptor));
 			make_qualifier (dev);
 			break;
@@ -1399,10 +1399,10 @@ gadgetfs_setup (struct usb_gadget *gadget, const struct usb_ctrlrequest *ctrl)
 #endif
 		case USB_DT_CONFIG:
 			value = config_buf (dev,
-					wValue >> 8,
-					wValue & 0xff);
+					w_value >> 8,
+					w_value & 0xff);
 			if (value >= 0)
-				value = min (wLength, (u16) value);
+				value = min (w_length, (u16) value);
 			break;
 		case USB_DT_STRING:
 			goto unrecognized;
@@ -1416,7 +1416,7 @@ gadgetfs_setup (struct usb_gadget *gadget, const struct usb_ctrlrequest *ctrl)
 	case USB_REQ_SET_CONFIGURATION:
 		if (ctrl->bRequestType != 0)
 			break;
-		if (0 == (u8) wValue) {
+		if (0 == (u8) w_value) {
 			value = 0;
 			dev->current_config = 0;
 			usb_gadget_vbus_draw(gadget, 8 /* mA */ );
@@ -1434,7 +1434,7 @@ gadgetfs_setup (struct usb_gadget *gadget, const struct usb_ctrlrequest *ctrl)
 				power = dev->config->bMaxPower;
 			}
 
-			if (config == (u8) wValue) {
+			if (config == (u8) w_value) {
 				value = 0;
 				dev->current_config = config;
 				usb_gadget_vbus_draw(gadget, 2 * power);
@@ -1465,7 +1465,7 @@ gadgetfs_setup (struct usb_gadget *gadget, const struct usb_ctrlrequest *ctrl)
 		if (ctrl->bRequestType != 0x80)
 			break;
 		*(u8 *)req->buf = dev->current_config;
-		value = min (wLength, (u16) 1);
+		value = min (w_length, (u16) 1);
 		break;
 #endif
 
@@ -1474,7 +1474,7 @@ unrecognized:
 		VDEBUG (dev, "%s req%02x.%02x v%04x i%04x l%d\n",
 			dev->usermode_setup ? "delegate" : "fail",
 			ctrl->bRequestType, ctrl->bRequest,
-			wValue, wIndex, wLength);
+			w_value, le16_to_cpu(ctrl->wIndex), w_length);
 
 		/* if there's an ep0 reader, don't stall */
 		if (dev->usermode_setup) {
@@ -1487,9 +1487,9 @@ delegate:
 			value = 0;
 
 			/* read DATA stage for OUT right away */
-			if (unlikely (!dev->setup_in && wLength)) {
+			if (unlikely (!dev->setup_in && w_length)) {
 				value = setup_req (gadget->ep0, dev->req,
-							wLength);
+							w_length);
 				if (value < 0)
 					break;
 				value = usb_ep_queue (gadget->ep0, dev->req,
@@ -1515,8 +1515,7 @@ delegate:
 	/* proceed with data transfer and status phases? */
 	if (value >= 0 && dev->state != STATE_SETUP) {
 		req->length = value;
-		req->zero = value < wLength
-				&& (value % gadget->ep0->maxpacket) == 0;
+		req->zero = value < w_length;
 		value = usb_ep_queue (gadget->ep0, req, GFP_ATOMIC);
 		if (value < 0) {
 			DBG (dev, "ep_queue --> %d\n", value);
@@ -2024,6 +2023,7 @@ gadgetfs_fill_super (struct super_block *sb, void *opts, int silent)
 	sb->s_blocksize_bits = PAGE_CACHE_SHIFT;
 	sb->s_magic = GADGETFS_MAGIC;
 	sb->s_op = &gadget_fs_operations;
+	sb->s_time_gran = 1;
 
 	/* root inode */
 	inode = gadgetfs_make_inode (sb,

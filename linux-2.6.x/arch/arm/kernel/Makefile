@@ -14,15 +14,15 @@ AFLAGS_head.o := -DTEXTADDR=$(TEXTADDR) -DDATAADDR=$(DATAADDR)
 
 # Object file lists.
 
-obj-y		:= arch.o compat.o  entry-armv.o entry-common.o irq.o   \
+obj-y		:= arch.o compat.o entry-armv.o entry-common.o irq.o   \
 		   process.o ptrace.o setup.o signal.o sys_arm.o \
 		   time.o traps.o
-
 ifndef CONFIG_ARCH_ARGON
 obj-y		+= dma.o
 endif
 
 obj-$(CONFIG_ASM_SEMAPHORES)    += semaphore.o
+
 obj-$(CONFIG_APM)		+= apm.o
 obj-$(CONFIG_ARCH_ACORN)	+= ecard.o 
 obj-$(CONFIG_FOOTBRIDGE)	+= isa.o
@@ -53,8 +53,3 @@ head-y			:= head.o
 obj-$(CONFIG_DEBUG_LL)	+= debug.o
 
 extra-y := $(head-y) init_task.o vmlinux.lds
-
-# Spell out some dependencies that aren't automatically figured out
-$(obj)/entry-armv.o: 	$(obj)/entry-header.S include/asm-arm/constants.h
-$(obj)/entry-common.o: 	$(obj)/entry-header.S include/asm-arm/constants.h \
-			$(obj)/calls.S

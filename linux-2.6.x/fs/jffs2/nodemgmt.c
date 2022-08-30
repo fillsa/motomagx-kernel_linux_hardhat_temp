@@ -424,7 +424,6 @@ void jffs2_mark_node_obsolete(struct jffs2_sb_info *c, struct jffs2_raw_node_ref
 		D1(printk(KERN_DEBUG "Obsoleting previously unchecked node at 0x%08x of len %x: ", ref_offset(ref), ref_totlen(c, jeb, ref)));
 		jeb->unchecked_size -= ref_totlen(c, jeb, ref);
 		c->unchecked_size -= ref_totlen(c, jeb, ref);
-
 	} else {
 		D1(if (unlikely(jeb->used_size < ref_totlen(c, jeb, ref))) {
 			printk(KERN_NOTICE "raw node of size 0x%08x freed from erase block %d at 0x%08x, but used_size was already 0x%08x\n",

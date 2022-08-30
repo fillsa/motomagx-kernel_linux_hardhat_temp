@@ -188,7 +188,7 @@ typedef struct snd_ali_channel_control {
 
 struct snd_ali_stru_voice {
 	unsigned int number;
-	int use: 1,
+	unsigned int use: 1,
 	    pcm: 1,
 	    midi: 1,
 	    mode: 1,
@@ -199,7 +199,7 @@ struct snd_ali_stru_voice {
 	snd_pcm_substream_t *substream;
 	snd_ali_voice_t *extra;
 	
-	int running: 1;
+	unsigned int running: 1;
 
 	int eso;                /* final ESO value for channel */
 	int count;              /* runtime->period_size */
@@ -1894,7 +1894,7 @@ static int __devinit snd_ali_mixer(ali_t * codec)
 }
 
 #ifdef CONFIG_PM
-static int ali_suspend(snd_card_t *card, unsigned int state)
+static int ali_suspend(snd_card_t *card, pm_message_t state)
 {
 	ali_t *chip = card->pm_private_data;
 	ali_image_t *im;
@@ -1933,11 +1933,10 @@ static int ali_suspend(snd_card_t *card, unsigned int state)
 
 	spin_unlock_irq(&chip->reg_lock);
 	pci_disable_device(chip->pci);
-	snd_power_change_state(card, SNDRV_CTL_POWER_D3hot);
 	return 0;
 }
 
-static int ali_resume(snd_card_t *card, unsigned int state)
+static int ali_resume(snd_card_t *card)
 {
 	ali_t *chip = card->pm_private_data;
 	ali_image_t *im;
@@ -1971,7 +1970,6 @@ static int ali_resume(snd_card_t *card, unsigned int state)
 	spin_unlock_irq(&chip->reg_lock);
 
 	snd_ac97_resume(chip->ac97);
-	snd_power_change_state(card, SNDRV_CTL_POWER_D0);
 	
 	return 0;
 }
@@ -1989,8 +1987,7 @@ static int snd_ali_free(ali_t * codec)
 		pci_release_regions(codec->pci);
 	pci_disable_device(codec->pci);
 #ifdef CONFIG_PM
-	if (codec->image)
-		kfree(codec->image);
+	kfree(codec->image);
 #endif
 	kfree(codec);
 	return 0;

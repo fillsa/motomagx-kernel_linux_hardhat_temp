@@ -3,7 +3,6 @@
                              -------------------
     begin                : Thu Sep 7 2000
     copyright            : (C) 2000 by Adaptec
-    email                : deanna_bonds@adaptec.com
 
 			   July 30, 2001 First version being submitted
 			   for inclusion in the kernel.  V2.4
@@ -108,7 +107,7 @@ static dpt_sig_S DPTI_sig = {
  *============================================================================
  */
 
-DECLARE_MUTEX(adpt_configuration_lock);
+static DECLARE_MUTEX(adpt_configuration_lock);
 
 static struct i2o_sys_tbl *sys_tbl = NULL;
 static int sys_tbl_ind = 0;
@@ -1179,7 +1178,6 @@ static int adpt_i2o_post_wait(adpt_hba* pHba, u32* msg, int len, int timeout)
 				// dangerous.
 				status = -ETIME;
 			}
-			schedule_timeout(timeout*HZ);
 		}
 		if(pHba->host)
 			spin_lock_irq(pHba->host->host_lock);

@@ -104,12 +104,6 @@ __acpi_release_global_lock (unsigned int *lock)
 /*
  * Refer Intel ACPI _PDC support document for bit definitions
  */
-#define ACPI_PDC_EST_CAPABILITY_SMP	0xa
-#define ACPI_PDC_EST_CAPABILITY_MSR	0x1
-
-/*
- * Refer Intel ACPI _PDC support document for bit definitions
- */
 #define ACPI_PDC_EST_CAPABILITY_SMP 	0xa
 #define ACPI_PDC_EST_CAPABILITY_MSR	0x1
 
@@ -180,7 +174,6 @@ static inline int acpi_irq_balance_set(char *str) { return 0; }
 
 /* routines for saving/restoring kernel state */
 extern int acpi_save_state_mem(void);
-extern int acpi_save_state_disk(void);
 extern void acpi_restore_state_mem(void);
 
 extern unsigned long acpi_wakeup_address;

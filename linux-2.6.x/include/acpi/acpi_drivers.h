@@ -56,17 +56,20 @@
 /* ACPI PCI Interrupt Link (pci_link.c) */
 
 int acpi_irq_penalty_init (void);
-int acpi_pci_link_get_irq (acpi_handle handle, int index, int* edge_level, int* active_high_low);
+int acpi_pci_link_get_irq (acpi_handle handle, int index, int *edge_level,
+	int *active_high_low, char **name);
 
 /* ACPI PCI Interrupt Routing (pci_irq.c) */
 
 int acpi_pci_irq_add_prt (acpi_handle handle, int segment, int bus);
+void acpi_pci_irq_del_prt (int segment, int bus);
 
 /* ACPI PCI Device Binding (pci_bind.c) */
 
 struct pci_bus;
 
 int acpi_pci_bind (struct acpi_device *device);
+int acpi_pci_unbind (struct acpi_device *device);
 int acpi_pci_bind_root (struct acpi_device *device, struct acpi_pci_id *id, struct pci_bus *bus);
 
 /* Arch-defined function to add a bus to the system */

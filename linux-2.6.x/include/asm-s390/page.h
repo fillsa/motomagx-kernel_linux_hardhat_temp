@@ -16,6 +16,8 @@
 #define PAGE_SHIFT      12
 #define PAGE_SIZE       (1UL << PAGE_SHIFT)
 #define PAGE_MASK       (~(PAGE_SIZE-1))
+#define PAGE_DEFAULT_ACC	0
+#define PAGE_DEFAULT_KEY	(PAGE_DEFAULT_ACC << 4)
 
 #ifdef __KERNEL__
 #ifndef __ASSEMBLY__
@@ -105,6 +107,9 @@ static inline void copy_page(void *to, void *from)
 
 #define clear_user_page(page, vaddr, pg)	clear_page(page)
 #define copy_user_page(to, from, vaddr, pg)	copy_page(to, from)
+
+#define alloc_zeroed_user_highpage(vma, vaddr) alloc_page_vma(GFP_HIGHUSER | __GFP_ZERO, vma, vaddr)
+#define __HAVE_ARCH_ALLOC_ZEROED_USER_HIGHPAGE
 
 /* Pure 2^n version of get_order */
 extern __inline__ int get_order(unsigned long size)

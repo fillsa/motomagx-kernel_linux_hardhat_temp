@@ -9,6 +9,8 @@
 #include <linux/reiserfs_acl.h>
 #include <asm/uaccess.h>
 
+static int reiserfs_set_acl(struct inode *inode, int type, struct posix_acl *acl);
+
 static int
 xattr_set_acl(struct inode *inode, int type, const void *value, size_t size)
 {
@@ -243,7 +245,7 @@ reiserfs_get_acl(struct inode *inode, int type)
  * inode->i_sem: down
  * BKL held [before 2.5.x]
  */
-int
+static int
 reiserfs_set_acl(struct inode *inode, int type, struct posix_acl *acl)
 {
         char *name;
@@ -337,7 +339,7 @@ reiserfs_inherit_default_acl (struct inode *dir, struct dentry *dentry, struct i
      * would be useless since permissions are ignored, and a pain because
      * it introduces locking cycles */
     if (is_reiserfs_priv_object (dir)) {
-        REISERFS_I(inode)->i_flags |= i_priv_object;
+        reiserfs_mark_inode_private (inode);
         goto apply_umask;
     }
 

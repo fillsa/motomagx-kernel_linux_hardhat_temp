@@ -17,8 +17,12 @@
 #include <asm/mmu.h>
 #include <asm/mmu_context.h>
 #include <asm/paca.h>
-#include <asm/naca.h>
 #include <asm/cputable.h>
+
+struct stab_entry {
+	unsigned long esid_data;
+	unsigned long vsid_data;
+};
 
 /* Both the segment table and SLB code uses the following cache */
 #define NR_STAB_CACHE_ENTRIES 8
@@ -228,7 +232,7 @@ void stab_initialize(unsigned long stab)
 {
 	unsigned long vsid = get_kernel_vsid(KERNELBASE);
 
-	if (cur_cpu_spec->cpu_features & CPU_FTR_SLB) {
+	if (cpu_has_feature(CPU_FTR_SLB)) {
 		slb_initialize();
 	} else {
 		asm volatile("isync; slbia; isync":::"memory");

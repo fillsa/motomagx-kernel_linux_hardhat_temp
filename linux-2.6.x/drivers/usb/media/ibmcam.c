@@ -1036,7 +1036,8 @@ static enum ParseState ibmcam_model4_128x96_parse_lines(
  * History:
  * 1/21/00  Created.
  */
-void ibmcam_ProcessIsocData(struct uvd *uvd, struct usbvideo_frame *frame)
+static void ibmcam_ProcessIsocData(struct uvd *uvd,
+				   struct usbvideo_frame *frame)
 {
 	enum ParseState newstate;
 	long copylen = 0;
@@ -1137,7 +1138,7 @@ static int ibmcam_veio(
 			index,
 			cp,
 			sizeof(cp),
-			HZ);
+			1000);
 #if 0
 		info("USB => %02x%02x%02x%02x%02x%02x%02x%02x "
 		       "(req=$%02x val=$%04x ind=$%04x)",
@@ -1154,7 +1155,7 @@ static int ibmcam_veio(
 			index,
 			NULL,
 			0,
-			HZ);
+			1000);
 	}
 	if (i < 0) {
 		err("%s: ERROR=%d. Camera stopped; Reconnect or reload driver.",
@@ -3659,17 +3660,8 @@ static int ibmcam_probe(struct usb_interface *intf, const struct usb_device_id *
 	if (dev->descriptor.bNumConfigurations != 1)
 		return -ENODEV;
 
-	/* Is it an IBM camera? */
-	if (dev->descriptor.idVendor != IBMCAM_VENDOR_ID)
-		return -ENODEV;
-	if ((dev->descriptor.idProduct != IBMCAM_PRODUCT_ID) &&
-	    (dev->descriptor.idProduct != VEO_800C_PRODUCT_ID) &&
-	    (dev->descriptor.idProduct != VEO_800D_PRODUCT_ID) &&
-	    (dev->descriptor.idProduct != NETCAM_PRODUCT_ID))
-		return -ENODEV;
-
 	/* Check the version/revision */
-	switch (dev->descriptor.bcdDevice) {
+	switch (le16_to_cpu(dev->descriptor.bcdDevice)) {
 	case 0x0002:
 		if (ifnum != 2)
 			return -ENODEV;
@@ -3678,8 +3670,8 @@ static int ibmcam_probe(struct usb_interface *intf, const struct usb_device_id *
 	case 0x030A:
 		if (ifnum != 0)
 			return -ENODEV;
-		if ((dev->descriptor.idProduct == NETCAM_PRODUCT_ID) ||
-		    (dev->descriptor.idProduct == VEO_800D_PRODUCT_ID))
+		if ((le16_to_cpu(dev->descriptor.idProduct) == NETCAM_PRODUCT_ID) ||
+		    (le16_to_cpu(dev->descriptor.idProduct) == VEO_800D_PRODUCT_ID))
 			model = IBMCAM_MODEL_4;
 		else
 			model = IBMCAM_MODEL_2;
@@ -3691,14 +3683,14 @@ static int ibmcam_probe(struct usb_interface *intf, const struct usb_device_id *
 		break;
 	default:
 		err("IBM camera with revision 0x%04x is not supported.",
-			dev->descriptor.bcdDevice);
+			le16_to_cpu(dev->descriptor.bcdDevice));
 		return -ENODEV;
 	}
 
 	/* Print detailed info on what we found so far */
 	do {
 		char *brand = NULL;
-		switch (dev->descriptor.idProduct) {
+		switch (le16_to_cpu(dev->descriptor.idProduct)) {
 		case NETCAM_PRODUCT_ID:
 			brand = "IBM NetCamera";
 			break;
@@ -3714,7 +3706,7 @@ static int ibmcam_probe(struct usb_interface *intf, const struct usb_device_id *
 			break;
 		}
 		info("%s USB camera found (model %d, rev. 0x%04x)",
-		     brand, model, dev->descriptor.bcdDevice);
+		     brand, model, le16_to_cpu(dev->descriptor.bcdDevice));
 	} while (0);
 
 	/* Validate found interface: must have one ISO endpoint */
@@ -3752,7 +3744,7 @@ static int ibmcam_probe(struct usb_interface *intf, const struct usb_device_id *
 			err("Interface %d. has ISO OUT endpoint!", ifnum);
 			return -ENODEV;
 		}
-		if (endpoint->wMaxPacketSize == 0) {
+		if (le16_to_cpu(endpoint->wMaxPacketSize) == 0) {
 			if (inactInterface < 0)
 				inactInterface = i;
 			else {
@@ -3762,7 +3754,7 @@ static int ibmcam_probe(struct usb_interface *intf, const struct usb_device_id *
 		} else {
 			if (actInterface < 0) {
 				actInterface = i;
-				maxPS = endpoint->wMaxPacketSize;
+				maxPS = le16_to_cpu(endpoint->wMaxPacketSize);
 				if (debug > 0)
 					info("Active setting=%d. maxPS=%d.", i, maxPS);
 			} else

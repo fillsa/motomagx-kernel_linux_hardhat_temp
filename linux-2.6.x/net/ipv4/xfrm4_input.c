@@ -148,7 +148,6 @@ int xfrm4_rcv_encap(struct sk_buff *skb, __u16 encap_type)
 
 		if ((err = xfrm_parse_spi(skb, skb->nh.iph->protocol, &spi)) < 0)
 			goto drop;
-
 	} while (!err);
 
 	/* Allocate new secpath or COW existing one. */

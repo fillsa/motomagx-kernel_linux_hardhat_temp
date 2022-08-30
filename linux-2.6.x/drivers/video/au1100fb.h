@@ -195,7 +195,7 @@ struct known_lcd_panels panels[] =
 		320, /* xres */
 		240, /* yres */
 		16,  /* bpp  */
-		
+
 		"Sharp_320x240_16",
 		/* mode_control */
 		( LCD_CONTROL_SBPPF_565

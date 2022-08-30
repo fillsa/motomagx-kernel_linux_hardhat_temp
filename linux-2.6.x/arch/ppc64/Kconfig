@@ -20,6 +20,10 @@ config RWSEM_XCHGADD_ALGORITHM
 	bool
 	default y
 
+config GENERIC_CALIBRATE_DELAY
+	bool
+	default y
+
 config GENERIC_ISA_DMA
 	bool
 	default y
@@ -36,7 +40,7 @@ config COMPAT
 	bool
 	default y
 
-config FRAME_POINTER
+config SCHED_NO_NO_OMIT_FRAME_POINTER
 	bool
 	default y
 
@@ -77,7 +81,6 @@ config PPC_PMAC
 	depends on PPC_MULTIPLATFORM
 	bool "  Apple G5 based machines"
 	default y
-	select ADB_PMU
 	select U3_DART
 
 config PPC_MAPLE
@@ -88,7 +91,7 @@ config PPC_MAPLE
 	default n
 	help
           This option enables support for the Maple 970FX Evaluation Board.
-	  For more informations, refer to http://www.970eval.com
+	  For more informations, refer to <http://www.970eval.com>
 
 config PPC
 	bool
@@ -182,14 +185,6 @@ config SMP
 
 	  If you don't know what to do here, say Y.
 
-config IRQ_ALL_CPUS
-	bool "Distribute interrupts on all CPUs by default"
-	depends on SMP && PPC_MULTIPLATFORM
-	help
-	  This option gives the kernel permission to distribute IRQs across
-	  multiple CPUs.  Saying N here will route all IRQs to the first
-	  CPU.
-
 config NR_CPUS
 	int "Maximum number of CPUs (2-128)"
 	range 2 128
@@ -198,7 +193,10 @@ config NR_CPUS
 
 config HMT
 	bool "Hardware multithreading"
-	depends on SMP && PPC_PSERIES
+	depends on SMP && PPC_PSERIES && BROKEN
+	help
+	  This option enables hardware multithreading on RS64 cpus.
+	  pSeries systems p620 and p660 have such a cpu type.
 
 config DISCONTIGMEM
 	bool "Discontiguous Memory Support"
@@ -227,6 +225,22 @@ config PREEMPT
 	  Say Y here if you are building a kernel for a desktop, embedded
 	  or real-time system.  Say N if you are unsure.
 
+config PREEMPT_BKL
+	bool "Preempt The Big Kernel Lock"
+	depends on PREEMPT
+	default y
+	help
+	  This option reduces the latency of the kernel by making the
+	  big kernel lock preemptible.
+
+	  Say Y here if you are building a kernel for a desktop system.
+	  Say N if you are unsure.
+
+config EEH
+	bool "PCI Extended Error Handling (EEH)" if EMBEDDED
+	depends on PPC_PSERIES
+	default y if !EMBEDDED
+
 #
 # Use the generic interrupt handling code in kernel/irq/:
 #
@@ -241,16 +255,22 @@ config MSCHUNKS
 
 
 config PPC_RTAS
-	bool "Proc interface to RTAS"
+	bool
 	depends on PPC_PSERIES
+	default y
+
+config RTAS_PROC
+	bool "Proc interface to RTAS"
+	depends on PPC_RTAS
+	default y
 
 config RTAS_FLASH
 	tristate "Firmware flash interface"
-	depends on PPC_RTAS
+	depends on RTAS_PROC
 
 config SCANLOG
 	tristate "Scanlog dump interface"
-	depends on PPC_RTAS
+	depends on RTAS_PROC && PPC_PSERIES
 
 config LPARCFG
 	tristate "LPAR Configuration Data"
@@ -259,8 +279,28 @@ config LPARCFG
 	Provide system capacity information via human readable
 	<key word>=<value> pairs through a /proc/ppc64/lparcfg interface.
 
+config SECCOMP
+	bool "Enable seccomp to safely compute untrusted bytecode"
+	depends on PROC_FS
+	default y
+	help
+	  This kernel feature is useful for number crunching applications
+	  that may need to compute untrusted bytecode during their
+	  execution. By using pipes or other transports made available to
+	  the process as file descriptors supporting the read/write
+	  syscalls, it's possible to isolate those applications in
+	  their own address space using seccomp. Once seccomp is
+	  enabled via /proc/<pid>/seccomp, it cannot be disabled
+	  and the task is only allowed to execute a few safe syscalls
+	  defined by each seccomp mode.
+
+	  If unsure, say Y. Only embedded should say N here.
+
 endmenu
 
+config ISA_DMA_API
+	bool
+	default y
 
 menu "General setup"
 
@@ -301,7 +341,8 @@ source "drivers/pci/Kconfig"
 
 config HOTPLUG_CPU
 	bool "Support for hot-pluggable CPUs"
-	depends on SMP && HOTPLUG && EXPERIMENTAL && PPC_PSERIES
+	depends on SMP && EXPERIMENTAL && (PPC_PSERIES || PPC_PMAC)
+	select HOTPLUG
 	---help---
 	  Say Y here to be able to turn CPUs off and on.
 

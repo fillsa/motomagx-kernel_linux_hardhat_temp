@@ -177,7 +177,7 @@ static struct n_hdlc *n_hdlc_alloc (void);
 static int debuglevel;
 
 /* max frame size for memory allocations */
-static ssize_t maxframe = 4096;
+static int maxframe = 4096;
 
 /* TTY callbacks */
 
@@ -575,7 +575,6 @@ static ssize_t n_hdlc_tty_read(struct tty_struct *tty, struct file *file,
 			   __u8 __user *buf, size_t nr)
 {
 	struct n_hdlc *n_hdlc = tty2n_hdlc(tty);
-	int error;
 	int ret;
 	struct n_hdlc_buf *rbuf;
 
@@ -587,11 +586,10 @@ static ssize_t n_hdlc_tty_read(struct tty_struct *tty, struct file *file,
 		return -EIO;
 
 	/* verify user access to buffer */
-	error = verify_area (VERIFY_WRITE, buf, nr);
-	if (error != 0) {
-		printk(KERN_WARNING"%s(%d) n_hdlc_tty_read() can't verify user "
-		"buffer\n",__FILE__,__LINE__);
-		return (error);
+	if (!access_ok(VERIFY_WRITE, buf, nr)) {
+		printk(KERN_WARNING "%s(%d) n_hdlc_tty_read() can't verify user "
+		"buffer\n", __FILE__, __LINE__);
+		return -EFAULT;
 	}
 
 	for (;;) {
@@ -672,7 +670,7 @@ static ssize_t n_hdlc_tty_write(struct tty_struct *tty, struct file *file,
 		if (debuglevel & DEBUG_LEVEL_INFO)
 			printk (KERN_WARNING
 				"n_hdlc_tty_write: truncating user packet "
-				"from %lu to %Zd\n", (unsigned long) count,
+				"from %lu to %d\n", (unsigned long) count,
 				maxframe );
 		count = maxframe;
 	}
@@ -975,6 +973,6 @@ module_exit(n_hdlc_exit);
 
 MODULE_LICENSE("GPL");
 MODULE_AUTHOR("Paul Fulghum paulkf@microgate.com");
-MODULE_PARM(debuglevel, "i");
-MODULE_PARM(maxframe, "i");
+module_param(debuglevel, int, 0);
+module_param(maxframe, int, 0);
 MODULE_ALIAS_LDISC(N_HDLC);

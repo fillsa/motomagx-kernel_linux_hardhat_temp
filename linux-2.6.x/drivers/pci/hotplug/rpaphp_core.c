@@ -224,7 +224,7 @@ static int get_children_props(struct device_node *dn, int **drc_indexes,
 
 	if (!indexes || !names || !types || !domains) {
 		/* Slot does not have dynamically-removable children */
-		return 1;
+		return -EINVAL;
 	}
 	if (drc_indexes)
 		*drc_indexes = indexes;
@@ -256,12 +256,12 @@ int rpaphp_get_drc_props(struct device_node *dn, int *drc_index,
 	my_index = (int *) get_property(dn, "ibm,my-drc-index", NULL);
 	if (!my_index) {
 		/* Node isn't DLPAR/hotplug capable */
-		return 1;
+		return -EINVAL;
 	}
 
 	rc = get_children_props(dn->parent, &indexes, &names, &types, &domains);
-	if (rc) {
-		return 1;
+	if (rc < 0) {
+		return -EINVAL;
 	}
 
 	name_tmp = (char *) &names[1];
@@ -284,29 +284,46 @@ int rpaphp_get_drc_props(struct device_node *dn, int *drc_index,
 		type_tmp += (strlen(type_tmp) + 1);
 	}
 
+	return -EINVAL;
+}
+
+static int is_php_type(char *drc_type)
+{
+	unsigned long value;
+	char *endptr;
+
+	/* PCI Hotplug nodes have an integer for drc_type */
+	value = simple_strtoul(drc_type, &endptr, 10);
+	if (endptr == drc_type)
+		return 0;
+
 	return 1;
 }
 
-static int is_php_dn(struct device_node *dn, int **indexes, int **names, int **types,
-	  int **power_domains)
+static int is_php_dn(struct device_node *dn, int **indexes, int **names,
+		int **types, int **power_domains)
 {
+	int *drc_types;
 	int rc;
 
-	if (!is_hotplug_capable(dn))
-		return (0);
-	rc = get_children_props(dn, indexes, names, types, power_domains);
-	if (rc)
-		return (0);
-	return (1);
+	rc = get_children_props(dn, indexes, names, &drc_types, power_domains);
+	if (rc >= 0) {
+		if (is_php_type((char *) &drc_types[1])) {
+			*types = drc_types;
+			return 1;
+		}
+	}
+
+	return 0;
 }
 
-static int is_dr_dn(struct device_node *dn, int **indexes, int **names, int **types,
-	  int **power_domains, int **my_drc_index)
+static int is_dr_dn(struct device_node *dn, int **indexes, int **names,
+		int **types, int **power_domains, int **my_drc_index)
 {
 	int rc;
 
 	*my_drc_index = (int *) get_property(dn, "ibm,my-drc-index", NULL);
-	if(!*my_drc_index) 		
+	if(!*my_drc_index)
 		return (0);
 
 	if (!dn->parent)
@@ -314,7 +331,7 @@ static int is_dr_dn(struct device_node *dn, int **indexes, int **names, int **ty
 
 	rc = get_children_props(dn->parent, indexes, names, types,
 				power_domains);
-	return (rc == 0);
+	return (rc >= 0);
 }
 
 static inline int is_vdevice_root(struct device_node *dn)

@@ -13,7 +13,7 @@
 #include <linux/device.h>
 #include <linux/serial.h>
 #include <linux/tty.h>
-#include <linux/serial_core.h>
+#include <linux/serial_8250.h>
 
 #include <asm/types.h>
 #include <asm/setup.h>
@@ -25,48 +25,8 @@
 #include <asm/mach/flash.h>
 #include <asm/kgdb.h>
 
-#ifdef	__ARMEB__
-#define	REG_OFFSET	3
-#else
-#define	REG_OFFSET	0
-#endif
-
-/*
- * IXDP425 uses both chipset serial ports
- */
-static struct uart_port ixdp425_serial_ports[] = {
-	{
-		.membase	= (char*)(IXP4XX_UART1_BASE_VIRT + REG_OFFSET),
-		.mapbase	= (IXP4XX_UART1_BASE_PHYS),
-		.irq		= IRQ_IXP4XX_UART1,
-		.flags		= UPF_SKIP_TEST | UPF_SHARE_IRQ ,
-		.iotype		= UPIO_MEM,	
-		.regshift	= 2,
-		.uartclk	= IXP4XX_UART_XTAL,
-		.line		= 0,
-		.type		= PORT_XSCALE,
-		.fifosize	= 32,
-		.lock		= SPIN_LOCK_UNLOCKED
-	} , {
-		.membase	= (char*)(IXP4XX_UART2_BASE_VIRT + REG_OFFSET),
-		.mapbase	= (IXP4XX_UART2_BASE_PHYS),
-		.irq		= IRQ_IXP4XX_UART2,
-		.flags		= UPF_SKIP_TEST | UPF_SHARE_IRQ,
-		.iotype		= UPIO_MEM,	
-		.regshift	= 2,
-		.uartclk	= IXP4XX_UART_XTAL,
-		.line		= 1,
-		.type		= PORT_XSCALE,
-		.fifosize	= 32,
-		.lock		= SPIN_LOCK_UNLOCKED
-	}
-};
-
 void __init ixdp425_map_io(void) 
 {
-	early_serial_setup(&ixdp425_serial_ports[0]);
-	early_serial_setup(&ixdp425_serial_ports[1]);
-
 #ifdef CONFIG_KGDB_8250
 	kgdb8250_add_port(0, &ixdp425_serial_ports[0]);
 	kgdb8250_add_port(1, &ixdp425_serial_ports[1]);
@@ -109,10 +69,54 @@ static struct platform_device ixdp425_i2c_controller = {
 	.num_resources	= 0
 };
 
+static struct resource ixdp425_uart_resources[] = {
+	{
+		.start		= IXP4XX_UART1_BASE_PHYS,
+		.end		= IXP4XX_UART1_BASE_PHYS + 0x0fff,
+		.flags		= IORESOURCE_MEM
+	},
+	{
+		.start		= IXP4XX_UART2_BASE_PHYS,
+		.end		= IXP4XX_UART2_BASE_PHYS + 0x0fff,
+		.flags		= IORESOURCE_MEM
+	}
+};
+
+static struct plat_serial8250_port ixdp425_uart_data[] = {
+	{
+		.mapbase	= IXP4XX_UART1_BASE_PHYS,
+		.membase	= (char *)IXP4XX_UART1_BASE_VIRT + REG_OFFSET,
+		.irq		= IRQ_IXP4XX_UART1,
+		.flags		= UPF_BOOT_AUTOCONF,
+		.iotype		= UPIO_MEM,
+		.regshift	= 2,
+		.uartclk	= IXP4XX_UART_XTAL,
+	},
+	{
+		.mapbase	= IXP4XX_UART2_BASE_PHYS,
+		.membase	= (char *)IXP4XX_UART2_BASE_VIRT + REG_OFFSET,
+		.irq		= IRQ_IXP4XX_UART1,
+		.flags		= UPF_BOOT_AUTOCONF,
+		.iotype		= UPIO_MEM,
+		.regshift	= 2,
+		.uartclk	= IXP4XX_UART_XTAL,
+	}
+};
+
+static struct platform_device ixdp425_uart = {
+	.name			= "serial8250",
+	.id			= 0,
+	.dev.platform_data	= ixdp425_uart_data,
+	.num_resources		= 2,
+	.resource		= ixdp425_uart_resources
+};
+
 static struct platform_device *ixdp425_devices[] __initdata = {
 	&ixdp425_i2c_controller,
-	&ixdp425_flash
+	&ixdp425_flash,
+	&ixdp425_uart
 };
+
 
 static void __init ixdp425_init(void)
 {

@@ -6,6 +6,7 @@
 #include <linux/timex.h>
 #include <linux/errno.h>
 #include <linux/jiffies.h>
+#include <linux/module.h>
 
 #include <asm/io.h>
 #include <asm/timer.h>
@@ -24,7 +25,7 @@
 
 __initdata unsigned long tsc_cycles_per_50_ms;
 
-unsigned long __init calibrate_tsc(void)
+unsigned long calibrate_tsc(void)
 {
 	mach_prepare_counter();
 
@@ -146,7 +147,7 @@ bad_calibration:
 #endif
 
 /* calculate cpu_khz */
-void __init init_cpu_khz(void)
+void init_cpu_khz(void)
 {
 	if (cpu_has_tsc) {
 		unsigned long tsc_quotient = calibrate_tsc();
@@ -165,3 +166,4 @@ void __init init_cpu_khz(void)
 		}
 	}
 }
+

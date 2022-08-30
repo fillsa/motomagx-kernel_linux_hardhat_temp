@@ -53,7 +53,6 @@
 #include <linux/types.h>
 #include <linux/errno.h>
 #include <linux/kernel.h>
-#include <linux/major.h>
 #include <linux/sched.h>
 #include <linux/slab.h>
 #include <linux/poll.h>
@@ -757,17 +756,20 @@ static inline void hci_role_change_evt(struct hci_dev *hdev, struct sk_buff *skb
 
 	BT_DBG("%s status %d", hdev->name, ev->status);
 
-	if (ev->status)
-		return;
-
 	hci_dev_lock(hdev);
 
 	conn = hci_conn_hash_lookup_ba(hdev, ACL_LINK, &ev->bdaddr);
 	if (conn) {
-		if (ev->role)
-			conn->link_mode &= ~HCI_LM_MASTER;
-		else
-			conn->link_mode |= HCI_LM_MASTER;
+		if (!ev->status) {
+			if (ev->role)
+				conn->link_mode &= ~HCI_LM_MASTER;
+			else
+				conn->link_mode |= HCI_LM_MASTER;
+		}
+
+		clear_bit(HCI_CONN_RSWITCH_PEND, &conn->pend);
+
+		hci_role_switch_cfm(conn, ev->status, ev->role);
 	}
 
 	hci_dev_unlock(hdev);
@@ -788,6 +790,7 @@ static inline void hci_auth_complete_evt(struct hci_dev *hdev, struct sk_buff *s
 	if (conn) {
 		if (!ev->status)
 			conn->link_mode |= HCI_LM_AUTH;
+
 		clear_bit(HCI_CONN_AUTH_PEND, &conn->pend);
 
 		hci_auth_cfm(conn, ev->status);
@@ -829,6 +832,7 @@ static inline void hci_encrypt_change_evt(struct hci_dev *hdev, struct sk_buff *
 			else
 				conn->link_mode &= ~HCI_LM_ENCRYPT;
 		}
+
 		clear_bit(HCI_CONN_ENCRYPT_PEND, &conn->pend);
 
 		hci_encrypt_cfm(conn, ev->status, ev->encrypt);
@@ -840,6 +844,25 @@ static inline void hci_encrypt_change_evt(struct hci_dev *hdev, struct sk_buff *
 /* Change Connection Link Key Complete */
 static inline void hci_change_conn_link_key_complete_evt(struct hci_dev *hdev, struct sk_buff *skb)
 {
+	struct hci_ev_change_conn_link_key_complete *ev = (struct hci_ev_change_conn_link_key_complete *) skb->data;
+	struct hci_conn *conn = NULL;
+	__u16 handle = __le16_to_cpu(ev->handle);
+
+	BT_DBG("%s status %d", hdev->name, ev->status);
+
+	hci_dev_lock(hdev);
+
+	conn = hci_conn_hash_lookup_handle(hdev, handle);
+	if (conn) {
+		if (!ev->status)
+			conn->link_mode |= HCI_LM_SECURE;
+
+		clear_bit(HCI_CONN_AUTH_PEND, &conn->pend);
+
+		hci_key_change_cfm(conn, ev->status);
+	}
+
+	hci_dev_unlock(hdev);
 }
 
 /* Pin Code Request*/
@@ -855,6 +878,30 @@ static inline void hci_link_key_request_evt(struct hci_dev *hdev, struct sk_buff
 /* Link Key Notification */
 static inline void hci_link_key_notify_evt(struct hci_dev *hdev, struct sk_buff *skb)
 {
+}
+
+/* Clock Offset */
+static inline void hci_clock_offset_evt(struct hci_dev *hdev, struct sk_buff *skb)
+{
+	struct hci_ev_clock_offset *ev = (struct hci_ev_clock_offset *) skb->data;
+	struct hci_conn *conn = NULL;
+	__u16 handle = __le16_to_cpu(ev->handle);
+
+	BT_DBG("%s status %d", hdev->name, ev->status);
+
+	hci_dev_lock(hdev);
+
+	conn = hci_conn_hash_lookup_handle(hdev, handle);
+	if (conn && !ev->status) {
+		struct inquiry_entry *ie;
+
+		if ((ie = hci_inquiry_cache_lookup(hdev, &conn->dst))) {
+			ie->data.clock_offset = ev->clock_offset;
+			ie->timestamp = jiffies;
+		}
+	}
+
+	hci_dev_unlock(hdev);
 }
 
 void hci_event_packet(struct hci_dev *hdev, struct sk_buff *skb)
@@ -923,6 +970,10 @@ void hci_event_packet(struct hci_dev *hdev, struct sk_buff *skb)
 
 	case HCI_EV_LINK_KEY_NOTIFY:
 		hci_link_key_notify_evt(hdev, skb);
+		break;
+
+	case HCI_EV_CLOCK_OFFSET:
+		hci_clock_offset_evt(hdev, skb);
 		break;
 
 	case HCI_EV_CMD_STATUS:

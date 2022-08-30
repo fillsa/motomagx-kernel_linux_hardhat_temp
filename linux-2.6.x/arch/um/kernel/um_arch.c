@@ -17,11 +17,13 @@
 #include "linux/sysrq.h"
 #include "linux/seq_file.h"
 #include "linux/delay.h"
+#include "linux/module.h"
 #include "asm/page.h"
 #include "asm/pgtable.h"
 #include "asm/ptrace.h"
 #include "asm/elf.h"
 #include "asm/user.h"
+#include "asm/setup.h"
 #include "ubd_user.h"
 #include "asm/current.h"
 #include "user_util.h"
@@ -39,15 +41,24 @@
 
 #define DEFAULT_COMMAND_LINE "root=98:0"
 
+/* Changed in linux_main and setup_arch, which run before SMP is started */
+static char command_line[COMMAND_LINE_SIZE] = { 0 };
+
+static void add_arg(char *arg)
+{
+	if (strlen(command_line) + strlen(arg) + 1 > COMMAND_LINE_SIZE) {
+		printf("add_arg: Too many command line arguments!\n");
+		exit(1);
+	}
+	if(strlen(command_line) > 0)
+		strcat(command_line, " ");
+	strcat(command_line, arg);
+}
+
 struct cpuinfo_um boot_cpu_data = { 
 	.loops_per_jiffy	= 0,
 	.ipi_pipe		= { -1, -1 }
 };
-
-/* Placeholder to make UML link until the vsyscall stuff is actually
- * implemented
- */
-void *__kernel_vsyscall;
 
 unsigned long thread_saved_pc(struct task_struct *task)
 {
@@ -98,12 +109,6 @@ struct seq_operations cpuinfo_op = {
 	.stop	= c_stop,
 	.show	= show_cpuinfo,
 };
-
-pte_t * __bad_pagetable(void)
-{
-	panic("Someone should implement __bad_pagetable");
-	return(NULL);
-}
 
 /* Set in linux_main */
 unsigned long host_task_size;
@@ -161,6 +166,8 @@ static int __init uml_version_setup(char *line, int *add)
 {
 	printf("%s\n", system_utsname.release);
 	exit(0);
+
+	return 0;
 }
 
 __uml_setup("--version", uml_version_setup,
@@ -200,7 +207,7 @@ __uml_setup("ncpus=", uml_ncpus_setup,
 );
 #endif
 
-int force_tt = 0;
+static int force_tt = 0;
 
 #if defined(CONFIG_MODE_TT) && defined(CONFIG_MODE_SKAS)
 #define DEFAULT_TT 0
@@ -261,6 +268,8 @@ static int __init Usage(char *line, int *add)
  		p++;
  	}
 	exit(0);
+
+	return 0;
 }
 
 __uml_setup("--help", Usage,
@@ -300,6 +309,7 @@ static void __init uml_postsetup(void)
 /* Set during early boot */
 unsigned long brk_start;
 unsigned long end_iomem;
+EXPORT_SYMBOL(end_iomem);
 
 #define MIN_VMALLOC (32 * 1024 * 1024)
 
@@ -313,11 +323,21 @@ int linux_main(int argc, char **argv)
 		if((i == 1) && (argv[i][0] == ' ')) continue;
 		add = 1;
 		uml_checksetup(argv[i], &add);
-		if(add) add_arg(saved_command_line, argv[i]);
+		if (add)
+			add_arg(argv[i]);
 	}
-	if(have_root == 0) add_arg(saved_command_line, DEFAULT_COMMAND_LINE);
+	if(have_root == 0)
+		add_arg(DEFAULT_COMMAND_LINE);
 
 	mode_tt = force_tt ? 1 : !can_do_skas();
+#ifndef CONFIG_MODE_TT
+	if (mode_tt) {
+		/*Since CONFIG_MODE_TT is #undef'ed, force_tt cannot be 1. So,
+		 * can_do_skas() returned 0, and the message is correct. */
+		printf("Support for TT mode is disabled, and no SKAS support is present on the host.\n");
+		exit(1);
+	}
+#endif
 	uml_start = CHOOSE_MODE_PROC(set_task_sizes_tt, set_task_sizes_skas, 0,
 				     &host_task_size, &task_size);
 
@@ -423,7 +443,7 @@ void __init setup_arch(char **cmdline_p)
 {
 	notifier_chain_register(&panic_notifier_list, &panic_exit_notifier);
 	paging_init();
- 	strcpy(command_line, saved_command_line);
+        strlcpy(saved_command_line, command_line, COMMAND_LINE_SIZE);
  	*cmdline_p = command_line;
 	setup_hostinfo();
 }
@@ -439,14 +459,3 @@ void __init check_bugs(void)
 void apply_alternatives(void *start, void *end)
 {
 }
-
-/*
- * Overrides for Emacs so that we follow Linus's tabbing style.
- * Emacs will notice this stuff at the end of the file and automatically
- * adjust the settings for this buffer only.  This must remain at the end
- * of the file.
- * ---------------------------------------------------------------------------
- * Local variables:
- * c-file-style: "linux"
- * End:
- */

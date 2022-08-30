@@ -178,9 +178,9 @@ int cmsghdr_from_user_compat_to_kern(struct msghdr *kmsg, struct sock *sk,
 	 * until we have successfully copied over all of the data
 	 * from the user.
 	 */
-	if (kcmlen > stackbuf_size)
+	if(kcmlen > stackbuf_size)
 		kcmsg_base = kcmsg = sock_kmalloc(sk, kcmlen, GFP_KERNEL);
-	if (kcmsg == NULL)
+	if(kcmsg == NULL)
 		return -ENOBUFS;
 
 	/* Now copy them over neatly. */
@@ -200,8 +200,8 @@ int cmsghdr_from_user_compat_to_kern(struct msghdr *kmsg, struct sock *sk,
 		if (__get_user(kcmsg->cmsg_level, &ucmsg->cmsg_level) ||
 		    __get_user(kcmsg->cmsg_type, &ucmsg->cmsg_type) ||
 		    copy_from_user(CMSG_DATA(kcmsg),
-				   CMSG_COMPAT_DATA(ucmsg),
-				   (ucmlen - CMSG_COMPAT_ALIGN(sizeof(*ucmsg)))))
+				  CMSG_COMPAT_DATA(ucmsg),
+				  (ucmlen - CMSG_COMPAT_ALIGN(sizeof(*ucmsg)))))
 			goto Efault;
 
 		/* Advance. */
@@ -217,7 +217,7 @@ int cmsghdr_from_user_compat_to_kern(struct msghdr *kmsg, struct sock *sk,
 Einval:
 	err = -EINVAL;
 Efault:
-	if (kcmsg_base != (struct cmsghdr *)stackbuf)
+	if(kcmsg_base != (struct cmsghdr *)stackbuf)
 		sock_kfree_s(sk, kcmsg_base, kcmlen);
 	return err;
 }
@@ -515,7 +515,8 @@ static int do_get_sock_timeout(int fd, int level, int optname,
 asmlinkage long compat_sys_getsockopt(int fd, int level, int optname,
 				char __user *optval, int __user *optlen)
 {
-	if (optname == SO_RCVTIMEO || optname == SO_SNDTIMEO)
+	if (level == SOL_SOCKET &&
+	    (optname == SO_RCVTIMEO || optname == SO_SNDTIMEO))
 		return do_get_sock_timeout(fd, level, optname, optval, optlen);
 	return sys_getsockopt(fd, level, optname, optval, optlen);
 }

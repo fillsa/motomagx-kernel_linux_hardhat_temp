@@ -66,6 +66,19 @@ config MACH_OMAP_PERSEUS2
 	  Support for TI OMAP 730 Perseus2 board. Say Y here if you have such
 	  a board.
 
+config MACH_VOICEBLUE
+	bool "Voiceblue"
+	depends on ARCH_OMAP1510
+	help
+	  Support for Voiceblue GSM/VoIP gateway. Say Y here if you have such
+	  board.
+
+config MACH_NETSTAR
+	bool "NetStar"
+	depends on ARCH_OMAP1510
+	help
+	  Support for NetStar PBX. Say Y here if you have such a board.
+
 config MACH_OMAP_GENERIC
 	bool "Generic OMAP board"
 	depends on ARCH_OMAP1510 || ARCH_OMAP16XX
@@ -175,6 +188,16 @@ config NO_IDLE_HZ_ENABLED
 	default n
 	help
 	  Select this option if you want VST turned on by default during boot.
+
+
+config OMAP_32K_TIMER_HZ
+       int "Kernel internal timer frequency for 32KHz timer"
+       range 32 1024
+       depends on OMAP_32K_TIMER
+       default "128"
+       help
+	  Kernel internal timer frequency should be a divisor of 32768,
+	  such as 64 or 128.
 
 choice
 	prompt "Low-level debug console UART"

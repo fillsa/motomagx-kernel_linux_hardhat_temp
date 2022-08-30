@@ -6,7 +6,7 @@
  *****************************************************************************/
 
 /*
- * Copyright (C) 2000 - 2004, R. Byron Moore
+ * Copyright (C) 2000 - 2005, R. Byron Moore
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -95,6 +95,7 @@ acpi_ex_get_object_reference (
 		switch (obj_desc->reference.opcode) {
 		case AML_LOCAL_OP:
 		case AML_ARG_OP:
+		case AML_DEBUG_OP:
 
 			/* The referenced object is the pseudo-node for the local/arg */
 
@@ -103,7 +104,7 @@ acpi_ex_get_object_reference (
 
 		default:
 
-			ACPI_REPORT_ERROR (("Unknown Reference subtype in get ref %X\n",
+			ACPI_REPORT_ERROR (("Unknown Reference opcode in get_reference %X\n",
 				obj_desc->reference.opcode));
 			return_ACPI_STATUS (AE_AML_INTERNAL);
 		}
@@ -121,7 +122,7 @@ acpi_ex_get_object_reference (
 
 	default:
 
-		ACPI_REPORT_ERROR (("Invalid descriptor type in get ref: %X\n",
+		ACPI_REPORT_ERROR (("Invalid descriptor type in get_reference: %X\n",
 				ACPI_GET_DESCRIPTOR_TYPE (obj_desc)));
 		return_ACPI_STATUS (AE_TYPE);
 	}
@@ -389,7 +390,7 @@ cleanup:
 	if (local_operand1 != operand1) {
 		acpi_ut_remove_reference (local_operand1);
 	}
-	return_ACPI_STATUS (AE_OK);
+	return_ACPI_STATUS (status);
 }
 
 

@@ -365,4 +365,6 @@ static inline unsigned long __cmpxchg(volatile void * ptr, unsigned long old,
 void disable_hlt(void);
 void enable_hlt(void);
 
+#define arch_align_stack(x) (x)
+
 #endif

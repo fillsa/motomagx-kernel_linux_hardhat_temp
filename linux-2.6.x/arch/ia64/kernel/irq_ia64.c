@@ -60,18 +60,45 @@ __u8 isa_irq_to_vector_map[16] = {
 };
 EXPORT_SYMBOL(isa_irq_to_vector_map);
 
+static unsigned long ia64_vector_mask[BITS_TO_LONGS(IA64_NUM_DEVICE_VECTORS)];
+
+int
+assign_irq_vector_nopanic (int irq)
+{
+	int pos, vector;
+ again:
+	pos = find_first_zero_bit(ia64_vector_mask, IA64_NUM_DEVICE_VECTORS);
+	vector = IA64_FIRST_DEVICE_VECTOR + pos;
+	if (vector > IA64_LAST_DEVICE_VECTOR)
+		return -1;
+	if (test_and_set_bit(pos, ia64_vector_mask))
+		goto again;
+	return vector;
+}
+
 int
 assign_irq_vector (int irq)
 {
-	static int next_vector = IA64_FIRST_DEVICE_VECTOR;
+	int vector = assign_irq_vector_nopanic(irq);
 
-	if (next_vector > IA64_LAST_DEVICE_VECTOR)
-		/* XXX could look for sharable vectors instead of panic'ing... */
+	if (vector < 0)
 		panic("assign_irq_vector: out of interrupt vectors!");
-	return next_vector++;
+
+	return vector;
 }
 
-extern unsigned int do_IRQ(unsigned long irq, struct pt_regs *regs);
+void
+free_irq_vector (int vector)
+{
+	int pos;
+
+	if (vector < IA64_FIRST_DEVICE_VECTOR || vector > IA64_LAST_DEVICE_VECTOR)
+		return;
+
+	pos = vector - IA64_FIRST_DEVICE_VECTOR;
+	if (!test_and_clear_bit(pos, ia64_vector_mask))
+		printk(KERN_WARNING "%s: double free!\n", __FUNCTION__);
+}
 
 #ifdef CONFIG_SMP
 #	define IS_RESCHEDULE(vec)	(vec == IA64_IPI_RESCHEDULE)
@@ -100,7 +127,7 @@ ia64_handle_irq (ia64_vector vector, struct pt_regs *regs)
 		 * switched atomically.
 		 */
 		bsp = ia64_getreg(_IA64_REG_AR_BSP);
-		sp = ia64_getreg(_IA64_REG_AR_SP);
+		sp = ia64_getreg(_IA64_REG_SP);
 
 		if ((sp - bsp) < 1024) {
 			static unsigned char count;
@@ -131,7 +158,7 @@ ia64_handle_irq (ia64_vector vector, struct pt_regs *regs)
 			ia64_setreg(_IA64_REG_CR_TPR, vector);
 			ia64_srlz_d();
 
-			do_IRQ(local_vector_to_irq(vector), regs);
+			__do_IRQ(local_vector_to_irq(vector), regs);
 
 			/*
 			 * Disable interrupts and send EOI:
@@ -182,7 +209,7 @@ void ia64_process_pending_intr(void)
 			 * Probably could shared code.
 			 */
 			vectors_in_migration[local_vector_to_irq(vector)]=0;
-			do_IRQ(local_vector_to_irq(vector), NULL);
+			__do_IRQ(local_vector_to_irq(vector), NULL);
 
 			/*
 			 * Disable interrupts and send EOI

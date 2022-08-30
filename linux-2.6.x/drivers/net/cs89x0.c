@@ -161,6 +161,7 @@
 #include <linux/string.h>
 #include <linux/init.h>
 #include <linux/bitops.h>
+#include <linux/delay.h>
 
 #include <asm/system.h>
 #ifdef CONFIG_MOT_FEAT_BRDREV
@@ -358,7 +359,7 @@ static int __init media_fn(char *str)
 
 __setup("cs89x0_media=", media_fn);
 
-
+
 /* Check for a network adaptor of this type, and return '0' iff one exists.
    If dev->base_addr == 0, probe all likely locations.
    If dev->base_addr == 1, always return failure.
@@ -963,7 +964,7 @@ out1:
 	return retval;
 }
 
-
+
 /*********************************
  * This page contains DMA routines
 **********************************/
@@ -1132,8 +1133,7 @@ void  __init reset_chip(struct net_device *dev)
 	writereg(dev, PP_SelfCTL, readreg(dev, PP_SelfCTL) | POWER_ON_RESET);
 
 	/* wait 30 ms */
-	current->state = TASK_INTERRUPTIBLE;
-	schedule_timeout(30*HZ/1000);
+	msleep(30);
 
 #ifndef CONFIG_ARCH_IXDP2X01
 	if (lp->chip_type != CS8900) {
@@ -1155,7 +1155,7 @@ void  __init reset_chip(struct net_device *dev)
 #endif
 }
 
-
+
 static void
 control_dc_dc(struct net_device *dev, int on_not_off)
 {
@@ -1331,7 +1331,7 @@ detect_bnc(struct net_device *dev)
 		return DETECTED_NONE;
 }
 
-
+
 static void
 write_irq(struct net_device *dev, int chip_type, int irq)
 {
@@ -1665,7 +1665,7 @@ static int net_send_packet(struct sk_buff *skb, struct net_device *dev)
 
 	return 0;
 }
-
+
 /* The typical workload of the driver:
    Handle the network interface interrupts. */
    
@@ -1950,14 +1950,14 @@ static int use_dma;			/* These generate unused var warnings if ALLOW_DMA = 0 */
 static int dma;
 static int dmasize=16;			/* or 64 */
 
-MODULE_PARM(io, "i");
-MODULE_PARM(irq, "i");
-MODULE_PARM(debug, "i");
-MODULE_PARM(media, "c8");
-MODULE_PARM(duplex, "i");
-MODULE_PARM(dma , "i");
-MODULE_PARM(dmasize , "i");
-MODULE_PARM(use_dma , "i");
+module_param(io, int, 0);
+module_param(irq, int, 0);
+module_param(debug, int, 0);
+module_param_string(media, media, sizeof(media), 0);
+module_param(duplex, int, 0);
+module_param(dma , int, 0);
+module_param(dmasize , int, 0);
+module_param(use_dma , int, 0);
 MODULE_PARM_DESC(io, "cs89x0 I/O base address");
 MODULE_PARM_DESC(irq, "cs89x0 IRQ number");
 #if DEBUGGING
@@ -2094,7 +2094,7 @@ cleanup_module(void)
 	free_netdev(dev_cs89x0);
 }
 #endif /* MODULE */
-
+
 /*
  * Local variables:
  *  version-control: t

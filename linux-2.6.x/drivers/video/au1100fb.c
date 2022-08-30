@@ -57,7 +57,7 @@
 #include <video/fbcon-cfb8.h>
 #include <video/fbcon-cfb16.h>
 
-/* 
+/*
  * Sanity check. If this is a new Au1100 based board, search for
  * the PB1100 ifdefs to make sure you modify the code accordingly.
  */
@@ -90,7 +90,7 @@ struct au1100fb_info {
 
 struct au1100fb_par {
         struct fb_var_screeninfo var;
-	
+
 	int line_length;  // in bytes
 	int cmap_len;     // color-map length
 };
@@ -102,7 +102,7 @@ static struct display disp;
 
 int au1100fb_init(void);
 void au1100fb_setup(char *options, int *ints);
-static int au1100fb_mmap(struct fb_info *fb, struct file *file, 
+static int au1100fb_mmap(struct fb_info *fb, struct file *file,
 		struct vm_area_struct *vma);
 static int au1100_blank(int blank_mode, struct fb_info_gen *info);
 static int au1100fb_ioctl(struct inode *inode, struct file *file, u_int cmd,
@@ -125,7 +125,7 @@ static struct fb_ops au1100fb_ops = {
 static void au1100_detect(void)
 {
 	/*
-	 *  This function should detect the current video mode settings 
+	 *  This function should detect the current video mode settings
 	 *  and store it as the default video mode
 	 */
 
@@ -136,7 +136,7 @@ static void au1100_detect(void)
 
 }
 
-static int au1100_encode_fix(struct fb_fix_screeninfo *fix, 
+static int au1100_encode_fix(struct fb_fix_screeninfo *fix,
 		const void *_par, struct fb_info_gen *_info)
 {
         struct au1100fb_info *info = (struct au1100fb_info *) _info;
@@ -189,7 +189,7 @@ static void set_color_bitfields(struct fb_var_screeninfo *var)
 	var->transp.msb_right = 0;
 }
 
-static int au1100_decode_var(const struct fb_var_screeninfo *var, 
+static int au1100_decode_var(const struct fb_var_screeninfo *var,
 		void *_par, struct fb_info_gen *_info)
 {
 
@@ -211,7 +211,7 @@ static int au1100_decode_var(const struct fb_var_screeninfo *var,
 
 	memset(par, 0, sizeof(struct au1100fb_par));
 	par->var = *var;
-	
+
 	/* FIXME */
 	switch (var->bits_per_pixel) {
 		case 8:
@@ -231,7 +231,7 @@ static int au1100_decode_var(const struct fb_var_screeninfo *var,
 	return 0;
 }
 
-static int au1100_encode_var(struct fb_var_screeninfo *var, 
+static int au1100_encode_var(struct fb_var_screeninfo *var,
 		const void *par, struct fb_info_gen *_info)
 {
 
@@ -239,7 +239,7 @@ static int au1100_encode_var(struct fb_var_screeninfo *var,
 	return 0;
 }
 
-static void 
+static void
 au1100_get_par(void *_par, struct fb_info_gen *_info)
 {
 	*(struct au1100fb_par *)_par = current_par;
@@ -259,10 +259,10 @@ static int au1100_getcolreg(unsigned regno, unsigned *red, unsigned *green,
 
 	if (regno > 255)
 		return 1;
-   
-	*red    = i->palette[regno].red; 
-	*green  = i->palette[regno].green; 
-	*blue   = i->palette[regno].blue; 
+
+	*red    = i->palette[regno].red;
+	*green  = i->palette[regno].green;
+	*blue   = i->palette[regno].blue;
 	*transp = 0;
 
 	return 0;
@@ -281,14 +281,14 @@ static int au1100_setcolreg(unsigned regno, unsigned red, unsigned green,
 	i->palette[regno].red    = red;
 	i->palette[regno].green  = green;
 	i->palette[regno].blue   = blue;
-   
+
 	switch(p_lcd->bpp) {
 #ifdef FBCON_HAS_CFB8
 	case 8:
 		red >>= 10;
 		green >>= 10;
 		blue >>= 10;
-		p_lcd_reg->lcd_pallettebase[regno] = (blue&0x1f) | 
+		p_lcd_reg->lcd_pallettebase[regno] = (blue&0x1f) |
 			((green&0x3f)<<5) | ((red&0x1f)<<11);
 		break;
 #endif
@@ -317,7 +317,7 @@ static int  au1100_blank(int blank_mode, struct fb_info_gen *_info)
 		//printk("turn on panel\n");
 #ifdef CONFIG_MIPS_PB1100
 		p_lcd_reg->lcd_control |= LCD_CONTROL_GO;
-		au_writew(au_readw(PB1100_G_CONTROL) | p_lcd->mode_backlight, 
+		au_writew(au_readw(PB1100_G_CONTROL) | p_lcd->mode_backlight,
 			PB1100_G_CONTROL);
 #endif
 #ifdef CONFIG_MIPS_HYDROGEN3
@@ -335,13 +335,13 @@ static int  au1100_blank(int blank_mode, struct fb_info_gen *_info)
 		/* turn off panel */
 		//printk("turn off panel\n");
 #ifdef CONFIG_MIPS_PB1100
-		au_writew(au_readw(PB1100_G_CONTROL) & ~p_lcd->mode_backlight, 
+		au_writew(au_readw(PB1100_G_CONTROL) & ~p_lcd->mode_backlight,
 			PB1100_G_CONTROL);
 		p_lcd_reg->lcd_control &= ~LCD_CONTROL_GO;
 #endif
 		au_sync();
 		break;
-	default: 
+	default:
 		break;
 
 	}
@@ -388,7 +388,7 @@ au1100fb_mmap(struct fb_info *_fb,
 	if (vma->vm_pgoff > (~0UL >> PAGE_SHIFT)) {
 		return -EINVAL;
 	}
-    
+
 	start = fb_info.fb_phys & PAGE_MASK;
 	len = PAGE_ALIGN((start & ~PAGE_MASK) + fb_info.fb_size);
 
@@ -407,8 +407,8 @@ au1100fb_mmap(struct fb_info *_fb,
 
 	/* This is an IO map - tell maydump to skip this VMA */
 	vma->vm_flags |= VM_IO;
-    
-	if (io_remap_page_range(vma->vm_start, off,
+
+	if (io_remap_pfn_range(vma, vma->vm_start, off >> PAGE_SHIFT,
 				vma->vm_end - vma->vm_start,
 				vma->vm_page_prot)) {
 		return -EAGAIN;
@@ -432,21 +432,21 @@ static int au1100fb_ioctl(struct inode *inode, struct file *file, u_int cmd,
 }
 
 static struct fbgen_hwswitch au1100_switch = {
-	au1100_detect, 
-	au1100_encode_fix, 
-	au1100_decode_var, 
-	au1100_encode_var, 
-	au1100_get_par, 
-	au1100_set_par, 
-	au1100_getcolreg, 
-	au1100_setcolreg, 
-	au1100_pan_display, 
-	au1100_blank, 
+	au1100_detect,
+	au1100_encode_fix,
+	au1100_decode_var,
+	au1100_encode_var,
+	au1100_get_par,
+	au1100_set_par,
+	au1100_getcolreg,
+	au1100_setcolreg,
+	au1100_pan_display,
+	au1100_blank,
 	au1100_set_disp
 };
 
 
-int au1100_setmode(void) 
+int au1100_setmode(void)
 {
 	int words;
 
@@ -482,7 +482,7 @@ int au1100_setmode(void)
 
 	/* turn on panel */
 #ifdef CONFIG_MIPS_PB1100
-	au_writew(au_readw(PB1100_G_CONTROL) | p_lcd->mode_backlight, 
+	au_writew(au_readw(PB1100_G_CONTROL) | p_lcd->mode_backlight,
 			PB1100_G_CONTROL);
 #endif
 #ifdef CONFIG_MIPS_HYDROGEN3
@@ -512,16 +512,16 @@ int __init au1100fb_init(void)
 	{
 		case LCD_CONTROL_SM_0:
 		case LCD_CONTROL_SM_180:
-		p_lcd->xres = 
+		p_lcd->xres =
 			(p_lcd->mode_horztiming & LCD_HORZTIMING_PPL) + 1;
-		p_lcd->yres = 
+		p_lcd->yres =
 			(p_lcd->mode_verttiming & LCD_VERTTIMING_LPP) + 1;
 			break;
 		case LCD_CONTROL_SM_90:
 		case LCD_CONTROL_SM_270:
-		p_lcd->yres = 
+		p_lcd->yres =
 			(p_lcd->mode_horztiming & LCD_HORZTIMING_PPL) + 1;
-		p_lcd->xres = 
+		p_lcd->xres =
 			(p_lcd->mode_verttiming & LCD_VERTTIMING_LPP) + 1;
 			break;
 	}
@@ -529,16 +529,16 @@ int __init au1100fb_init(void)
 	/*
 	 * Panel dimensions x bpp must be divisible by 32
 	 */
-	if (((p_lcd->yres * p_lcd->bpp) % 32) != 0) 
+	if (((p_lcd->yres * p_lcd->bpp) % 32) != 0)
 		printk("VERT %% 32\n");
-	if (((p_lcd->xres * p_lcd->bpp) % 32) != 0) 
+	if (((p_lcd->xres * p_lcd->bpp) % 32) != 0)
 		printk("HORZ %% 32\n");
 
 	/*
 	 * Allocate LCD framebuffer from system memory
 	 */
 	fb_info.fb_size = (p_lcd->xres * p_lcd->yres * p_lcd->bpp) / 8;
-	
+
 	current_par.var.xres = p_lcd->xres;
 	current_par.var.xres_virtual = p_lcd->xres;
 	current_par.var.yres = p_lcd->yres;
@@ -548,7 +548,7 @@ int __init au1100fb_init(void)
 	/* FIX!!! only works for 8/16 bpp */
 	current_par.line_length = p_lcd->xres * p_lcd->bpp / 8; /* in bytes */
 	fb_info.fb_virt_start = (unsigned long )
-		__get_free_pages(GFP_ATOMIC | GFP_DMA, 
+		__get_free_pages(GFP_ATOMIC | GFP_DMA,
 				get_order(fb_info.fb_size + 0x1000));
 	if (!fb_info.fb_virt_start) {
 		printk("Unable to allocate fb memory\n");
@@ -561,7 +561,7 @@ int __init au1100fb_init(void)
 	 * since we'll be remapping normal memory.
 	 */
 	for (page = fb_info.fb_virt_start;
-	     page < PAGE_ALIGN(fb_info.fb_virt_start + fb_info.fb_size); 
+	     page < PAGE_ALIGN(fb_info.fb_virt_start + fb_info.fb_size);
 	     page += PAGE_SIZE) {
 		SetPageReserved(virt_to_page(page));
 	}
@@ -570,7 +570,7 @@ int __init au1100fb_init(void)
 
 	/* set freqctrl now to allow more time to stabilize */
 	/* zero-out out LCD bits */
-	sys_clksrc = au_readl(SYS_CLKSRC) & ~0x000003e0; 
+	sys_clksrc = au_readl(SYS_CLKSRC) & ~0x000003e0;
 	sys_clksrc |= p_lcd->mode_toyclksrc;
 	au_writel(sys_clksrc, SYS_CLKSRC);
 
@@ -598,8 +598,8 @@ int __init au1100fb_init(void)
 	fbgen_install_cmap(0, &fb_info.gen);
 	if (register_framebuffer(&fb_info.gen.info) < 0)
 		return -EINVAL;
-	printk(KERN_INFO "fb%d: %s frame buffer device\n", 
-			GET_FB_IDX(fb_info.gen.info.node), 
+	printk(KERN_INFO "fb%d: %s frame buffer device\n",
+			GET_FB_IDX(fb_info.gen.info.node),
 			fb_info.gen.info.modename);
 
 	return 0;
@@ -618,7 +618,7 @@ void au1100fb_setup(char *options, int *ints)
 	int i;
 	int num_panels = sizeof(panels)/sizeof(struct known_lcd_panels);
 
-    
+
 	if (!options || !*options)
 		return;
 
@@ -640,7 +640,7 @@ void au1100fb_setup(char *options, int *ints)
 #endif
 			/* Get the panel name, everything else if fixed */
 			for (i=0; i<num_panels; i++) {
-				if (!strncmp(this_opt+6, panels[i].panel_name, 
+				if (!strncmp(this_opt+6, panels[i].panel_name,
 							strlen(this_opt))) {
 					my_lcd_index = i;
 					break;
@@ -651,7 +651,7 @@ void au1100fb_setup(char *options, int *ints)
 			printk("nohwcursor\n");
 			fb_info.nohwcursor = 1;
 		}
-	} 
+	}
 
 	printk("au1100fb: Panel %d %s\n", my_lcd_index,
 		panels[my_lcd_index].panel_name);

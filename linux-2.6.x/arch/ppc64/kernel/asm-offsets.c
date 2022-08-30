@@ -22,19 +22,22 @@
 #include <linux/types.h>
 #include <linux/mman.h>
 #include <linux/mm.h>
+#include <linux/time.h>
 #include <linux/hardirq.h>
 #include <asm/io.h>
 #include <asm/page.h>
 #include <asm/pgtable.h>
 #include <asm/processor.h>
 
-#include <asm/naca.h>
 #include <asm/paca.h>
-#include <asm/iSeries/ItLpPaca.h>
+#include <asm/lppaca.h>
 #include <asm/iSeries/ItLpQueue.h>
 #include <asm/iSeries/HvLpEvent.h>
 #include <asm/rtas.h>
 #include <asm/cputable.h>
+#include <asm/cache.h>
+#include <asm/systemcfg.h>
+#include <asm/compat.h>
 
 #define DEFINE(sym, val) \
 	asm volatile("\n->" #sym " %0 " #val : : "i" (val))
@@ -67,14 +70,12 @@ int main(void)
 #endif /* CONFIG_ALTIVEC */
 	DEFINE(MM, offsetof(struct task_struct, mm));
 
-	/* naca */
-        DEFINE(PACA, offsetof(struct naca_struct, paca));
-	DEFINE(DCACHEL1LINESIZE, offsetof(struct systemcfg, dCacheL1LineSize));
-        DEFINE(DCACHEL1LOGLINESIZE, offsetof(struct naca_struct, dCacheL1LogLineSize));
-        DEFINE(DCACHEL1LINESPERPAGE, offsetof(struct naca_struct, dCacheL1LinesPerPage));
-        DEFINE(ICACHEL1LINESIZE, offsetof(struct systemcfg, iCacheL1LineSize));
-        DEFINE(ICACHEL1LOGLINESIZE, offsetof(struct naca_struct, iCacheL1LogLineSize));
-        DEFINE(ICACHEL1LINESPERPAGE, offsetof(struct naca_struct, iCacheL1LinesPerPage));
+	DEFINE(DCACHEL1LINESIZE, offsetof(struct ppc64_caches, dline_size));
+	DEFINE(DCACHEL1LOGLINESIZE, offsetof(struct ppc64_caches, log_dline_size));
+	DEFINE(DCACHEL1LINESPERPAGE, offsetof(struct ppc64_caches, dlines_per_page));
+	DEFINE(ICACHEL1LINESIZE, offsetof(struct ppc64_caches, iline_size));
+	DEFINE(ICACHEL1LOGLINESIZE, offsetof(struct ppc64_caches, log_iline_size));
+	DEFINE(ICACHEL1LINESPERPAGE, offsetof(struct ppc64_caches, ilines_per_page));
 	DEFINE(PLATFORM, offsetof(struct systemcfg, platform));
 
 	/* paca */
@@ -104,10 +105,10 @@ int main(void)
         DEFINE(PACAEMERGSP, offsetof(struct paca_struct, emergency_sp));
 	DEFINE(PACALPPACA, offsetof(struct paca_struct, lppaca));
 	DEFINE(PACAHWCPUID, offsetof(struct paca_struct, hw_cpu_id));
-        DEFINE(LPPACASRR0, offsetof(struct ItLpPaca, xSavedSrr0));
-        DEFINE(LPPACASRR1, offsetof(struct ItLpPaca, xSavedSrr1));
-	DEFINE(LPPACAANYINT, offsetof(struct ItLpPaca, xIntDword.xAnyInt));
-	DEFINE(LPPACADECRINT, offsetof(struct ItLpPaca, xIntDword.xFields.xDecrInt));
+	DEFINE(LPPACASRR0, offsetof(struct lppaca, saved_srr0));
+	DEFINE(LPPACASRR1, offsetof(struct lppaca, saved_srr1));
+	DEFINE(LPPACAANYINT, offsetof(struct lppaca, int_dword.any_int));
+	DEFINE(LPPACADECRINT, offsetof(struct lppaca, int_dword.fields.decr_int));
 
 	/* RTAS */
 	DEFINE(RTASBASE, offsetof(struct rtas_t, base));
@@ -168,6 +169,25 @@ int main(void)
 	DEFINE(CPU_SPEC_PVR_VALUE, offsetof(struct cpu_spec, pvr_value));
 	DEFINE(CPU_SPEC_FEATURES, offsetof(struct cpu_spec, cpu_features));
 	DEFINE(CPU_SPEC_SETUP, offsetof(struct cpu_spec, cpu_setup));
+
+	/* systemcfg offsets for use by vdso */
+	DEFINE(CFG_TB_ORIG_STAMP, offsetof(struct systemcfg, tb_orig_stamp));
+	DEFINE(CFG_TB_TICKS_PER_SEC, offsetof(struct systemcfg, tb_ticks_per_sec));
+	DEFINE(CFG_TB_TO_XS, offsetof(struct systemcfg, tb_to_xs));
+	DEFINE(CFG_STAMP_XSEC, offsetof(struct systemcfg, stamp_xsec));
+	DEFINE(CFG_TB_UPDATE_COUNT, offsetof(struct systemcfg, tb_update_count));
+	DEFINE(CFG_TZ_MINUTEWEST, offsetof(struct systemcfg, tz_minuteswest));
+	DEFINE(CFG_TZ_DSTTIME, offsetof(struct systemcfg, tz_dsttime));
+	DEFINE(CFG_SYSCALL_MAP32, offsetof(struct systemcfg, syscall_map_32));
+	DEFINE(CFG_SYSCALL_MAP64, offsetof(struct systemcfg, syscall_map_64));
+
+	/* timeval/timezone offsets for use by vdso */
+	DEFINE(TVAL64_TV_SEC, offsetof(struct timeval, tv_sec));
+	DEFINE(TVAL64_TV_USEC, offsetof(struct timeval, tv_usec));
+	DEFINE(TVAL32_TV_SEC, offsetof(struct compat_timeval, tv_sec));
+	DEFINE(TVAL32_TV_USEC, offsetof(struct compat_timeval, tv_usec));
+	DEFINE(TZONE_TZ_MINWEST, offsetof(struct timezone, tz_minuteswest));
+	DEFINE(TZONE_TZ_DSTTIME, offsetof(struct timezone, tz_dsttime));
 
 	return 0;
 }

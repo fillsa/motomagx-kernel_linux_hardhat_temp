@@ -43,6 +43,9 @@ typedef int (*kprobe_fault_handler_t) (struct kprobe *, struct pt_regs *,
 struct kprobe {
 	struct hlist_node hlist;
 
+	/* list of kprobes for multi-handler support */
+	struct list_head list;
+
 	/* location of the probe point */
 	kprobe_opcode_t *addr;
 
@@ -95,6 +98,7 @@ static inline int kprobe_running(void)
 }
 
 extern int arch_prepare_kprobe(struct kprobe *p);
+extern void arch_copy_kprobe(struct kprobe *p);
 extern void arch_remove_kprobe(struct kprobe *p);
 extern void show_registers(struct pt_regs *regs);
 

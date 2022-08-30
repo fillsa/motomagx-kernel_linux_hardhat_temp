@@ -144,7 +144,9 @@ static void unhandled_fault(unsigned long address, struct task_struct *tsk,
 		       "at virtual address %016lx\n", (unsigned long)address);
 	}
 	printk(KERN_ALERT "tsk->{mm,active_mm}->context = %016lx\n",
-	       (tsk->mm ? tsk->mm->context : tsk->active_mm->context));
+	       (tsk->mm ?
+		CTX_HWBITS(tsk->mm->context) :
+		CTX_HWBITS(tsk->active_mm->context)));
 	printk(KERN_ALERT "tsk->{mm,active_mm}->pgd = %016lx\n",
 	       (tsk->mm ? (unsigned long) tsk->mm->pgd :
 		          (unsigned long) tsk->active_mm->pgd));
@@ -175,6 +177,7 @@ static void bad_kernel_pc(struct pt_regs *regs)
 static unsigned int get_user_insn(unsigned long tpc)
 {
 	pgd_t *pgdp = pgd_offset(current->mm, tpc);
+	pud_t *pudp;
 	pmd_t *pmdp;
 	pte_t *ptep, pte;
 	unsigned long pa;
@@ -183,7 +186,10 @@ static unsigned int get_user_insn(unsigned long tpc)
 
 	if (pgd_none(*pgdp))
 		goto outret;
-	pmdp = pmd_offset(pgdp, tpc);
+	pudp = pud_offset(pgdp, tpc);
+	if (pud_none(*pudp))
+		goto outret;
+	pmdp = pmd_offset(pudp, tpc);
 	if (pmd_none(*pmdp))
 		goto outret;
 

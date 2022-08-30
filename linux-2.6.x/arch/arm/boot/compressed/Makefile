@@ -11,6 +11,7 @@ FONTC	= drivers/video/console/font_acorn_8x8.c
 CFLAGS         :=$(CFLAGS:-finstrument-functions=)
 
 FONT = $(addprefix ../../../../drivers/video/console/, font_acorn_8x8.o)
+
 ifeq ($(CONFIG_GCOV_ALL), y)
 CFLAGS := $(CFLAGS_NOGCOV)
 endif
@@ -50,8 +51,12 @@ ifeq ($(CONFIG_CPU_XSCALE),y)
 OBJS		+= head-xscale.o
 endif
 
+ifeq ($(CONFIG_PXA_SHARPSL),y)
+OBJS		+= head-sharpsl.o
+endif
+
 ifeq ($(CONFIG_DEBUG_ICEDCC),y)
-OBJS		+= ice-dcc.o
+OBJS            += ice-dcc.o
 endif
 
 ifeq ($(CONFIG_MACH_OMAP_PERSEUS2),y)

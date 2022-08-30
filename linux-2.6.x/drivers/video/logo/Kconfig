@@ -22,4 +22,5 @@ config LOGO_LINUX_CLUT224
 	bool "Standard 224-color Linux logo"
 	depends on LOGO
 	default y
+
 endmenu

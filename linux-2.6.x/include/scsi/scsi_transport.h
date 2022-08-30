@@ -20,25 +20,13 @@
 #ifndef SCSI_TRANSPORT_H
 #define SCSI_TRANSPORT_H
 
+#include <linux/transport_class.h>
+
 struct scsi_transport_template {
-	/* The NULL terminated list of transport attributes
-	 * that should be exported.
-	 */
-	struct class_device_attribute **device_attrs;
-	struct class_device_attribute **target_attrs;
-	struct class_device_attribute **host_attrs;
-
-
-	/* The transport class that the device is in */
-	struct class *device_class;
-	struct class *target_class;
-	struct class *host_class;
-
-	/* Constructor functions */
-	int (*device_setup)(struct scsi_device *);
-	int (*device_configure)(struct scsi_device *);
-	int (*target_setup)(struct scsi_target *);
-	int (*host_setup)(struct Scsi_Host *);
+	/* the attribute containers */
+	struct transport_container host_attrs;
+	struct transport_container target_attrs;
+	struct transport_container device_attrs;
 
 	/* The size of the specific transport attribute structure (a
 	 * space of this size will be left at the end of the
@@ -46,6 +34,15 @@ struct scsi_transport_template {
 	int	device_size;
 	int	target_size;
 	int	host_size;
+
+	/*
+	 * True if the transport wants to use a host-based work-queue
+	 */
+	unsigned int create_work_queue : 1;
 };
+
+#define transport_class_to_shost(tc) \
+	dev_to_shost((tc)->dev)
+
 
 #endif /* SCSI_TRANSPORT_H */

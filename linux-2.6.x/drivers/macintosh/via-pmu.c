@@ -43,8 +43,10 @@
 #include <linux/init.h>
 #include <linux/interrupt.h>
 #include <linux/device.h>
+#include <linux/sysdev.h>
 #include <linux/suspend.h>
 #include <linux/syscalls.h>
+#include <linux/cpu.h>
 #include <asm/prom.h>
 #include <asm/machdep.h>
 #include <asm/io.h>
@@ -152,7 +154,6 @@ static int drop_interrupts;
 #ifdef CONFIG_PMAC_PBOOK
 static int option_lid_wakeup = 1;
 static int sleep_in_progress;
-static int can_sleep;
 #endif /* CONFIG_PMAC_PBOOK */
 static unsigned long async_req_locks;
 static unsigned int pmu_irq_stats[11];
@@ -367,9 +368,7 @@ find_via_pmu(void)
 	printk(KERN_INFO "PMU driver %d initialized for %s, firmware: %02x\n",
 	       PMU_DRIVER_VERSION, pbook_type[pmu_kind], pmu_version);
 	       
-#ifndef CONFIG_PPC64
 	sys_ctrler = SYS_CTRLER_PMU;
-#endif
 	
 	return 1;
 }
@@ -406,8 +405,6 @@ static int __init via_pmu_start(void)
 	bright_req_2.complete = 1;
 #ifdef CONFIG_PMAC_PBOOK
 	batt_req.complete = 1;
-	if (pmac_call_feature(PMAC_FTR_SLEEP_STATE,NULL,0,-1) >= 0)
-		can_sleep = 1;
 #endif
 
 	if (request_irq(vias->intrs[0].line, via_pmu_interrupt, 0, "VIA-PMU",
@@ -418,7 +415,7 @@ static int __init via_pmu_start(void)
 	}
 
 	if (pmu_kind == PMU_KEYLARGO_BASED && gpio_irq != -1) {
-		if (request_irq(gpio_irq, gpio1_interrupt, 0, "GPIO1/ADB", (void *)0))
+		if (request_irq(gpio_irq, gpio1_interrupt, 0, "GPIO1 ADB", (void *)0))
 			printk(KERN_ERR "pmu: can't get irq %d (GPIO1)\n", gpio_irq);
 		gpio_irq_enabled = 1;
 	}
@@ -885,7 +882,8 @@ proc_read_options(char *page, char **start, off_t off,
 	char *p = page;
 
 #ifdef CONFIG_PMAC_PBOOK
-	if (pmu_kind == PMU_KEYLARGO_BASED && can_sleep)
+	if (pmu_kind == PMU_KEYLARGO_BASED &&
+	    pmac_call_feature(PMAC_FTR_SLEEP_STATE,NULL,0,-1) >= 0)
 		p += sprintf(p, "lid_wakeup=%d\n", option_lid_wakeup);
 #endif /* CONFIG_PMAC_PBOOK */
 	if (pmu_kind == PMU_KEYLARGO_BASED)
@@ -925,7 +923,8 @@ proc_write_options(struct file *file, const char __user *buffer,
 	while(*val == ' ')
 		val++;
 #ifdef CONFIG_PMAC_PBOOK
-	if (pmu_kind == PMU_KEYLARGO_BASED && can_sleep)
+	if (pmu_kind == PMU_KEYLARGO_BASED &&
+	    pmac_call_feature(PMAC_FTR_SLEEP_STATE,NULL,0,-1) >= 0)
 		if (!strcmp(label, "lid_wakeup"))
 			option_lid_wakeup = ((*val) == '1');
 #endif /* CONFIG_PMAC_PBOOK */
@@ -1745,6 +1744,9 @@ pmu_restart(void)
 {
 	struct adb_request req;
 
+	if (via == NULL)
+		return;
+
 	local_irq_disable();
 
 	drop_interrupts = 1;
@@ -1766,6 +1768,9 @@ void __pmac
 pmu_shutdown(void)
 {
 	struct adb_request req;
+
+	if (via == NULL)
+		return;
 
 	local_irq_disable();
 
@@ -2313,7 +2318,7 @@ static int __pmac
 pmac_suspend_devices(void)
 {
 	int ret;
-	
+
 	pm_prepare_console();
 	
 	/* Notify old-style device drivers & userland */
@@ -2326,7 +2331,7 @@ pmac_suspend_devices(void)
 	/* Sync the disks. */
 	/* XXX It would be nice to have some way to ensure that
 	 * nobody is dirtying any new buffers while we wait. That
-	 * could be acheived using the refrigerator for processes
+	 * could be achieved using the refrigerator for processes
 	 * that swsusp uses
 	 */
 	sys_sync();
@@ -2339,15 +2344,19 @@ pmac_suspend_devices(void)
 	}
 
 	/* Send suspend call to devices, hold the device core's dpm_sem */
-	ret = device_suspend(PM_SUSPEND_MEM);
+	ret = device_suspend(PMSG_SUSPEND);
 	if (ret) {
-		printk(KERN_ERR "Driver sleep failed\n");
 		broadcast_wake();
+		printk(KERN_ERR "Driver sleep failed\n");
 		return -EBUSY;
 	}
-	
+
+	/* Disable clock spreading on some machines */
+	pmac_tweak_clock_spreading(0);
+
+	/* Stop preemption */
 	preempt_disable();
-	
+
 	/* Make sure the decrementer won't interrupt us */
 	asm volatile("mtdec %0" : : "r" (0x7fffffff));
 	/* Make sure any pending DEC interrupt occurring while we did
@@ -2366,7 +2375,7 @@ pmac_suspend_devices(void)
 	 * use this but still... This will take care of sysdev's as well, so
 	 * we exit from here with local irqs disabled and PIC off.
 	 */
-	ret = device_power_down(PM_SUSPEND_MEM);
+	ret = device_power_down(PMSG_SUSPEND);
 	if (ret) {
 		wakeup_decrementer();
 		local_irq_enable();
@@ -2379,7 +2388,6 @@ pmac_suspend_devices(void)
 
 	/* Wait for completion of async backlight requests */
 	while (!bright_req_1.complete || !bright_req_2.complete ||
-
 			!batt_req.complete)
 		pmu_poll();
 
@@ -2389,7 +2397,7 @@ pmac_suspend_devices(void)
 	enable_kernel_fp();
 
 #ifdef CONFIG_ALTIVEC
-	if (cur_cpu_spec[0]->cpu_features & CPU_FTR_ALTIVEC)
+	if (cpu_has_feature(CPU_FTR_ALTIVEC))
 		enable_kernel_altivec();
 #endif /* CONFIG_ALTIVEC */
 
@@ -2404,8 +2412,6 @@ pmac_wakeup_devices(void)
 	/* Power back up system devices (including the PIC) */
 	device_power_up();
 
-	pmu_blink(1);
-
 	/* Force a poll of ADB interrupts */
 	adb_int_pending = 1;
 	via_pmu_interrupt(0, NULL, NULL);
@@ -2415,10 +2421,11 @@ pmac_wakeup_devices(void)
 
 	/* Re-enable local CPU interrupts */
 	local_irq_enable();
-
-	pmu_blink(1);
-
+	mdelay(10);
 	preempt_enable();
+
+	/* Re-enable clock spreading on some machines */
+	pmac_tweak_clock_spreading(1);
 
 	/* Resume devices */
 	device_resume();
@@ -2464,8 +2471,6 @@ powerbook_sleep_grackle(void)
 
 	/* For 750, save backside cache setting and disable it */
 	save_l2cr = _get_L2CR();	/* (returns -1 if not available) */
-	if (save_l2cr != 0xffffffff && (save_l2cr & L2CR_L2E) != 0)
-		_set_L2CR(save_l2cr & 0x7fffffff);
 
 	if (!__fake_sleep) {
 		/* Ask the PMU to put us to sleep */
@@ -2530,17 +2535,24 @@ powerbook_sleep_Core99(void)
 	struct adb_request req;
 	int ret;
 	
-	if (!can_sleep) {
+	if (pmac_call_feature(PMAC_FTR_SLEEP_STATE,NULL,0,-1) < 0) {
 		printk(KERN_ERR "Sleep mode not supported on this machine\n");
 		return -ENOSYS;
 	}
-	
+
+	if (num_online_cpus() > 1 || cpu_is_offline(0))
+		return -EAGAIN;
+
 	ret = pmac_suspend_devices();
 	if (ret) {
 		printk(KERN_ERR "Sleep rejected by devices\n");
 		return ret;
 	}
-	
+
+	/* Stop environment and ADB interrupts */
+	pmu_request(&req, NULL, 2, PMU_SET_INTR_MASK, 0);
+	pmu_wait_complete(&req);
+
 	/* Tell PMU what events will wake us up */
 	pmu_request(&req, NULL, 4, PMU_POWER_EVENTS, PMU_PWR_CLR_WAKEUP_EVENTS,
 		0xff, 0xff);
@@ -2550,16 +2562,9 @@ powerbook_sleep_Core99(void)
 		(option_lid_wakeup ? PMU_PWR_WAKEUP_LID_OPEN : 0));
 	pmu_wait_complete(&req);
 
-	/* Save & disable L2 and L3 caches*/
+	/* Save the state of the L2 and L3 caches */
 	save_l3cr = _get_L3CR();	/* (returns -1 if not available) */
 	save_l2cr = _get_L2CR();	/* (returns -1 if not available) */
-	if (save_l3cr != 0xffffffff && (save_l3cr & L3CR_L3E) != 0)
-		_set_L3CR(save_l3cr & 0x7fffffff);
-	if (save_l2cr != 0xffffffff && (save_l2cr & L2CR_L2E) != 0)
-		_set_L2CR(save_l2cr & 0x7fffffff);
-
-	/* Save the state of PCI config space for some slots */
-	//pbook_pci_save();
 
 	if (!__fake_sleep) {
 		/* Ask the PMU to put us to sleep */
@@ -2574,7 +2579,7 @@ powerbook_sleep_Core99(void)
 	 * talk to the PMU after this, so I moved it to _after_ sending the
 	 * sleep command to it. Still need to be checked.
 	 */
-	pmac_call_feature(PMAC_FTR_SLEEP_STATE,NULL,0,1);
+	pmac_call_feature(PMAC_FTR_SLEEP_STATE, NULL, 0, 1);
 
 	/* Call low-level ASM sleep handler */
 	if (__fake_sleep)
@@ -2583,18 +2588,16 @@ powerbook_sleep_Core99(void)
 		low_sleep_handler();
 
 	/* Restore Apple core ASICs state */
-	pmac_call_feature(PMAC_FTR_SLEEP_STATE,NULL,0,0);
+	pmac_call_feature(PMAC_FTR_SLEEP_STATE, NULL, 0, 0);
 
 	/* Restore VIA */
 	restore_via_state();
 
-	/* Restore PCI config space. This should be overridable by PCI device
-	 * drivers as some of them may need special restore code. That's yet
-	 * another issue that should be handled by the common code properly,
-	 * maybe one day ?
-	 */
-	/* Don't restore PCI for now, it crashes. Maybe unnecessary on pbook */
-	//pbook_pci_restore();
+	/* tweak LPJ before cpufreq is there */
+	loops_per_jiffy *= 2;
+
+	/* Restore video */
+	pmac_call_early_video_resume();
 
 	/* Restore L2 cache */
 	if (save_l2cr != 0xffffffff && (save_l2cr & L2CR_L2E) != 0)
@@ -2613,7 +2616,8 @@ powerbook_sleep_Core99(void)
 	pmu_request(&req, NULL, 2, PMU_SET_INTR_MASK, pmu_intr_mask);
 	pmu_wait_complete(&req);
 
-	pmu_blink(1);
+	/* Restore LPJ, cpufreq will adjust the cpu frequency */
+	loops_per_jiffy /= 2;
 
 	pmac_wakeup_devices();
 
@@ -2781,13 +2785,12 @@ pmu_read(struct file *file, char __user *buf,
 	struct pmu_private *pp = file->private_data;
 	DECLARE_WAITQUEUE(wait, current);
 	unsigned long flags;
-	int ret;
+	int ret = 0;
 
 	if (count < 1 || pp == 0)
 		return -EINVAL;
-	ret = verify_area(VERIFY_WRITE, buf, count);
-	if (ret)
-		return ret;
+	if (!access_ok(VERIFY_WRITE, buf, count))
+		return -EFAULT;
 
 	spin_lock_irqsave(&pp->lock, flags);
 	add_wait_queue(&pp->wait, &wait);
@@ -2909,7 +2912,10 @@ pmu_ioctl(struct inode * inode, struct file *filp,
 		sleep_in_progress = 0;
 		return error;
 	case PMU_IOC_CAN_SLEEP:
-		return put_user((u32)can_sleep, argp);
+		if (pmac_call_feature(PMAC_FTR_SLEEP_STATE,NULL,0,-1) < 0)
+			return put_user(0, argp);
+		else
+			return put_user(1, argp);
 
 #ifdef CONFIG_PMAC_BACKLIGHT
 	/* Backlight should have its own device or go via
@@ -3047,6 +3053,88 @@ pmu_polled_request(struct adb_request *req)
 	return 0;
 }
 #endif /* DEBUG_SLEEP */
+
+
+/* FIXME: This is a temporary set of callbacks to enable us
+ * to do suspend-to-disk.
+ */
+
+#ifdef CONFIG_PM
+
+static int pmu_sys_suspended = 0;
+
+static int pmu_sys_suspend(struct sys_device *sysdev, pm_message_t state)
+{
+	if (state != PM_SUSPEND_DISK || pmu_sys_suspended)
+		return 0;
+
+	/* Suspend PMU event interrupts */
+	pmu_suspend();
+
+	pmu_sys_suspended = 1;
+	return 0;
+}
+
+static int pmu_sys_resume(struct sys_device *sysdev)
+{
+	struct adb_request req;
+
+	if (!pmu_sys_suspended)
+		return 0;
+
+	/* Tell PMU we are ready */
+	pmu_request(&req, NULL, 2, PMU_SYSTEM_READY, 2);
+	pmu_wait_complete(&req);
+
+	/* Resume PMU event interrupts */
+	pmu_resume();
+
+	pmu_sys_suspended = 0;
+
+	return 0;
+}
+
+#endif /* CONFIG_PM */
+
+static struct sysdev_class pmu_sysclass = {
+	set_kset_name("pmu"),
+};
+
+static struct sys_device device_pmu = {
+	.id		= 0,
+	.cls		= &pmu_sysclass,
+};
+
+static struct sysdev_driver driver_pmu = {
+#ifdef CONFIG_PM
+	.suspend	= &pmu_sys_suspend,
+	.resume		= &pmu_sys_resume,
+#endif /* CONFIG_PM */
+};
+
+static int __init init_pmu_sysfs(void)
+{
+	int rc;
+
+	rc = sysdev_class_register(&pmu_sysclass);
+	if (rc) {
+		printk(KERN_ERR "Failed registering PMU sys class\n");
+		return -ENODEV;
+	}
+	rc = sysdev_register(&device_pmu);
+	if (rc) {
+		printk(KERN_ERR "Failed registering PMU sys device\n");
+		return -ENODEV;
+	}
+	rc = sysdev_driver_register(&pmu_sysclass, &driver_pmu);
+	if (rc) {
+		printk(KERN_ERR "Failed registering PMU sys driver\n");
+		return -ENODEV;
+	}
+	return 0;
+}
+
+subsys_initcall(init_pmu_sysfs);
 
 EXPORT_SYMBOL(pmu_request);
 EXPORT_SYMBOL(pmu_poll);

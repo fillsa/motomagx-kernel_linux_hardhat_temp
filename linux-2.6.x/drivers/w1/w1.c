@@ -30,7 +30,6 @@
 #include <linux/device.h>
 #include <linux/slab.h>
 #include <linux/sched.h>
-#include <linux/suspend.h>
 
 #include <asm/atomic.h>
 

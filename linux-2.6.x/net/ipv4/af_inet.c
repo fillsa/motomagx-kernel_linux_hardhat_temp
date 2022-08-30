@@ -7,7 +7,7 @@
  *
  * Version:	$Id: af_inet.c,v 1.137 2002/02/01 22:01:03 davem Exp $
  *
- * Authors:	Ross Biro, <bir7@leland.Stanford.Edu>
+ * Authors:	Ross Biro
  *		Fred N. van Kempen, <waltje@uWalt.NL.Mugnet.ORG>
  *		Florian La Roche, <flla@stud.uni-sb.de>
  *		Alan Cox, <A.Cox@swansea.ac.uk>
@@ -73,7 +73,6 @@
 #include <linux/socket.h>
 #include <linux/in.h>
 #include <linux/kernel.h>
-#include <linux/major.h>
 #include <linux/module.h>
 #include <linux/sched.h>
 #include <linux/timer.h>
@@ -131,7 +130,7 @@ static DEFINE_SPINLOCK(inetsw_lock);
 
 void inet_sock_destruct(struct sock *sk)
 {
-	struct inet_opt *inet = inet_sk(sk);
+	struct inet_sock *inet = inet_sk(sk);
 
 	__skb_queue_purge(&sk->sk_receive_queue);
 	__skb_queue_purge(&sk->sk_error_queue);
@@ -173,7 +172,7 @@ void inet_sock_destruct(struct sock *sk)
 
 static int inet_autobind(struct sock *sk)
 {
-	struct inet_opt *inet;
+	struct inet_sock *inet;
 	/* We may need to bind the socket. */
 	lock_sock(sk);
 	inet = inet_sk(sk);
@@ -232,7 +231,7 @@ static int inet_create(struct socket *sock, int protocol)
 	struct sock *sk;
 	struct list_head *p;
 	struct inet_protosw *answer;
-	struct inet_opt *inet;
+	struct inet_sock *inet;
 	struct proto *answer_prot;
 	unsigned char answer_flags;
 	char answer_no_check;
@@ -281,14 +280,11 @@ static int inet_create(struct socket *sock, int protocol)
 	BUG_TRAP(answer_prot->slab != NULL);
 
 	err = -ENOBUFS;
-	sk = sk_alloc(PF_INET, GFP_KERNEL,
-		      answer_prot->slab_obj_size,
-		      answer_prot->slab);
+	sk = sk_alloc(PF_INET, GFP_KERNEL, answer_prot, 1);
 	if (sk == NULL)
 		goto out;
 
 	err = 0;
-	sk->sk_prot = answer_prot;
 	sk->sk_no_check = answer_no_check;
 	if (INET_PROTOSW_REUSE & answer_flags)
 		sk->sk_reuse = 1;
@@ -309,7 +305,6 @@ static int inet_create(struct socket *sock, int protocol)
 	inet->id = 0;
 
 	sock_init_data(sock, sk);
-	sk_set_owner(sk, sk->sk_prot->owner);
 
 	sk->sk_destruct	   = inet_sock_destruct;
 	sk->sk_family	   = PF_INET;
@@ -389,7 +384,7 @@ int inet_bind(struct socket *sock, struct sockaddr *uaddr, int addr_len)
 {
 	struct sockaddr_in *addr = (struct sockaddr_in *)uaddr;
 	struct sock *sk = sock->sk;
-	struct inet_opt *inet = inet_sk(sk);
+	struct inet_sock *inet = inet_sk(sk);
 	unsigned short snum;
 	int chk_addr_ret;
 	int err;
@@ -623,7 +618,7 @@ int inet_getname(struct socket *sock, struct sockaddr *uaddr,
 			int *uaddr_len, int peer)
 {
 	struct sock *sk		= sock->sk;
-	struct inet_opt *inet	= inet_sk(sk);
+	struct inet_sock *inet	= inet_sk(sk);
 	struct sockaddr_in *sin	= (struct sockaddr_in *)uaddr;
 
 	sin->sin_family = AF_INET;
@@ -659,7 +654,7 @@ int inet_sendmsg(struct kiocb *iocb, struct socket *sock, struct msghdr *msg,
 }
 
 
-ssize_t inet_sendpage(struct socket *sock, struct page *page, int offset, size_t size, int flags)
+static ssize_t inet_sendpage(struct socket *sock, struct page *page, int offset, size_t size, int flags)
 {
 	struct sock *sk = sock->sk;
 
@@ -1011,7 +1006,7 @@ static int __init init_ipv4_mibs(void)
 	return 0;
 }
 
-int ipv4_proc_init(void);
+static int ipv4_proc_init(void);
 extern void ipfrag_init(void);
 
 static int __init inet_init(void)
@@ -1026,21 +1021,17 @@ static int __init inet_init(void)
 		goto out;
 	}
 
-	rc = sk_alloc_slab(&tcp_prot, "tcp_sock");
-	if (rc) {
-		sk_alloc_slab_error(&tcp_prot);
+	rc = proto_register(&tcp_prot, 1);
+	if (rc)
 		goto out;
-	}
-	rc = sk_alloc_slab(&udp_prot, "udp_sock");
-	if (rc) {
-		sk_alloc_slab_error(&udp_prot);
-		goto out_tcp_free_slab;
-	}
-	rc = sk_alloc_slab(&raw_prot, "raw_sock");
-	if (rc) {
-		sk_alloc_slab_error(&raw_prot);
-		goto out_udp_free_slab;
-	}
+
+	rc = proto_register(&udp_prot, 1);
+	if (rc)
+		goto out_unregister_tcp_proto;
+
+	rc = proto_register(&raw_prot, 1);
+	if (rc)
+		goto out_unregister_udp_proto;
 
 	/*
 	 *	Tell SOCKET that we are alive... 
@@ -1114,10 +1105,10 @@ static int __init inet_init(void)
 	rc = 0;
 out:
 	return rc;
-out_tcp_free_slab:
-	sk_free_slab(&tcp_prot);
-out_udp_free_slab:
-	sk_free_slab(&udp_prot);
+out_unregister_tcp_proto:
+	proto_unregister(&tcp_prot);
+out_unregister_udp_proto:
+	proto_unregister(&udp_prot);
 	goto out;
 }
 
@@ -1136,7 +1127,7 @@ extern void tcp4_proc_exit(void);
 extern int  udp4_proc_init(void);
 extern void udp4_proc_exit(void);
 
-int __init ipv4_proc_init(void)
+static int __init ipv4_proc_init(void)
 {
 	int rc = 0;
 
@@ -1166,7 +1157,7 @@ out_raw:
 }
 
 #else /* CONFIG_PROC_FS */
-int __init ipv4_proc_init(void)
+static int __init ipv4_proc_init(void)
 {
 	return 0;
 }
@@ -1190,6 +1181,7 @@ EXPORT_SYMBOL(inet_stream_connect);
 EXPORT_SYMBOL(inet_stream_ops);
 EXPORT_SYMBOL(inet_unregister_protosw);
 EXPORT_SYMBOL(net_statistics);
+EXPORT_SYMBOL(sysctl_ip_nonlocal_bind);
 
 #ifdef INET_REFCNT_DEBUG
 EXPORT_SYMBOL(inet_sock_nr);

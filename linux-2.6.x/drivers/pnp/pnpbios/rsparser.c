@@ -7,7 +7,12 @@
 #include <linux/ctype.h>
 #include <linux/pnp.h>
 #include <linux/pnpbios.h>
+
+#ifdef CONFIG_PCI
 #include <linux/pci.h>
+#else
+inline void pcibios_penalize_isa_irq(int irq) {}
+#endif /* CONFIG_PCI */
 
 #include "pnpbios.h"
 
@@ -67,7 +72,9 @@ static void
 pnpbios_parse_allocated_dmaresource(struct pnp_resource_table * res, int dma)
 {
 	int i = 0;
-	while (!(res->dma_resource[i].flags & IORESOURCE_UNSET) && i < PNP_MAX_DMA) i++;
+	while (i < PNP_MAX_DMA &&
+			!(res->dma_resource[i].flags & IORESOURCE_UNSET))
+		i++;
 	if (i < PNP_MAX_DMA) {
 		res->dma_resource[i].flags = IORESOURCE_DMA;  // Also clears _UNSET flag
 		if (dma == -1) {

@@ -47,12 +47,31 @@ extern void omap1510_fpga_init_irq(void);
 #define H2P2_DBG_FPGA_LAN_STATUS	(H2P2_DBG_FPGA_BASE + 0x1A)	/* LAN Status line */
 #define H2P2_DBG_FPGA_LAN_RESET		(H2P2_DBG_FPGA_BASE + 0x1C)	/* LAN Reset line */
 
-/* LEDs definition on debug board (16 LEDs) */
-#define H2P2_DBG_FPGA_LED_CLAIMRELEASE	(1 << 15)
-#define H2P2_DBG_FPGA_LED_STARTSTOP	(1 << 14)
-#define H2P2_DBG_FPGA_LED_HALTED	(1 << 13)
-#define H2P2_DBG_FPGA_LED_IDLE		(1 << 12)
-#define H2P2_DBG_FPGA_LED_TIMER		(1 << 11)
+/* NOTE:  most boards don't have a static mapping for the FPGA ... */
+struct h2p2_dbg_fpga {
+	/* offset 0x00 */
+	u16		smc91x[8];
+	/* offset 0x10 */
+	u16		fpga_rev;
+	u16		board_rev;
+	u16		gpio_outputs;
+	u16		leds;
+	/* offset 0x18 */
+	u16		misc_inputs;
+	u16		lan_status;
+	u16		lan_reset;
+	u16		reserved0;
+	/* offset 0x20 */
+	u16		ps2_data;
+	u16		ps2_ctrl;
+	/* plus also 4 rs232 ports ... */
+};
+
+/* LEDs definition on debug board (16 LEDs, all physically green) */
+#define H2P2_DBG_FPGA_LED_GREEN		(1 << 15)
+#define H2P2_DBG_FPGA_LED_AMBER		(1 << 14)
+#define H2P2_DBG_FPGA_LED_RED		(1 << 13)
+#define H2P2_DBG_FPGA_LED_BLUE		(1 << 12)
 /*  cpu0 load-meter LEDs */
 #define H2P2_DBG_FPGA_LOAD_METER	(1 << 0)	// A bit of fun on our board ...
 #define H2P2_DBG_FPGA_LOAD_METER_SIZE	11

@@ -255,8 +255,8 @@ static int atm_tc_change(struct Qdisc *sch, u32 classid, u32 parent,
 	 * later.)
 	 */
 	if (flow) return -EBUSY;
-	if (opt == NULL || rtattr_parse(tb,TCA_ATM_MAX,RTA_DATA(opt),
-	    RTA_PAYLOAD(opt))) return -EINVAL;
+	if (opt == NULL || rtattr_parse_nested(tb, TCA_ATM_MAX, opt))
+		return -EINVAL;
 	if (!tb[TCA_ATM_FD-1] || RTA_PAYLOAD(tb[TCA_ATM_FD-1]) < sizeof(fd))
 		return -EINVAL;
 	fd = *(int *) RTA_DATA(tb[TCA_ATM_FD-1]);
@@ -519,7 +519,7 @@ static void sch_atm_dequeue(unsigned long data)
 			memcpy(skb_push(skb,flow->hdr_len),flow->hdr,
 			    flow->hdr_len);
 			atomic_add(skb->truesize,
-				   &flow->vcc->sk->sk_wmem_alloc);
+				   &sk_atm(flow->vcc)->sk_wmem_alloc);
 			/* atm.atm_options are already set by atm_tc_enqueue */
 			(void) flow->vcc->send(flow->vcc,skb);
 		}

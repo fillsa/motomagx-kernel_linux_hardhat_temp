@@ -91,7 +91,7 @@ typedef struct {
 #define RW_LOCK_UNLOCKED (rwlock_t) { 0 }
 #define rwlock_init(lp) do { *(lp) = RW_LOCK_UNLOCKED; } while(0)
 
-#define rwlock_is_locked(x)	((x)->lock != 0)
+//del 2.6.11	#define rwlock_is_locked(x)	((x)->lock != 0)
 
 #define read_can_lock(rw)	((rw)->lock >= 0)
 #define write_can_lock(rw)	(!(rw)->lock)

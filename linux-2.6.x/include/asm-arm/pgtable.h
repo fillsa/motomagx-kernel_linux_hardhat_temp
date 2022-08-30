@@ -1,8 +1,8 @@
 /*
- * linux/include/asm-arm/pgtable.h
+ *  linux/include/asm-arm/pgtable.h
  *
- * Copyright (C) 1995-2002 Russell King
- * Copyright (C) 2007 Motorola, Inc. 
+ *  Copyright (C) 1995-2002 Russell King
+ *  Copyright (C) 2007 Motorola, Inc. 
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 as
@@ -22,13 +22,31 @@
  * ==========   ===========    ===================================
  * 06/01/2007   Motorola       Define CONFIG_MOT_FEAT_CHKSUM.
  */
-
 #ifndef _ASMARM_PGTABLE_H
 #define _ASMARM_PGTABLE_H
+
+#include <asm-generic/4level-fixup.h>
 
 #include <asm/memory.h>
 #include <asm/proc-fns.h>
 #include <asm/arch/vmalloc.h>
+
+/*
+ * Just any arbitrary offset to the start of the vmalloc VM area: the
+ * current 8MB value just means that there will be a 8MB "hole" after the
+ * physical memory until the kernel virtual memory starts.  That means that
+ * any out-of-bounds memory accesses will hopefully be caught.
+ * The vmalloc() routines leaves a hole of 4kB between each vmalloced
+ * area for the same reason. ;)
+ *
+ * Note that platforms may override VMALLOC_START, but they must provide
+ * VMALLOC_END.  VMALLOC_END defines the (exclusive) limit of this space,
+ * which may not overlap IO space.
+ */
+#ifndef VMALLOC_START
+#define VMALLOC_OFFSET		(8*1024*1024)
+#define VMALLOC_START		(((unsigned long)high_memory + VMALLOC_OFFSET) & ~(VMALLOC_OFFSET-1))
+#endif
 
 /*
  * Hardware-wise, we have a two level page table structure, where the first
@@ -121,6 +139,13 @@ extern void __pgd_error(const char *file, int line, unsigned long val);
 #define PMD_MASK		(~(PMD_SIZE-1))
 #define PGDIR_SIZE		(1UL << PGDIR_SHIFT)
 #define PGDIR_MASK		(~(PGDIR_SIZE-1))
+
+/*
+ * This is the lowest virtual address we can permit any user space
+ * mapping to be mapped at.  This is particularly important for
+ * non-high vector CPUs.
+ */
+#define FIRST_USER_ADDRESS	PAGE_SIZE
 
 #define FIRST_USER_PGD_NR	1
 #define USER_PTRS_PER_PGD	((TASK_SIZE/PGDIR_SIZE) - FIRST_USER_PGD_NR)
@@ -291,7 +316,7 @@ extern struct page *empty_zero_page;
 #define pfn_pte(pfn,prot)	(__pte(((pfn) << PAGE_SHIFT) | pgprot_val(prot)))
 
 #define pte_none(pte)		(!pte_val(pte))
-#define pte_clear(ptep)		set_pte((ptep), __pte(0))
+#define pte_clear(mm,addr,ptep)	set_pte_at((mm),(addr),(ptep), __pte(0))
 #define pte_page(pte)		(pfn_to_page(pte_pfn(pte)))
 #define pte_offset_kernel(dir,addr)	(pmd_page_kernel(*(dir)) + __pte_index(addr))
 #define pte_offset_map(dir,addr)	(pmd_page_kernel(*(dir)) + __pte_index(addr))
@@ -300,6 +325,7 @@ extern struct page *empty_zero_page;
 #define pte_unmap_nested(pte)	do { } while (0)
 
 #define set_pte(ptep, pte)	cpu_set_pte(ptep,pte)
+#define set_pte_at(mm,addr,ptep,pteval) set_pte(ptep,pteval)
 
 /*
  * The following only work if pte_present() is true.
@@ -446,6 +472,13 @@ extern pgd_t swapper_pg_dir[PTRS_PER_PGD];
  */
 #define io_remap_page_range(vma,from,phys,size,prot) \
 		remap_pfn_range(vma, from, (phys) >> PAGE_SHIFT, size, prot)
+
+#define io_remap_pfn_range(vma,from,pfn,size,prot) \
+		remap_pfn_range(vma, from, pfn, size, prot)
+
+#define MK_IOSPACE_PFN(space, pfn)	(pfn)
+#define GET_IOSPACE(pfn)		0
+#define GET_PFN(pfn)			(pfn)
 
 #define pgtable_cache_init() do { } while (0)
 

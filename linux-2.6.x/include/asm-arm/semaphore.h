@@ -44,8 +44,8 @@ struct compat_semaphore {
 #define __COMPAT_DECLARE_SEMAPHORE_GENERIC(name,count)	\
 	struct compat_semaphore name = __COMPAT_SEMAPHORE_INIT(name,count)
 
-#define COMPAT_DECLARE_MUTEX(name)	__COMPAT_DECLARE_SEMAPHORE_GENERIC(name,1)
-#define COMPAT_DECLARE_MUTEX_LOCKED(name) __COMPAT_DECLARE_SEMAPHORE_GENERIC(name,0)
+#define COMPAT_DECLARE_MUTEX(name)		__COMPAT_DECLARE_SEMAPHORE_GENERIC(name,1)
+#define COMPAT_DECLARE_MUTEX_LOCKED(name)	__COMPAT_DECLARE_SEMAPHORE_GENERIC(name,0)
 
 static inline void compat_sema_init(struct compat_semaphore *sem, int val)
 {

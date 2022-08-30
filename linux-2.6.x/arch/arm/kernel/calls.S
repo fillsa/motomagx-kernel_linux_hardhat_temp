@@ -22,7 +22,7 @@
 /* 10 */	.long	sys_unlink
 		.long	sys_execve_wrapper
 		.long	sys_chdir
-		.long	OBSOLETE(sys_time)	/* used by libc4 */
+		.long	OBSOLETE(sys_time)		/* used by libc4 */
 		.long	sys_mknod
 /* 15 */	.long	sys_chmod
 		.long	sys_lchown16
@@ -31,15 +31,15 @@
 		.long	sys_lseek
 /* 20 */	.long	sys_getpid
 		.long	sys_mount
-		.long	OBSOLETE(sys_oldumount)	/* used by libc4 */
+		.long	OBSOLETE(sys_oldumount)		/* used by libc4 */
 		.long	sys_setuid16
 		.long	sys_getuid16
 /* 25 */	.long	OBSOLETE(sys_stime)
 		.long	sys_ptrace
-		.long	OBSOLETE(sys_alarm)	/* used by libc4 */
+		.long	OBSOLETE(sys_alarm)		/* used by libc4 */
 		.long	sys_ni_syscall		/* was sys_fstat */
 		.long	sys_pause
-/* 30 */	.long	OBSOLETE(sys_utime)	/* used by libc4 */
+/* 30 */	.long	OBSOLETE(sys_utime)		/* used by libc4 */
 		.long	sys_ni_syscall		/* was sys_stty */
 		.long	sys_ni_syscall		/* was sys_getty */
 		.long	sys_access
@@ -249,7 +249,7 @@
 		.long	sys_fremovexattr
 		.long	sys_tkill
 		.long	sys_sendfile64
-/* 240 */	.long	sys_futex
+/* 240 */	.long	sys_futex_wrapper
 		.long	sys_sched_setaffinity
 		.long	sys_sched_getaffinity
 		.long	sys_io_setup

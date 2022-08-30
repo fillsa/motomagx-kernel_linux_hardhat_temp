@@ -27,7 +27,7 @@
 	,"rcx","rbx","rdx","r8","r9","r10","r11","r12","r13","r14","r15"
 
 #define switch_to(prev,next,last) \
-       asm volatile(".globl __switch_to_begin\n\t"				    \
+	asm volatile(".globl __switch_to_begin\n\t"				    \
 		     "__switch_to_begin:\n\t"					  \
 		     SAVE_CONTEXT						  \
 		     "movq %%rsp,%P[threadrsp](%[prev])\n\t" /* save RSP */	  \
@@ -346,5 +346,7 @@ void enable_hlt(void);
 
 #define HAVE_EAT_KEY
 void eat_key(void);
+
+extern unsigned long arch_align_stack(unsigned long sp);
 
 #endif

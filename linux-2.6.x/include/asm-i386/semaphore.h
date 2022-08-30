@@ -4,6 +4,7 @@
 #include <linux/config.h>
 #include <linux/linkage.h>
 
+
 /*
  * SMP- and interrupt-safe semaphores..
  *
@@ -98,11 +99,6 @@ fastcall int  __compat_down_failed_interruptible(void  /* params in registers */
 fastcall int  __compat_down_failed_trylock(void  /* params in registers */);
 fastcall void __compat_up_wakeup(void /* special register calling convention */);
 
-/*fastcall void __down(struct semaphore * sem);
-fastcall int  __down_interruptible(struct semaphore * sem);
-fastcall int  __down_trylock(struct semaphore * sem);
-fastcall void __up(struct semaphore * sem);
-*/
 /*
  * This is ugly, but we want the default case to fall through.
  * "__down_failed" is a special asm handler that calls the C

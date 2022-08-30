@@ -102,8 +102,9 @@ bubinga_early_serial_map(void)
 	port.line = 0;
 
 #ifdef CONFIG_SERIAL_8250
-	if (early_serial_setup(&port) != 0)
+	if (early_serial_setup(&port) != 0) {
 		printk("Early serial init of port 0 failed\n");
+	}
 #endif
 
 #ifdef CONFIG_KGDB_8250
@@ -115,8 +116,9 @@ bubinga_early_serial_map(void)
 	port.line = 1;
 
 #ifdef CONFIG_SERIAL_8250
-	if (early_serial_setup(&port) != 0)
+	if (early_serial_setup(&port) != 0) {
 		printk("Early serial init of port 1 failed\n");
+	}
 #endif
 #ifdef CONFIG_KGDB_8250
 	kgdb8250_add_port(1, &port);
@@ -266,3 +268,4 @@ platform_init(unsigned long r3, unsigned long r4, unsigned long r5,
 	ppc_md.nvram_write_val = todc_direct_write_val;
 #endif
 }
+

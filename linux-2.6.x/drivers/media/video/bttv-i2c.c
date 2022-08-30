@@ -1,5 +1,5 @@
 /*
-    $Id: bttv-i2c.c,v 1.13 2004/11/07 13:17:15 kraxel Exp $
+    $Id: bttv-i2c.c,v 1.18 2005/02/16 12:14:10 kraxel Exp $
 
     bttv-i2c.c  --  all the i2c code is here
 
@@ -26,8 +26,10 @@
 */
 
 #include <linux/module.h>
+#include <linux/moduleparam.h>
 #include <linux/init.h>
 #include <linux/delay.h>
+#include <linux/jiffies.h>
 #include <asm/io.h>
 
 #include "bttvp.h"
@@ -38,7 +40,6 @@ static struct i2c_adapter bttv_i2c_adap_hw_template;
 static struct i2c_client bttv_i2c_client_template;
 
 static int attach_inform(struct i2c_client *client);
-static int detach_inform(struct i2c_client *client);
 
 static int i2c_debug = 0;
 static int i2c_hw = 0;
@@ -51,7 +52,7 @@ MODULE_PARM_DESC(i2c_scan,"scan i2c bus at insmod time");
 /* ----------------------------------------------------------------------- */
 /* I2C functions - bitbanging adapter (software i2c)                       */
 
-void bttv_bit_setscl(void *data, int state)
+static void bttv_bit_setscl(void *data, int state)
 {
 	struct bttv *btv = (struct bttv*)data;
 
@@ -63,7 +64,7 @@ void bttv_bit_setscl(void *data, int state)
 	btread(BT848_I2C);
 }
 
-void bttv_bit_setsda(void *data, int state)
+static void bttv_bit_setsda(void *data, int state)
 {
 	struct bttv *btv = (struct bttv*)data;
 
@@ -111,7 +112,6 @@ static struct i2c_adapter bttv_i2c_adap_sw_template = {
 	I2C_DEVNAME("bt848"),
 	.id                = I2C_HW_B_BT848,
 	.client_register   = attach_inform,
-	.client_unregister = detach_inform,
 };
 
 /* ----------------------------------------------------------------------- */
@@ -131,17 +131,14 @@ static u32 functionality(struct i2c_adapter *adap)
 static int
 bttv_i2c_wait_done(struct bttv *btv)
 {
-	DECLARE_WAITQUEUE(wait, current);
 	int rc = 0;
 
-	add_wait_queue(&btv->i2c_queue, &wait);
-	if (0 == btv->i2c_done)
-		msleep_interruptible(20);
-	remove_wait_queue(&btv->i2c_queue, &wait);
+	/* timeout */
+	if (wait_event_interruptible_timeout(btv->i2c_queue,
+		btv->i2c_done, msecs_to_jiffies(85)) == -ERESTARTSYS)
 
-	if (0 == btv->i2c_done)
-		/* timeout */
-		rc = -EIO;
+	rc = -EIO;
+
 	if (btv->i2c_done & BT848_INT_RACK)
 		rc = 1;
 	btv->i2c_done = 0;
@@ -244,7 +241,7 @@ bttv_i2c_readbytes(struct bttv *btv, const struct i2c_msg *msg, int last)
        	return retval;
 }
 
-int bttv_i2c_xfer(struct i2c_adapter *i2c_adap, struct i2c_msg msgs[], int num)
+static int bttv_i2c_xfer(struct i2c_adapter *i2c_adap, struct i2c_msg *msgs, int num)
 {
 	struct bttv *btv = i2c_get_adapdata(i2c_adap);
 	int retval = 0;
@@ -289,7 +286,6 @@ static struct i2c_adapter bttv_i2c_adap_hw_template = {
 	.id            = I2C_ALGO_BIT | I2C_HW_B_BT848 /* FIXME */,
 	.algo          = &bttv_algo,
 	.client_register = attach_inform,
-	.client_unregister = detach_inform,
 };
 
 /* ----------------------------------------------------------------------- */
@@ -304,20 +300,10 @@ static int attach_inform(struct i2c_client *client)
 	if (btv->pinnacle_id != UNSET)
 		bttv_call_i2c_clients(btv,AUDC_CONFIG_PINNACLE,
 				      &btv->pinnacle_id);
-	bttv_i2c_info(&btv->c, client, 1);
-
         if (bttv_debug)
 		printk("bttv%d: i2c attach [client=%s]\n",
 		       btv->c.nr, i2c_clientname(client));
         return 0;
-}
-
-static int detach_inform(struct i2c_client *client)
-{
-        struct bttv *btv = i2c_get_adapdata(client->adapter);
-
-	bttv_i2c_info(&btv->c, client, 0);
-	return 0;
 }
 
 void bttv_call_i2c_clients(struct bttv *btv, unsigned int cmd, void *arg)
@@ -327,16 +313,8 @@ void bttv_call_i2c_clients(struct bttv *btv, unsigned int cmd, void *arg)
 	i2c_clients_command(&btv->c.i2c_adap, cmd, arg);
 }
 
-void bttv_i2c_call(unsigned int card, unsigned int cmd, void *arg)
-{
-	if (card >= bttv_num)
-		return;
-	bttv_call_i2c_clients(&bttvs[card], cmd, arg);
-}
-
 static struct i2c_client bttv_i2c_client_template = {
 	I2C_DEVNAME("bttv internal"),
-        .id       = -1,
 };
 
 
@@ -385,19 +363,11 @@ int bttv_I2CWrite(struct bttv *btv, unsigned char addr, unsigned char b1,
 /* read EEPROM content */
 void __devinit bttv_readee(struct bttv *btv, unsigned char *eedata, int addr)
 {
-	int i;
-
-	if (bttv_I2CWrite(btv, addr, 0, -1, 0)<0) {
-		printk(KERN_WARNING "bttv: readee error\n");
+	memset(eedata, 0, 256);
+	if (0 != btv->i2c_rc)
 		return;
-	}
 	btv->i2c_client.addr = addr >> 1;
-	for (i=0; i<256; i+=16) {
-		if (16 != i2c_master_recv(&btv->i2c_client,eedata+i,16)) {
-			printk(KERN_WARNING "bttv: readee error\n");
-			break;
-		}
-	}
+	tveeprom_read(&btv->i2c_client, eedata, 256);
 }
 
 static char *i2c_devs[128] = {

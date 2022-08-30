@@ -7,8 +7,8 @@
  */
 
 #include <linux/irq.h>
-#include <linux/random.h>
 #include <linux/module.h>
+#include <linux/random.h>
 #include <linux/kthread.h>
 #include <linux/syscalls.h>
 #include <linux/interrupt.h>
@@ -16,6 +16,8 @@
 #include "internals.h"
 
 #ifdef CONFIG_SMP
+
+cpumask_t irq_affinity[NR_IRQS] = { [0 ... NR_IRQS-1] = CPU_MASK_ALL };
 
 /**
  *	synchronize_irq - wait for pending IRQ handlers (on other CPUs)

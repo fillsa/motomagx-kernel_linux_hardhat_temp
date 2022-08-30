@@ -58,7 +58,6 @@ void jffs2_add_fd_to_list(struct jffs2_sb_info *c, struct jffs2_full_dirent *new
 /* Put a new tmp_dnode_info into the list, keeping the list in 
    order of increasing version
 */
-
 static void jffs2_add_tn_to_list(struct jffs2_tmp_dnode_info *tn, struct rb_root *list)
 {
 	struct rb_node **p = &list->rb_node;

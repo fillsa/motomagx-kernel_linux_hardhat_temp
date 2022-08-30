@@ -33,8 +33,6 @@ EXPORT_SYMBOL(inet6_ioctl);
 EXPORT_SYMBOL(ipv6_get_saddr);
 EXPORT_SYMBOL(ipv6_chk_addr);
 EXPORT_SYMBOL(ipv6_chk_home_addr);
-EXPORT_SYMBOL(in6addr_any);
-EXPORT_SYMBOL(in6addr_loopback);
 EXPORT_SYMBOL(in6_dev_finish_destroy);
 #ifdef CONFIG_IPV6_MIP6
 EXPORT_SYMBOL(ipv6_find_tlv);
@@ -46,7 +44,6 @@ EXPORT_SYMBOL(__xfrm6_rcv_one);
 #endif
 #endif
 EXPORT_SYMBOL(rt6_fl_tree_lookup);
-EXPORT_SYMBOL(fl6_sock_lookup);
 EXPORT_SYMBOL(ip6_append_data);
 EXPORT_SYMBOL(ip6_flush_pending_frames);
 EXPORT_SYMBOL(ip6_push_pending_frames);

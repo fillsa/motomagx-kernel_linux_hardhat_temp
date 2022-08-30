@@ -23,6 +23,7 @@
 #include <linux/dmi.h>
 
 #include <asm/msr.h>
+#include <asm/timer.h>
 #include <asm/timex.h>
 #include <asm/io.h>
 #include <asm/system.h>
@@ -67,12 +68,12 @@ union powernow_acpi_control_t {
 #endif
 
 #ifdef CONFIG_CPU_FREQ_DEBUG
-/* divide by 1000 to get VID. */
+/* divide by 1000 to get VCore voltage in V. */
 static int mobile_vid_table[32] = {
     2000, 1950, 1900, 1850, 1800, 1750, 1700, 1650,
     1600, 1550, 1500, 1450, 1400, 1350, 1300, 0,
     1275, 1250, 1225, 1200, 1175, 1150, 1125, 1100,
-    1075, 1050, 1024, 1000, 975, 950, 925, 0,
+    1075, 1050, 1025, 1000, 975, 950, 925, 0,
 };
 #endif
 
@@ -586,13 +587,17 @@ static int __init powernow_cpu_init (struct cpufreq_policy *policy)
 
 	rdmsrl (MSR_K7_FID_VID_STATUS, fidvidstatus.val);
 
-	/* A K7 with powernow technology is set to max frequency by BIOS */
-	fsb = (10 * cpu_khz) / fid_codes[fidvidstatus.bits.MFID];
+	/* recalibrate cpu_khz */
+	result = recalibrate_cpu_khz();
+	if (result)
+		return result;
+
+	fsb = (10 * cpu_khz) / fid_codes[fidvidstatus.bits.CFID];
 	if (!fsb) {
 		printk(KERN_WARNING PFX "can not determine bus frequency\n");
 		return -EINVAL;
 	}
-	dprintk("FSB: %3d.%03d MHz\n", fsb/1000, fsb%1000);
+	dprintk("FSB: %3dMHz\n", fsb/1000);
 
 	if (dmi_check_system(powernow_dmi_table) || acpi_force) {
 		printk (KERN_INFO PFX "PSB/PST known to be broken.  Trying ACPI instead\n");
@@ -635,6 +640,17 @@ static int __init powernow_cpu_init (struct cpufreq_policy *policy)
 
 static int powernow_cpu_exit (struct cpufreq_policy *policy) {
 	cpufreq_frequency_table_put_attr(policy->cpu);
+
+#ifdef CONFIG_X86_POWERNOW_K7_ACPI
+	if (acpi_processor_perf) {
+		acpi_processor_unregister_performance(acpi_processor_perf, 0);
+		kfree(acpi_processor_perf);
+	}
+#endif
+
+	if (powernow_table)
+		kfree(powernow_table);
+
 	return 0;
 }
 
@@ -664,15 +680,7 @@ static int __init powernow_init (void)
 
 static void __exit powernow_exit (void)
 {
-#ifdef CONFIG_X86_POWERNOW_K7_ACPI
-	if (acpi_processor_perf) {
-		acpi_processor_unregister_performance(acpi_processor_perf, 0);
-		kfree(acpi_processor_perf);
-	}
-#endif
 	cpufreq_unregister_driver(&powernow_driver);
-	if (powernow_table)
-		kfree(powernow_table);
 }
 
 module_param(acpi_force,  int, 0444);

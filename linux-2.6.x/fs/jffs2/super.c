@@ -350,7 +350,6 @@ static int __init init_jffs2_fs(void)
 		printk(KERN_ERR "JFFS2 error: Failed to register filesystem\n");
 		goto out_slab;
 	}
-
 	return 0;
 
  out_slab:

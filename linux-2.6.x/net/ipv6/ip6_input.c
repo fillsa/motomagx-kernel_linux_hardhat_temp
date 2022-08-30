@@ -46,6 +46,8 @@
 #include <net/addrconf.h>
 #include <net/xfrm.h>
 
+
+
 static inline int ip6_rcv_finish( struct sk_buff *skb) 
 {
 	if (skb->dst == NULL)
@@ -81,16 +83,25 @@ int ipv6_rcv(struct sk_buff *skb, struct net_device *dev, struct packet_type *pt
 		goto out;
 	}
 
-	/* Store incoming device index. When the packet will
-	   be queued, we cannot refer to skb->dev anymore.
+	/*
+	 * Store incoming device index. When the packet will
+	 * be queued, we cannot refer to skb->dev anymore.
+	 *
+	 * BTW, when we send a packet for our own local address on a
+	 * non-loopback interface (e.g. ethX), it is being delivered
+	 * via the loopback interface (lo) here; skb->dev = &loopback_dev.
+	 * It, however, should be considered as if it is being
+	 * arrived via the sending interface (ethX), because of the
+	 * nature of scoping architecture. --yoshfuji
 	 */
-	IP6CB(skb)->iif = dev->ifindex;
+	IP6CB(skb)->iif = skb->dst ? ((struct rt6_info *)skb->dst)->rt6i_idev->dev->ifindex : dev->ifindex;
 
 	if (skb->len < sizeof(struct ipv6hdr))
 		goto err;
 
-	if (!pskb_may_pull(skb, sizeof(struct ipv6hdr)))
+	if (!pskb_may_pull(skb, sizeof(struct ipv6hdr))) {
 		goto err;
+	}
 
 	hdr = skb->nh.ipv6h;
 
@@ -103,13 +114,11 @@ int ipv6_rcv(struct sk_buff *skb, struct net_device *dev, struct packet_type *pt
 	if (pkt_len || hdr->nexthdr != NEXTHDR_HOP) {
 		if (pkt_len + sizeof(struct ipv6hdr) > skb->len)
 			goto truncated;
-		if (pkt_len + sizeof(struct ipv6hdr) < skb->len) {
-			if (__pskb_trim(skb, pkt_len + sizeof(struct ipv6hdr)))
-				goto err;
-			hdr = skb->nh.ipv6h;
-			if (skb->ip_summed == CHECKSUM_HW)
-				skb->ip_summed = CHECKSUM_NONE;
+		if (pskb_trim_rcsum(skb, pkt_len + sizeof(struct ipv6hdr))) {
+			IP6_INC_STATS_BH(IPSTATS_MIB_INHDRERRORS);
+			goto drop;
 		}
+		hdr = skb->nh.ipv6h;
 	}
 
 	if (hdr->nexthdr == NEXTHDR_HOP) {
@@ -165,9 +174,9 @@ static inline int ip6_input_finish(struct sk_buff *skb)
 	unsigned int nhoff;
 	int nexthdr;
 	u8 hash;
-	int cksum_sub = 0;
 
 	skb->h.raw = skb->nh.raw + sizeof(struct ipv6hdr);
+
 	nexthdr = skb->nh.ipv6h->nexthdr;
 	nhoff = offsetof(struct ipv6hdr, nexthdr);
 
@@ -195,11 +204,8 @@ resubmit:
 		if (ipprot->flags & INET6_PROTO_FINAL) {
 			struct ipv6hdr *hdr;	
 
-			if (!cksum_sub && skb->ip_summed == CHECKSUM_HW) {
-				skb->csum = csum_sub(skb->csum,
-						     csum_partial(skb->nh.raw, skb->h.raw-skb->nh.raw, 0));
-				cksum_sub++;
-			}
+			skb_postpull_rcsum(skb, skb->nh.raw,
+					   skb->h.raw - skb->nh.raw);
 			hdr = skb->nh.ipv6h;
 			if (ipv6_addr_is_multicast(&hdr->daddr) &&
 			    !ipv6_chk_mcast_addr(skb->dev, &hdr->daddr,

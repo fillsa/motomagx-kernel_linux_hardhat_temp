@@ -19,7 +19,6 @@
  * 09/26/2005   Motorola  Add 'down timeout' services 
  *
  */
-
 #include <linux/module.h>
 #include <linux/sched.h>
 #include <linux/errno.h>
@@ -57,12 +56,13 @@
  *    that we're on the wakeup list before we synchronize so that
  *    we cannot lose wakeup events.
  */
+
 fastcall void __compat_up(struct compat_semaphore *sem)
 {
 	wake_up(&sem->wait);
 }
 
-static DEFINE_RAW_SPINLOCK(semaphore_lock);
+static DEFINE_RAW_SPINLOCK(semaphore_lock); //static DEFINE_SPINLOCK(semaphore_lock);
 
 fastcall void __sched __compat_down(struct compat_semaphore * sem)
 {
@@ -91,7 +91,6 @@ fastcall void __sched __compat_down(struct compat_semaphore * sem)
 		spin_unlock_irqrestore(&sem->wait.lock, flags);
 
 		schedule();
-
 		spin_lock_irqsave(&sem->wait.lock, flags);
 		tsk->state = TASK_UNINTERRUPTIBLE;
 	}
@@ -187,7 +186,7 @@ int __sched __down_interruptible_timeout(struct semaphore * sem, signed long tim
 		/*
 		 * With signals pending, this turns into
 		 * the trylock failure case - we won't be
-		 * sleeping, and we can't get the lock as
+		 * sleeping, and we* can't get the lock as
 		 * it has contention. Just correct the count
 		 * and exit.
 		 */
@@ -220,7 +219,6 @@ int __sched __down_interruptible_timeout(struct semaphore * sem, signed long tim
 	tsk->state = TASK_RUNNING;
 	remove_wait_queue(&sem->wait, &wait);
 	wake_up(&sem->wait);
-
 	return retval;
 }
 EXPORT_SYMBOL(__down_interruptible_timeout);
@@ -248,9 +246,8 @@ fastcall int __compat_down_trylock(struct compat_semaphore * sem)
 	 * playing, because we own the spinlock in the
 	 * wait_queue_head.
 	 */
-	if (!atomic_add_negative(sleepers, &sem->count)) {
+	if (!atomic_add_negative(sleepers, &sem->count))
 		wake_up_locked(&sem->wait);
-	}
 
 	spin_unlock_irqrestore(&sem->wait.lock, flags);
 	return 1;
@@ -274,37 +271,37 @@ EXPORT_SYMBOL(compat_sem_is_locked);
  */
 asm("	.section .sched.text,\"ax\"		\n\
 	.align	5				\n\
-	.globl	__compat_down_failed		\n\
-__compat_down_failed:				\n\
+	.globl	__compat_down_failed			\n\
+__compat_down_failed:					\n\
 	stmfd	sp!, {r0 - r3, lr}		\n\
 	mov	r0, ip				\n\
-	bl	__compat_down			\n\
+	bl	__compat_down				\n\
 	ldmfd	sp!, {r0 - r3, pc}		\n\
 						\n\
 	.align	5				\n\
-	.globl	__compat_down_interruptible_failed \n\
+	.globl	__compat_down_interruptible_failed	\n\
 __compat_down_interruptible_failed:			\n\
 	stmfd	sp!, {r0 - r3, lr}		\n\
 	mov	r0, ip				\n\
-	bl	__compat_down_interruptible	\n\
+	bl	__compat_down_interruptible		\n\
 	mov	ip, r0				\n\
 	ldmfd	sp!, {r0 - r3, pc}		\n\
 						\n\
 	.align	5				\n\
-	.globl	__compat_down_trylock_failed	\n\
-__compat_down_trylock_failed:			\n\
+	.globl	__compat_down_trylock_failed		\n\
+__compat_down_trylock_failed:				\n\
 	stmfd	sp!, {r0 - r3, lr}		\n\
 	mov	r0, ip				\n\
-	bl	__compat_down_trylock		\n\
+	bl	__compat_down_trylock			\n\
 	mov	ip, r0				\n\
 	ldmfd	sp!, {r0 - r3, pc}		\n\
 						\n\
 	.align	5				\n\
-	.globl	__compat_up_wakeup		\n\
-__compat_up_wakeup:				\n\
+	.globl	__compat_up_wakeup			\n\
+__compat_up_wakeup:					\n\
 	stmfd	sp!, {r0 - r3, lr}		\n\
 	mov	r0, ip				\n\
-	bl	__compat_up			\n\
+	bl	__compat_up				\n\
 	ldmfd	sp!, {r0 - r3, pc}		\n\
 	");
 

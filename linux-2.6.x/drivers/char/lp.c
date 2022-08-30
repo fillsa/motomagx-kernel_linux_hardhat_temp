@@ -12,7 +12,7 @@
  * "lp=" command line parameters added by Grant Guenther, grant@torque.net
  * lp_read (Status readback) support added by Carsten Gross,
  *                                             carsten@sol.wohnheim.uni-ulm.de
- * Support for parport by Philip Blundell <Philip.Blundell@pobox.com>
+ * Support for parport by Philip Blundell <philb@gnu.org>
  * Parport sharing hacking by Andrea Arcangeli
  * Fixed kernel_(to/from)_user memory copy to check for errors
  * 				by Riccardo Facchetti <fizban@tin.it>
@@ -127,6 +127,7 @@
 #include <linux/poll.h>
 #include <linux/console.h>
 #include <linux/device.h>
+#include <linux/wait.h>
 
 #include <linux/parport.h>
 #undef LP_STATS
@@ -142,7 +143,7 @@
 /* ROUND_UP macro from fs/select.c */
 #define ROUND_UP(x,y) (((x)+(y)-1)/(y))
 
-struct lp_struct lp_table[LP_NO];
+static struct lp_struct lp_table[LP_NO];
 
 static unsigned int lp_count = 0;
 static struct class_simple *lp_class;
@@ -218,6 +219,7 @@ static int lp_reset(int minor)
 
 static void lp_error (int minor)
 {
+	DEFINE_WAIT(wait);
 	int polling;
 
 	if (LP_F(minor) & LP_ABORT)
@@ -225,8 +227,9 @@ static void lp_error (int minor)
 
 	polling = lp_table[minor].dev->port->irq == PARPORT_IRQ_NONE;
 	if (polling) lp_release_parport (&lp_table[minor]);
-	interruptible_sleep_on_timeout (&lp_table[minor].waitq,
-					LP_TIMEOUT_POLLED);
+	prepare_to_wait(&lp_table[minor].waitq, &wait, TASK_INTERRUPTIBLE);
+	schedule_timeout(LP_TIMEOUT_POLLED);
+	finish_wait(&lp_table[minor].waitq, &wait);
 	if (polling) lp_claim_parport_or_block (&lp_table[minor]);
 	else parport_yield_blocking (lp_table[minor].dev);
 }
@@ -412,6 +415,7 @@ out_unlock:
 static ssize_t lp_read(struct file * file, char __user * buf,
 		       size_t count, loff_t *ppos)
 {
+	DEFINE_WAIT(wait);
 	unsigned int minor=iminor(file->f_dentry->d_inode);
 	struct parport *port = lp_table[minor].dev->port;
 	ssize_t retval = 0;
@@ -460,9 +464,11 @@ static ssize_t lp_read(struct file * file, char __user * buf,
 				retval = -EIO;
 				goto out;
 			}
-		} else
-			interruptible_sleep_on_timeout (&lp_table[minor].waitq,
-							LP_TIMEOUT_POLLED);
+		} else {
+			prepare_to_wait(&lp_table[minor].waitq, &wait, TASK_INTERRUPTIBLE);
+			schedule_timeout(LP_TIMEOUT_POLLED);
+			finish_wait(&lp_table[minor].waitq, &wait);
+		}
 
 		if (signal_pending (current)) {
 			retval = -ERESTARTSYS;
@@ -869,7 +875,7 @@ static struct parport_driver lp_driver = {
 	.detach = lp_detach,
 };
 
-int __init lp_init (void)
+static int __init lp_init (void)
 {
 	int i, err = 0;
 

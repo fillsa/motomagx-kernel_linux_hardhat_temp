@@ -10,12 +10,13 @@
  *	   2 of the License, or (at your option) any later version.
  *
  * FILE		: megaraid_mm.c
- * Version	: v2.20.2.3 (Dec 09 2004)
+ * Version	: v2.20.2.5 (Jan 21 2005)
  *
  * Common management module
  */
 
 #include "megaraid_mm.h"
+#include <linux/smp_lock.h>
 
 
 // Entry points for char node driver
@@ -43,8 +44,7 @@ static void mraid_mm_free_adp_resources(mraid_mmadp_t *);
 static void mraid_mm_teardown_dma_pools(mraid_mmadp_t *);
 
 #ifdef CONFIG_COMPAT
-static int mraid_mm_compat_ioctl(unsigned int, unsigned int, unsigned long,
-		struct file *);
+static long mraid_mm_compat_ioctl(struct file *, unsigned int, unsigned long);
 #endif
 
 MODULE_AUTHOR("LSI Logic Corporation");
@@ -58,6 +58,7 @@ MODULE_PARM_DESC(dlevel, "Debug level (default=0)");
 
 EXPORT_SYMBOL(mraid_mm_register_adp);
 EXPORT_SYMBOL(mraid_mm_unregister_adp);
+EXPORT_SYMBOL(mraid_mm_adapter_app_handle);
 
 static int majorno;
 static uint32_t drvr_ver	= 0x02200201;
@@ -65,11 +66,14 @@ static uint32_t drvr_ver	= 0x02200201;
 static int adapters_count_g;
 static struct list_head adapters_list_g;
 
-wait_queue_head_t wait_q;
+static wait_queue_head_t wait_q;
 
 static struct file_operations lsi_fops = {
 	.open	= mraid_mm_open,
 	.ioctl	= mraid_mm_ioctl,
+#ifdef CONFIG_COMPAT
+	.compat_ioctl = mraid_mm_compat_ioctl,
+#endif
 	.owner	= THIS_MODULE,
 };
 
@@ -1007,6 +1011,40 @@ memalloc_error:
 	return rval;
 }
 
+
+/**
+ * mraid_mm_adapter_app_handle - return the application handle for this adapter
+ *
+ * For the given driver data, locate the adadpter in our global list and
+ * return the corresponding handle, which is also used by applications to
+ * uniquely identify an adapter.
+ *
+ * @param unique_id : adapter unique identifier
+ *
+ * @return adapter handle if found in the list
+ * @return 0 if adapter could not be located, should never happen though
+ */
+uint32_t
+mraid_mm_adapter_app_handle(uint32_t unique_id)
+{
+	mraid_mmadp_t	*adapter;
+	mraid_mmadp_t	*tmp;
+	int		index = 0;
+
+	list_for_each_entry_safe(adapter, tmp, &adapters_list_g, list) {
+
+		if (adapter->unique_id == unique_id) {
+
+			return MKADAP(index);
+		}
+
+		index++;
+	}
+
+	return 0;
+}
+
+
 /**
  * mraid_mm_setup_dma_pools - Set up dma buffer pools per adapter
  *
@@ -1180,8 +1218,6 @@ mraid_mm_init(void)
 
 	INIT_LIST_HEAD(&adapters_list_g);
 
-	register_ioctl32_conversion(MEGAIOCCMD, mraid_mm_compat_ioctl);
-
 	return 0;
 }
 
@@ -1190,13 +1226,15 @@ mraid_mm_init(void)
  * mraid_mm_compat_ioctl	: 32bit to 64bit ioctl conversion routine
  */
 #ifdef CONFIG_COMPAT
-static int
-mraid_mm_compat_ioctl(unsigned int fd, unsigned int cmd,
-			unsigned long arg, struct file *filep)
+static long
+mraid_mm_compat_ioctl(struct file *filep, unsigned int cmd,
+		      unsigned long arg)
 {
-	struct inode *inode = filep->f_dentry->d_inode;
-
-	return mraid_mm_ioctl(inode, filep, cmd, arg);
+	int err;
+	lock_kernel();
+	err = mraid_mm_ioctl(NULL, filep, cmd, arg);
+	unlock_kernel();
+	return err;
 }
 #endif
 
@@ -1209,7 +1247,6 @@ mraid_mm_exit(void)
 	con_log(CL_DLEVEL1 , ("exiting common mod\n"));
 
 	unregister_chrdev(majorno, "megadev");
-	unregister_ioctl32_conversion(MEGAIOCCMD);
 }
 
 module_init(mraid_mm_init);

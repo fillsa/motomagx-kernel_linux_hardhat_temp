@@ -7,7 +7,7 @@
  *
  * Version:	@(#)eth.h	1.0.4	05/13/93
  *
- * Authors:	Ross Biro, <bir7@leland.Stanford.Edu>
+ * Authors:	Ross Biro
  *		Fred N. van Kempen, <waltje@uWalt.NL.Mugnet.ORG>
  *
  *		Relocated to include/linux where it belongs by Alan Cox 
@@ -37,8 +37,6 @@ extern void		eth_header_cache_update(struct hh_cache *hh, struct net_device *dev
 						unsigned char * haddr);
 extern int		eth_header_cache(struct neighbour *neigh,
 					 struct hh_cache *hh);
-extern int		eth_header_parse(struct sk_buff *skb,
-					 unsigned char *haddr);
 
 extern struct net_device *alloc_etherdev(int sizeof_priv);
 static inline void eth_copy_and_sum (struct sk_buff *dest, 
@@ -46,6 +44,12 @@ static inline void eth_copy_and_sum (struct sk_buff *dest,
 				     int len, int base)
 {
 	memcpy (dest->data, src, len);
+}
+
+static inline int is_broadcast_ether_addr(const u8 *addr)
+{
+        return ((addr[0] == 0xff) && (addr[1] == 0xff) && (addr[2] == 0xff) &&  
+		(addr[3] == 0xff) && (addr[4] == 0xff) && (addr[5] == 0xff));
 }
 
 /**
@@ -67,13 +71,7 @@ static inline int is_zero_ether_addr(const u8 *addr)
  */
 static inline int is_multicast_ether_addr(const u8 *addr)
 {
-	return ((addr[0] != 0xff) && (0x01 & addr[0]));
-}
-
-static inline int is_broadcast_ether_addr(const u8 *addr)
-{
-        return ((addr[0] == 0xff) && (addr[1] == 0xff) && (addr[2] == 0xff) &&  
-		(addr[3] == 0xff) && (addr[4] == 0xff) && (addr[5] == 0xff));
+	return addr[0] & 0x01;
 }
 
 /**
@@ -81,16 +79,15 @@ static inline int is_broadcast_ether_addr(const u8 *addr)
  * @addr: Pointer to a six-byte array containing the Ethernet address
  *
  * Check that the Ethernet address (MAC) is not 00:00:00:00:00:00, is not
- * a multicast address, and is not FF:FF:FF:FF:FF:FF.  The multicast
- * and FF:FF:... tests are combined into the single test "!(addr[0]&1)".
+ * a multicast address, and is not FF:FF:FF:FF:FF:FF.
  *
  * Return true if the address is valid.
  */
-static inline int is_valid_ether_addr( const u8 *addr )
+static inline int is_valid_ether_addr(const u8 *addr)
 {
-	const char zaddr[6] = {0,};
-
-	return !(addr[0]&1) && memcmp( addr, zaddr, 6);
+	/* FF:FF:FF:FF:FF:FF is a multicast address so we don't need to
+	 * explicitly check for it here. */
+	return !is_multicast_ether_addr(addr) && !is_zero_ether_addr(addr);
 }
 
 /**
@@ -106,6 +103,6 @@ static inline void random_ether_addr(u8 *addr)
 	addr [0] &= 0xfe;	/* clear multicast bit */
 	addr [0] |= 0x02;	/* set local assignment bit (IEEE802) */
 }
-#endif
+#endif	/* __KERNEL__ */
 
 #endif	/* _LINUX_ETHERDEVICE_H */

@@ -186,7 +186,7 @@ struct usb_tt_clear {
 extern void usb_hub_tt_clear_buffer (struct usb_device *dev, int pipe);
 
 struct usb_hub {
-	struct usb_interface	*intf;		/* the "real" device */
+	struct device		*intfdev;	/* the "interface" device */
 	struct usb_device	*hdev;
 	struct urb		*urb;		/* for interrupt polling pipe */
 
@@ -205,6 +205,7 @@ struct usb_hub {
 	unsigned long		event_bits[1];	/* status change bitmask */
 	unsigned long		change_bits[1];	/* ports with logical connect
 							status change */
+	unsigned long		busy_bits[1];	/* ports being reset */
 #if USB_MAXCHILDREN > 31 /* 8*sizeof(unsigned long) - 1 */
 #error event_bits[] is too short!
 #endif
@@ -215,6 +216,8 @@ struct usb_hub {
 	u8			power_budget;	/* in 2mA units; or zero */
 
 	unsigned		quiescing:1;
+	unsigned		activating:1;
+	unsigned		resume_root_hub:1;
 
 	unsigned		has_indicators:1;
 	enum hub_led_mode	indicator[USB_MAXCHILDREN];

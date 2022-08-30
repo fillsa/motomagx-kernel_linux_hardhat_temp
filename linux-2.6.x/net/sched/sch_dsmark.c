@@ -14,10 +14,11 @@
 #include <linux/rtnetlink.h>
 #include <net/pkt_sched.h>
 #include <net/dsfield.h>
+#include <net/inet_ecn.h>
 #include <asm/byteorder.h>
 
 
-#if 1 /* control */
+#if 0 /* control */
 #define DPRINTK(format,args...) printk(KERN_DEBUG format,##args)
 #else
 #define DPRINTK(format,args...)
@@ -72,8 +73,13 @@ static int dsmark_graft(struct Qdisc *sch,unsigned long arg,
 
 	DPRINTK("dsmark_graft(sch %p,[qdisc %p],new %p,old %p)\n",sch,p,new,
 	    old);
-	if (!new)
-		new = &noop_qdisc;
+
+	if (new == NULL) {
+		new = qdisc_create_dflt(sch->dev, &pfifo_qdisc_ops);
+		if (new == NULL)
+			new = &noop_qdisc;
+	}
+
 	sch_tree_lock(sch);
 	*old = xchg(&p->q,new);
 	if (*old)
@@ -124,8 +130,7 @@ static int dsmark_change(struct Qdisc *sch, u32 classid, u32 parent,
 	    "arg 0x%lx\n",sch,p,classid,parent,*arg);
 	if (*arg > p->indices)
 		return -ENOENT;
-	if (!opt || rtattr_parse(tb, TCA_DSMARK_MAX, RTA_DATA(opt),
-				 RTA_PAYLOAD(opt)))
+	if (!opt || rtattr_parse_nested(tb, TCA_DSMARK_MAX, opt))
 		return -EINVAL;
 	if (tb[TCA_DSMARK_MASK-1]) {
 		if (!RTA_PAYLOAD(tb[TCA_DSMARK_MASK-1]))
@@ -163,14 +168,15 @@ static void dsmark_walk(struct Qdisc *sch,struct qdisc_walker *walker)
 		return;
 	for (i = 0; i < p->indices; i++) {
 		if (p->mask[i] == 0xff && !p->value[i])
-			continue;
+			goto ignore;
 		if (walker->count >= walker->skip) {
 			if (walker->fn(sch, i+1, walker) < 0) {
 				walker->stop = 1;
 				break;
 			}
 		}
-                walker->count++;
+ignore:		
+		walker->count++;
         }
 }
 
@@ -198,10 +204,12 @@ static int dsmark_enqueue(struct sk_buff *skb,struct Qdisc *sch)
 		/* FIXME: Safe with non-linear skbs? --RR */
 		switch (skb->protocol) {
 			case __constant_htons(ETH_P_IP):
-				skb->tc_index = ipv4_get_dsfield(skb->nh.iph);
+				skb->tc_index = ipv4_get_dsfield(skb->nh.iph)
+					& ~INET_ECN_MASK;
 				break;
 			case __constant_htons(ETH_P_IPV6):
-				skb->tc_index = ipv6_get_dsfield(skb->nh.ipv6h);
+				skb->tc_index = ipv6_get_dsfield(skb->nh.ipv6h)
+					& ~INET_ECN_MASK;
 				break;
 			default:
 				skb->tc_index = 0;
@@ -320,7 +328,7 @@ static unsigned int dsmark_drop(struct Qdisc *sch)
 }
 
 
-int dsmark_init(struct Qdisc *sch,struct rtattr *opt)
+static int dsmark_init(struct Qdisc *sch,struct rtattr *opt)
 {
 	struct dsmark_qdisc_data *p = PRIV(sch);
 	struct rtattr *tb[TCA_DSMARK_MAX];

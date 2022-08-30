@@ -121,7 +121,9 @@ struct rw_semaphore {
  */
 typedef struct {
 	struct rw_semaphore	lock;
-	unsigned int		break_lock;
+#ifdef CONFIG_PREEMPT
+	unsigned int break_lock;
+#endif
 } rwlock_t;
 
 # ifdef CONFIG_RT_DEADLOCK_DETECT
@@ -149,7 +151,7 @@ typedef struct {
  * spinlocks - an RT mutex plus lock-break field:
  */
 typedef struct {
-	struct rt_mutex lock;
+	struct rt_mutex slock;
 	unsigned int break_lock;
 } spinlock_t;
 

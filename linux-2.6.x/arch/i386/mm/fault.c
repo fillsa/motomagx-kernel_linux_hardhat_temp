@@ -115,9 +115,7 @@ static inline unsigned long get_segment_eip(struct pt_regs *regs,
 	}
 
 	/* Decode the code segment base from the descriptor */
-	base =   (desc[0] >> 16) |
-		((desc[1] & 0xff) << 16) |
-		 (desc[1] & 0xff000000);
+	base = get_desc_base((unsigned long *)desc);
 
 	if (seg & (1<<2)) { 
 		up(&current->mm->context.sem);
@@ -537,6 +535,7 @@ vmalloc_fault:
 		int index = pgd_index(address);
 		unsigned long pgd_paddr;
 		pgd_t *pgd, *pgd_k;
+		pud_t *pud, *pud_k;
 		pmd_t *pmd, *pmd_k;
 		pte_t *pte_k;
 
@@ -549,11 +548,17 @@ vmalloc_fault:
 
 		/*
 		 * set_pgd(pgd, *pgd_k); here would be useless on PAE
-		 * and redundant with the set_pmd() on non-PAE.
+		 * and redundant with the set_pmd() on non-PAE. As would
+		 * set_pud.
 		 */
 
-		pmd = pmd_offset(pgd, address);
-		pmd_k = pmd_offset(pgd_k, address);
+		pud = pud_offset(pgd, address);
+		pud_k = pud_offset(pgd_k, address);
+		if (!pud_present(*pud_k))
+			goto no_context;
+		
+		pmd = pmd_offset(pud, address);
+		pmd_k = pmd_offset(pud_k, address);
 		if (!pmd_present(*pmd_k))
 			goto no_context;
 		set_pmd(pmd, *pmd_k);

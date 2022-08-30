@@ -17,9 +17,9 @@
  * Generic declaration of the raw read_trylock() function,
  * architectures are supposed to optimize this:
  */
-int __lockfunc generic_raw_read_trylock(raw_rwlock_t *lock)
+int __lockfunc generic_raw_read_trylock(rwlock_t *lock)
 {
-	__raw_read_lock(lock);
+	__raw_read_lock(lock); // _raw_read_lock
 	return 1;
 }
 EXPORT_SYMBOL(generic_raw_read_trylock);
@@ -33,9 +33,9 @@ int __lockfunc _raw_spin_trylock(raw_spinlock_t *lock)
 	preempt_enable();
 	return 0;
 }
-EXPORT_SYMBOL(_raw_spin_trylock);
+EXPORT_SYMBOL(_raw_spin_trylock); // 2.6 EXPORT_SYMBOL(_spin_trylock);
 
-int __lockfunc _raw_read_trylock(raw_rwlock_t *lock)
+int __lockfunc _raw_read_trylock(raw_rwlock_t *lock) // 2.6.12 +int __lockfunc _read_trylock(rwlock_t *lock)
 {
 	preempt_disable();
 	if (__raw_read_trylock(lock))
@@ -44,9 +44,9 @@ int __lockfunc _raw_read_trylock(raw_rwlock_t *lock)
 	preempt_enable();
 	return 0;
 }
-EXPORT_SYMBOL(_raw_read_trylock);
+EXPORT_SYMBOL(_raw_read_trylock); // 2.6.12 +EXPORT_SYMBOL(_read_trylock)
 
-int __lockfunc _raw_write_trylock(raw_rwlock_t *lock)
+int __lockfunc _raw_write_trylock(raw_rwlock_t *lock) // 2.6.12	+int __lockfunc _write_trylock(rwlock_t *lock)
 {
 	preempt_disable();
 	if (__raw_write_trylock(lock))
@@ -55,7 +55,7 @@ int __lockfunc _raw_write_trylock(raw_rwlock_t *lock)
 	preempt_enable();
 	return 0;
 }
-EXPORT_SYMBOL(_raw_write_trylock);
+EXPORT_SYMBOL(_raw_write_trylock); //2.6.12	+EXPORT_SYMBOL(_write_trylock);
 
 #ifndef CONFIG_PREEMPT
 
@@ -145,21 +145,21 @@ void __lockfunc _raw_write_lock_bh(raw_rwlock_t *lock)
 	preempt_disable();
 	__raw_write_lock(lock);
 }
-EXPORT_SYMBOL(_raw_write_lock_bh);
+EXPORT_SYMBOL(_raw_write_lock_bh); //2.6.12	EXPORT_SYMBOL(_write_lock_bh);
 
-void __lockfunc _raw_spin_lock(raw_spinlock_t *lock)
+void __lockfunc _raw_spin_lock(raw_spinlock_t *lock)//2.6.12	+void __lockfunc _spin_lock(spinlock_t *lock)
 {
 	preempt_disable();
 	__raw_spin_lock(lock);
 }
-EXPORT_SYMBOL(_raw_spin_lock);
+EXPORT_SYMBOL(_raw_spin_lock); // 2.6.12	EXPORT_SYMBOL(_spin_lock);
 
-void __lockfunc _raw_write_lock(raw_rwlock_t *lock)
+void __lockfunc _raw_write_lock(raw_rwlock_t *lock) // 2.6.12	+void __lockfunc _write_lock(rwlock_t *lock)
 {
 	preempt_disable();
 	__raw_write_lock(lock);
 }
-EXPORT_SYMBOL(_raw_write_lock);
+EXPORT_SYMBOL(_raw_write_lock); // 2.6.12	+EXPORT_SYMBOL(_write_lock);
 
 #else /* CONFIG_PREEMPT: */
 
@@ -210,9 +210,9 @@ unsigned long __lockfunc _raw_##op##_lock_irqsave(locktype##_t *lock)	\
 	return flags;							\
 }									\
 									\
-EXPORT_SYMBOL(_raw_##op##_lock_irqsave);				\
+EXPORT_SYMBOL(_raw_##op##_lock_irqsave);					\
 									\
-void __lockfunc _raw_##op##_lock_irq(locktype##_t *lock)		\
+void __lockfunc _raw_##op##_lock_irq(locktype##_t *lock)			\
 {									\
 	_raw_##op##_lock_irqsave(lock);					\
 }									\
@@ -233,7 +233,7 @@ void __lockfunc _raw_##op##_lock_bh(locktype##_t *lock)			\
 	local_irq_restore(flags);					\
 }									\
 									\
-EXPORT_SYMBOL(_raw_##op##_lock_bh)
+EXPORT_SYMBOL(_raw_##op##_lock_bh) // 2.6.12	+EXPORT_SYMBOL(_##op##_lock_bh)
 
 /*
  * Build preemption-friendly versions of the following
@@ -253,23 +253,23 @@ BUILD_LOCK_OPS(write, raw_rwlock);
 void __lockfunc _raw_spin_unlock(raw_spinlock_t *lock)
 {
 	__raw_spin_unlock(lock);
-	preempt_enable();
+	preempt_enable_no_resched();
 }
 EXPORT_SYMBOL(_raw_spin_unlock);
 
 void __lockfunc _raw_write_unlock(raw_rwlock_t *lock)
 {
 	__raw_write_unlock(lock);
-	preempt_enable();
+	preempt_enable_no_resched();
 }
 EXPORT_SYMBOL(_raw_write_unlock);
 
 void __lockfunc _raw_read_unlock(raw_rwlock_t *lock)
 {
 	__raw_read_unlock(lock);
-	preempt_enable();
+	preempt_enable_no_resched();
 }
-EXPORT_SYMBOL(_raw_read_unlock);
+EXPORT_SYMBOL(_raw_read_unlock); // 2.6.12	+EXPORT_SYMBOL(_read_unlock);
 
 void __lockfunc _raw_spin_unlock_irqrestore(raw_spinlock_t *lock, unsigned long flags)
 {
@@ -289,7 +289,7 @@ void __lockfunc _raw_spin_unlock_irq(raw_spinlock_t *lock)
 }
 EXPORT_SYMBOL(_raw_spin_unlock_irq);
 
-void __lockfunc _raw_spin_unlock_bh(raw_spinlock_t *lock)
+void __lockfunc _raw_spin_unlock_bh(raw_spinlock_t *lock) // 2.6.12	void __lockfunc _spin_unlock_bh(spinlock_t *lock)
 {
 	__raw_spin_unlock(lock);
 	preempt_enable_no_resched();
@@ -315,13 +315,13 @@ void __lockfunc _raw_read_unlock_irq(raw_rwlock_t *lock)
 }
 EXPORT_SYMBOL(_raw_read_unlock_irq);
 
-void __lockfunc _raw_read_unlock_bh(raw_rwlock_t *lock)
+void __lockfunc _raw_read_unlock_bh(raw_rwlock_t *lock) // 2.6.12	void __lockfunc _read_unlock_bh(rwlock_t *lock)
 {
 	__raw_read_unlock(lock);
 	preempt_enable_no_resched();
 	local_bh_enable();
 }
-EXPORT_SYMBOL(_raw_read_unlock_bh);
+EXPORT_SYMBOL(_raw_read_unlock_bh); // 2.6.12	EXPORT_SYMBOL(_read_unlock_bh);
 
 void __lockfunc _raw_write_unlock_irqrestore(raw_rwlock_t *lock, unsigned long flags)
 {
@@ -341,13 +341,13 @@ void __lockfunc _raw_write_unlock_irq(raw_rwlock_t *lock)
 }
 EXPORT_SYMBOL(_raw_write_unlock_irq);
 
-void __lockfunc _raw_write_unlock_bh(raw_rwlock_t *lock)
+void __lockfunc _raw_write_unlock_bh(raw_rwlock_t *lock) // 2.6.12	void __lockfunc _write_unlock_bh(rwlock_t *lock)
 {
 	__raw_write_unlock(lock);
 	preempt_enable_no_resched();
 	local_bh_enable();
 }
-EXPORT_SYMBOL(_raw_write_unlock_bh);
+EXPORT_SYMBOL(_raw_write_unlock_bh); // 2.6.12	EXPORT_SYMBOL(_write_unlock_bh);
 
 int __lockfunc _raw_spin_trylock_bh(raw_spinlock_t *lock)
 {

@@ -166,7 +166,7 @@ struct ip6t_entry
 #define IP6T_CONTINUE 0xFFFFFFFF
 
 /* For standard target */
-#define IP6T_RETURN (-NF_MAX_VERDICT - 1)
+#define IP6T_RETURN (-NF_REPEAT - 1)
 
 /* TCP matching stuff */
 struct ip6t_tcp
@@ -429,9 +429,6 @@ struct ip6t_table
 	/* A unique name... */
 	char name[IP6T_TABLE_MAXNAMELEN];
 
-	/* Seed table: copied in register_table */
-	struct ip6t_replace *table;
-
 	/* What hooks you will enter on */
 	unsigned int valid_hooks;
 
@@ -445,7 +442,8 @@ struct ip6t_table
 	struct module *me;
 };
 
-extern int ip6t_register_table(struct ip6t_table *table);
+extern int ip6t_register_table(struct ip6t_table *table,
+			       const struct ip6t_replace *repl);
 extern void ip6t_unregister_table(struct ip6t_table *table);
 extern unsigned int ip6t_do_table(struct sk_buff **pskb,
 				  unsigned int hook,

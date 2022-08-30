@@ -820,7 +820,7 @@ struct snd_m3 {
 	unsigned long iobase;
 
 	int irq;
-	int allegro_flag : 1;
+	unsigned int allegro_flag : 1;
 
 	ac97_t *ac97;
 
@@ -955,6 +955,13 @@ static struct m3_quirk m3_quirk_list[] = {
 		.name = "NEC LM800J/7",
 		.vendor = 0x1033,
 		.device = 0x80f1,
+		.amp_gpio = 0x03,
+	},
+	/* LEGEND ZhaoYang 3100CF */
+	{
+		.name = "LEGEND ZhaoYang 3100CF",
+		.vendor = 0x1509,
+		.device = 0x1740,
 		.amp_gpio = 0x03,
 	},
 	/* END */
@@ -1835,34 +1842,24 @@ static unsigned short
 snd_m3_ac97_read(ac97_t *ac97, unsigned short reg)
 {
 	m3_t *chip = ac97->private_data;
-	unsigned short ret = 0;
-	unsigned long flags;
 
-	spin_lock_irqsave(&chip->reg_lock, flags);
 	if (snd_m3_ac97_wait(chip))
-		goto __error;
-	snd_m3_outb(chip, 0x80 | (reg & 0x7f), 0x30);
+		return 0xffff;
+	snd_m3_outb(chip, 0x80 | (reg & 0x7f), CODEC_COMMAND);
 	if (snd_m3_ac97_wait(chip))
-		goto __error;
-	ret = snd_m3_inw(chip, 0x32);
-__error:
-	spin_unlock_irqrestore(&chip->reg_lock, flags);
-	return ret;
+		return 0xffff;
+	return snd_m3_inw(chip, CODEC_DATA);
 }
 
 static void
 snd_m3_ac97_write(ac97_t *ac97, unsigned short reg, unsigned short val)
 {
 	m3_t *chip = ac97->private_data;
-	unsigned long flags;
 
-	spin_lock_irqsave(&chip->reg_lock, flags);
 	if (snd_m3_ac97_wait(chip))
-		goto __error;
-	snd_m3_outw(chip, val, 0x32);
-	snd_m3_outb(chip, reg & 0x7f, 0x30);
-__error:
-	spin_unlock_irqrestore(&chip->reg_lock, flags);
+		return;
+	snd_m3_outw(chip, val, CODEC_DATA);
+	snd_m3_outb(chip, reg & 0x7f, CODEC_COMMAND);
 }
 
 
@@ -2374,8 +2371,7 @@ static int snd_m3_free(m3_t *chip)
 	}
 
 #ifdef CONFIG_PM
-	if (chip->suspend_mem)
-		vfree(chip->suspend_mem);
+	vfree(chip->suspend_mem);
 #endif
 
 	if (chip->irq >= 0) {
@@ -2396,7 +2392,7 @@ static int snd_m3_free(m3_t *chip)
  * APM support
  */
 #ifdef CONFIG_PM
-static int m3_suspend(snd_card_t *card, unsigned int state)
+static int m3_suspend(snd_card_t *card, pm_message_t state)
 {
 	m3_t *chip = card->pm_private_data;
 	int i, index;
@@ -2425,11 +2421,10 @@ static int m3_suspend(snd_card_t *card, unsigned int state)
 	snd_m3_outw(chip, 0xffff, 0x56);
 
 	pci_disable_device(chip->pci);
-	snd_power_change_state(card, SNDRV_CTL_POWER_D3hot);
 	return 0;
 }
 
-static int m3_resume(snd_card_t *card, unsigned int state)
+static int m3_resume(snd_card_t *card)
 {
 	m3_t *chip = card->pm_private_data;
 	int i, index;
@@ -2468,7 +2463,6 @@ static int m3_resume(snd_card_t *card, unsigned int state)
 	snd_m3_enable_ints(chip);
 	snd_m3_amp_enable(chip, 1);
 
-	snd_power_change_state(card, SNDRV_CTL_POWER_D0);
 	return 0;
 }
 #endif /* CONFIG_PM */
@@ -2577,26 +2571,7 @@ snd_m3_create(snd_card_t *card, struct pci_dev *pci,
 
 	snd_m3_assp_init(chip);
 	snd_m3_amp_enable(chip, 1);
-    
-	if ((err = snd_m3_mixer(chip)) < 0) {
-		snd_m3_free(chip);
-		return err;
-	}
 
-	for (i = 0; i < chip->num_substreams; i++) {
-		m3_dma_t *s = &chip->substreams[i];
-		s->chip = chip;
-		if ((err = snd_m3_assp_client_init(chip, s, i)) < 0) {
-			snd_m3_free(chip);
-			return err;
-		}
-	}
-    
-	if ((err = snd_m3_pcm(chip, 0)) < 0) {
-		snd_m3_free(chip);
-		return err;
-	}
-    
 	if (request_irq(pci->irq, snd_m3_interrupt, SA_INTERRUPT|SA_SHIRQ,
 			card->driver, (void *)chip)) {
 		snd_printk("unable to grab IRQ %d\n", pci->irq);
@@ -2618,6 +2593,19 @@ snd_m3_create(snd_card_t *card, struct pci_dev *pci,
 		return err;
 	}
 
+	if ((err = snd_m3_mixer(chip)) < 0)
+		return err;
+
+	for (i = 0; i < chip->num_substreams; i++) {
+		m3_dma_t *s = &chip->substreams[i];
+		s->chip = chip;
+		if ((err = snd_m3_assp_client_init(chip, s, i)) < 0)
+			return err;
+	}
+
+	if ((err = snd_m3_pcm(chip, 0)) < 0)
+		return err;
+    
 	snd_m3_enable_ints(chip);
 	snd_m3_assp_continue(chip);
 

@@ -45,7 +45,6 @@
  * 10/21/2007   Motorola  Introduce the image resolution information into FIQ handler
  * 03/11/2008   Motorola  Added WDOG2 FIQ handler to common FIQ handler
  */
-
 #include <linux/module.h>
 #include <linux/kernel.h>
 #include <linux/init.h>
@@ -111,7 +110,7 @@ void set_fiq_handler(void *start, unsigned int length)
 void __attribute__((naked)) set_fiq_regs(struct pt_regs *regs)
 {
         register unsigned long tmp;
-        asm volatile (
+	asm volatile (
         "mov    ip, sp\n\
         stmfd   sp!, {fp, ip, lr, pc}\n\
         sub     fp, ip, #4\n\
@@ -121,7 +120,7 @@ void __attribute__((naked)) set_fiq_regs(struct pt_regs *regs)
         ldmia   %1, {r8 - r14}\n\
         msr     cpsr_c, %0      @ return to SVC mode\n\
         mov     r0, r0\n\
-        ldmfd   sp, {fp, sp, pc}"
+	ldmfd   sp, {fp, sp, pc}"
         : "=&r" (tmp)
         : "r" (&regs->ARM_r8), "I" (PSR_I_BIT | PSR_F_BIT | FIQ_MODE));
 }

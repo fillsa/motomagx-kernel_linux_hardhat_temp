@@ -130,7 +130,7 @@ void (*interrupt[NR_IRQS])(void) = {
  * moves to arch independent land
  */
 
-DEFINE_RAW_SPINLOCK(i8259A_lock);
+DEFINE_RAW_SPINLOCK(i8259A_lock); //2.6.12	+DEFINE_SPINLOCK(i8259A_lock);
 
 static void end_8259A_irq (unsigned int irq)
 {
@@ -148,7 +148,7 @@ static void end_8259A_irq (unsigned int irq)
 
 #define shutdown_8259A_irq	disable_8259A_irq
 
-void mask_and_ack_8259A(unsigned int);
+static void mask_and_ack_8259A(unsigned int);
 
 static unsigned int startup_8259A_irq(unsigned int irq)
 { 
@@ -272,7 +272,7 @@ static inline int i8259A_irq_real(unsigned int irq)
  * first, _then_ send the EOI, and the order of EOI
  * to the two 8259s is important!
  */
-void mask_and_ack_8259A(unsigned int irq)
+static void mask_and_ack_8259A(unsigned int irq)
 {
 	unsigned int irqmask = 1 << irq;
 	unsigned long flags;
@@ -409,7 +409,7 @@ static int i8259A_resume(struct sys_device *dev)
 	return 0;
 }
 
-static int i8259A_suspend(struct sys_device *dev, u32 state)
+static int i8259A_suspend(struct sys_device *dev, pm_message_t state)
 {
 	save_ELCR(irq_trigger);
 	return 0;
@@ -476,6 +476,8 @@ void error_interrupt(void);
 void reschedule_interrupt(void);
 void call_function_interrupt(void);
 void invalidate_interrupt(void);
+void thermal_interrupt(void);
+void i8254_timer_resume(void);
 
 static void setup_timer(void)
 {
@@ -490,6 +492,11 @@ static int timer_resume(struct sys_device *dev)
 {
 	setup_timer();
 	return 0;
+}
+
+void i8254_timer_resume(void)
+{
+	setup_timer();
 }
 
 static struct sysdev_class timer_sysclass = {
@@ -550,6 +557,7 @@ void __init init_IRQ(void)
 	/* IPI for generic function call */
 	set_intr_gate(CALL_FUNCTION_VECTOR, call_function_interrupt);
 #endif	
+	set_intr_gate(THERMAL_APIC_VECTOR, thermal_interrupt);
 
 #ifdef CONFIG_X86_LOCAL_APIC
 	/* self generated IPI for local APIC timer */

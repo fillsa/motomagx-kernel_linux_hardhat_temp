@@ -115,7 +115,7 @@ int platform_add_devices(struct platform_device **devs, int num)
 
 /**
  *	platform_device_register - add a platform-level device
- *	@dev:	platform device we're adding
+ *	@pdev:	platform device we're adding
  *
  */
 int platform_device_register(struct platform_device * pdev)
@@ -141,11 +141,13 @@ int platform_device_register(struct platform_device * pdev)
 		if (r->name == NULL)
 			r->name = pdev->dev.bus_id;
 
-		p = NULL;
-		if (r->flags & IORESOURCE_MEM)
-			p = &iomem_resource;
-		else if (r->flags & IORESOURCE_IO)
-			p = &ioport_resource;
+		p = r->parent;
+		if (!p) {
+			if (r->flags & IORESOURCE_MEM)
+				p = &iomem_resource;
+			else if (r->flags & IORESOURCE_IO)
+				p = &ioport_resource;
+		}
 
 		if (p && request_resource(p, r)) {
 			printk(KERN_ERR
@@ -172,7 +174,7 @@ int platform_device_register(struct platform_device * pdev)
 
 /**
  *	platform_device_unregister - remove a platform-level device
- *	@dev:	platform device we're removing
+ *	@pdev:	platform device we're removing
  *
  *	Note that this function will also release all memory- and port-based
  *	resources owned by the device (@dev->resource).
@@ -274,7 +276,7 @@ static int platform_match(struct device * dev, struct device_driver * drv)
 	return (strncmp(pdev->name, drv->name, BUS_ID_SIZE) == 0);
 }
 
-static int platform_suspend(struct device * dev, u32 state)
+static int platform_suspend(struct device * dev, pm_message_t state)
 {
 	int ret = 0;
 
@@ -339,6 +341,7 @@ EXPORT_SYMBOL_GPL(dma_get_required_mask);
 
 EXPORT_SYMBOL_GPL(platform_bus);
 EXPORT_SYMBOL_GPL(platform_bus_type);
+EXPORT_SYMBOL_GPL(platform_add_devices);
 EXPORT_SYMBOL_GPL(platform_device_register);
 EXPORT_SYMBOL_GPL(platform_device_register_simple);
 EXPORT_SYMBOL_GPL(platform_device_unregister);

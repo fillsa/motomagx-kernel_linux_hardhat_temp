@@ -214,12 +214,12 @@ static struct file_operations misc_fops = {
 int misc_register(struct miscdevice * misc)
 {
 	struct miscdevice *c;
-#ifndef CONFIG_MOT_FEAT_INOTIFY
-	struct class_device *class;
+#ifndef CONFIG_MOT_FEAT_INOTIFY // >2.6.11
+	struct class_device *class; // >2.6.11
 #endif
 	dev_t dev;
 	int err;
-	
+
 	down(&misc_sem);
 	list_for_each_entry(c, &misc_list, list) {
 		if (c->minor == misc->minor) {
@@ -233,8 +233,7 @@ int misc_register(struct miscdevice * misc)
 		while (--i >= 0)
 			if ( (misc_minors[i>>3] & (1 << (i&7))) == 0)
 				break;
-		if (i<0)
-		{
+		if (i<0) {
 			up(&misc_sem);
 			return -EBUSY;
 		}
@@ -249,13 +248,13 @@ int misc_register(struct miscdevice * misc)
 	}
 	dev = MKDEV(MISC_MAJOR, misc->minor);
 
-#ifdef CONFIG_MOT_FEAT_INOTIFY
+#ifdef CONFIG_MOT_FEAT_INOTIFY //2.6.12
 	misc->class = class_simple_device_add(misc_class, dev,
 					      misc->dev, misc->name);
 	if (IS_ERR(misc->class)) {
 		err = PTR_ERR(misc->class);
 
-#else
+#else //2.6.10
 	class = class_simple_device_add(misc_class, dev,
 					misc->dev, misc->name);
 	if (IS_ERR(class)) {

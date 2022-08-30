@@ -18,11 +18,10 @@
 
 #include	<linux/config.h>
 #include	<asm/types.h>
-#include	<asm/iSeries/ItLpPaca.h>
+#include	<asm/lppaca.h>
 #include	<asm/iSeries/ItLpRegSave.h>
 #include	<asm/mmu.h>
 
-extern struct paca_struct paca[];
 register struct paca_struct *local_paca asm("r13");
 #define get_paca()	local_paca
 
@@ -34,8 +33,8 @@ struct ItLpQueue;
  *
  * This structure is not directly accessed by firmware or the service
  * processor except for the first two pointers that point to the
- * ItLpPaca area and the ItLpRegSave area for this CPU.  Both the
- * ItLpPaca and ItLpRegSave objects are currently contained within the
+ * lppaca area and the ItLpRegSave area for this CPU.  Both the
+ * lppaca and ItLpRegSave objects are currently contained within the
  * PACA but they do not need to be.
  */
 struct paca_struct {
@@ -50,7 +49,7 @@ struct paca_struct {
 	 * MAGIC: These first two pointers can't be moved - they're
 	 * accessed by the firmware
 	 */
-	struct ItLpPaca *lppaca_ptr;	/* Pointer to LpPaca for PLIC */
+	struct lppaca *lppaca_ptr;	/* Pointer to LpPaca for PLIC */
 	struct ItLpRegSave *reg_save_ptr; /* Pointer to LpRegSave for PLIC */
 
 	/*
@@ -68,7 +67,7 @@ struct paca_struct {
 	u64 stab_real;			/* Absolute address of segment table */
 	u64 stab_addr;			/* Virtual address of segment table */
 	void *emergency_sp;		/* pointer to emergency stack */
-	u16 hw_cpu_id;			/* Physical processor number */
+	s16 hw_cpu_id;			/* Physical processor number */
 	u8 cpu_start;			/* At startup, processor spins until */
 					/* this becomes non-zero. */
 
@@ -109,10 +108,12 @@ struct paca_struct {
 	 * alignment will suffice to ensure that it doesn't
 	 * cross a page boundary.
 	 */
-	struct ItLpPaca lppaca __attribute__((__aligned__(0x400)));
+	struct lppaca lppaca __attribute__((__aligned__(0x400)));
 #ifdef CONFIG_PPC_ISERIES
 	struct ItLpRegSave reg_save;
 #endif
 };
+
+extern struct paca_struct paca[];
 
 #endif /* _PPC64_PACA_H */

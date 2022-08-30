@@ -116,14 +116,14 @@ extern void __cpu_copy_user_page(void *to, const void *from,
 
 #define clear_user_page(addr,vaddr,pg)	 __cpu_clear_user_page(addr, vaddr)
 
-#ifdef CONFIG_CPU_MINICACHE
+#ifdef CONFIG_CPU_MINICACHE // do  2.6.12
 #define copy_user_page(to,from,vaddr,pg)                \
         do {                                            \
 		preempt_disable();			\
                 __cpu_copy_user_page(to, from, vaddr);  \
 		preempt_enable();			\
         } while (0)
-#else
+#else // < 2.6.12
 #define copy_user_page(to,from,vaddr,pg) __cpu_copy_user_page(to, from, vaddr)
 #endif
 

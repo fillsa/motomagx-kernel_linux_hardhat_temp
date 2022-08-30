@@ -107,7 +107,7 @@ match(const struct sk_buff *skb,
       int *hotdrop);
 
 /* Function to hash a given address into the hash table of table_size size */
-int hash_func(unsigned int addr, int table_size)
+static int hash_func(unsigned int addr, int table_size)
 {
 	int result = 0;
 	unsigned int value = addr;
@@ -223,7 +223,7 @@ static int ip_recent_ctrl(struct file *file, const char __user *input, unsigned 
 			curr_table->table[count].last_seen = 0;
 			curr_table->table[count].addr = 0;
 			curr_table->table[count].ttl = 0;
-			memset(curr_table->table[count].last_pkts,0,ip_pkt_list_tot*sizeof(u_int32_t));
+			memset(curr_table->table[count].last_pkts,0,ip_pkt_list_tot*sizeof(unsigned long));
 			curr_table->table[count].oldest_pkt = 0;
 			curr_table->table[count].time_pos = 0;
 			curr_table->time_info[count].position = count;
@@ -502,7 +502,7 @@ match(const struct sk_buff *skb,
 		location = time_info[curr_table->time_pos].position;
 		hash_table[r_list[location].hash_entry] = -1;
 		hash_table[hash_result] = location;
-		memset(r_list[location].last_pkts,0,ip_pkt_list_tot*sizeof(u_int32_t));
+		memset(r_list[location].last_pkts,0,ip_pkt_list_tot*sizeof(unsigned long));
 		r_list[location].time_pos = curr_table->time_pos;
 		r_list[location].addr = addr;
 		r_list[location].ttl = ttl;
@@ -631,7 +631,7 @@ match(const struct sk_buff *skb,
 			r_list[location].last_seen = 0;
 			r_list[location].addr = 0;
 			r_list[location].ttl = 0;
-			memset(r_list[location].last_pkts,0,ip_pkt_list_tot*sizeof(u_int32_t));
+			memset(r_list[location].last_pkts,0,ip_pkt_list_tot*sizeof(unsigned long));
 			r_list[location].oldest_pkt = 0;
 			ans = !info->invert;
 		}
@@ -713,7 +713,7 @@ checkentry(const char *tablename,
 #endif
 
 	curr_table = vmalloc(sizeof(struct recent_ip_tables));
-	if(curr_table == NULL) return -ENOMEM;
+	if(curr_table == NULL) return 0;
 
 	spin_lock_init(&curr_table->list_lock);
 	curr_table->next = NULL;
@@ -730,14 +730,14 @@ checkentry(const char *tablename,
 #endif
 
 	curr_table->table = vmalloc(sizeof(struct recent_ip_list)*ip_list_tot);
-	if(curr_table->table == NULL) { vfree(curr_table); return -ENOMEM; }
+	if(curr_table->table == NULL) { vfree(curr_table); return 0; }
 	memset(curr_table->table,0,sizeof(struct recent_ip_list)*ip_list_tot);
 #ifdef DEBUG
 	if(debug) printk(KERN_INFO RECENT_NAME ": checkentry: Allocating %d for pkt_list.\n",
-			sizeof(u_int32_t)*ip_pkt_list_tot*ip_list_tot);
+			sizeof(unsigned long)*ip_pkt_list_tot*ip_list_tot);
 #endif
 
-	hold = vmalloc(sizeof(u_int32_t)*ip_pkt_list_tot*ip_list_tot);
+	hold = vmalloc(sizeof(unsigned long)*ip_pkt_list_tot*ip_list_tot);
 #ifdef DEBUG
 	if(debug) printk(KERN_INFO RECENT_NAME ": checkentry: After pkt_list allocation.\n");
 #endif
@@ -745,7 +745,7 @@ checkentry(const char *tablename,
 		printk(KERN_INFO RECENT_NAME ": checkentry: unable to allocate for pkt_list.\n");
 		vfree(curr_table->table); 
 		vfree(curr_table);
-		return -ENOMEM;
+		return 0;
 	}
 	for(c = 0; c < ip_list_tot; c++) {
 		curr_table->table[c].last_pkts = hold + c*ip_pkt_list_tot;
@@ -763,7 +763,7 @@ checkentry(const char *tablename,
 		vfree(hold);
 		vfree(curr_table->table); 
 		vfree(curr_table);
-		return -ENOMEM;
+		return 0;
 	}
 
 	for(c = 0; c < ip_list_hash_size; c++) {
@@ -783,7 +783,7 @@ checkentry(const char *tablename,
 		vfree(hold);
 		vfree(curr_table->table); 
 		vfree(curr_table);
-		return -ENOMEM;
+		return 0;
 	}
 	for(c = 0; c < ip_list_tot; c++) {
 		curr_table->time_info[c].position = c;
@@ -827,7 +827,7 @@ checkentry(const char *tablename,
 			if(debug) printk(KERN_INFO RECENT_NAME ": checkentry() create_proc failed, no tables.\n");
 #endif
 			spin_unlock_bh(&recent_lock);
-			return -ENOMEM;
+			return 0;
 		}
 		while( strncmp(info->name,curr_table->name,IPT_RECENT_NAME_LEN) && (last_table = curr_table) && (curr_table = curr_table->next) );
 		if(!curr_table) {
@@ -835,7 +835,7 @@ checkentry(const char *tablename,
 			if(debug) printk(KERN_INFO RECENT_NAME ": checkentry() create_proc failed, table already destroyed.\n");
 #endif
 			spin_unlock_bh(&recent_lock);
-			return -ENOMEM;
+			return 0;
 		}
 		if(last_table) last_table->next = curr_table->next; else r_tables = curr_table->next;
 		spin_unlock_bh(&recent_lock);
@@ -844,7 +844,7 @@ checkentry(const char *tablename,
 		vfree(hold);
 		vfree(curr_table->table);
 		vfree(curr_table);
-		return -ENOMEM;
+		return 0;
 	}
 	
 	curr_table->status_proc->owner = THIS_MODULE;
@@ -959,7 +959,7 @@ static struct ipt_match recent_match = {
 /* Kernel module initialization. */
 static int __init init(void)
 {
-	int count;
+	int err, count;
 
 	printk(version);
 #ifdef CONFIG_PROC_FS
@@ -983,7 +983,10 @@ static int __init init(void)
 	if(debug) printk(KERN_INFO RECENT_NAME ": ip_list_hash_size: %d\n",ip_list_hash_size);
 #endif
 
-	return ipt_register_match(&recent_match);
+	err = ipt_register_match(&recent_match);
+	if (err)
+		remove_proc_entry("ipt_recent", proc_net);
+	return err;
 }
 
 /* Kernel module destruction. */

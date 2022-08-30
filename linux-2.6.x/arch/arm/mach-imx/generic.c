@@ -26,6 +26,7 @@
 #include <linux/init.h>
 #include <linux/kernel.h>
 #include <linux/module.h>
+#include <asm/arch/imxfb.h>
 #include <asm/hardware.h>
 
 #include <asm/mach/map.h>
@@ -100,8 +101,8 @@ EXPORT_SYMBOL(imx_gpio_mode);
 static unsigned int imx_decode_pll(unsigned int pll)
 {
 	u32 mfi = (pll >> 10) & 0xf;
-	u32 mfn = pll & 0x3f;
-	u32 mfd = (pll >> 16) & 0x3f;
+	u32 mfn = pll & 0x3ff;
+	u32 mfd = (pll >> 16) & 0x3ff;
 	u32 pd =  (pll >> 26) & 0xf;
 	u32 f_ref = (CSCR & CSCR_SYSTEM_SEL) ? 16000000 : (CLK32 * 512);
 
@@ -228,6 +229,14 @@ static struct platform_device imx_uart2_device = {
 	.resource	= imx_uart2_resources,
 };
 
+static struct imxfb_mach_info imx_fb_info;
+
+void __init set_imx_fb_info(struct imxfb_mach_info *hard_imx_fb_info)
+{
+	memcpy(&imx_fb_info,hard_imx_fb_info,sizeof(struct imxfb_mach_info));
+}
+EXPORT_SYMBOL(set_imx_fb_info);
+
 static struct resource imxfb_resources[] = {
 	[0] = {
 		.start	= 0x00205000,
@@ -241,9 +250,16 @@ static struct resource imxfb_resources[] = {
 	},
 };
 
+static u64 fb_dma_mask = ~(u64)0;
+
 static struct platform_device imxfb_device = {
 	.name		= "imx-fb",
 	.id		= 0,
+	.dev		= {
+ 		.platform_data	= &imx_fb_info,
+		.dma_mask	= &fb_dma_mask,
+		.coherent_dma_mask = 0xffffffff,
+	},
 	.num_resources	= ARRAY_SIZE(imxfb_resources),
 	.resource	= imxfb_resources,
 };

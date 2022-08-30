@@ -6,7 +6,7 @@
  * Copyright (C) 1994, 1995 Waldorf GmbH
  * Copyright (C) 1994 - 2000 Ralf Baechle
  * Copyright (C) 1999, 2000 Silicon Graphics, Inc.
- * Copyright (C) 2004  MIPS Technologies, Inc.  All rights reserved.
+ * Copyright (C) 2004, 2005  MIPS Technologies, Inc.  All rights reserved.
  *	Author:	Maciej W. Rozycki <macro@mips.com>
  */
 #ifndef _ASM_IO_H
@@ -271,7 +271,8 @@ static inline void iounmap(volatile void __iomem *addr)
 
 #define __BUILD_MEMORY_SINGLE(pfx, bwlq, type, irq)			\
 									\
-static inline void pfx##write##bwlq(type val, void *mem)		\
+static inline void pfx##write##bwlq(type val,				\
+				    void *mem)		\
 {									\
 	volatile type *__mem;						\
 	type __val;							\
@@ -304,7 +305,7 @@ static inline void pfx##write##bwlq(type val, void *mem)		\
 		BUG();							\
 }									\
 									\
-static inline type pfx##read##bwlq(void *mem)				\
+static inline type pfx##read##bwlq(void *mem)		\
 {									\
 	volatile type *__mem;						\
 	type __val;							\
@@ -413,7 +414,7 @@ __BUILDIO(q, u64)
 
 #define __BUILD_MEMORY_STRING(bwlq, type)				\
 									\
-static inline void writes##bwlq(void *mem, void *addr,			\
+static inline void writes##bwlq(void *mem, void *addr,	\
 				unsigned int count)			\
 {									\
 	volatile type *__addr = addr;					\
@@ -424,7 +425,7 @@ static inline void writes##bwlq(void *mem, void *addr,			\
 	}								\
 }									\
 									\
-static inline void reads##bwlq(void *mem, void *addr,			\
+static inline void reads##bwlq(void *mem, void *addr,	\
 			       unsigned int count)			\
 {									\
 	volatile type *__addr = addr;					\
@@ -476,6 +477,34 @@ BUILDSTRING(q, u64)
 #define memset_io(a,b,c)	memset((void *)(a),(b),(c))
 #define memcpy_fromio(a,b,c)	memcpy((a),(void *)(b),(c))
 #define memcpy_toio(a,b,c)	memcpy((void *)(a),(b),(c))
+
+/*
+ * Memory Mapped I/O
+ */
+#define ioread8(addr)		readb(addr)
+#define ioread16(addr)		readw(addr)
+#define ioread32(addr)		readl(addr)
+
+#define iowrite8(b,addr)	writeb(b,addr)
+#define iowrite16(w,addr)	writew(w,addr)
+#define iowrite32(l,addr)	writel(l,addr)
+
+#define ioread8_rep(a,b,c)	readsb(a,b,c)
+#define ioread16_rep(a,b,c)	readsw(a,b,c)
+#define ioread32_rep(a,b,c)	readsl(a,b,c)
+
+#define iowrite8_rep(a,b,c)	writesb(a,b,c)
+#define iowrite16_rep(a,b,c)	writesw(a,b,c)
+#define iowrite32_rep(a,b,c)	writesl(a,b,c)
+
+/* Create a virtual mapping cookie for an IO port range */
+extern void __iomem *ioport_map(unsigned long port, unsigned int nr);
+extern void ioport_unmap(void __iomem *);
+
+/* Create a virtual mapping cookie for a PCI BAR (memory or IO) */
+struct pci_dev;
+extern void __iomem *pci_iomap(struct pci_dev *dev, int bar, unsigned long max);
+extern void pci_iounmap(struct pci_dev *dev, void __iomem *);
 
 /*
  * ISA space is 'always mapped' on currently supported MIPS systems, no need
@@ -584,5 +613,16 @@ extern void (*_dma_cache_inv)(unsigned long start, unsigned long size);
 
 #define csr_out32(v,a) (*(volatile u32 *)((unsigned long)(a) + __CSR_32_ADJUST) = (v))
 #define csr_in32(a)    (*(volatile u32 *)((unsigned long)(a) + __CSR_32_ADJUST))
+
+/*
+ * Convert a physical pointer to a virtual kernel pointer for /dev/mem
+ * access
+ */
+#define xlate_dev_mem_ptr(p)	__va(p)
+
+/*
+ * Convert a virtual cached pointer to an uncached pointer
+ */
+#define xlate_dev_kmem_ptr(p)	p
 
 #endif /* _ASM_IO_H */

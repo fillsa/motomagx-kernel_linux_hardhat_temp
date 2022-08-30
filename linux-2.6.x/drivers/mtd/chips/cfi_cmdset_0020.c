@@ -4,7 +4,7 @@
  *
  * (C) 2000 Red Hat. GPL'd
  *
- * $Id: cfi_cmdset_0020.c,v 1.16 2004/11/16 18:29:00 dwmw2 Exp $
+ * $Id: cfi_cmdset_0020.c,v 1.17 2004/11/20 12:49:04 dwmw2 Exp $
  * 
  * 10/10/2000	Nicolas Pitre <nico@cam.org>
  * 	- completely revamped method functions so they are aware and

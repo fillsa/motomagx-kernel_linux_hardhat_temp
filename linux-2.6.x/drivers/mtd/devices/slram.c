@@ -125,7 +125,7 @@ static int slram_read(struct mtd_info *mtd, loff_t from, size_t len,
 		size_t *retlen, u_char *buf)
 {
 	slram_priv_t *priv = mtd->priv;
-
+	
 	if (from > mtd->size)
 		return -EINVAL;
 

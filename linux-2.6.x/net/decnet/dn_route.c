@@ -99,9 +99,9 @@ extern struct neigh_table dn_neigh_table;
 
 static unsigned char dn_hiord_addr[6] = {0xAA,0x00,0x04,0x00,0x00,0x00};
 
-int dn_rt_min_delay = 2 * HZ;
-int dn_rt_max_delay = 10 * HZ;
-int dn_rt_mtu_expires = 10 * 60 * HZ;
+static const int dn_rt_min_delay = 2 * HZ;
+static const int dn_rt_max_delay = 10 * HZ;
+static const int dn_rt_mtu_expires = 10 * 60 * HZ;
 
 static unsigned long dn_rt_deadline;
 
@@ -253,7 +253,6 @@ static void dn_dst_update_pmtu(struct dst_entry *dst, u32 mtu)
  */
 static struct dst_entry *dn_dst_check(struct dst_entry *dst, __u32 cookie)
 {
-	dst_release(dst);
 	return NULL;
 }
 
@@ -818,7 +817,7 @@ static int dn_rt_set_next_hop(struct dn_route *rt, struct dn_fib_res *res)
 	if (rt->u.dst.metrics[RTAX_MTU-1] == 0 || 
             rt->u.dst.metrics[RTAX_MTU-1] > rt->u.dst.dev->mtu)
 		rt->u.dst.metrics[RTAX_MTU-1] = rt->u.dst.dev->mtu;
-	mss = dn_mss_from_pmtu(dev, dst_pmtu(&rt->u.dst));
+	mss = dn_mss_from_pmtu(dev, dst_mtu(&rt->u.dst));
 	if (rt->u.dst.metrics[RTAX_ADVMSS-1] == 0 ||
 	    rt->u.dst.metrics[RTAX_ADVMSS-1] > mss)
 		rt->u.dst.metrics[RTAX_ADVMSS-1] = mss;

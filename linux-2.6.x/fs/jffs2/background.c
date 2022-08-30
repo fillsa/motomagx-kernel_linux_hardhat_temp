@@ -95,12 +95,8 @@ static int jffs2_garbage_collect_thread(void *_c)
 			schedule();
 		}
 
-		if (current->flags & PF_FREEZE) {
-			refrigerator(0);
-			/* refrigerator() should recalc sigpending for us
-			   but doesn't. No matter - allow_signal() will. */
+		if (try_to_freeze())
 			continue;
-		}
 
 		cond_resched();
 

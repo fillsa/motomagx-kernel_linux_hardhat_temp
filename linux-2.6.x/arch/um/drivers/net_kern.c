@@ -30,6 +30,8 @@
 #include "irq_user.h"
 #include "irq_kern.h"
 
+#define DRIVER_NAME "uml-netdev"
+
 static DEFINE_SPINLOCK(opened_lock);
 LIST_HEAD(opened);
 
@@ -126,10 +128,6 @@ static int uml_net_open(struct net_device *dev)
 	lp->tl.data = (unsigned long) &lp->user;
 	netif_start_queue(dev);
 
-	spin_lock(&opened_lock);
-	list_add(&lp->list, &opened);
-	spin_unlock(&opened_lock);
-
 	/* clear buffer - it can happen that the host side of the interface
 	 * is full when we get here.  In this case, new data is never queued,
 	 * SIGIOs never arrive, and the net never works.
@@ -150,11 +148,9 @@ static int uml_net_close(struct net_device *dev)
 
 	free_irq_by_irq_and_dev(dev->irq, dev);
 	free_irq(dev->irq, dev);
-	if(lp->close != NULL) (*lp->close)(lp->fd, &lp->user);
+	if(lp->close != NULL)
+		(*lp->close)(lp->fd, &lp->user);
 	lp->fd = -1;
-	spin_lock(&opened_lock);
-	list_del(&lp->list);
-	spin_unlock(&opened_lock);
 
 	spin_unlock(&lp->lock);
 	return 0;
@@ -252,7 +248,7 @@ static int uml_net_ioctl(struct net_device *dev, struct ifreq *ifr, int cmd)
 {
 	static const struct ethtool_drvinfo info = {
 		.cmd     = ETHTOOL_GDRVINFO,
-		.driver  = "uml virtual ethernet",
+		.driver  = DRIVER_NAME,
 		.version = "42",
 	};
 	void *useraddr;
@@ -288,6 +284,12 @@ void uml_net_user_timer_expire(unsigned long _conn)
 
 static DEFINE_SPINLOCK(devices_lock);
 static struct list_head devices = LIST_HEAD_INIT(devices);
+
+static struct device_driver uml_net_driver = {
+	.name  = DRIVER_NAME,
+	.bus   = &platform_bus_type,
+};
+static int driver_registered;
 
 static int eth_configure(int n, void *init, char *mac,
 			 struct transport *transport)
@@ -330,6 +332,16 @@ static int eth_configure(int n, void *init, char *mac,
 		return 1;
 	}
 
+	/* sysfs register */
+	if (!driver_registered) {
+		driver_register(&uml_net_driver);
+		driver_registered = 1;
+	}
+	device->pdev.id = n;
+	device->pdev.name = DRIVER_NAME;
+	platform_device_register(&device->pdev);
+	SET_NETDEV_DEV(dev,&device->pdev.dev);
+
 	/* If this name ends up conflicting with an existing registered
 	 * netdevice, that is OK, register_netdev{,ice}() will notice this
 	 * and fail.
@@ -371,7 +383,6 @@ static int eth_configure(int n, void *init, char *mac,
 	save = lp->user[0];
 	*lp = ((struct uml_net_private)
 		{ .list  		= LIST_HEAD_INIT(lp->list),
-		  .lock 		= SPIN_LOCK_UNLOCKED,
 		  .dev 			= dev,
 		  .fd 			= -1,
 		  .mac 			= { 0xfe, 0xfd, 0x0, 0x0, 0x0, 0x0},
@@ -388,6 +399,7 @@ static int eth_configure(int n, void *init, char *mac,
 		  .user  		= { save } });
 
 	init_timer(&lp->tl);
+	spin_lock_init(&lp->lock);
 	lp->tl.function = uml_net_user_timer_expire;
 	if (lp->have_mac)
 		memcpy(lp->mac, device->mac, sizeof(lp->mac));
@@ -397,6 +409,11 @@ static int eth_configure(int n, void *init, char *mac,
 
 	if (device->have_mac)
 		set_ether_mac(dev, device->mac);
+
+	spin_lock(&opened_lock);
+	list_add(&lp->list, &opened);
+	spin_unlock(&opened_lock);
+
 	return(0);
 }
 
@@ -560,6 +577,7 @@ __uml_help(eth_setup,
 "    Configure a network device.\n\n"
 );
 
+#if 0
 static int eth_init(void)
 {
 	struct list_head *ele, *next;
@@ -574,8 +592,8 @@ static int eth_init(void)
 	
 	return(1);
 }
-
 __initcall(eth_init);
+#endif
 
 static int net_config(char *str)
 {
@@ -616,6 +634,7 @@ static int net_remove(char *str)
 	if(lp->fd > 0) return(-1);
 	if(lp->remove != NULL) (*lp->remove)(&lp->user);
 	unregister_netdev(dev);
+	platform_device_unregister(&device->pdev);
 
 	list_del(&device->list);
 	kfree(device);
@@ -705,11 +724,12 @@ __initcall(uml_net_init);
 static void close_devices(void)
 {
 	struct list_head *ele;
-	struct uml_net_private *lp;	
+	struct uml_net_private *lp;
 
 	list_for_each(ele, &opened){
 		lp = list_entry(ele, struct uml_net_private, list);
-		if(lp->close != NULL) (*lp->close)(lp->fd, &lp->user);
+		if((lp->close != NULL) && (lp->fd >= 0))
+			(*lp->close)(lp->fd, &lp->user);
 		if(lp->remove != NULL) (*lp->remove)(&lp->user);
 	}
 }

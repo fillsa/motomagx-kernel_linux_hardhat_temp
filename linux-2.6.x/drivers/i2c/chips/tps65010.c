@@ -316,7 +316,6 @@ static int tps65010_probe(struct i2c_adapter *bus, int address, int kind)
 	tps->client.addr = address;
 	i2c_set_clientdata(&tps->client, tps);
 	tps->client.adapter = bus;
-	tps->client.id = tps65010_id++;
 	tps->client.driver = &tps65010_driver;
 	strlcpy(tps->client.name, DRIVER_NAME, I2C_NAME_SIZE);
 

@@ -25,6 +25,7 @@
 #include <linux/security.h>
 #include <linux/sched.h>
 #include <linux/syscalls.h>
+#include <linux/audit.h>
 #include <linux/ltt-events.h>
 #include <asm/current.h>
 #include <asm/uaccess.h>
@@ -434,6 +435,8 @@ asmlinkage long sys_msgctl (int msqid, int cmd, struct msqid_ds __user *buf)
 			return -EFAULT;
 		if (copy_msqid_from_user (&setbuf, buf, version))
 			return -EFAULT;
+		if ((err = audit_ipc_perms(setbuf.qbytes, setbuf.uid, setbuf.gid, setbuf.mode)))
+			return err;
 		break;
 	case IPC_RMID:
 		break;
@@ -542,7 +545,6 @@ static inline int pipelined_send(struct msg_queue* msq, struct msg_msg* msg)
 			 */
 			preempt_disable();
 			if(msr->r_maxsize < msg->m_ts) {
-
 				msr->r_msg = NULL;
 				wake_up_process(msr->r_tsk);
 				smp_mb();

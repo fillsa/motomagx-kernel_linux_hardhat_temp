@@ -99,8 +99,6 @@ unsigned long tb_to_ns_scale;
 
 extern unsigned long wall_jiffies;
 
-static long time_offset;
-
 DEFINE_SPINLOCK(rtc_lock);
 
 EXPORT_SYMBOL(rtc_lock);
@@ -221,6 +219,7 @@ void timer_interrupt(struct pt_regs * regs)
 		jiffy_stamp += tb_ticks_per_jiffy;
 		
 		profile_tick(CPU_PROFILING, regs);
+		update_process_times(user_mode(regs));
 
 	  	if (smp_processor_id())
 			continue;
@@ -229,9 +228,6 @@ void timer_interrupt(struct pt_regs * regs)
 		write_seqlock(&xtime_lock);
 		tb_last_stamp = jiffy_stamp;
 		do_timer(regs);
-#ifndef CONFIG_SMP
-		update_process_times(user_mode(regs));
-#endif
 
 		/*
 		 * update the rtc when needed, this should be performed on the
@@ -270,10 +266,6 @@ void timer_interrupt(struct pt_regs * regs)
 	}
 #endif
 	last_jiffy_stamp(cpu) = jiffy_stamp;
-
-#ifdef CONFIG_SMP
-	smp_local_timer_interrupt(regs);
-#endif /* CONFIG_SMP */
 
 	if (ppc_md.heartbeat && !ppc_md.heartbeat_count--)
 		ppc_md.heartbeat();
@@ -378,7 +370,6 @@ int do_settimeofday(struct timespec *tv)
 
 	time_adjust = 0;                /* stop active adjtime() */
 	time_status |= STA_UNSYNC;
-	time_state = TIME_ERROR;        /* p. 24, (a) */
 	time_maxerror = NTP_PHASE_LIMIT;
 	time_esterror = NTP_PHASE_LIMIT;
 	write_sequnlock_irqrestore(&xtime_lock, flags);

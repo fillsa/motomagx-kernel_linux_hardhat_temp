@@ -262,8 +262,6 @@ static int jfs_mkdir(struct inode *dip, struct dentry *dentry, int mode)
 	ip->i_nlink = 2;	/* for '.' */
 	ip->i_op = &jfs_dir_inode_operations;
 	ip->i_fop = &jfs_dir_operations;
-	ip->i_mapping->a_ops = &jfs_aops;
-	mapping_set_gfp_mask(ip->i_mapping, GFP_NOFS);
 
 	insert_inode_hash(ip);
 	mark_inode_dirty(ip);
@@ -1233,7 +1231,7 @@ static int jfs_rename(struct inode *old_dir, struct dentry *old_dentry,
 	old_ip->i_ctime = CURRENT_TIME;
 	mark_inode_dirty(old_ip);
 
-	new_dir->i_ctime = new_dir->i_mtime = CURRENT_TIME;
+	new_dir->i_ctime = new_dir->i_mtime = current_fs_time(new_dir->i_sb);
 	mark_inode_dirty(new_dir);
 
 	/* Build list of inodes modified by this transaction */

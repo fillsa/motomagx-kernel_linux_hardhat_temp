@@ -182,10 +182,6 @@ typedef struct xfs_ihash {
 	uint			ih_version;
 } xfs_ihash_t;
 
-/*
- * Inode hashing and hash bucket locking.
- */
-#define XFS_BUCKETS(mp) (37*(mp)->m_sb.sb_agcount-1)
 #define XFS_IHASH(mp,ino) ((mp)->m_ihash + (((uint)(ino)) % (mp)->m_ihsize))
 
 /*
@@ -193,7 +189,6 @@ typedef struct xfs_ihash {
  * find inodes that share a cluster and can be flushed to disk at the same
  * time.
  */
-
 typedef struct xfs_chashlist {
 	struct xfs_chashlist	*chl_next;
 	struct xfs_inode	*chl_ip;
@@ -206,6 +201,8 @@ typedef struct xfs_chash {
 	xfs_chashlist_t		*ch_list;
 	lock_t			ch_lock;
 } xfs_chash_t;
+
+#define XFS_CHASH(mp,blk) ((mp)->m_chash + (((uint)blk) % (mp)->m_chsize))
 
 
 /*
@@ -450,12 +447,6 @@ xfs_inode_t *xfs_bhvtoi(struct bhv_desc *bhvp);
 #define BHV_IS_XFS(bdp)		(BHV_OPS(bdp) == &xfs_vnodeops)
 
 /*
- * Pick the inode cluster hash bucket
- * (m_chash is the same size as m_ihash)
- */
-#define XFS_CHASH(mp,blk) ((mp)->m_chash + (((uint)blk) % (mp)->m_chsize))
-
-/*
  * For multiple groups support: if S_ISGID bit is set in the parent
  * directory, group of new file is set to that of the parent, and
  * new subdirectory gets S_ISGID bit from parent.
@@ -504,12 +495,13 @@ int		xfs_itobp(struct xfs_mount *, struct xfs_trans *,
 int		xfs_iread(struct xfs_mount *, struct xfs_trans *, xfs_ino_t,
 			  xfs_inode_t **, xfs_daddr_t);
 int		xfs_iread_extents(struct xfs_trans *, xfs_inode_t *, int);
-int		xfs_ialloc(struct xfs_trans *, xfs_inode_t *, mode_t, nlink_t,
-			   xfs_dev_t, struct cred *, xfs_prid_t, int,
-			   struct xfs_buf **, boolean_t *, xfs_inode_t **);
+int		xfs_ialloc(struct xfs_trans *, xfs_inode_t *, mode_t,
+			   xfs_nlink_t, xfs_dev_t, struct cred *, xfs_prid_t,
+			   int, struct xfs_buf **, boolean_t *, xfs_inode_t **);
 void		xfs_xlate_dinode_core(xfs_caddr_t, struct xfs_dinode_core *,
-					int, xfs_arch_t);
-uint		xfs_dic2xflags(struct xfs_dinode_core *, xfs_arch_t);
+					int);
+uint		xfs_ip2xflags(struct xfs_inode *);
+uint		xfs_dic2xflags(struct xfs_dinode_core *);
 int		xfs_ifree(struct xfs_trans *, xfs_inode_t *,
 			   struct xfs_bmap_free *);
 void		xfs_itruncate_start(xfs_inode_t *, uint, xfs_fsize_t);

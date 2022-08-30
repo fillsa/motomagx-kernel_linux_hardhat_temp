@@ -25,6 +25,7 @@
 #include <linux/sched.h>
 #include <linux/slab.h>
 #include <linux/ioport.h>
+#include <linux/delay.h>
 #include <sound/core.h>
 #include <sound/emu8000.h>
 #include <sound/emu8000_reg.h>
@@ -355,8 +356,7 @@ init_arrays(emu8000_t *emu)
 {
 	send_array(emu, init1, ARRAY_SIZE(init1)/4);
 
-	set_current_state(TASK_INTERRUPTIBLE);
-	schedule_timeout((HZ * (44099 + 1024)) / 44100); /* wait for 1024 clocks */
+	msleep((1024 * 1000) / 44100); /* wait for 1024 clocks */
 	send_array(emu, init2, ARRAY_SIZE(init2)/4);
 	send_array(emu, init3, ARRAY_SIZE(init3)/4);
 
@@ -1133,7 +1133,7 @@ snd_emu8000_new(snd_card_t *card, int index, long port, int seq_ports, snd_seq_d
 		return err;
 	}
 	
-	if ((err = snd_device_new(card, SNDRV_DEV_LOWLEVEL, hw, &ops)) < 0) {
+	if ((err = snd_device_new(card, SNDRV_DEV_CODEC, hw, &ops)) < 0) {
 		snd_emu8000_free(hw);
 		return err;
 	}

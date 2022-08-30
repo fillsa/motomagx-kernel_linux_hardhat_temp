@@ -26,11 +26,11 @@ struct kgdb_regs {
         unsigned long regs[16];
         unsigned long pc;
         unsigned long pr;
+        unsigned long sr;
         unsigned long gbr;
-        unsigned long vbr;
         unsigned long mach;
         unsigned long macl;
-        unsigned long sr;
+        unsigned long vbr;
 };
 
 #define BREAKPOINT()		asm("trapa #0xff");
@@ -50,4 +50,5 @@ struct kgdb_regs {
 #define kgdb_flush_icache_range(start, end)	do { } while (0)
 #endif
 #endif				/* !__ASSEMBLY__ */
+
 #endif

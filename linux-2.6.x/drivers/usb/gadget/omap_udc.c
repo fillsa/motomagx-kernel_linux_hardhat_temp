@@ -387,7 +387,7 @@ done(struct omap_ep *ep, struct omap_req *req, int status)
 
 /*-------------------------------------------------------------------------*/
 
-#define UDC_FIFO_FULL		(UDC_NON_ISO_FIFO_FULL | UDC_ISO_FIFO_FULL)
+#define UDC_FIFO_FULL	(UDC_NON_ISO_FIFO_FULL | UDC_ISO_FIFO_FULL)
 #define UDC_FIFO_UNWRITABLE	(UDC_EP_HALTED | UDC_FIFO_FULL)
 
 #define FIFO_EMPTY	(UDC_NON_ISO_FIFO_EMPTY | UDC_ISO_FIFO_EMPTY)
@@ -2661,7 +2661,6 @@ omap_udc_setup(struct platform_device *odev, struct otg_transceiver *xceiv)
 
 		OMAP_BULK_EP("ep15in",  USB_DIR_IN  | 15);
 		OMAP_BULK_EP("ep15out", USB_DIR_OUT | 15);
-
 		break;
 
 #ifdef	USE_ISO
@@ -2911,7 +2910,7 @@ static int __exit omap_udc_remove(struct device *dev)
  * may involve talking to an external transceiver (e.g. isp1301).
  */
 
-static int omap_udc_suspend(struct device *dev, u32 state, u32 level)
+static int omap_udc_suspend(struct device *dev, pm_message_t state, u32 level)
 {
 	u32	devstat;
 
@@ -2928,8 +2927,8 @@ static int omap_udc_suspend(struct device *dev, u32 state, u32 level)
 		omap_pullup(&udc->gadget, 0);
 	}
 
-	udc->gadget.dev.power.power_state = 3;
-	udc->gadget.dev.parent->power.power_state = 3;
+	udc->gadget.dev.power.power_state = PMSG_SUSPEND;
+	udc->gadget.dev.parent->power.power_state = PMSG_SUSPEND;
 	return 0;
 }
 
@@ -2939,6 +2938,8 @@ static int omap_udc_resume(struct device *dev, u32 level)
 		return 0;
 
 	DBG("resume + wakeup/SRP\n");
+//2.6	+	udc->gadget.dev.parent->power.power_state = PMSG_ON;
+//2.6	+	udc->gadget.dev.power.power_state = PMSG_ON;
 	omap_pullup(&udc->gadget, 1);
 
 	/* maybe the host would enumerate us if we nudged it */

@@ -540,25 +540,25 @@ static char *lacp_rate	= NULL;
 static int arp_interval = BOND_LINK_ARP_INTERV;
 static char *arp_ip_target[BOND_MAX_ARP_TARGETS] = { NULL, };
 
-MODULE_PARM(max_bonds, "i");
+module_param(max_bonds, int, 0);
 MODULE_PARM_DESC(max_bonds, "Max number of bonded devices");
-MODULE_PARM(miimon, "i");
+module_param(miimon, int, 0);
 MODULE_PARM_DESC(miimon, "Link check interval in milliseconds");
-MODULE_PARM(updelay, "i");
+module_param(updelay, int, 0);
 MODULE_PARM_DESC(updelay, "Delay before considering link up, in milliseconds");
-MODULE_PARM(downdelay, "i");
+module_param(downdelay, int, 0);
 MODULE_PARM_DESC(downdelay, "Delay before considering link down, in milliseconds");
-MODULE_PARM(use_carrier, "i");
+module_param(use_carrier, int, 0);
 MODULE_PARM_DESC(use_carrier, "Use netif_carrier_ok (vs MII ioctls) in miimon; 0 for off, 1 for on (default)");
-MODULE_PARM(mode, "s");
+module_param(mode, charp, 0);
 MODULE_PARM_DESC(mode, "Mode of operation : 0 for round robin, 1 for active-backup, 2 for xor");
-MODULE_PARM(primary, "s");
+module_param(primary, charp, 0);
 MODULE_PARM_DESC(primary, "Primary network device to use");
-MODULE_PARM(lacp_rate, "s");
+module_param(lacp_rate, charp, 0);
 MODULE_PARM_DESC(lacp_rate, "LACPDU tx rate to request from 802.3ad partner (slow/fast)");
-MODULE_PARM(arp_interval, "i");
+module_param(arp_interval, int, 0);
 MODULE_PARM_DESC(arp_interval, "arp interval in milliseconds");
-MODULE_PARM(arp_ip_target, "1-" __MODULE_STRING(BOND_MAX_ARP_TARGETS) "s");
+module_param_array(arp_ip_target, charp, NULL, 0);
 MODULE_PARM_DESC(arp_ip_target, "arp targets in n.n.n.n form");
 
 /*----------------------------- Global variables ----------------------------*/
@@ -793,29 +793,20 @@ struct vlan_entry *bond_next_vlan(struct bonding *bond, struct vlan_entry *curr)
  * @skb: hw accel VLAN tagged skb to transmit
  * @slave_dev: slave that is supposed to xmit this skbuff
  * 
- * When the bond gets an skb to tarnsmit that is
+ * When the bond gets an skb to transmit that is
  * already hardware accelerated VLAN tagged, and it
  * needs to relay this skb to a slave that is not
  * hw accel capable, the skb needs to be "unaccelerated",
  * i.e. strip the hwaccel tag and re-insert it as part
  * of the payload.
- * 
- * Assumption - once a VLAN device is created over the bond device, all
- * packets are going to be hardware accelerated VLAN tagged since the IP
- * binding is done over the VLAN device
  */
 int bond_dev_queue_xmit(struct bonding *bond, struct sk_buff *skb, struct net_device *slave_dev)
 {
 	unsigned short vlan_id;
-	int res;
 
 	if (!list_empty(&bond->vlan_list) &&
-	    !(slave_dev->features & NETIF_F_HW_VLAN_TX)) {
-		res = vlan_get_tag(skb, &vlan_id);
-		if (res) {
-			return -EINVAL;
-		}
-
+	    !(slave_dev->features & NETIF_F_HW_VLAN_TX) &&
+	    vlan_get_tag(skb, &vlan_id) == 0) {
 		skb->dev = slave_dev;
 		skb = vlan_put_tag(skb, vlan_id);
 		if (!skb) {
@@ -1719,7 +1710,7 @@ static int bond_enslave(struct net_device *bond_dev, struct net_device *slave_de
 		 */
 		memcpy(addr.sa_data, bond_dev->dev_addr, bond_dev->addr_len);
 		addr.sa_family = slave_dev->type;
-		res = slave_dev->set_mac_address(slave_dev, &addr);
+		res = dev_set_mac_address(slave_dev, &addr);
 		if (res) {
 			dprintk("Error %d calling set_mac_address\n", res);
 			goto err_free;
@@ -1849,8 +1840,8 @@ static int bond_enslave(struct net_device *bond_dev, struct net_device *slave_de
 	if (bond_update_speed_duplex(new_slave) &&
 	    (new_slave->link != BOND_LINK_DOWN)) {
 		printk(KERN_WARNING DRV_NAME
-		       ": Warning: failed to get speed/duplex from %s, speed "
-		       "forced to 100Mbps, duplex forced to Full.\n",
+		       ": Warning: failed to get speed and duplex from %s, "
+		       "assumed to be 100Mb/sec and Full.\n",
 		       new_slave->dev->name);
 
 		if (bond->params.mode == BOND_MODE_8023AD) {
@@ -1991,7 +1982,7 @@ err_close:
 err_restore_mac:
 	memcpy(addr.sa_data, new_slave->perm_hwaddr, ETH_ALEN);
 	addr.sa_family = slave_dev->type;
-	slave_dev->set_mac_address(slave_dev, &addr);
+	dev_set_mac_address(slave_dev, &addr);
 
 err_free:
 	kfree(new_slave);
@@ -2171,7 +2162,7 @@ static int bond_release(struct net_device *bond_dev, struct net_device *slave_de
 		/* restore original ("permanent") mac address */
 		memcpy(addr.sa_data, slave->perm_hwaddr, ETH_ALEN);
 		addr.sa_family = slave_dev->type;
-		slave_dev->set_mac_address(slave_dev, &addr);
+		dev_set_mac_address(slave_dev, &addr);
 	}
 
 	/* restore the original state of the
@@ -2262,7 +2253,7 @@ static int bond_release_all(struct net_device *bond_dev)
 			/* restore original ("permanent") mac address*/
 			memcpy(addr.sa_data, slave->perm_hwaddr, ETH_ALEN);
 			addr.sa_family = slave_dev->type;
-			slave_dev->set_mac_address(slave_dev, &addr);
+			dev_set_mac_address(slave_dev, &addr);
 		}
 
 		/* restore the original state of the IFF_NOARP flag that might have
@@ -3046,7 +3037,7 @@ static void bond_activebackup_arp_mon(struct net_device *bond_dev)
 			bond_set_slave_inactive_flags(bond->current_arp_slave);
 
 			/* search for next candidate */
-			bond_for_each_slave_from(bond, slave, i, bond->current_arp_slave) {
+			bond_for_each_slave_from(bond, slave, i, bond->current_arp_slave->next) {
 				if (IS_UP(slave->dev)) {
 					slave->link = BOND_LINK_BACK;
 					bond_set_slave_active_flags(slave);
@@ -3898,12 +3889,7 @@ static int bond_change_mtu(struct net_device *bond_dev, int new_mtu)
 	bond_for_each_slave(bond, slave, i) {
 		dprintk("s %p s->p %p c_m %p\n", slave,
 			slave->prev, slave->dev->change_mtu);
-		if (slave->dev->change_mtu) {
-			res = slave->dev->change_mtu(slave->dev, new_mtu);
-		} else {
-			slave->dev->mtu = new_mtu;
-			res = 0;
-		}
+		res = dev_set_mtu(slave->dev, new_mtu);
 
 		if (res) {
 			/* If we failed to set the slave's mtu to the new value
@@ -3929,14 +3915,10 @@ unwind:
 	bond_for_each_slave_from_to(bond, slave, i, bond->first_slave, stop_at) {
 		int tmp_res;
 
-		if (slave->dev->change_mtu) {
-			tmp_res = slave->dev->change_mtu(slave->dev, bond_dev->mtu);
-			if (tmp_res) {
-				dprintk("unwind err %d dev %s\n", tmp_res,
-					slave->dev->name);
-			}
-		} else {
-			slave->dev->mtu = bond_dev->mtu;
+		tmp_res = dev_set_mtu(slave->dev, bond_dev->mtu);
+		if (tmp_res) {
+			dprintk("unwind err %d dev %s\n", tmp_res,
+				slave->dev->name);
 		}
 	}
 
@@ -3988,7 +3970,7 @@ static int bond_set_mac_address(struct net_device *bond_dev, void *addr)
 			goto unwind;
 		}
 
-		res = slave->dev->set_mac_address(slave->dev, addr);
+		res = dev_set_mac_address(slave->dev, addr);
 		if (res) {
 			/* TODO: consider downing the slave
 			 * and retry ?
@@ -4014,7 +3996,7 @@ unwind:
 	bond_for_each_slave_from_to(bond, slave, i, bond->first_slave, stop_at) {
 		int tmp_res;
 
-		tmp_res = slave->dev->set_mac_address(slave->dev, &tmp_sa);
+		tmp_res = dev_set_mac_address(slave->dev, &tmp_sa);
 		if (tmp_res) {
 			dprintk("unwind err %d dev %s\n", tmp_res,
 				slave->dev->name);
@@ -4305,6 +4287,10 @@ static int __init bond_init(struct net_device *bond_dev, struct bond_params *par
 	 * slaves are enslaved.
 	 */
 	bond_dev->features |= NETIF_F_VLAN_CHALLENGED;
+
+	/* don't acquire bond device's xmit_lock when 
+	 * transmitting */
+	bond_dev->features |= NETIF_F_LLTX;
 
 	/* By default, we declare the bond to be fully
 	 * VLAN hardware accelerated capable. Special

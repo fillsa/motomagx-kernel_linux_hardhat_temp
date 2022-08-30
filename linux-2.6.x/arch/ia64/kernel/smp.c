@@ -52,7 +52,7 @@
  * Structure and data for smp_call_function(). This is designed to minimise static memory
  * requirements. It also looks cleaner.
  */
-static spinlock_t call_lock __cacheline_aligned = SPIN_LOCK_UNLOCKED;
+static  __cacheline_aligned DEFINE_SPINLOCK(call_lock);
 
 struct call_data_struct {
 	void (*func) (void *info);
@@ -227,7 +227,6 @@ smp_flush_tlb_all (void)
 {
 	on_each_cpu((void (*)(void *))local_flush_tlb_all, NULL, 1, 1);
 }
-EXPORT_SYMBOL(smp_flush_tlb_all);
 
 void
 smp_flush_tlb_mm (struct mm_struct *mm)

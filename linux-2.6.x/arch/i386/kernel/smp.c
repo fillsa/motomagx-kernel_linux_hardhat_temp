@@ -189,7 +189,7 @@ void send_IPI_mask_bitmask(cpumask_t cpumask, int vector)
 	local_irq_restore(flags);
 }
 
-inline void send_IPI_mask_sequence(cpumask_t mask, int vector)
+void send_IPI_mask_sequence(cpumask_t mask, int vector)
 {
 	unsigned long cfg, flags;
 	unsigned int query_cpu;
@@ -245,6 +245,7 @@ inline void send_IPI_mask_sequence(cpumask_t mask, int vector)
 static cpumask_t flush_cpumask;
 static struct mm_struct * flush_mm;
 static unsigned long flush_va;
+//2.6.12	+static DEFINE_SPINLOCK(tlbstate_lock);
 static DEFINE_RAW_SPINLOCK(tlbstate_lock);
 #define FLUSH_ALL	0xffffffff
 
@@ -493,6 +494,7 @@ void smp_send_reschedule_allbutself(void)
  * Structure and data for smp_call_function(). This is designed to minimise
  * static memory requirements. It also looks cleaner.
  */
+//2.6.12	+static DEFINE_SPINLOCK(call_lock);
 static DEFINE_RAW_SPINLOCK(call_lock);
 
 struct call_data_struct {

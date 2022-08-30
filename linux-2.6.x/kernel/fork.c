@@ -34,6 +34,7 @@
 #include <linux/mman.h>
 #include <linux/fs.h>
 #include <linux/cpu.h>
+#include <linux/cpuset.h>
 #include <linux/security.h>
 #include <linux/swap.h>
 #include <linux/syscalls.h>
@@ -44,6 +45,7 @@
 #include <linux/audit.h>
 #include <linux/profile.h>
 #include <linux/rmap.h>
+#include <linux/acct.h>
 #include <linux/kthread.h>
 #include <linux/notifier.h>
 #include <linux/ltt-events.h>
@@ -59,13 +61,13 @@
 #include <linux/aplogger_hook.h>
 #endif
  
-/* The idle threads do not count..
- * Protected by write_lock_irq(&tasklist_lock)
+/*
+ * Protected counters by write_lock_irq(&tasklist_lock)
  */
-int nr_threads;
-
-int max_threads;
 unsigned long total_forks;	/* Handle normal Linux uptimes. */
+int nr_threads; 		/* The idle threads do not count.. */
+
+int max_threads;		/* tunable limit on nr_threads */
 
 DEFINE_PER_CPU(unsigned long, process_counts) = 0;
 
@@ -99,6 +101,24 @@ int nr_processes(void)
 # define free_task_struct(tsk)	kmem_cache_free(task_struct_cachep, (tsk))
 static kmem_cache_t *task_struct_cachep;
 #endif
+
+/* SLAB cache for signal_struct structures (tsk->signal) */
+kmem_cache_t *signal_cachep;
+
+/* SLAB cache for sighand_struct structures (tsk->sighand) */
+kmem_cache_t *sighand_cachep;
+
+/* SLAB cache for files_struct structures (tsk->files) */
+kmem_cache_t *files_cachep;
+
+/* SLAB cache for fs_struct structures (tsk->fs) */
+kmem_cache_t *fs_cachep;
+
+/* SLAB cache for vm_area_struct structures */
+kmem_cache_t *vm_area_cachep;
+
+/* SLAB cache for mm_struct structures (tsk->mm) */
+static kmem_cache_t *mm_cachep;
 
 void free_task(struct task_struct *tsk)
 {
@@ -173,6 +193,8 @@ void __init fork_init(unsigned long mempages)
 
 	init_task.signal->rlim[RLIMIT_NPROC].rlim_cur = max_threads/2;
 	init_task.signal->rlim[RLIMIT_NPROC].rlim_max = max_threads/2;
+	init_task.signal->rlim[RLIMIT_SIGPENDING] =
+		init_task.signal->rlim[RLIMIT_NPROC];
 
 	for (i = 0; i < NR_CPUS; i++) {
 		INIT_LIST_HEAD(&per_cpu(delayed_drop_list, i));
@@ -223,8 +245,8 @@ static inline int dup_mmap(struct mm_struct * mm, struct mm_struct * oldmm)
 	mm->mmap_cache = NULL;
 	mm->free_area_cache = oldmm->mmap_base;
 	mm->map_count = 0;
-	mm->rss = 0;
-	mm->anon_rss = 0;
+	set_mm_counter(mm, rss, 0);
+	set_mm_counter(mm, anon_rss, 0);
 	cpus_clear(mm->cpu_vm_mask);
 	mm->mm_rb = RB_ROOT;
 	rb_link = &mm->mm_rb.rb_node;
@@ -268,6 +290,7 @@ static inline int dup_mmap(struct mm_struct * mm, struct mm_struct * oldmm)
       
 			/* insert tmp into the share list, just after mpnt */
 			spin_lock(&file->f_mapping->i_mmap_lock);
+			tmp->vm_truncate_count = mpnt->vm_truncate_count;
 			flush_dcache_mmap_lock(file->f_mapping);
 			vma_prio_tree_add(tmp, mpnt);
 			flush_dcache_mmap_unlock(file->f_mapping);
@@ -520,6 +543,9 @@ static int copy_mm(unsigned long clone_flags, struct task_struct * tsk)
 	if (retval)
 		goto free_pt;
 
+	mm->hiwater_rss = get_mm_counter(mm,rss);
+	mm->hiwater_vm = mm->total_vm;
+
 good_mm:
 	tsk->mm = mm;
 	tsk->active_mm = mm;
@@ -601,7 +627,7 @@ static int copy_files(unsigned long clone_flags, struct task_struct * tsk)
 {
 	struct files_struct *oldf, *newf;
 	struct file **old_fds, **new_fds;
-	int open_files, nfds, size, i, error = 0;
+	int open_files, size, i, error = 0, expand;
 
 	/*
 	 * A background process may not have any files ...
@@ -636,36 +662,32 @@ static int copy_files(unsigned long clone_flags, struct task_struct * tsk)
 	newf->open_fds	    = &newf->open_fds_init;
 	newf->fd	    = &newf->fd_array[0];
 
-	/* We don't yet have the oldf readlock, but even if the old
-           fdset gets grown now, we'll only copy up to "size" fds */
-	size = oldf->max_fdset;
-	if (size > __FD_SETSIZE) {
-		newf->max_fdset = 0;
-		spin_lock(&newf->file_lock);
-		error = expand_fdset(newf, size-1);
-		spin_unlock(&newf->file_lock);
-		if (error)
-			goto out_release;
-	}
 	spin_lock(&oldf->file_lock);
 
-	open_files = count_open_files(oldf, size);
+	open_files = count_open_files(oldf, oldf->max_fdset);
+	expand = 0;
 
 	/*
-	 * Check whether we need to allocate a larger fd array.
-	 * Note: we're not a clone task, so the open count won't
-	 * change.
+	 * Check whether we need to allocate a larger fd array or fd set.
+	 * Note: we're not a clone task, so the open count won't  change.
 	 */
-	nfds = NR_OPEN_DEFAULT;
-	if (open_files > nfds) {
-		spin_unlock(&oldf->file_lock);
+	if (open_files > newf->max_fdset) {
+		newf->max_fdset = 0;
+		expand = 1;
+	}
+	if (open_files > newf->max_fds) {
 		newf->max_fds = 0;
+		expand = 1;
+	}
+
+	/* if the old fdset gets grown now, we'll only copy up to "size" fds */
+	if (expand) {
+		spin_unlock(&oldf->file_lock);
 		spin_lock(&newf->file_lock);
-		error = expand_fd_array(newf, open_files-1);
+		error = expand_files(newf, open_files-1);
 		spin_unlock(&newf->file_lock);
-		if (error) 
+		if (error < 0)
 			goto out_release;
-		nfds = newf->max_fds;
 		spin_lock(&oldf->file_lock);
 	}
 
@@ -714,6 +736,7 @@ out:
 out_release:
 	free_fdset (newf->close_on_exec, newf->max_fdset);
 	free_fdset (newf->open_fds, newf->max_fdset);
+	free_fd_array(newf->fd, newf->max_fds);
 	kmem_cache_free(files_cachep, newf);
 	goto out;
 }
@@ -768,6 +791,7 @@ static inline int copy_sighand(unsigned long clone_flags, struct task_struct * t
 static inline int copy_signal(unsigned long clone_flags, struct task_struct * tsk)
 {
 	struct signal_struct *sig;
+	int ret;
 
 	if (clone_flags & CLONE_THREAD) {
 		atomic_inc(&current->signal->count);
@@ -778,16 +802,33 @@ static inline int copy_signal(unsigned long clone_flags, struct task_struct * ts
 	tsk->signal = sig;
 	if (!sig)
 		return -ENOMEM;
+
+	ret = copy_thread_group_keys(tsk);
+	if (ret < 0) {
+		kmem_cache_free(signal_cachep, sig);
+		return ret;
+	}
+
 	atomic_set(&sig->count, 1);
 	atomic_set(&sig->live, 1);
-	sig->group_exit = 0;
+	init_waitqueue_head(&sig->wait_chldexit);
+	sig->flags = 0;
 	sig->group_exit_code = 0;
 	sig->group_exit_task = NULL;
 	sig->group_stop_count = 0;
-	sig->stop_state = 0;
 	sig->curr_target = NULL;
 	init_sigpending(&sig->shared_pending);
 	INIT_LIST_HEAD(&sig->posix_timers);
+
+	sig->it_real_value = sig->it_real_incr = 0;
+	sig->real_timer.function = it_real_fn;
+	sig->real_timer.data = (unsigned long) tsk;
+	init_timer(&sig->real_timer);
+
+	sig->it_virt_expires = cputime_zero;
+	sig->it_virt_incr = cputime_zero;
+	sig->it_prof_expires = cputime_zero;
+	sig->it_prof_incr = cputime_zero;
 
 	sig->tty = current->signal->tty;
 	sig->pgrp = process_group(current);
@@ -795,13 +836,26 @@ static inline int copy_signal(unsigned long clone_flags, struct task_struct * ts
 	sig->leader = 0;	/* session leadership doesn't inherit */
 	sig->tty_old_pgrp = 0;
 
-	sig->utime = sig->stime = sig->cutime = sig->cstime = 0;
+	sig->utime = sig->stime = sig->cutime = sig->cstime = cputime_zero;
 	sig->nvcsw = sig->nivcsw = sig->cnvcsw = sig->cnivcsw = 0;
 	sig->min_flt = sig->maj_flt = sig->cmin_flt = sig->cmaj_flt = 0;
+	sig->sched_time = 0;
+	INIT_LIST_HEAD(&sig->cpu_timers[0]);
+	INIT_LIST_HEAD(&sig->cpu_timers[1]);
+	INIT_LIST_HEAD(&sig->cpu_timers[2]);
 
 	task_lock(current->group_leader);
 	memcpy(sig->rlim, current->signal->rlim, sizeof sig->rlim);
 	task_unlock(current->group_leader);
+
+	if (sig->rlim[RLIMIT_CPU].rlim_cur != RLIM_INFINITY) {
+		/*
+		 * New sole thread in the process gets an expiry time
+		 * of the whole CPU time limit.
+		 */
+		tsk->it_prof_expires =
+			secs_to_cputime(sig->rlim[RLIMIT_CPU].rlim_cur);
+	}
 
 	return 0;
 }
@@ -908,7 +962,6 @@ static task_t *copy_process(unsigned long clone_flags,
 
 	INIT_LIST_HEAD(&p->children);
 	INIT_LIST_HEAD(&p->sibling);
-	init_waitqueue_head(&p->wait_chldexit);
 	p->vfork_done = NULL;
 	spin_lock_init(&p->alloc_lock);
 	spin_lock_init(&p->proc_lock);
@@ -916,12 +969,22 @@ static task_t *copy_process(unsigned long clone_flags,
 	clear_tsk_thread_flag(p, TIF_SIGPENDING);
 	init_sigpending(&p->pending);
 
-	p->it_real_value = p->it_virt_value = p->it_prof_value = 0;
-	p->it_real_incr = p->it_virt_incr = p->it_prof_incr = 0;
-	init_timer(&p->real_timer);
-	p->real_timer.data = (unsigned long) p;
+	p->utime = cputime_zero;
+	p->stime = cputime_zero;
+ 	p->sched_time = 0;
+	p->rchar = 0;		/* I/O counter: bytes read */
+	p->wchar = 0;		/* I/O counter: bytes written */
+	p->syscr = 0;		/* I/O counter: read syscalls */
+	p->syscw = 0;		/* I/O counter: write syscalls */
+	acct_clear_integrals(p);
 
-	p->utime = p->stime = 0;
+ 	p->it_virt_expires = cputime_zero;
+	p->it_prof_expires = cputime_zero;
+ 	p->it_sched_expires = 0;
+ 	INIT_LIST_HEAD(&p->cpu_timers[0]);
+ 	INIT_LIST_HEAD(&p->cpu_timers[1]);
+ 	INIT_LIST_HEAD(&p->cpu_timers[2]);
+
 	p->lock_depth = -1;		/* -1 = no lock */
 	do_posix_clock_monotonic_gettime(&p->start_time);
 #ifdef CONFIG_MOT_FEAT_SECURE_DRM
@@ -1050,7 +1113,7 @@ static task_t *copy_process(unsigned long clone_flags,
 		 * do not create this new thread - the whole thread
 		 * group is supposed to exit anyway.
 		 */
-		if (current->signal->group_exit) {
+		if (current->signal->flags & SIGNAL_GROUP_EXIT) {
 			spin_unlock(&current->sighand->siglock);
 			write_unlock_irq(&tasklist_lock);
 			retval = -EAGAIN;
@@ -1068,12 +1131,29 @@ static task_t *copy_process(unsigned long clone_flags,
 			set_tsk_thread_flag(p, TIF_SIGPENDING);
 		}
 
+		if (!cputime_eq(current->signal->it_virt_expires,
+				cputime_zero) ||
+		    !cputime_eq(current->signal->it_prof_expires,
+				cputime_zero) ||
+		    current->signal->rlim[RLIMIT_CPU].rlim_cur != RLIM_INFINITY ||
+		    !list_empty(&current->signal->cpu_timers[0]) ||
+		    !list_empty(&current->signal->cpu_timers[1]) ||
+		    !list_empty(&current->signal->cpu_timers[2])) {
+			/*
+			 * Have child wake up on its first tick to check
+			 * for process CPU timers.
+			 */
+			p->it_prof_expires = jiffies_to_cputime(1);
+		}
+
 		spin_unlock(&current->sighand->siglock);
 	}
 
 	SET_LINKS(p);
 	if (unlikely(p->ptrace & PT_PTRACED))
 		__ptrace_link(p, current->parent);
+
+	cpuset_fork(p);
 
 	attach_pid(p, PIDTYPE_PID, p->pid);
 	attach_pid(p, PIDTYPE_TGID, p->tgid);
@@ -1088,6 +1168,7 @@ static task_t *copy_process(unsigned long clone_flags,
 	}
 
 	nr_threads++;
+	total_forks++;
 	write_unlock_irq(&tasklist_lock);
 	retval = 0;
 
@@ -1220,7 +1301,6 @@ long do_fork(unsigned long clone_flags,
 			wake_up_new_task(p, clone_flags);
 		else
 			p->state = TASK_STOPPED;
-		++total_forks;
 
 		if (unlikely (trace)) {
 			current->ptrace_message = pid;
@@ -1250,24 +1330,6 @@ long do_fork(unsigned long clone_flags,
 	}
 	return pid;
 }
-
-/* SLAB cache for signal_struct structures (tsk->signal) */
-kmem_cache_t *signal_cachep;
-
-/* SLAB cache for sighand_struct structures (tsk->sighand) */
-kmem_cache_t *sighand_cachep;
-
-/* SLAB cache for files_struct structures (tsk->files) */
-kmem_cache_t *files_cachep;
-
-/* SLAB cache for fs_struct structures (tsk->fs) */
-kmem_cache_t *fs_cachep;
-
-/* SLAB cache for vm_area_struct structures */
-kmem_cache_t *vm_area_cachep;
-
-/* SLAB cache for mm_struct structures (tsk->mm) */
-kmem_cache_t *mm_cachep;
 
 void __init proc_caches_init(void)
 {

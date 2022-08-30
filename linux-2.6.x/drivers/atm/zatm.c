@@ -22,6 +22,7 @@
 #include <linux/atm_zatm.h>
 #include <linux/capability.h>
 #include <linux/bitops.h>
+#include <linux/wait.h>
 #include <asm/byteorder.h>
 #include <asm/system.h>
 #include <asm/string.h>
@@ -410,7 +411,7 @@ printk("[-3..0] 0x%08lx 0x%08lx 0x%08lx 0x%08lx\n",((unsigned *) skb->data)[-3],
 #if 0
 printk("dummy: 0x%08lx, 0x%08lx\n",dummy[0],dummy[1]);
 #endif
-		size = error ? 0 : ntohs(((u16 *) skb->data)[cells*
+		size = error ? 0 : ntohs(((__be16 *) skb->data)[cells*
 		    ATM_CELL_PAYLOAD/sizeof(u16)-3]);
 		EVENT("got skb 0x%lx, size %d\n",(unsigned long) skb,size);
 		chan = (here[3] & uPD98401_AAL5_CHAN) >>
@@ -867,31 +868,21 @@ static void close_tx(struct atm_vcc *vcc)
 	struct zatm_vcc *zatm_vcc;
 	unsigned long flags;
 	int chan;
-struct sk_buff *skb;
-int once = 1;
 
 	zatm_vcc = ZATM_VCC(vcc);
 	zatm_dev = ZATM_DEV(vcc->dev);
 	chan = zatm_vcc->tx_chan;
 	if (!chan) return;
 	DPRINTK("close_tx\n");
-	while (skb_peek(&zatm_vcc->backlog)) {
-if (once) {
-printk("waiting for backlog to drain ...\n");
-event_dump();
-once = 0;
-}
-		sleep_on(&zatm_vcc->tx_wait);
+	if (skb_peek(&zatm_vcc->backlog)) {
+		printk("waiting for backlog to drain ...\n");
+		event_dump();
+		wait_event(zatm_vcc->tx_wait, !skb_peek(&zatm_vcc->backlog));
 	}
-once = 1;
-	while ((skb = skb_peek(&zatm_vcc->tx_queue))) {
-if (once) {
-printk("waiting for TX queue to drain ... %p\n",skb);
-event_dump();
-once = 0;
-}
-		DPRINTK("waiting for TX queue to drain ... %p\n",skb);
-		sleep_on(&zatm_vcc->tx_wait);
+	if (skb_peek(&zatm_vcc->tx_queue)) {
+		printk("waiting for TX queue to drain ...\n");
+		event_dump();
+		wait_event(zatm_vcc->tx_wait, !skb_peek(&zatm_vcc->tx_queue));
 	}
 	spin_lock_irqsave(&zatm_dev->lock, flags);
 #if 0
@@ -911,7 +902,7 @@ once = 0;
 		zatm_dev->tx_bw += vcc->qos.txtp.min_pcr;
 		dealloc_shaper(vcc->dev,zatm_vcc->shaper);
 	}
-	if (zatm_vcc->ring) kfree(zatm_vcc->ring);
+	kfree(zatm_vcc->ring);
 }
 
 
@@ -1099,7 +1090,7 @@ static irqreturn_t zatm_int(int irq,void *dev_id,struct pt_regs *regs)
 /*----------------------------- (E)EPROM access -----------------------------*/
 
 
-static void __init eprom_set(struct zatm_dev *zatm_dev,unsigned long value,
+static void __devinit eprom_set(struct zatm_dev *zatm_dev,unsigned long value,
     unsigned short cmd)
 {
 	int error;
@@ -1110,7 +1101,7 @@ static void __init eprom_set(struct zatm_dev *zatm_dev,unsigned long value,
 }
 
 
-static unsigned long __init eprom_get(struct zatm_dev *zatm_dev,
+static unsigned long __devinit eprom_get(struct zatm_dev *zatm_dev,
     unsigned short cmd)
 {
 	unsigned int value;
@@ -1123,7 +1114,7 @@ static unsigned long __init eprom_get(struct zatm_dev *zatm_dev,
 }
 
 
-static void __init eprom_put_bits(struct zatm_dev *zatm_dev,
+static void __devinit eprom_put_bits(struct zatm_dev *zatm_dev,
     unsigned long data,int bits,unsigned short cmd)
 {
 	unsigned long value;
@@ -1138,7 +1129,7 @@ static void __init eprom_put_bits(struct zatm_dev *zatm_dev,
 }
 
 
-static void __init eprom_get_byte(struct zatm_dev *zatm_dev,
+static void __devinit eprom_get_byte(struct zatm_dev *zatm_dev,
     unsigned char *byte,unsigned short cmd)
 {
 	int i;
@@ -1154,7 +1145,7 @@ static void __init eprom_get_byte(struct zatm_dev *zatm_dev,
 }
 
 
-static unsigned char __init eprom_try_esi(struct atm_dev *dev,
+static unsigned char __devinit eprom_try_esi(struct atm_dev *dev,
     unsigned short cmd,int offset,int swap)
 {
 	unsigned char buf[ZEPROM_SIZE];
@@ -1175,7 +1166,7 @@ static unsigned char __init eprom_try_esi(struct atm_dev *dev,
 }
 
 
-static void __init eprom_get_esi(struct atm_dev *dev)
+static void __devinit eprom_get_esi(struct atm_dev *dev)
 {
 	if (eprom_try_esi(dev,ZEPROM_V1_REG,ZEPROM_V1_ESI_OFF,1)) return;
 	(void) eprom_try_esi(dev,ZEPROM_V2_REG,ZEPROM_V2_ESI_OFF,0);
@@ -1348,12 +1339,9 @@ static int __init zatm_start(struct atm_dev *dev)
 	return 0;
     out:
 	for (i = 0; i < NR_MBX; i++)
-		if (zatm_dev->mbx_start[i] != 0)
-			kfree((void *) zatm_dev->mbx_start[i]);
-	if (zatm_dev->rx_map != NULL)
-		kfree(zatm_dev->rx_map);
-	if (zatm_dev->tx_map != NULL)
-		kfree(zatm_dev->tx_map);
+		kfree(zatm_dev->mbx_start[i]);
+	kfree(zatm_dev->rx_map);
+	kfree(zatm_dev->tx_map);
 	free_irq(zatm_dev->irq, dev);
 	return error;
 }
@@ -1605,7 +1593,7 @@ static int __devinit zatm_init_one(struct pci_dev *pci_dev,
 		goto out_disable;
 
 	zatm_dev->pci_dev = pci_dev;
-	dev = (struct atm_dev *)zatm_dev;
+	dev->dev_data = zatm_dev;
 	zatm_dev->copper = (int)ent->driver_data;
 	if ((ret = zatm_init(dev)) || (ret = zatm_start(dev)))
 		goto out_release;
@@ -1648,7 +1636,7 @@ static struct pci_driver zatm_driver = {
 
 static int __init zatm_init_module(void)
 {
-	return pci_module_init(&zatm_driver);
+	return pci_register_driver(&zatm_driver);
 }
 
 module_init(zatm_init_module);

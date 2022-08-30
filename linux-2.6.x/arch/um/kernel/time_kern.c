@@ -22,7 +22,7 @@
 #include "mode.h"
 #include "os.h"
 
-u64 jiffies_64;
+u64 jiffies_64 = INITIAL_JIFFIES;
 
 EXPORT_SYMBOL(jiffies_64);
 
@@ -47,8 +47,6 @@ static unsigned long long prev_usecs;
 #ifdef CONFIG_UML_REAL_TIME_CLOCK
 static long long delta;   		/* Deviation per interval */
 #endif
-
-#define MILLION 1000000
 
 void timer_irq(union uml_pt_regs *regs)
 {
@@ -111,19 +109,19 @@ irqreturn_t um_timer(int irq, void *dev, struct pt_regs *regs)
 	return(IRQ_HANDLED);
 }
 
-long um_time(int * tloc)
+long um_time(int __user *tloc)
 {
 	struct timeval now;
 
 	do_gettimeofday(&now);
 	if (tloc) {
- 		if (put_user(now.tv_sec,tloc))
+ 		if (put_user(now.tv_sec, tloc))
 			now.tv_sec = -EFAULT;
 	}
 	return now.tv_sec;
 }
 
-long um_stime(int * tptr)
+long um_stime(int __user *tptr)
 {
 	int value;
 	struct timespec new;
@@ -136,41 +134,10 @@ long um_stime(int * tptr)
 	return 0;
 }
 
-/* XXX Needs to be moved under sys-i386 */
-void __delay(um_udelay_t time)
-{
-	/* Stolen from the i386 __loop_delay */
-	int d0;
-	__asm__ __volatile__(
-		"\tjmp 1f\n"
-		".align 16\n"
-		"1:\tjmp 2f\n"
-		".align 16\n"
-		"2:\tdecl %0\n\tjns 2b"
-		:"=&a" (d0)
-		:"0" (time));
-}
-
-void __udelay(um_udelay_t usecs)
-{
-	int i, n;
-
-	n = (loops_per_jiffy * HZ * usecs) / MILLION;
-	for(i=0;i<n;i++) ;
-}
-
-void __const_udelay(um_udelay_t usecs)
-{
-	int i, n;
-
-	n = (loops_per_jiffy * HZ * usecs) / MILLION;
-	for(i=0;i<n;i++) ;
-}
-
 void timer_handler(int sig, union uml_pt_regs *regs)
 {
 	local_irq_disable();
-	update_process_times(user_context(UPT_SP(regs)));
+	update_process_times(CHOOSE_MODE(user_context(UPT_SP(regs)), (regs)->skas.is_user));
 	local_irq_enable();
 	if(current_thread->cpu == 0)
 		timer_irq(regs);

@@ -19,6 +19,7 @@
 #include "qla_def.h"
 
 #include <linux/delay.h>
+#include <scsi/scsi_transport_fc.h>
 
 #include "qla_devtbl.h"
 
@@ -44,44 +45,14 @@ static int qla2x00_init_rings(scsi_qla_host_t *);
 static int qla2x00_fw_ready(scsi_qla_host_t *);
 static int qla2x00_configure_hba(scsi_qla_host_t *);
 static int qla2x00_nvram_config(scsi_qla_host_t *);
-static void qla2x00_init_tgt_map(scsi_qla_host_t *);
 static int qla2x00_configure_loop(scsi_qla_host_t *);
 static int qla2x00_configure_local_loop(scsi_qla_host_t *);
 static void qla2x00_update_fcport(scsi_qla_host_t *, fc_port_t *);
-static void qla2x00_lun_discovery(scsi_qla_host_t *, fc_port_t *);
-static int qla2x00_rpt_lun_discovery(scsi_qla_host_t *, fc_port_t *,
-    inq_cmd_rsp_t *, dma_addr_t);
-static int qla2x00_report_lun(scsi_qla_host_t *, fc_port_t *);
-static fc_lun_t *qla2x00_cfg_lun(scsi_qla_host_t *, fc_port_t *, uint16_t,
-    inq_cmd_rsp_t *, dma_addr_t);
-static fc_lun_t * qla2x00_add_lun(fc_port_t *, uint16_t);
-static int qla2x00_inquiry(scsi_qla_host_t *, fc_port_t *, uint16_t,
-    inq_cmd_rsp_t *, dma_addr_t);
 static int qla2x00_configure_fabric(scsi_qla_host_t *);
 static int qla2x00_find_all_fabric_devs(scsi_qla_host_t *, struct list_head *);
 static int qla2x00_device_resync(scsi_qla_host_t *);
 static int qla2x00_fabric_dev_login(scsi_qla_host_t *, fc_port_t *,
     uint16_t *);
-static void qla2x00_config_os(scsi_qla_host_t *ha);
-static uint16_t qla2x00_fcport_bind(scsi_qla_host_t *ha, fc_port_t *fcport);
-static os_lun_t * qla2x00_fclun_bind(scsi_qla_host_t *, fc_port_t *,
-    fc_lun_t *);
-static void qla2x00_lun_free(scsi_qla_host_t *, uint16_t, uint16_t);
-
-static int qla2x00_bstr_to_hex(char *, uint8_t *, int);
-static int qla2x00_find_propname(scsi_qla_host_t *,
-    char *, char *, char *, int);
-#if 0
-static void qla2x00_get_lun_mask_from_config(scsi_qla_host_t *, fc_port_t *,
-    uint16_t, uint16_t);
-static int qla2x00_get_prop_16chars(scsi_qla_host_t *,
-    char *, char *, char *);
-static void qla2x00_get_properties(scsi_qla_host_t *, char *);
-
-static void qla2x00_cfg_persistent_binding(scsi_qla_host_t *);
-static os_tgt_t *qla2x00_persistent_bind(scsi_qla_host_t *, uint8_t *,
-    uint8_t *, port_id_t *, uint16_t);
-#endif
 
 static int qla2x00_restart_isp(scsi_qla_host_t *);
 static void qla2x00_reset_adapter(scsi_qla_host_t *);
@@ -132,25 +103,10 @@ qla2x00_initialize_adapter(scsi_qla_host_t *ha)
 
 	qla2x00_reset_chip(ha);
 
-	/* Initialize target map database. */
-	qla2x00_init_tgt_map(ha);
-
 	qla_printk(KERN_INFO, ha, "Configure NVRAM parameters...\n");
 	qla2x00_nvram_config(ha);
 
 	qla_printk(KERN_INFO, ha, "Verifying loaded RISC code...\n");
-
-#if 0
-	/*
-	 * If the user specified a device configuration on the command line
-	 * then use it as the configuration.  Otherwise, we scan for all
-	 * devices.
-	 */
-	if (ql2xdevconf) {
-		ha->cmdline = ql2xdevconf;
-		qla2x00_get_properties(ha, ql2xdevconf);
-	}
-#endif
 
 	retry = 10;
 	/*
@@ -853,7 +809,7 @@ qla2x00_init_response_q_entries(scsi_qla_host_t *ha)
 static void
 qla2x00_update_fw_options(scsi_qla_host_t *ha)
 {
-	uint16_t swing, emphasis;
+	uint16_t swing, emphasis, tx_sens, rx_sens;
 
 	memset(ha->fw_options, 0, sizeof(ha->fw_options));
 	qla2x00_get_fw_options(ha, ha->fw_options);
@@ -868,23 +824,53 @@ qla2x00_update_fw_options(scsi_qla_host_t *ha)
 	    sizeof(ha->fw_seriallink_options)));
 
 	ha->fw_options[1] &= ~FO1_SET_EMPHASIS_SWING;
-	if (ha->fw_seriallink_options[1] & BIT_2)
+	if (ha->fw_seriallink_options[3] & BIT_2) {
 		ha->fw_options[1] |= FO1_SET_EMPHASIS_SWING;
 
-	/*  1G settings */
-	swing = ha->fw_seriallink_options[0] & (BIT_2 | BIT_1 | BIT_0);
-	emphasis = ha->fw_seriallink_options[0] & (BIT_4 | BIT_3);
-	emphasis >>= 3;
-	ha->fw_options[10] = (emphasis << 14) | (swing << 8) | 0x3;
-	/*  2G settings */
-	swing = ha->fw_seriallink_options[0] & (BIT_7 | BIT_6 | BIT_5);
-	swing >>= 5;
-	emphasis = ha->fw_seriallink_options[1] & (BIT_1 | BIT_0);
-	ha->fw_options[11] = (emphasis << 14) | (swing << 8) | 0x3;
+		/*  1G settings */
+		swing = ha->fw_seriallink_options[2] & (BIT_2 | BIT_1 | BIT_0);
+		emphasis = (ha->fw_seriallink_options[2] &
+		    (BIT_4 | BIT_3)) >> 3;
+		tx_sens = ha->fw_seriallink_options[0] &
+		    (BIT_3 | BIT_2 | BIT_1 | BIT_0); 
+		rx_sens = (ha->fw_seriallink_options[0] &
+		    (BIT_7 | BIT_6 | BIT_5 | BIT_4)) >> 4;
+		ha->fw_options[10] = (emphasis << 14) | (swing << 8);
+		if (IS_QLA2300(ha) || IS_QLA2312(ha) || IS_QLA6312(ha)) {
+			if (rx_sens == 0x0)
+				rx_sens = 0x3;
+			ha->fw_options[10] |= (tx_sens << 4) | rx_sens;
+		} else if (IS_QLA2322(ha) || IS_QLA6322(ha))
+			ha->fw_options[10] |= BIT_5 |
+			    ((rx_sens & (BIT_1 | BIT_0)) << 2) |
+			    (tx_sens & (BIT_1 | BIT_0));
+
+		/*  2G settings */
+		swing = (ha->fw_seriallink_options[2] &
+		    (BIT_7 | BIT_6 | BIT_5)) >> 5;
+		emphasis = ha->fw_seriallink_options[3] & (BIT_1 | BIT_0);
+		tx_sens = ha->fw_seriallink_options[1] &
+		    (BIT_3 | BIT_2 | BIT_1 | BIT_0); 
+		rx_sens = (ha->fw_seriallink_options[1] &
+		    (BIT_7 | BIT_6 | BIT_5 | BIT_4)) >> 4;
+		ha->fw_options[11] = (emphasis << 14) | (swing << 8);
+		if (IS_QLA2300(ha) || IS_QLA2312(ha) || IS_QLA6312(ha)) {
+			if (rx_sens == 0x0)
+				rx_sens = 0x3;
+			ha->fw_options[11] |= (tx_sens << 4) | rx_sens;
+		} else if (IS_QLA2322(ha) || IS_QLA6322(ha))
+			ha->fw_options[11] |= BIT_5 |
+			    ((rx_sens & (BIT_1 | BIT_0)) << 2) |
+			    (tx_sens & (BIT_1 | BIT_0));
+	}
 
 	/* FCP2 options. */
 	/*  Return command IOCBs without waiting for an ABTS to complete. */
 	ha->fw_options[3] |= BIT_13;
+
+	/* LED scheme. */
+	if (ha->flags.enable_led_scheme)
+		ha->fw_options[2] |= BIT_12;
 
 	/* Update firmware options. */
 	qla2x00_set_fw_options(ha, ha->fw_options);
@@ -1094,6 +1080,7 @@ qla2x00_configure_hba(scsi_qla_host_t *ha)
 	if (rval != QLA_SUCCESS) {
 		qla_printk(KERN_WARNING, ha,
 		    "ERROR -- Unable to get host loop ID.\n");
+		set_bit(ISP_ABORT_NEEDED, &ha->dpc_flags);
 		return (rval);
 	}
 
@@ -1394,12 +1381,13 @@ qla2x00_nvram_config(scsi_qla_host_t *ha)
 	ha->flags.enable_lip_reset = ((nv->host_p[1] & BIT_1) ? 1 : 0);
 	ha->flags.enable_lip_full_login = ((nv->host_p[1] & BIT_2) ? 1 : 0);
 	ha->flags.enable_target_reset = ((nv->host_p[1] & BIT_3) ? 1 : 0);
+	ha->flags.enable_led_scheme = ((nv->efi_parameters & BIT_3) ? 1 : 0);
 
 	ha->operating_mode =
 	    (icb->add_firmware_options[0] & (BIT_6 | BIT_5 | BIT_4)) >> 4;
 
-	ha->fw_seriallink_options[0] = nv->seriallink_options[0];
-	ha->fw_seriallink_options[1] = nv->seriallink_options[1];
+	memcpy(ha->fw_seriallink_options, nv->seriallink_options,
+	    sizeof(ha->fw_seriallink_options));
 
 	/* save HBA serial number */
 	ha->serial0 = icb->port_name[5];
@@ -1522,25 +1510,6 @@ qla2x00_nvram_config(scsi_qla_host_t *ha)
 	return (rval);
 }
 
-/*
-* qla2x00_init_tgt_map
-*      Initializes target map.
-*
-* Input:
-*      ha = adapter block pointer.
-*
-* Output:
-*      TGT_Q initialized
-*/
-static void
-qla2x00_init_tgt_map(scsi_qla_host_t *ha)
-{
-	uint32_t t;
-
-	for (t = 0; t < MAX_TARGETS; t++)
-		TGT_Q(ha, t) = (os_tgt_t *)NULL;
-}
-
 /**
  * qla2x00_alloc_fcport() - Allocate a generic fcport.
  * @ha: HA context
@@ -1565,7 +1534,6 @@ qla2x00_alloc_fcport(scsi_qla_host_t *ha, int flags)
 	fcport->iodesc_idx_sent = IODESC_INVALID_INDEX;
 	atomic_set(&fcport->state, FCS_UNCONFIGURED);
 	fcport->flags = FCF_RLC_SUPPORT;
-	INIT_LIST_HEAD(&fcport->fcluns);
 
 	return (fcport);
 }
@@ -1655,7 +1623,6 @@ qla2x00_configure_loop(scsi_qla_host_t *ha)
 		    test_bit(LOOP_RESYNC_NEEDED, &ha->dpc_flags)) {
 			rval = QLA_FUNCTION_FAILED;
 		} else {
-			qla2x00_config_os(ha);
 			atomic_set(&ha->loop_state, LOOP_READY);
 
 			DEBUG(printk("scsi(%ld): LOOP READY\n", ha->host_no));
@@ -1900,8 +1867,11 @@ qla2x00_update_fcport(scsi_qla_host_t *ha, fc_port_t *fcport)
 	if (fcport->flags & FCF_TAPE_PRESENT) {
 		spin_lock_irqsave(&ha->hardware_lock, flags);
 		for (index = 1; index < MAX_OUTSTANDING_COMMANDS; index++) {
+			fc_port_t *sfcp;
+
 			if ((sp = ha->outstanding_cmds[index]) != 0) {
-				if (sp->fclun->fcport == fcport) {
+				sfcp = sp->fcport;
+				if (sfcp == fcport) {
 					atomic_set(&fcport->state, FCS_ONLINE);
 					spin_unlock_irqrestore(
 					    &ha->hardware_lock, flags);
@@ -1912,421 +1882,47 @@ qla2x00_update_fcport(scsi_qla_host_t *ha, fc_port_t *fcport)
 		spin_unlock_irqrestore(&ha->hardware_lock, flags);
 	}
 
-	/* Do LUN discovery. */
 	if (fcport->port_type == FCT_INITIATOR ||
-	    fcport->port_type == FCT_BROADCAST) {
+	    fcport->port_type == FCT_BROADCAST)
 		fcport->device_type = TYPE_PROCESSOR;
-	} else {
-		qla2x00_lun_discovery(ha, fcport);
-	}
+
 	atomic_set(&fcport->state, FCS_ONLINE);
+
+	if (ha->flags.init_done)
+		qla2x00_reg_remote_port(ha, fcport);
 }
 
-/*
- * qla2x00_lun_discovery
- *	Issue SCSI inquiry command for LUN discovery.
- *
- * Input:
- *	ha:		adapter state pointer.
- *	fcport:		FC port structure pointer.
- *
- * Context:
- *	Kernel context.
- */
-static void
-qla2x00_lun_discovery(scsi_qla_host_t *ha, fc_port_t *fcport)
+void
+qla2x00_reg_remote_port(scsi_qla_host_t *ha, fc_port_t *fcport)
 {
-	inq_cmd_rsp_t	*inq;
-	dma_addr_t	inq_dma;
-	uint16_t	lun;
+	struct fc_rport_identifiers rport_ids;
+	struct fc_rport *rport;
 
-	inq = dma_pool_alloc(ha->s_dma_pool, GFP_KERNEL, &inq_dma);
-	if (inq == NULL) {
-		qla_printk(KERN_WARNING, ha,
-		    "Memory Allocation failed - INQ\n");
+	if (fcport->rport) {
+		fc_remote_port_unblock(fcport->rport);
 		return;
 	}
 
-	/* If report LUN works, exit. */
-	if (qla2x00_rpt_lun_discovery(ha, fcport, inq, inq_dma) !=
-	    QLA_SUCCESS) {
-		for (lun = 0; lun < ha->max_probe_luns; lun++) {
-			/* Configure LUN. */
-			qla2x00_cfg_lun(ha, fcport, lun, inq, inq_dma);
-		}
-	}
+	rport_ids.node_name = be64_to_cpu(*(uint64_t *)fcport->node_name);
+	rport_ids.port_name = be64_to_cpu(*(uint64_t *)fcport->port_name);
+	rport_ids.port_id = fcport->d_id.b.domain << 16 |
+	    fcport->d_id.b.area << 8 | fcport->d_id.b.al_pa;
+	rport_ids.roles = FC_RPORT_ROLE_UNKNOWN;
+	if (fcport->port_type == FCT_INITIATOR)
+		rport_ids.roles |= FC_RPORT_ROLE_FCP_INITIATOR;
+	if (fcport->port_type == FCT_TARGET)
+		rport_ids.roles |= FC_RPORT_ROLE_FCP_TARGET;
 
-	dma_pool_free(ha->s_dma_pool, inq, inq_dma);
+	fcport->rport = rport = fc_remote_port_add(ha->host, 0, &rport_ids);
+	if (!rport)
+		qla_printk(KERN_WARNING, ha,
+		    "Unable to allocate fc remote port!\n");
+
+	if (rport->scsi_target_id != -1 && rport->scsi_target_id < MAX_TARGETS)
+		fcport->os_target_id = rport->scsi_target_id;
+
+	rport->dd_data = fcport;
 }
-
-/*
- * qla2x00_rpt_lun_discovery
- *	Issue SCSI report LUN command for LUN discovery.
- *
- * Input:
- *	ha:		adapter state pointer.
- *	fcport:		FC port structure pointer.
- *
- * Returns:
- *	qla2x00 local function return status code.
- *
- * Context:
- *	Kernel context.
- */
-static int
-qla2x00_rpt_lun_discovery(scsi_qla_host_t *ha, fc_port_t *fcport,
-    inq_cmd_rsp_t *inq, dma_addr_t inq_dma)
-{
-	int			rval;
-	uint32_t		len, cnt;
-	uint16_t		lun;
-
-	/* Assume a failed status */
-	rval = QLA_FUNCTION_FAILED;
-
-	/* No point in continuing if the device doesn't support RLC */
-	if ((fcport->flags & FCF_RLC_SUPPORT) == 0)
-		return (rval);
-
-	rval = qla2x00_report_lun(ha, fcport);
-	if (rval != QLA_SUCCESS)
-		return (rval);
-
-	/* Always add a fc_lun_t structure for lun 0 -- mid-layer requirement */
-	qla2x00_add_lun(fcport, 0);
-
-	/* Configure LUN list. */
-	len = be32_to_cpu(ha->rlc_rsp->list.hdr.len);
-	len /= 8;
-	for (cnt = 0; cnt < len; cnt++) {
-		lun = CHAR_TO_SHORT(ha->rlc_rsp->list.lst[cnt].lsb,
-		    ha->rlc_rsp->list.lst[cnt].msb.b);
-
-		DEBUG3(printk("scsi(%ld): RLC lun = (%d)\n", ha->host_no, lun));
-
-		/* We only support 0 through MAX_LUNS-1 range */
-		if (lun < MAX_LUNS) {
-			qla2x00_cfg_lun(ha, fcport, lun, inq, inq_dma);
-		}
-	}
-	atomic_set(&fcport->state, FCS_ONLINE);
-
-	return (rval);
-}
-
-/*
- * qla2x00_report_lun
- *	Issue SCSI report LUN command.
- *
- * Input:
- *	ha:		adapter state pointer.
- *	fcport:		FC port structure pointer.
- *
- * Returns:
- *	qla2x00 local function return status code.
- *
- * Context:
- *	Kernel context.
- */
-static int
-qla2x00_report_lun(scsi_qla_host_t *ha, fc_port_t *fcport)
-{
-	int rval;
-	uint16_t retries;
-	uint16_t comp_status;
-	uint16_t scsi_status;
-	rpt_lun_cmd_rsp_t *rlc;
-	dma_addr_t rlc_dma;
-
-	rval = QLA_FUNCTION_FAILED;
-	rlc = ha->rlc_rsp;
-	rlc_dma = ha->rlc_rsp_dma;
-
-	for (retries = 3; retries; retries--) {
-		memset(rlc, 0, sizeof(rpt_lun_cmd_rsp_t));
-		rlc->p.cmd.entry_type = COMMAND_A64_TYPE;
-		rlc->p.cmd.entry_count = 1;
-		SET_TARGET_ID(ha, rlc->p.cmd.target, fcport->loop_id);
-		rlc->p.cmd.control_flags =
-		    __constant_cpu_to_le16(CF_READ | CF_SIMPLE_TAG);
-		rlc->p.cmd.scsi_cdb[0] = REPORT_LUNS;
-		rlc->p.cmd.scsi_cdb[8] = MSB(sizeof(rpt_lun_lst_t));
-		rlc->p.cmd.scsi_cdb[9] = LSB(sizeof(rpt_lun_lst_t));
-		rlc->p.cmd.dseg_count = __constant_cpu_to_le16(1);
-		rlc->p.cmd.timeout = __constant_cpu_to_le16(10);
-		rlc->p.cmd.byte_count =
-		    __constant_cpu_to_le32(sizeof(rpt_lun_lst_t));
-		rlc->p.cmd.dseg_0_address[0] = cpu_to_le32(
-		    LSD(rlc_dma + sizeof(sts_entry_t)));
-		rlc->p.cmd.dseg_0_address[1] = cpu_to_le32(
-		    MSD(rlc_dma + sizeof(sts_entry_t)));
-		rlc->p.cmd.dseg_0_length =
-		    __constant_cpu_to_le32(sizeof(rpt_lun_lst_t));
-
-		rval = qla2x00_issue_iocb(ha, rlc, rlc_dma,
-		    sizeof(rpt_lun_cmd_rsp_t));
-
-		comp_status = le16_to_cpu(rlc->p.rsp.comp_status);
-		scsi_status = le16_to_cpu(rlc->p.rsp.scsi_status);
-
-		if (rval != QLA_SUCCESS || comp_status != CS_COMPLETE ||
-		    scsi_status & SS_CHECK_CONDITION) {
-
-			/* Device underrun, treat as OK. */
-			if (rval == QLA_SUCCESS &&
-			    comp_status == CS_DATA_UNDERRUN &&
-			    scsi_status & SS_RESIDUAL_UNDER) {
-
-				rval = QLA_SUCCESS;
-				break;
-			}
-
-			DEBUG(printk("scsi(%ld): RLC failed to issue iocb! "
-			    "fcport=[%04x/%p] rval=%x cs=%x ss=%x\n",
-			    ha->host_no, fcport->loop_id, fcport, rval,
-			    comp_status, scsi_status));
-
-			rval = QLA_FUNCTION_FAILED;
-			if (scsi_status & SS_CHECK_CONDITION) {
-				DEBUG2(printk("scsi(%ld): RLC "
-				    "SS_CHECK_CONDITION Sense Data "
-				    "%02x %02x %02x %02x %02x %02x %02x %02x\n",
-				    ha->host_no,
-				    rlc->p.rsp.req_sense_data[0],
-				    rlc->p.rsp.req_sense_data[1],
-				    rlc->p.rsp.req_sense_data[2],
-				    rlc->p.rsp.req_sense_data[3],
-				    rlc->p.rsp.req_sense_data[4],
-				    rlc->p.rsp.req_sense_data[5],
-				    rlc->p.rsp.req_sense_data[6],
-				    rlc->p.rsp.req_sense_data[7]));
-				if (rlc->p.rsp.req_sense_data[2] ==
-				    ILLEGAL_REQUEST) {
-					fcport->flags &= ~(FCF_RLC_SUPPORT);
-					break;
-				}
-			}
-		} else {
-			break;
-		}
-	}
-
-	return (rval);
-}
-
-/*
- * qla2x00_cfg_lun
- *	Configures LUN into fcport LUN list.
- *
- * Input:
- *	fcport:		FC port structure pointer.
- *	lun:		LUN number.
- *
- * Context:
- *	Kernel context.
- */
-static fc_lun_t *
-qla2x00_cfg_lun(scsi_qla_host_t *ha, fc_port_t *fcport, uint16_t lun,
-    inq_cmd_rsp_t *inq, dma_addr_t inq_dma) 
-{
-	fc_lun_t *fclun;
-
-	/* Bypass LUNs that failed. */
-	if (qla2x00_inquiry(ha, fcport, lun, inq, inq_dma) != QLA_SUCCESS) {
-		DEBUG2(printk("scsi(%ld): Failed inquiry - loop id=0x%04x "
-		    "lun=%d\n", ha->host_no, fcport->loop_id, lun));
-
-		return (NULL);
-	}
-
-	switch (inq->inq[0]) {
-	case TYPE_DISK:
-	case TYPE_PROCESSOR:
-	case TYPE_WORM:
-	case TYPE_ROM:
-	case TYPE_SCANNER:
-	case TYPE_MOD:
-	case TYPE_MEDIUM_CHANGER:
-	case TYPE_ENCLOSURE:
-	case 0x20:
-	case 0x0C:
-		break;
-	case TYPE_TAPE:
-		fcport->flags |= FCF_TAPE_PRESENT;
-		break;
-	default:
-		DEBUG2(printk("scsi(%ld): Unsupported lun type -- "
-		    "loop id=0x%04x lun=%d type=%x\n",
-		    ha->host_no, fcport->loop_id, lun, inq->inq[0]));
-		return (NULL);
-	}
-
-	fcport->device_type = inq->inq[0];
-	fclun = qla2x00_add_lun(fcport, lun);
-
-	if (fclun != NULL) {
-		atomic_set(&fcport->state, FCS_ONLINE);
-	}
-
-	return (fclun);
-}
-
-/*
- * qla2x00_add_lun
- *	Adds LUN to database
- *
- * Input:
- *	fcport:		FC port structure pointer.
- *	lun:		LUN number.
- *
- * Context:
- *	Kernel context.
- */
-static fc_lun_t *
-qla2x00_add_lun(fc_port_t *fcport, uint16_t lun)
-{
-	int		found;
-	fc_lun_t	*fclun;
-
-	if (fcport == NULL) {
-		DEBUG(printk("scsi: Unable to add lun to NULL port\n"));
-		return (NULL);
-	}
-
-	/* Allocate LUN if not already allocated. */
-	found = 0;
-	list_for_each_entry(fclun, &fcport->fcluns, list) {
-		if (fclun->lun == lun) {
-			found++;
-			break;
-		}
-	}
-	if (found)
-		return (NULL);
-
-	fclun = kmalloc(sizeof(fc_lun_t), GFP_ATOMIC);
-	if (fclun == NULL) {
-		printk(KERN_WARNING
-		    "%s(): Memory Allocation failed - FCLUN\n",
-		    __func__);
-		return (NULL);
-	}
-
-	/* Setup LUN structure. */
-	memset(fclun, 0, sizeof(fc_lun_t));
-	fclun->lun = lun;
-	fclun->fcport = fcport;
-	fclun->o_fcport = fcport;
-	fclun->device_type = fcport->device_type;
-	atomic_set(&fcport->state, FCS_UNCONFIGURED);
-
-	list_add_tail(&fclun->list, &fcport->fcluns);
-
-	return (fclun);
-}
-
-/*
- * qla2x00_inquiry
- *	Issue SCSI inquiry command.
- *
- * Input:
- *	ha = adapter block pointer.
- *	fcport = FC port structure pointer.
- *
- * Return:
- *	0  - Success
- *  BIT_0 - error
- *
- * Context:
- *	Kernel context.
- */
-static int
-qla2x00_inquiry(scsi_qla_host_t *ha,
-    fc_port_t *fcport, uint16_t lun, inq_cmd_rsp_t *inq, dma_addr_t inq_dma)
-{
-	int rval;
-	uint16_t retries;
-	uint16_t comp_status;
-	uint16_t scsi_status;
-
-	rval = QLA_FUNCTION_FAILED;
-
-	for (retries = 3; retries; retries--) {
-		memset(inq, 0, sizeof(inq_cmd_rsp_t));
-		inq->p.cmd.entry_type = COMMAND_A64_TYPE;
-		inq->p.cmd.entry_count = 1;
-		inq->p.cmd.lun = cpu_to_le16(lun);
-		SET_TARGET_ID(ha, inq->p.cmd.target, fcport->loop_id);
-		inq->p.cmd.control_flags =
-		    __constant_cpu_to_le16(CF_READ | CF_SIMPLE_TAG);
-		inq->p.cmd.scsi_cdb[0] = INQUIRY;
-		inq->p.cmd.scsi_cdb[4] = INQ_DATA_SIZE;
-		inq->p.cmd.dseg_count = __constant_cpu_to_le16(1);
-		inq->p.cmd.timeout = __constant_cpu_to_le16(10);
-		inq->p.cmd.byte_count =
-		    __constant_cpu_to_le32(INQ_DATA_SIZE);
-		inq->p.cmd.dseg_0_address[0] = cpu_to_le32(
-		    LSD(inq_dma + sizeof(sts_entry_t)));
-		inq->p.cmd.dseg_0_address[1] = cpu_to_le32(
-		    MSD(inq_dma + sizeof(sts_entry_t)));
-		inq->p.cmd.dseg_0_length =
-		    __constant_cpu_to_le32(INQ_DATA_SIZE);
-
-		DEBUG5(printk("scsi(%ld): Lun Inquiry - fcport=[%04x/%p],"
-		    " lun (%d)\n",
-		    ha->host_no, fcport->loop_id, fcport, lun));
-
-		rval = qla2x00_issue_iocb(ha, inq, inq_dma,
-		    sizeof(inq_cmd_rsp_t));
-
-		comp_status = le16_to_cpu(inq->p.rsp.comp_status);
-		scsi_status = le16_to_cpu(inq->p.rsp.scsi_status);
-
-		DEBUG5(printk("scsi(%ld): lun (%d) inquiry - "
-		    "inq[0]= 0x%x, comp status 0x%x, scsi status 0x%x, "
-		    "rval=%d\n",
-		    ha->host_no, lun, inq->inq[0], comp_status, scsi_status,
-		    rval));
-
-		if (rval != QLA_SUCCESS || comp_status != CS_COMPLETE ||
-		    scsi_status & SS_CHECK_CONDITION) {
-
-			DEBUG(printk("scsi(%ld): INQ failed to issue iocb! "
-			    "fcport=[%04x/%p] rval=%x cs=%x ss=%x\n",
-			    ha->host_no, fcport->loop_id, fcport, rval,
-			    comp_status, scsi_status));
-
-			if (rval == QLA_SUCCESS)
-				rval = QLA_FUNCTION_FAILED;
-
-			if (scsi_status & SS_CHECK_CONDITION) {
-				DEBUG2(printk("scsi(%ld): INQ "
-				    "SS_CHECK_CONDITION Sense Data "
-				    "%02x %02x %02x %02x %02x %02x %02x %02x\n",
-				    ha->host_no,
-				    inq->p.rsp.req_sense_data[0],
-				    inq->p.rsp.req_sense_data[1],
-				    inq->p.rsp.req_sense_data[2],
-				    inq->p.rsp.req_sense_data[3],
-				    inq->p.rsp.req_sense_data[4],
-				    inq->p.rsp.req_sense_data[5],
-				    inq->p.rsp.req_sense_data[6],
-				    inq->p.rsp.req_sense_data[7]));
-			}
-
-			/* Device underrun drop LUN. */
-			if (comp_status == CS_DATA_UNDERRUN &&
-			    scsi_status & SS_RESIDUAL_UNDER) {
-				break;
-			}
-		} else {
-			break;
-		}
-	}
-
-	return (rval);
-}
-
 
 /*
  * qla2x00_configure_fabric
@@ -2478,12 +2074,12 @@ qla2x00_configure_fabric(scsi_qla_host_t *ha)
 				break;
 			}
 
-			/* Login and update database */
-			qla2x00_fabric_dev_login(ha, fcport, &next_loopid);
-
 			/* Remove device from the new list and add it to DB */
 			list_del(&fcport->list);
 			list_add_tail(&fcport->list, &ha->fcports);
+
+			/* Login and update database */
+			qla2x00_fabric_dev_login(ha, fcport, &next_loopid);
 		}
 	} while (0);
 
@@ -2520,7 +2116,7 @@ qla2x00_find_all_fabric_devs(scsi_qla_host_t *ha, struct list_head *new_fcports)
 {
 	int		rval;
 	uint16_t	loop_id;
-	fc_port_t	*fcport, *new_fcport;
+	fc_port_t	*fcport, *new_fcport, *fcptemp;
 	int		found;
 
 	sw_info_t	*swl;
@@ -2594,6 +2190,15 @@ qla2x00_find_all_fabric_devs(scsi_qla_host_t *ha, struct list_head *new_fcports)
 			/* Send GA_NXT to the switch */
 			rval = qla2x00_ga_nxt(ha, new_fcport);
 			if (rval != QLA_SUCCESS) {
+				qla_printk(KERN_WARNING, ha,
+				    "SNS scan failed -- assuming zero-entry "
+				    "result...\n");
+				list_for_each_entry_safe(fcport, fcptemp,
+				    new_fcports, list) {
+					list_del(&fcport->list);
+					kfree(fcport);
+				}
+				rval = QLA_SUCCESS;
 				break;
 			}
 		}
@@ -2878,8 +2483,7 @@ qla2x00_device_resync(scsi_qla_host_t *ha)
 			if (atomic_read(&fcport->state) == FCS_ONLINE) {
 				if (format != 3 ||
 				    fcport->port_type != FCT_INITIATOR) {
-					atomic_set(&fcport->state,
-					    FCS_DEVICE_LOST);
+					qla2x00_mark_device_lost(ha, fcport, 0);
 				}
 			}
 			fcport->flags &= ~FCF_FARP_DONE;
@@ -3024,9 +2628,9 @@ qla2x00_fabric_login(scsi_qla_host_t *ha, fc_port_t *fcport,
 			 */
 			*next_loopid = fcport->loop_id;
 			qla2x00_fabric_logout(ha, fcport->loop_id);
-			fcport->loop_id = FC_NO_LOOP_ID;
+			qla2x00_mark_device_lost(ha, fcport, 1);
 
-			rval = 3;
+			rval = 1;
 			break;
 		} else {
 			/*
@@ -3043,7 +2647,7 @@ qla2x00_fabric_login(scsi_qla_host_t *ha, fc_port_t *fcport,
 			fcport->loop_id = FC_NO_LOOP_ID;
 			atomic_set(&fcport->state, FCS_DEVICE_DEAD);
 
-			rval = 1;
+			rval = 3;
 			break;
 		}
 	}
@@ -3129,7 +2733,6 @@ qla2x00_loop_resync(scsi_qla_host_t *ha)
 				wait_time &&
 				(test_bit(LOOP_RESYNC_NEEDED, &ha->dpc_flags)));
 		}
-		qla2x00_restart_queues(ha, 1);
 	}
 
 	if (test_bit(ISP_ABORT_NEEDED, &ha->dpc_flags)) {
@@ -3141,87 +2744,6 @@ qla2x00_loop_resync(scsi_qla_host_t *ha)
 	}
 
 	return (rval);
-}
-
-/*
- *  qla2x00_restart_queues
- *	Restart device queues.
- *
- * Input:
- *	ha = adapter block pointer.
- *
- * Context:
- *	Kernel/Interrupt context.
- */
-void
-qla2x00_restart_queues(scsi_qla_host_t *ha, uint8_t flush) 
-{
-	srb_t  		*sp;
-	int		retry_q_cnt = 0;
-	int		pending_q_cnt = 0;
-	struct list_head *list, *temp;
-	unsigned long flags = 0;
-
-	clear_bit(RESTART_QUEUES_NEEDED, &ha->dpc_flags);
-
-	/* start pending queue */
-	pending_q_cnt = ha->qthreads;
-	if (flush) {
-		spin_lock_irqsave(&ha->list_lock,flags);
-		list_for_each_safe(list, temp, &ha->pending_queue) {
-			sp = list_entry(list, srb_t, list);
-
-			if ((sp->flags & SRB_TAPE))
-				continue;
-			 
-			/* 
-			 * When time expire return request back to OS as BUSY 
-			 */
-			__del_from_pending_queue(ha, sp);
-			sp->cmd->result = DID_BUS_BUSY << 16;
-			sp->cmd->host_scribble = (unsigned char *)NULL;
-			__add_to_done_queue(ha, sp);
-		}
-		spin_unlock_irqrestore(&ha->list_lock, flags);
-	} else {
-		if (!list_empty(&ha->pending_queue))
-			qla2x00_next(ha);
-	}
-
-	/*
-	 * Clear out our retry queue
-	 */
-	if (flush) {
-		spin_lock_irqsave(&ha->list_lock, flags);
-		retry_q_cnt = ha->retry_q_cnt;
-		list_for_each_safe(list, temp, &ha->retry_queue) {
-			sp = list_entry(list, srb_t, list);
-			/* when time expire return request back to OS as BUSY */
-			__del_from_retry_queue(ha, sp);
-			sp->cmd->result = DID_BUS_BUSY << 16;
-			sp->cmd->host_scribble = (unsigned char *)NULL;
-			__add_to_done_queue(ha, sp);
-		}
-		spin_unlock_irqrestore(&ha->list_lock, flags);
-
-		DEBUG2(printk("%s(%ld): callback %d commands.\n",
-				__func__,
-				ha->host_no,
-				retry_q_cnt);)
-	}
-
-	DEBUG2(printk("%s(%ld): active=%ld, retry=%d, pending=%d, "
-			"done=%ld, scsi retry=%d commands.\n",
-			__func__,
-			ha->host_no,
-			ha->actthreads,
-			ha->retry_q_cnt,
-			pending_q_cnt,
-			ha->done_q_cnt,
-			ha->scsi_retry_q_cnt);)
-
-	if (!list_empty(&ha->done_queue))
-		qla2x00_done(ha);
 }
 
 void
@@ -3241,877 +2763,7 @@ qla2x00_rescan_fcports(scsi_qla_host_t *ha)
 		rescan_done = 1;
 	}
 	qla2x00_probe_for_all_luns(ha); 
-
-	/* Update OS target and lun structures if necessary. */
-	if (rescan_done) {
-		qla2x00_config_os(ha);
-	}
 }
-
-
-/*
- * qla2x00_config_os
- *	Setup OS target and LUN structures.
- *
- * Input:
- *	ha = adapter state pointer.
- *
- * Context:
- *	Kernel context.
- */
-static void
-qla2x00_config_os(scsi_qla_host_t *ha) 
-{
-	fc_port_t	*fcport;
-	fc_lun_t	*fclun;
-	os_tgt_t	*tq;
-	uint16_t	tgt;
-
-
-	for (tgt = 0; tgt < MAX_TARGETS; tgt++) {
-		if ((tq = TGT_Q(ha, tgt)) == NULL)
-			continue;
-
-		clear_bit(TQF_ONLINE, &tq->flags);
-	}
-
-	list_for_each_entry(fcport, &ha->fcports, list) {
-		if (atomic_read(&fcport->state) != FCS_ONLINE ||
-		    fcport->port_type == FCT_INITIATOR ||
-		    fcport->port_type == FCT_BROADCAST) {
-			fcport->os_target_id = MAX_TARGETS;
-			continue;
-		}
-
-		if (fcport->flags & FCF_FO_MASKED) {
-			continue;
-		}
-
-		/* Bind FC port to OS target number. */
-		if (qla2x00_fcport_bind(ha, fcport) == MAX_TARGETS) {
-			continue;
-		}
-
-		/* Bind FC LUN to OS LUN number. */
-		list_for_each_entry(fclun, &fcport->fcluns, list) {
-			qla2x00_fclun_bind(ha, fcport, fclun);
-		}
-	}
-}
-
-/*
- * qla2x00_fcport_bind
- *	Locates a target number for FC port.
- *
- * Input:
- *	ha = adapter state pointer.
- *	fcport = FC port structure pointer.
- *
- * Returns:
- *	target number
- *
- * Context:
- *	Kernel context.
- */
-static uint16_t
-qla2x00_fcport_bind(scsi_qla_host_t *ha, fc_port_t *fcport) 
-{
-	int		found;
-	uint16_t	tgt;
-	os_tgt_t	*tq;
-
-	/* Check for persistent binding. */
-	for (tgt = 0; tgt < MAX_TARGETS; tgt++) {
-		if ((tq = TGT_Q(ha, tgt)) == NULL)
-			continue;
-
-		found = 0;
-		switch (ha->binding_type) {
-		case BIND_BY_PORT_ID:
-			if (fcport->d_id.b24 == tq->d_id.b24) {
-				memcpy(tq->node_name, fcport->node_name,
-				    WWN_SIZE);
-				memcpy(tq->port_name, fcport->port_name,
-				    WWN_SIZE);
-				found++;
-			}
-			break;
-		case BIND_BY_PORT_NAME:    
-			if (memcmp(fcport->port_name, tq->port_name,
-			    WWN_SIZE) == 0) {
-				/*
-				 * In case of persistent binding, update the
-				 * WWNN.
-				 */
-				memcpy(tq->node_name, fcport->node_name,
-				    WWN_SIZE);
-				found++;
-			}
-			break;
-		}
-		if (found)
-		    break;	
-	}
-
-	/* TODO: honor the ConfigRequired flag */
-	if (tgt == MAX_TARGETS) {
-		/* Check if targetID 0 available. */
-		tgt = 0;
-
-		if (TGT_Q(ha, tgt) != NULL) {
-			/* Locate first free target for device. */
-			for (tgt = 0; tgt < MAX_TARGETS; tgt++) {
-				if (TGT_Q(ha, tgt) == NULL) {
-					break;
-				}
-			}
-		}
-		if (tgt != MAX_TARGETS) {
-			if ((tq = qla2x00_tgt_alloc(ha, tgt)) != NULL) {
-				memcpy(tq->node_name, fcport->node_name,
-				    WWN_SIZE);
-				memcpy(tq->port_name, fcport->port_name,
-				    WWN_SIZE);
-				tq->d_id.b24 = fcport->d_id.b24;
-			}
-		}
-	}
-
-	/* Reset target numbers incase it changed. */
-	fcport->os_target_id = tgt;
-	if (tgt != MAX_TARGETS && tq != NULL) {
-		DEBUG2(printk("scsi(%ld): Assigning target ID=%02d @ %p to "
-		    "loop id=0x%04x, port state=0x%x, port down retry=%d\n",
-		    ha->host_no, tgt, tq, fcport->loop_id,
-		    atomic_read(&fcport->state),
-		    atomic_read(&fcport->port_down_timer)));
-
-		fcport->tgt_queue = tq;
-		fcport->flags |= FCF_PERSISTENT_BOUND;
-		tq->fcport = fcport;
-		set_bit(TQF_ONLINE, &tq->flags);
-		tq->port_down_retry_count = ha->port_down_retry_count;
-
-#if 0
-		qla2x00_get_lun_mask_from_config(ha, fcport, tgt, 0);
-#endif
-	}
-
-	if (tgt == MAX_TARGETS) {
-		qla_printk(KERN_WARNING, ha,
-		    "Unable to bind fcport, loop_id=%x\n", fcport->loop_id);
-	}
-
-	return (tgt);
-}
-
-/*
- * qla2x00_fclun_bind
- *	Binds all FC device LUNS to OS LUNS.
- *
- * Input:
- *	ha:		adapter state pointer.
- *	fcport:		FC port structure pointer.
- *
- * Returns:
- *	target number
- *
- * Context:
- *	Kernel context.
- */
-static os_lun_t *
-qla2x00_fclun_bind(scsi_qla_host_t *ha, fc_port_t *fcport, fc_lun_t *fclun)
-{
-	os_lun_t	*lq;
-	uint16_t	tgt;
-	uint16_t	lun;
-
-	tgt = fcport->os_target_id;
-	lun = fclun->lun;
-
-	/* Allocate LUNs */
-	if (lun >= MAX_LUNS) {
-		DEBUG2(printk("scsi(%ld): Unable to bind lun, invalid "
-		    "lun=(%x).\n", ha->host_no, lun));
-		return (NULL);
-	}
-
-	/* Always alloc LUN 0 so kernel will scan past LUN 0. */
-	if (lun != 0 && (EXT_IS_LUN_BIT_SET(&(fcport->lun_mask), lun))) {
-		return (NULL);
-	}
-
-	if ((lq = qla2x00_lun_alloc(ha, tgt, lun)) == NULL) {
-		qla_printk(KERN_WARNING, ha,
-		    "Unable to bind fclun, loop_id=%x lun=%x\n",
-		    fcport->loop_id, lun);
-		return (NULL);
-	}
-
-	lq->fclun = fclun;
-
-	return (lq);
-}
-
-/*
- * qla2x00_tgt_alloc
- *	Allocate and pre-initialize target queue.
- *
- * Input:
- *	ha = adapter block pointer.
- *	t = SCSI target number.
- *
- * Returns:
- *	NULL = failure
- *
- * Context:
- *	Kernel context.
- */
-os_tgt_t *
-qla2x00_tgt_alloc(scsi_qla_host_t *ha, uint16_t tgt) 
-{
-	os_tgt_t	*tq;
-
-	/*
-	 * If SCSI addressing OK, allocate TGT queue and lock.
-	 */
-	if (tgt >= MAX_TARGETS) {
-		DEBUG2(printk("scsi(%ld): Unable to allocate target, invalid "
-		    "target number %d.\n", ha->host_no, tgt));
-		return (NULL);
-	}
-
-	tq = TGT_Q(ha, tgt);
-	if (tq == NULL) {
-		tq = kmalloc(sizeof(os_tgt_t), GFP_ATOMIC);
-		if (tq != NULL) {
-			DEBUG2(printk("scsi(%ld): Alloc Target %d @ %p\n",
-			    ha->host_no, tgt, tq));
-
-			memset(tq, 0, sizeof(os_tgt_t));
-			tq->ha = ha;
-
-			TGT_Q(ha, tgt) = tq;
-		}
-	}
-	if (tq != NULL) {
-		tq->port_down_retry_count = ha->port_down_retry_count;
-	} else {
-		qla_printk(KERN_WARNING, ha,
-		    "Unable to allocate target.\n");
-		ha->mem_err++;
-	}
-
-	return (tq);
-}
-
-/*
- * qla2x00_tgt_free
- *	Frees target and LUN queues.
- *
- * Input:
- *	ha = adapter block pointer.
- *	t = SCSI target number.
- *
- * Context:
- *	Kernel context.
- */
-void
-qla2x00_tgt_free(scsi_qla_host_t *ha, uint16_t tgt) 
-{
-	os_tgt_t	*tq;
-	uint16_t	lun;
-
-	/*
-	 * If SCSI addressing OK, allocate TGT queue and lock.
-	 */
-	if (tgt >= MAX_TARGETS) {
-		DEBUG2(printk("scsi(%ld): Unable to de-allocate target, "
-		    "invalid target number %d.\n", ha->host_no, tgt));
-
-		return;
-	}
-
-	tq = TGT_Q(ha, tgt);
-	if (tq != NULL) {
-		TGT_Q(ha, tgt) = NULL;
-
-		/* Free LUN structures. */
-		for (lun = 0; lun < MAX_LUNS; lun++)
-			qla2x00_lun_free(ha, tgt, lun);
-
-		kfree(tq);
-	}
-
-	return;
-}
-
-/*
- * qla2x00_lun_alloc
- *	Allocate and initialize LUN queue.
- *
- * Input:
- *	ha = adapter block pointer.
- *	t = SCSI target number.
- *	l = LUN number.
- *
- * Returns:
- *	NULL = failure
- *
- * Context:
- *	Kernel context.
- */
-os_lun_t *
-qla2x00_lun_alloc(scsi_qla_host_t *ha, uint16_t tgt, uint16_t lun) 
-{
-	os_lun_t	*lq;
-
-	/*
-	 * If SCSI addressing OK, allocate LUN queue.
-	 */
-	if (tgt >= MAX_TARGETS || lun >= MAX_LUNS || TGT_Q(ha, tgt) == NULL) {
-		DEBUG2(printk("scsi(%ld): Unable to allocate lun, invalid "
-		    "parameter.\n", ha->host_no));
-
-		return (NULL);
-	}
-
-	lq = LUN_Q(ha, tgt, lun);
-	if (lq == NULL) {
-		lq = kmalloc(sizeof(os_lun_t), GFP_ATOMIC);
-		if (lq != NULL) {
-			DEBUG2(printk("scsi(%ld): Alloc Lun %d @ tgt %d.\n",
-			    ha->host_no, lun, tgt));
-
-			memset(lq, 0, sizeof (os_lun_t));
-			LUN_Q(ha, tgt, lun) = lq;
-
-			/*
-			 * The following lun queue initialization code
-			 * must be duplicated in alloc_ioctl_mem function
-			 * for ioctl_lq.
-			 */
-			lq->q_state = LUN_STATE_READY;
-			spin_lock_init(&lq->q_lock);
-		}
-	}
-
-	if (lq == NULL) {
-		qla_printk(KERN_WARNING, ha, "Unable to allocate lun.\n");
-	}
-
-	return (lq);
-}
-
-/*
- * qla2x00_lun_free
- *	Frees LUN queue.
- *
- * Input:
- *	ha = adapter block pointer.
- *	t = SCSI target number.
- *
- * Context:
- *	Kernel context.
- */
-static void
-qla2x00_lun_free(scsi_qla_host_t *ha, uint16_t tgt, uint16_t lun) 
-{
-	os_lun_t	*lq;
-
-	/*
-	 * If SCSI addressing OK, allocate TGT queue and lock.
-	 */
-	if (tgt >= MAX_TARGETS || lun >= MAX_LUNS) {
-		DEBUG2(printk("scsi(%ld): Unable to deallocate lun, invalid "
-		    "parameter.\n", ha->host_no));
-
-		return;
-	}
-
-	if (TGT_Q(ha, tgt) != NULL && (lq = LUN_Q(ha, tgt, lun)) != NULL) {
-		LUN_Q(ha, tgt, lun) = NULL;
-		kfree(lq);
-	}
-
-	return;
-}
-
-
-#if 0
-/*
- * qla2x00_get_lun_mask_from_config
- *      Get lun mask from the configuration parameters.
- *      Bit order is little endian.
- *
- * Input:
- * ha  -- Host adapter
- * tgt  -- target/device number
- * port -- pointer to port
- */
-static void
-qla2x00_get_lun_mask_from_config(scsi_qla_host_t *ha,
-    fc_port_t *fcport, uint16_t tgt, uint16_t dev_no) 
-{
-	char		propbuf[60]; /* size of search string */
-	int		rval, lun, bit;
-	lun_bit_mask_t	lun_mask, *mask_ptr = &lun_mask;
-
-	/* Get "target-N-device-N-lun-mask" as a 256 bit lun_mask*/
-	sprintf(propbuf, "scsi-qla%ld-tgt-%d-di-%d-lun-disabled",
-	    ha->instance, tgt, dev_no);
-
-	rval = qla2x00_get_prop_xstr(ha, propbuf,
-	    (uint8_t *)&lun_mask, sizeof(lun_bit_mask_t));
-	if (rval == sizeof(lun_bit_mask_t)) {
-		memset(&fcport->lun_mask, 0, sizeof(lun_bit_mask_t));
-		for (lun = 8 * sizeof(lun_bit_mask_t) - 1, bit = 0;
-		    lun >= 0; lun--, bit++) {
-			if (EXT_IS_LUN_BIT_SET(mask_ptr, lun))
-				EXT_SET_LUN_BIT((&fcport->lun_mask), bit);
-		}
-
-		DEBUG3(printk("scsi(%ld): returning lun mask for fcport "
-		    "%02x%02x%02x%02x%02x%02x%02x%02x:\n",
-		    ha->host_no,
-		    fcport->port_name[0], fcport->port_name[1],
-		    fcport->port_name[2], fcport->port_name[3],
-		    fcport->port_name[4], fcport->port_name[5],
-		    fcport->port_name[6], fcport->port_name[7]));
-		DEBUG3(qla2x00_dump_buffer((uint8_t *)&fcport->lun_mask,
-		    sizeof(lun_bit_mask_t));)
-	}
-}
-#endif
-
-/*
- * qla2x00_bstr_to_hex
- *	Convert hex byte string to number.
- *
- * Input:
- *	s = byte string pointer.
- *	bp = byte pointer for number.
- *	size = number of bytes.
- *
- * Context:
- *	Kernel/Interrupt context.
- */
-static int
-qla2x00_bstr_to_hex(char *s, uint8_t *bp, int size) 
-{
-	int		cnt;
-	uint8_t		n;
-
-	for (cnt = 0; *s != '\0' && cnt / 2 < size; cnt++) {
-		if (*s >= 'A' && *s <= 'F') {
-			n = (*s++ - 'A') + 10;
-		} else if (*s >= 'a' && *s <= 'f') {
-			n = (*s++ - 'a') + 10;
-		} else if (*s >= '0' && *s <= '9') {
-			n = *s++ - '0';
-		} else {
-			cnt = 0;
-			break;
-		}
-
-		if (cnt & BIT_0)
-			*bp++ |= n;
-		else
-			*bp = n << 4;
-	}
-
-	/* fixme(dg) Need to swap data little endian */
-
-	return (cnt / 2);
-}
-
-/*
- * qla2x00_get_prop_xstr
- *      Get a string property value for the specified property name and
- *      convert from the property string found in the configuration file,
- *      which are ASCII characters representing nibbles, 2 characters represent
- *      the hexdecimal value for a byte in the byte array.
- *      The byte array is initialized to zero.
- *      The resulting converted value is in big endian format (MSB at byte0).
- *
- * Input:
- *      ha = adapter state pointer.
- *      propname = property name pointer.
- *      propval  = pointer where to store converted property val.
- *      size = max or expected size of 'propval' array.
- *
- * Returns:
- *      0 = empty value string or invalid character in string
- *      >0 = count of characters converted
- *      -1 = property not found
- *
- * Context:
- *      Kernel context.
- */
-int
-qla2x00_get_prop_xstr(scsi_qla_host_t *ha, 
-		char *propname, uint8_t *propval, int size) 
-{
-	char		*propstr;
-	int		rval = -1;
-	static char	buf[LINESIZE];
-
-	/* Get the requested property string */
-	rval = qla2x00_find_propname(ha, propname, buf, ha->cmdline, size*2);
-	DEBUG3(printk("%s(): Ret rval from find propname = %d\n",
-			__func__,
-			rval);)
-
-	propstr = &buf[0];
-	if (*propstr == '=')
-		propstr++;   /* ignore equal sign */
-
-	if (rval == 0) {  /* not found */
-		return (-1);
-	}
-
-	rval = qla2x00_bstr_to_hex(propstr, (uint8_t *)propval, size);
-	if (rval == 0) {
-		/* Invalid character in value string */
-		qla_printk(KERN_INFO, ha,
-			"%s(): %s Invalid hex string for property\n",
-			__func__,
-			propname);
-		qla_printk(KERN_INFO, ha,
-			" Invalid string - %s\n", 
-			propstr);
-	}
-
-	return (rval);
-}
-
-/*
- * qla2x00_find_propname
- *	Get property in database.
- *
- * Input:
- *	ha = adapter structure pointer.
- *      db = pointer to database
- *      propstr = pointer to dest array for string
- *	propname = name of property to search for.
- *	siz = size of property
- *
- * Returns:
- *	0 = no property
- *      size = index of property
- *
- * Context:
- *	Kernel context.
- */
-static int
-qla2x00_find_propname(scsi_qla_host_t *ha, 
-			char *propname, char *propstr, 
-			char *db, int siz) 
-{
-	char	*cp;
-
-	/* find the specified string */
-	if (db) {
-		/* find the property name */
-		if ((cp = strstr(db,propname)) != NULL) {
-			while ((*cp)  && *cp != '=')
-				cp++;
-			if (*cp) {
-				strncpy(propstr, cp, siz+1);
-				propstr[siz+1] = '\0';
-				DEBUG(printk("qla2x00_find_propname: found "
-						"property = {%s}\n",
-						propstr);)
-				return (siz);   /* match */
-			}
-		}
-	}
-
-	return (0);
-}
-
-#if 0
-/*
- * qla2x00_get_prop_16chars
- *	Get an 8-byte property value for the specified property name by
- *      converting from the property string found in the configuration file.
- *      The resulting converted value is in big endian format (MSB at byte0).
- *
- * Input:
- *	ha = adapter state pointer.
- *	propname = property name pointer.
- *	propval  = pointer to location for the converted property val.
- *      db = pointer to database
- *
- * Returns:
- *	0 = value returned successfully.
- *
- * Context:
- *	Kernel context.
- */
-static int
-qla2x00_get_prop_16chars(scsi_qla_host_t *ha,
-				char *propname, char *propval, char *db) 
-{
-	char		*propstr;
-	int		i, k;
-	int		rval;
-	uint8_t		nval;
-	uint8_t		*pchar;
-	uint8_t		*ret_byte;
-	uint8_t		*tmp_byte;
-	uint8_t		*retval = (uint8_t*)propval;
-	uint8_t		tmpval[8] = {0, 0, 0, 0, 0, 0, 0, 0};
-	uint16_t	max_byte_cnt = 8; /* 16 chars = 8 bytes */
-	uint16_t	max_strlen = 16;
-	static char	buf[LINESIZE];
-
-	rval = qla2x00_find_propname(ha, propname, buf, db, max_strlen);
-
-	propstr = &buf[0];
-	if (*propstr == '=')
-		propstr++;   /* ignore equal sign */
-
-	if (rval == 0) {
-		return (1);
-	}
-
-	/* Convert string to numbers. */
-	pchar = (uint8_t *)propstr;
-	tmp_byte = (uint8_t *)tmpval;
-
-	rval = 0;
-	for (i = 0; i < max_strlen; i++) {
-		/*
-		 * Check for invalid character, two at a time,
-		 * then convert them starting with first byte.
-		 */
-
-		if ((pchar[i] >= '0') && (pchar[i] <= '9')) {
-			nval = pchar[i] - '0';
-		} else if ((pchar[i] >= 'A') && (pchar[i] <= 'F')) {
-			nval = pchar[i] - 'A' + 10;
-		} else if ((pchar[i] >= 'a') && (pchar[i] <= 'f')) {
-			nval = pchar[i] - 'a' + 10;
-		} else {
-			/* invalid character */
-			rval = 1;
-			break;
-		}
-
-		if (i & BIT_0) {
-			*tmp_byte = *tmp_byte | nval;
-			tmp_byte++;
-		} else {
-			*tmp_byte = *tmp_byte | nval << 4;
-		}
-	}
-
-	if (rval != 0) {
-		/* Encountered invalid character. */
-		return (rval);
-	}
-
-	/* Copy over the converted value. */
-	ret_byte = retval;
-	tmp_byte = tmpval;
-
-	i = max_byte_cnt;
-	k = 0;
-	while (i--) {
-		*ret_byte++ = *tmp_byte++;
-	}
-
-	/* big endian retval[0]; */
-	return (0);
-}
-
-/*
-* qla2x00_get_properties
-*	Find all properties for the specified adapeter in
-*      command line.
-*
-* Input:
-*	ha = adapter block pointer.
-*	cmdline = pointer to command line string
-*
-* Context:
-*	Kernel context.
-*/
-static void
-qla2x00_get_properties(scsi_qla_host_t *ha, char *cmdline) 
-{
-	int	rval;
-	static char propbuf[LINESIZE];
-	uint8_t fc_name[8];
-
-	/* Adapter FC node names. */
-	sprintf(propbuf, "scsi-qla%d-adapter-node", (int) ha->instance);
-	rval = qla2x00_get_prop_16chars(ha, propbuf, fc_name, cmdline);
-	if (rval == QLA_SUCCESS)
-		memcpy(ha->init_cb->node_name, fc_name, WWN_SIZE);
-
-	/* DG 04/07 check portname of adapter */
-	sprintf(propbuf, "scsi-qla%d-adapter-port", (int)ha->instance);
-	rval = qla2x00_get_prop_16chars(ha, propbuf, fc_name, cmdline);
-	if (rval == QLA_SUCCESS &&
-	    memcmp(ha->init_cb->port_name, fc_name, WWN_SIZE)) {
-		/*
-		 * Adapter port name is WWN, and cannot be changed.
-		 * Inform users of the mismatch, then just continue driver
-		 * loading using the original adapter port name in NVRAM.
-		 */
-		qla_printk(KERN_WARNING, ha,
-		    "Found mismatch in adapter port names.\n");
-		qla_printk(KERN_INFO, ha,
-		    "       qla%ld port name found in NVRAM -> "
-		    "%02x%02x%02x%02x%02x%02x%02x%02x\n",
-		    ha->instance,
-		    ha->init_cb->port_name[0],
-		    ha->init_cb->port_name[1],
-		    ha->init_cb->port_name[2],
-		    ha->init_cb->port_name[3],
-		    ha->init_cb->port_name[4],
-		    ha->init_cb->port_name[5],
-		    ha->init_cb->port_name[6],
-		    ha->init_cb->port_name[7]);
-		qla_printk(KERN_INFO, ha,
-		    "      qla%ld port name found on command line -> "
-		    "%02x%02x%02x%02x%02x%02x%02x%02x\n",
-		    ha->instance,
-		    fc_name[0], fc_name[1], fc_name[2], fc_name[3],
-		    fc_name[4], fc_name[5], fc_name[6], fc_name[7]);
-		qla_printk(KERN_INFO, ha,
-		    "      Using port name from NVRAM.\n");
-	}
-
-	qla2x00_cfg_persistent_binding(ha);
-}
-
-/*
- * qla2x00_cfg_persistent_binding
- *	Get driver configuration file target persistent binding entries.
- *
- * Input:
- *	ha = adapter block pointer.
- *
- * Context:
- *	Kernel context.
- */
-static void
-qla2x00_cfg_persistent_binding(scsi_qla_host_t *ha) 
-{
-	int		rval;
-	static char	propbuf[LINESIZE];
-	char		*cmdline = ha->cmdline;
-	uint16_t	tgt;
-	port_id_t	d_id;
-	uint8_t		portid[3];
-	uint8_t		port_name[8];
-
-	for (tgt = 0; tgt < MAX_TARGETS; tgt++) {
-		if (ha->binding_type == BIND_BY_PORT_ID) {
-			sprintf(propbuf, "scsi-qla%d-tgt-%d-di-0-pid",
-			    (int)ha->instance, tgt);
-			rval = qla2x00_get_prop_xstr(ha,
-			    propbuf, portid, sizeof(portid));
-			if (rval != sizeof(portid))
-				continue;
-			
-			memset(&d_id, 0, sizeof(port_id_t));
-			d_id.r.d_id[0] = portid[2];
-			d_id.r.d_id[1] = portid[1];
-			d_id.r.d_id[2] = portid[0];
-		} else {
-			sprintf(propbuf, "scsi-qla%d-tgt-%d-di-0-port",
-			    (int)ha->instance, tgt);
-			rval = qla2x00_get_prop_16chars(ha,
-			    propbuf, port_name, cmdline);
-			if (rval != QLA_SUCCESS)
-				continue;
-
-			/* Fallthru since port_name already populated */
-		}
-
-		/*
-		 * Create target context for device.
-		 */
-		if (ha->binding_type == BIND_BY_PORT_ID) {
-			qla2x00_persistent_bind(ha, NULL, NULL, &d_id, tgt);
-		} else {
-			qla2x00_persistent_bind(ha, NULL, port_name, NULL, tgt);
-		}
-	}
-}
-
-/*
- * qla2x00_persistent_bind
- *	Allocates target and fcport.
- *
- * Input:
- *	ha:		adapter state pointer.
- *	node_name:	node name pointer.
- *	port_name:	port name pointer.
- *	d_id:		port ID pointer.
- *	tgt:		OS target number.
- *
- * Returns:
- *	success = target queue pointer.
- *	failure = NULL.
- *
- * Context:
- *	Kernel context.
- */
-static os_tgt_t *
-qla2x00_persistent_bind(scsi_qla_host_t *ha, uint8_t *node_name,
-    uint8_t *port_name, port_id_t *d_id, uint16_t tgt)
-{
-	os_tgt_t	*tq;
-	uint16_t	tgt2;
-
-	/*
-	 * Check for duplicates.
-	 */
-	for (tgt2 = 0; tgt2 < MAX_TARGETS; tgt2++) {
-		if ((tq = TGT_Q(ha, tgt2)) == NULL) {
-			continue;
-		}
-
-		if (ha->binding_type == BIND_BY_PORT_ID) {
-			if (tq->d_id.b24 != d_id->b24) {
-				continue;
-			}
-		} else if (memcmp(tq->port_name, port_name, WWN_SIZE) != 0) {
-			continue;
-		}
-
-		qla_printk(KERN_WARNING, ha,
-		    "Duplicate persistent bindings found for "
-		    "WWPN: %02x%02x%02x%02x%02x%02x%02x%02x.\n", 
-		    port_name[0], port_name[1], port_name[2], port_name[3],
-		    port_name[4], port_name[5], port_name[6], port_name[7]);
-
-		return (tq);
-	}
-
-	tq = qla2x00_tgt_alloc(ha, tgt);
-	if (tq == NULL) {
-		return (NULL);
-	}
-
-	if (node_name != NULL) {
-		memcpy(tq->node_name, node_name, WWN_SIZE);
-	}
-	if (port_name != NULL) {
-		memcpy(tq->port_name, port_name, WWN_SIZE);
-	}
-	if (d_id != NULL) {
-		tq->d_id.b24 = d_id->b24;
-	}
-
-	return (tq);
-}
-#endif
 
 /*
 *  qla2x00_abort_isp
@@ -4160,26 +2812,10 @@ qla2x00_abort_isp(scsi_qla_host_t *ha)
 				ha->outstanding_cmds[cnt] = NULL;
 				if (ha->actthreads)
 					ha->actthreads--;
-				sp->lun_queue->out_cnt--;
-
-				/*
-				 * Set the cmd host_byte status depending on
-				 * whether the scsi_error_handler is
-				 * active or not.
- 				 */
-				if (sp->flags & SRB_TAPE) {
-					sp->cmd->result = DID_NO_CONNECT << 16;
-				} else {
-					if (ha->host->eh_active != EH_ACTIVE)
-						sp->cmd->result =
-						    DID_BUS_BUSY << 16;
-					else
-						sp->cmd->result =
-						    DID_RESET << 16;
-				}
 				sp->flags = 0;
+				sp->cmd->result = DID_RESET << 16;
 				sp->cmd->host_scribble = (unsigned char *)NULL;
-				add_to_done_queue(ha, sp);
+				qla2x00_sp_compl(ha, sp);
 			}
 		}
 		spin_unlock_irqrestore(&ha->hardware_lock, flags);
@@ -4202,11 +2838,6 @@ qla2x00_abort_isp(scsi_qla_host_t *ha)
 			/* Enable ISP interrupts. */
 			qla2x00_enable_intrs(ha);
 
-			/* v2.19.5b6 Return all commands */
-			qla2x00_abort_queues(ha, 1);
-
-			/* Restart queues that may have been stopped. */
-			qla2x00_restart_queues(ha, 1);
 			ha->isp_abort_cnt = 0; 
 			clear_bit(ISP_ABORT_RETRY, &ha->dpc_flags);
 		} else {	/* failed the ISP abort */
@@ -4221,7 +2852,6 @@ qla2x00_abort_isp(scsi_qla_host_t *ha)
 					 * completely.
 					 */
 					qla2x00_reset_adapter(ha);
-					qla2x00_abort_queues(ha, 0);
 					ha->flags.online = 0;
 					clear_bit(ISP_ABORT_RETRY,
 					    &ha->dpc_flags);

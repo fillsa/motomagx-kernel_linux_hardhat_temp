@@ -84,9 +84,10 @@ struct mtd_info {
 
 	u_int32_t oobblock;  // Size of OOB blocks (e.g. 512)
 	u_int32_t oobsize;   // Amount of OOB data per block (e.g. 16)
+	u_int32_t oobavail;  // Number of bytes in OOB area available for fs 
 	u_int32_t ecctype;
 	u_int32_t eccsize;
-
+	
 	/*
 	 * Reuse some of the above unused fields in the case of NOR flash
 	 * with configurable programming regions to avoid modifying the
@@ -104,7 +105,6 @@ struct mtd_info {
 
 	// oobinfo is a nand_oobinfo structure, which can be set by iotcl (MEMSETOOBINFO)
 	struct nand_oobinfo oobinfo;
-	u_int32_t oobavail;  // Number of bytes in OOB area available for fs 
 
 	/* Data for variable erase regions. If numeraseregions is zero,
 	 * it means that the whole device has erasesize as given above. 
@@ -247,6 +247,7 @@ int default_mtd_readv(struct mtd_info *mtd, struct kvec *vecs,
 #define MTD_WRITEOOB(mtd, args...) (*(mtd->write_oob))(mtd, args)
 #define MTD_SYNC(mtd) do { if (mtd->sync) (*(mtd->sync))(mtd);  } while (0) 
 
+
 #ifdef CONFIG_MTD_PARTITIONS
 void mtd_erase_callback(struct erase_info *instr);
 #else
@@ -256,7 +257,6 @@ static inline void mtd_erase_callback(struct erase_info *instr)
 		instr->callback(instr);
 }
 #endif
-
 
 #ifdef CONFIG_MOT_FEAT_MTD_FS
 /*
@@ -284,10 +284,10 @@ extern int mtd_fs_runtime_info;
 /*
  * Debugging macro and defines
  */
-  #define MTD_DEBUG_LEVEL0        (0)     /* Quiet   */
-  #define MTD_DEBUG_LEVEL1        (1)     /* Audible */
-  #define MTD_DEBUG_LEVEL2        (2)     /* Loud    */
-  #define MTD_DEBUG_LEVEL3        (3)     /* Noisy   */
+#define MTD_DEBUG_LEVEL0	(0)	/* Quiet   */
+#define MTD_DEBUG_LEVEL1	(1)	/* Audible */
+#define MTD_DEBUG_LEVEL2	(2)	/* Loud    */
+#define MTD_DEBUG_LEVEL3	(3)	/* Noisy   */
 
 #ifdef CONFIG_MTD_DEBUG
 #define DEBUG(n, args...)				\

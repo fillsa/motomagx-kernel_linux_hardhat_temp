@@ -59,7 +59,7 @@ config VT_CONSOLE
 
 config HW_CONSOLE
 	bool
-	depends on VT && !S390 && !USERMODE
+	depends on VT && !S390 && !UML
 	default y
 
 config INOTIFY
@@ -161,29 +161,12 @@ config DIGIEPCA
 	  you have a card like this, say Y here and read the file
 	  <file:Documentation/digiepca.txt>.
 
-	  NOTE: There is another, separate driver for the Digiboard PC boards:
-	  "Digiboard PC/Xx Support" below. You should (and can) only select
-	  one of the two drivers.
-
 	  To compile this driver as a module, choose M here: the
 	  module will be called epca.
 
-config DIGI
-	tristate "Digiboard PC/Xx Support"
-	depends on SERIAL_NONSTANDARD && DIGIEPCA=n && BROKEN_ON_SMP
-	help
-	  This is a driver for the Digiboard PC/Xe, PC/Xi, and PC/Xeve cards
-	  that give you many serial ports. You would need something like this
-	  to connect more than two modems to your Linux box, for instance in
-	  order to become a dial-in server. If you have a card like that, say
-	  Y here and read the file <file:Documentation/digiboard.txt>.
-
-	  To compile this driver as a module, choose M here: the
-	  module will be called pcxx.
-
 config ESPSERIAL
 	tristate "Hayes ESP serial port support"
-	depends on SERIAL_NONSTANDARD && ISA && BROKEN_ON_SMP
+	depends on SERIAL_NONSTANDARD && ISA && BROKEN_ON_SMP && ISA_DMA_API
 	help
 	  This is a driver which supports Hayes ESP serial ports.  Both single
 	  port cards and multiport cards are supported.  Make sure to read
@@ -216,7 +199,7 @@ config MOXA_SMARTIO
 
 config ISI
 	tristate "Multi-Tech multiport card support (EXPERIMENTAL)"
-	depends on SERIAL_NONSTANDARD && PCI && EXPERIMENTAL && BROKEN_ON_SMP && m
+	depends on SERIAL_NONSTANDARD
 	help
 	  This is a driver for the Multi-Tech cards which provide several
 	  serial ports.  The driver is experimental and can currently only be
@@ -225,7 +208,7 @@ config ISI
 
 config SYNCLINK
 	tristate "Microgate SyncLink card support"
-	depends on SERIAL_NONSTANDARD && PCI
+	depends on SERIAL_NONSTANDARD && PCI && ISA_DMA_API
 	help
 	  Provides support for the SyncLink ISA and PCI multiprotocol serial
 	  adapters. These adapters support asynchronous and HDLC bit
@@ -277,7 +260,7 @@ config RISCOM8
 
 config SPECIALIX
 	tristate "Specialix IO8+ card support"
-	depends on SERIAL_NONSTANDARD && BROKEN_ON_SMP
+	depends on SERIAL_NONSTANDARD
 	help
 	  This is a driver for the Specialix IO8+ multiport card (both the
 	  ISA and the PCI version) which gives you many serial ports. You
@@ -301,7 +284,7 @@ config SPECIALIX_RTSCTS
 
 config SX
 	tristate "Specialix SX (and SI) card support"
-	depends on SERIAL_NONSTANDARD && BROKEN_ON_SMP
+	depends on SERIAL_NONSTANDARD
 	help
 	  This is a driver for the SX and SI multiport serial cards.
 	  Please read the file <file:Documentation/sx.txt> for details.
@@ -376,22 +359,6 @@ config AU1X00_USB_TTY
 config AU1X00_USB_RAW
 	tristate "Au1000 USB Raw Device support"
 	depends on MIPS && MIPS_AU1000 && AU1000_USB_DEVICE=y && AU1000_USB_TTY!=y && AU1X00_USB_DEVICE
-
-config SERIAL_TX3912
-	bool "TX3912/PR31700 serial port support"
-	depends on MIPS && CPU_TX39XX=y
-	help
-	  The TX3912 is a Toshiba RISC processor based o the MIPS 3900 core;
-	  see <http://www.toshiba.com/taec/components/Generic/risc/tx3912.htm>.
-	  Say Y here to enable kernel support for the on-board serial port.
-
-config SERIAL_TX3912_CONSOLE
-	bool "Console on TX3912/PR31700 serial port"
-	depends on SERIAL_TX3912
-	help
-	  The TX3912 is a Toshiba RISC processor based o the MIPS 3900 core;
-	  see <http://www.toshiba.com/taec/components/Generic/risc/tx3912.htm>.
-	  Say Y here to direct console I/O to the on-board serial port.
 
 config TXX927_SERIAL
 	bool "TXx927 SIO support"
@@ -513,6 +480,20 @@ config MXC_RTC
 	default y
 	---help---
 	  Support for Freescale MXC RTC
+
+config SGI_TIOCX
+       bool "SGI TIO CX driver support"
+       depends on (IA64_SGI_SN2 || IA64_GENERIC)
+       help
+         If you have an SGI Altix and you have fpga devices attached
+         to your TIO, say Y here, otherwise say N.
+
+config SGI_MBCS
+       tristate "SGI FPGA Core Services driver support"
+       depends on SGI_TIOCX
+       help
+         If you have an SGI Altix with an attached SABrick
+         say Y or M here, otherwise say N.
 
 source "drivers/serial/Kconfig"
 
@@ -912,6 +893,10 @@ config S3C2410_RTC
 	  Samsung S3C2410. This can provide periodic interrupt rates
 	  from 1Hz to 64Hz for user programs, and wakeup from Alarm.
 
+config RTC_VR41XX
+	tristate "NEC VR4100 series Real Time Clock Support"
+	depends on CPU_VR41XX
+
 config COBALT_LCD
 	bool "Support for Cobalt LCD"
 	depends on MIPS_COBALT
@@ -968,6 +953,10 @@ config SONYPI
 
 	  To compile this driver as a module, choose M here: the
 	  module will be called sonypi.
+
+config TANBAC_TB0219
+	tristate "TANBAC TB0219 base board support"
+	depends TANBAC_TB0229
 
 
 menu "Ftape, the floppy tape device driver"
@@ -1107,7 +1096,7 @@ config MAX_RAW_DEVS
 
 config HANGCHECK_TIMER
 	tristate "Hangcheck timer"
-	depends on X86_64 || X86
+	depends on X86_64 || X86 || IA64 || PPC64 || ARCH_S390
 	help
 	  The hangcheck-timer module detects when the system has gone
 	  out to lunch past a certain margin.  It can reboot the system
@@ -1127,4 +1116,7 @@ config FUSION_DEVICE
 	  The Fusion Kernel Device is needed to use DirectFB's multi
 	  application core.
 
+source "drivers/char/tpm/Kconfig"
+
 endmenu
+

@@ -108,7 +108,6 @@ extern void show_regs(struct pt_regs * regs);
 extern void low_hash_fault(struct pt_regs *regs, unsigned long address);
 extern int die(const char *str, struct pt_regs *regs, long err);
 
-extern void flush_instruction_cache(void);
 extern int _get_PVR(void);
 extern void giveup_fpu(struct task_struct *);
 extern void disable_kernel_fp(void);
@@ -300,6 +299,8 @@ __cmpxchg(volatile void *ptr, unsigned long old, unsigned long new, int size)
  * Based on this we disable the IP header alignment in network drivers.
  */
 #define NET_IP_ALIGN   0
+
+#define arch_align_stack(x) (x)
 
 #endif /* __KERNEL__ */
 #endif

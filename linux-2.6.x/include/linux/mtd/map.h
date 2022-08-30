@@ -284,7 +284,6 @@ static inline map_word map_word_or(struct map_info *map, map_word val1, map_word
 	}
 	return r;
 }
-
 #define map_word_andequal(m, a, b, z) map_word_equal(m, z, map_word_and(m, a, b))
 
 static inline int map_word_bitsset(struct map_info *map, map_word val1, map_word val2)
@@ -350,17 +349,17 @@ static inline map_word map_word_ff(struct map_info *map)
 {
 	map_word r;
 	int i;
-	
+
 	if (map_bankwidth(map) < MAP_FF_LIMIT) {
 		int bw = 8 * map_bankwidth(map);
 		r.x[0] = (1 << bw) - 1;
 	} else {
-		for (i=0; i<map_words(map); i++)
+		for (i=0; i<map_words(map); i++) {
 			r.x[i] = ~0UL;
+		}
 	}
 	return r;
 }
-
 static inline map_word inline_map_read(struct map_info *map, unsigned long ofs)
 {
 	map_word r;

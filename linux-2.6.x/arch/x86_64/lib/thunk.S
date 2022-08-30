@@ -43,7 +43,7 @@
 	thunk rwsem_downgrade_thunk,rwsem_downgrade_wake
 #endif	
 	thunk do_softirq_thunk,do_softirq
-
+	
 #ifdef CONFIG_RWSEM_GENERIC_SPINLOCK
 	thunk __down_failed,__down
 	thunk_retrax __down_failed_interruptible,__down_interruptible

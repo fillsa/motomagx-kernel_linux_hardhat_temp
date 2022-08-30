@@ -5,13 +5,15 @@
 
 #include <signal.h>
 #include <errno.h>
-#include <asm/sigcontext.h>
-#include "sysdep/ptrace.h"
 #include "signal_user.h"
 #include "user_util.h"
 #include "kern_util.h"
 #include "task.h"
 #include "sigcontext.h"
+#include "skas.h"
+#include "ptrace_user.h"
+#include "sysdep/ptrace.h"
+#include "sysdep/ptrace_user.h"
 
 void sig_handler_common_skas(int sig, void *sc_ptr)
 {
@@ -21,12 +23,22 @@ void sig_handler_common_skas(int sig, void *sc_ptr)
 	int save_errno = errno;
 	int save_user;
 
+	/* This is done because to allow SIGSEGV to be delivered inside a SEGV
+	 * handler.  This can happen in copy_user, and if SEGV is disabled,
+	 * the process will die.
+	 * XXX Figure out why this is better than SA_NODEFER
+	 */
+	if(sig == SIGSEGV)
+		change_sig(SIGSEGV, 1);
+
 	r = &TASK_REGS(get_current())->skas;
 	save_user = r->is_user;
 	r->is_user = 0;
-	r->fault_addr = SC_FAULT_ADDR(sc);
-	r->fault_type = SC_FAULT_TYPE(sc);
-	r->trap_type = SC_TRAP_TYPE(sc);
+        if ( sig == SIGFPE || sig == SIGSEGV ||
+             sig == SIGBUS || sig == SIGILL ||
+             sig == SIGTRAP ) {
+                GET_FAULTINFO_FROM_SC(r->faultinfo, sc);
+        }
 
 	change_sig(SIGUSR1, 1);
 	info = &sig_info[sig];
@@ -38,14 +50,17 @@ void sig_handler_common_skas(int sig, void *sc_ptr)
 	r->is_user = save_user;
 }
 
-void user_signal(int sig, union uml_pt_regs *regs)
+extern int ptrace_faultinfo;
+
+void user_signal(int sig, union uml_pt_regs *regs, int pid)
 {
 	struct signal_info *info;
+        int segv = ((sig == SIGFPE) || (sig == SIGSEGV) || (sig == SIGBUS) ||
+                    (sig == SIGILL) || (sig == SIGTRAP));
 
 	regs->skas.is_user = 1;
-	regs->skas.fault_addr = 0;
-	regs->skas.fault_type = 0;
-	regs->skas.trap_type = 0;
+	if (segv)
+		get_skas_faultinfo(pid, &regs->skas.faultinfo);
 	info = &sig_info[sig];
 	(*info->handler)(sig, regs);
 

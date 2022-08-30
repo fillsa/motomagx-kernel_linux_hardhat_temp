@@ -138,8 +138,7 @@ int snd_midi_event_new(int bufsize, snd_midi_event_t **rdev)
 void snd_midi_event_free(snd_midi_event_t *dev)
 {
 	if (dev != NULL) {
-		if (dev->buf)
-			kfree(dev->buf);
+		kfree(dev->buf);
 		kfree(dev);
 	}
 }
@@ -202,8 +201,7 @@ int snd_midi_event_resize_buffer(snd_midi_event_t *dev, int bufsize)
 	dev->bufsize = bufsize;
 	reset_encode(dev);
 	spin_unlock_irqrestore(&dev->lock, flags);
-	if (old_buf)
-		kfree(old_buf);
+	kfree(old_buf);
 	return 0;
 }
 
@@ -527,3 +525,15 @@ EXPORT_SYMBOL(snd_midi_event_no_status);
 EXPORT_SYMBOL(snd_midi_event_encode);
 EXPORT_SYMBOL(snd_midi_event_encode_byte);
 EXPORT_SYMBOL(snd_midi_event_decode);
+
+static int __init alsa_seq_midi_event_init(void)
+{
+	return 0;
+}
+
+static void __exit alsa_seq_midi_event_exit(void)
+{
+}
+
+module_init(alsa_seq_midi_event_init)
+module_exit(alsa_seq_midi_event_exit)

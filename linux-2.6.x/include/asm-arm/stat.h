@@ -70,7 +70,8 @@ struct stat64 {
 
 	long long	st_size;
 	unsigned long	st_blksize;
-	unsigned long long st_blocks;	/* Number 512-byte blocks allocated. */
+
+	unsigned long long   st_blocks;	/* Number 512-byte blocks allocated. */
 
 	unsigned long	st_atime;
 	unsigned long	st_atime_nsec;

@@ -10,8 +10,8 @@
 #include <linux/linkage.h>
 
 #if defined(CONFIG_DEBUG_PREEMPT) || defined(CONFIG_CRITICAL_TIMING)
-  extern void notrace add_preempt_count(int val);
-  extern void notrace sub_preempt_count(int val);
+  extern void fastcall add_preempt_count(int val);
+  extern void fastcall sub_preempt_count(int val);
 #else
 # define add_preempt_count(val)	do { preempt_count() += (val); } while (0)
 # define sub_preempt_count(val)	do { preempt_count() -= (val); } while (0)

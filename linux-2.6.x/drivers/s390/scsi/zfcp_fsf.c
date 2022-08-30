@@ -30,7 +30,7 @@
  * Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
  */
 
-#define ZFCP_FSF_C_REVISION "$Revision: 1.88 $"
+#define ZFCP_FSF_C_REVISION "$Revision: 1.92 $"
 
 #include "zfcp_ext.h"
 
@@ -2107,6 +2107,9 @@ zfcp_fsf_exchange_config_evaluate(struct zfcp_fsf_req *fsf_req, int xchg_ok)
 		       bottom->low_qtcb_version, bottom->high_qtcb_version);
 	adapter->fsf_lic_version = bottom->lic_version;
 	adapter->supported_features = bottom->supported_features;
+	adapter->peer_wwpn = 0;
+	adapter->peer_wwnn = 0;
+	adapter->peer_d_id = 0;
 
 	if (xchg_ok) {
 		adapter->wwnn = bottom->nport_serv_param.wwnn;
@@ -2124,13 +2127,19 @@ zfcp_fsf_exchange_config_evaluate(struct zfcp_fsf_req *fsf_req, int xchg_ok)
 		adapter->hydra_version = 0;
 	}
 
+	if (adapter->fc_topology == FSF_TOPO_P2P) {
+		adapter->peer_d_id = bottom->peer_d_id & ZFCP_DID_MASK;
+		adapter->peer_wwpn = bottom->plogi_payload.wwpn;
+		adapter->peer_wwnn = bottom->plogi_payload.wwnn;
+	}
+
 	if(adapter->supported_features & FSF_FEATURE_HBAAPI_MANAGEMENT){
 		adapter->hardware_version = bottom->hardware_version;
 		memcpy(adapter->serial_number, bottom->serial_number, 17);
 		EBCASC(adapter->serial_number, sizeof(adapter->serial_number));
 	}
 
-	ZFCP_LOG_INFO("The adapter %s reported the following characteristics:\n"
+	ZFCP_LOG_NORMAL("The adapter %s reported the following characteristics:\n"
 		      "WWNN 0x%016Lx, "
 		      "WWPN 0x%016Lx, "
 		      "S_ID 0x%08x,\n"
@@ -2194,14 +2203,18 @@ zfcp_fsf_exchange_config_data_handler(struct zfcp_fsf_req *fsf_req)
 		switch (adapter->fc_topology) {
 		case FSF_TOPO_P2P:
 			ZFCP_LOG_FLAGS(1, "FSF_TOPO_P2P\n");
-			ZFCP_LOG_NORMAL("error: Point-to-point fibrechannel "
-					"configuration detected at adapter %s "
-					"unsupported, shutting down adapter\n",
-					zfcp_get_busid_by_adapter(adapter));
+			ZFCP_LOG_NORMAL("Point-to-Point fibrechannel "
+					"configuration detected at adapter %s\n"
+					"Peer WWNN 0x%016llx, "
+					"peer WWPN 0x%016llx, "
+					"peer d_id 0x%06x\n",
+					zfcp_get_busid_by_adapter(adapter),
+					adapter->peer_wwnn,
+					adapter->peer_wwpn,
+					adapter->peer_d_id);
 			debug_text_event(fsf_req->adapter->erp_dbf, 0,
 					 "top-p-to-p");
-			zfcp_erp_adapter_shutdown(adapter, 0);
-			return -EIO;
+			break;
 		case FSF_TOPO_AL:
 			ZFCP_LOG_FLAGS(1, "FSF_TOPO_AL\n");
 			ZFCP_LOG_NORMAL("error: Arbitrated loop fibrechannel "
@@ -2226,6 +2239,7 @@ zfcp_fsf_exchange_config_data_handler(struct zfcp_fsf_req *fsf_req)
 					"of a type known to the zfcp "
 					"driver, shutting down adapter\n",
 					zfcp_get_busid_by_adapter(adapter));
+			adapter->fc_topology = FSF_TOPO_ERROR;
 			debug_text_exception(fsf_req->adapter->erp_dbf, 0,
 					     "unknown-topo");
 			zfcp_erp_adapter_shutdown(adapter, 0);
@@ -3203,7 +3217,9 @@ zfcp_fsf_open_unit_handler(struct zfcp_fsf_req *fsf_req)
 			      sizeof (union fsf_status_qual));
 		debug_text_event(adapter->erp_dbf, 2,
 				 "fsf_s_l_sh_vio");
-		zfcp_erp_unit_failed(unit);
+		zfcp_erp_unit_access_denied(unit);
+		atomic_clear_mask(ZFCP_STATUS_UNIT_SHARED, &unit->status);
+		atomic_clear_mask(ZFCP_STATUS_UNIT_READONLY, &unit->status);
 		fsf_req->status |= ZFCP_STATUS_FSFREQ_ERROR;
 		break;
 
@@ -4279,6 +4295,7 @@ zfcp_fsf_send_fcp_command_task_handler(struct zfcp_fsf_req *fsf_req)
 				      bottom.io.fcp_cmnd, FSF_FCP_CMND_SIZE);
 			zfcp_cmd_dbf_event_fsf("undeffcp", fsf_req, NULL, 0);
 			set_host_byte(&scpnt->result, DID_ERROR);
+			goto skip_fsfstatus;
 		}
 	}
 
@@ -4320,22 +4337,19 @@ zfcp_fsf_send_fcp_command_task_handler(struct zfcp_fsf_req *fsf_req)
 
 	/* check for underrun */
 	if (unlikely(fcp_rsp_iu->validity.bits.fcp_resid_under)) {
-		ZFCP_LOG_DEBUG("A data underrun was detected for a command. "
-			       "unit 0x%016Lx, port 0x%016Lx, adapter %s. "
-			       "The response data length is "
-			       "%d, the original length was %d.\n",
-			       unit->fcp_lun,
-			       unit->port->wwpn,
-			       zfcp_get_busid_by_unit(unit),
-			       fcp_rsp_iu->fcp_resid,
-			       (int) zfcp_get_fcp_dl(fcp_cmnd_iu));
-		/*
-		 * It may not have been possible to send all data and the
-		 * underrun on send may already be in scpnt->resid, so it's add
-		 * not equals in the below statement.
-		 */
-		scpnt->resid += fcp_rsp_iu->fcp_resid;
-		ZFCP_LOG_TRACE("scpnt->resid=0x%x\n", scpnt->resid);
+		ZFCP_LOG_INFO("A data underrun was detected for a command. "
+			      "unit 0x%016Lx, port 0x%016Lx, adapter %s. "
+			      "The response data length is "
+			      "%d, the original length was %d.\n",
+			      unit->fcp_lun,
+			      unit->port->wwpn,
+			      zfcp_get_busid_by_unit(unit),
+			      fcp_rsp_iu->fcp_resid,
+			      (int) zfcp_get_fcp_dl(fcp_cmnd_iu));
+
+		scpnt->resid = fcp_rsp_iu->fcp_resid;
+		if (scpnt->request_bufflen - scpnt->resid < scpnt->underflow)
+			set_host_byte(&scpnt->result, DID_ERROR);
 	}
 
  skip_fsfstatus:
@@ -4607,6 +4621,13 @@ zfcp_fsf_control_file_handler(struct zfcp_fsf_req *fsf_req)
 		ZFCP_LOG_FLAGS(2, "FSF_OPERATION_PARTIALLY_SUCCESSFUL\n");
 		if (bottom->operation_subtype == FSF_CFDC_OPERATION_SUBTYPE) {
 			switch (header->fsf_status_qual.word[0]) {
+
+			case FSF_SQ_CFDC_HARDENED_ON_SE:
+				ZFCP_LOG_NORMAL(
+					"CFDC on the adapter %s has being "
+					"hardened on primary and secondary SE\n",
+					zfcp_get_busid_by_adapter(adapter));
+				break;
 
 			case FSF_SQ_CFDC_COULD_NOT_HARDEN_ON_SE:
 				ZFCP_LOG_NORMAL(
@@ -5023,7 +5044,7 @@ zfcp_fsf_req_send(struct zfcp_fsf_req *fsf_req, struct timer_list *timer)
 		 * timer might be expired (absolutely unlikely)
 		 */
 		if (timer)
-			del_timer_sync(timer);
+			del_timer(timer);
 		write_lock_irqsave(&adapter->fsf_req_list_lock, flags);
 		list_del(&fsf_req->list);
 		write_unlock_irqrestore(&adapter->fsf_req_list_lock, flags);

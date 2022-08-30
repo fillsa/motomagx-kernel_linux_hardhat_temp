@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2000-2004 Silicon Graphics, Inc.  All Rights Reserved.
+ * Copyright (c) 2000-2005 Silicon Graphics, Inc.  All Rights Reserved.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of version 2 of the GNU General Public License as
@@ -66,19 +66,15 @@
 #include "xfs_buf_item.h"
 #include "xfs_utils.h"
 #include "xfs_version.h"
-#include "xfs_ioctl32.h"
 
 #include <linux/namei.h>
 #include <linux/init.h>
 #include <linux/mount.h>
-#include <linux/suspend.h>
 #include <linux/writeback.h>
 
 STATIC struct quotactl_ops linvfs_qops;
 STATIC struct super_operations linvfs_sops;
-STATIC struct export_operations linvfs_export_ops;
 STATIC kmem_zone_t *linvfs_inode_zone;
-STATIC kmem_shaker_t xfs_inode_shaker;
 
 STATIC struct xfs_mount_args *
 xfs_args_allocate(
@@ -93,6 +89,10 @@ xfs_args_allocate(
 	/* Copy the already-parsed mount(2) flags we're interested in */
 	if (sb->s_flags & MS_NOATIME)
 		args->flags |= XFSMNT_NOATIME;
+	if (sb->s_flags & MS_DIRSYNC)
+		args->flags |= XFSMNT_DIRSYNC;
+	if (sb->s_flags & MS_SYNCHRONOUS)
+		args->flags |= XFSMNT_WSYNC;
 
 	/* Default to 32 bit inodes on Linux all the time */
 	args->flags |= XFSMNT_32BITINODES;
@@ -288,18 +288,6 @@ linvfs_destroy_inode(
 	kmem_cache_free(linvfs_inode_zone, LINVFS_GET_VP(inode));
 }
 
-STATIC int
-xfs_inode_shake(
-	int		priority,
-	unsigned int	gfp_mask)
-{
-	int		pages;
-
-	pages = kmem_zone_shrink(linvfs_inode_zone);
-	pages += kmem_zone_shrink(xfs_inode_zone);
-	return pages;
-}
-
 STATIC void
 init_once(
 	void			*data,
@@ -350,6 +338,12 @@ linvfs_write_inode(
 		if (sync)
 			flags |= FLUSH_SYNC;
 		VOP_IFLUSH(vp, flags, error);
+		if (error == EAGAIN) {
+			if (sync)
+				VOP_IFLUSH(vp, flags | FLUSH_LOG, error);
+			else
+				error = 0;
+		}
 	}
 
 	return -error;
@@ -489,8 +483,7 @@ xfssyncd(
 		set_current_state(TASK_INTERRUPTIBLE);
 		timeleft = schedule_timeout(timeleft);
 		/* swsusp */
-		if (current->flags & PF_FREEZE)
-			refrigerator(PF_FREEZE);
+		try_to_freeze(PF_FREEZE);
 		if (vfsp->vfs_flag & VFS_UMOUNT)
 			break;
 
@@ -661,63 +654,6 @@ linvfs_freeze_fs(
 	VFS_FREEZE(LINVFS_GET_VFS(sb));
 }
 
-STATIC struct dentry *
-linvfs_get_parent(
-	struct dentry		*child)
-{
-	int			error;
-	vnode_t			*vp, *cvp;
-	struct dentry		*parent;
-	struct dentry		dotdot;
-
-	dotdot.d_name.name = "..";
-	dotdot.d_name.len = 2;
-	dotdot.d_inode = NULL;
-
-	cvp = NULL;
-	vp = LINVFS_GET_VP(child->d_inode);
-	VOP_LOOKUP(vp, &dotdot, &cvp, 0, NULL, NULL, error);
-	if (unlikely(error))
-		return ERR_PTR(-error);
-
-	parent = d_alloc_anon(LINVFS_GET_IP(cvp));
-	if (unlikely(!parent)) {
-		VN_RELE(cvp);
-		return ERR_PTR(-ENOMEM);
-	}
-	return parent;
-}
-
-STATIC struct dentry *
-linvfs_get_dentry(
-	struct super_block	*sb,
-	void			*data)
-{
-	vnode_t			*vp;
-	struct inode		*inode;
-	struct dentry		*result;
-	xfs_fid2_t		xfid;
-	vfs_t			*vfsp = LINVFS_GET_VFS(sb);
-	int			error;
-
-	xfid.fid_len = sizeof(xfs_fid2_t) - sizeof(xfid.fid_len);
-	xfid.fid_pad = 0;
-	xfid.fid_gen = ((__u32 *)data)[1];
-	xfid.fid_ino = ((__u32 *)data)[0];
-
-	VFS_VGET(vfsp, &vp, (fid_t *)&xfid, error);
-	if (error || vp == NULL)
-		return ERR_PTR(-ESTALE) ;
-
-	inode = LINVFS_GET_IP(vp);
-	result = d_alloc_anon(inode);
-        if (!result) {
-		iput(inode);
-		return ERR_PTR(-ENOMEM);
-	}
-	return result;
-}
-
 STATIC int
 linvfs_show_options(
 	struct seq_file		*m,
@@ -810,7 +746,9 @@ linvfs_fill_super(
 	}
 
 	sb_min_blocksize(sb, BBSIZE);
+#ifdef CONFIG_XFS_EXPORT
 	sb->s_export_op = &linvfs_export_ops;
+#endif
 	sb->s_qcop = &linvfs_qops;
 	sb->s_op = &linvfs_sops;
 
@@ -829,6 +767,7 @@ linvfs_fill_super(
 	sb->s_blocksize = statvfs.f_bsize;
 	sb->s_blocksize_bits = ffs(statvfs.f_bsize) - 1;
 	sb->s_maxbytes = xfs_max_file_offset(sb->s_blocksize_bits);
+	sb->s_time_gran = 1;
 	set_posix_acl_flag(sb);
 
 	VFS_ROOT(vfsp, &rootvp, error);
@@ -877,12 +816,6 @@ linvfs_get_sb(
 {
 	return get_sb_bdev(fs_type, flags, dev_name, data, linvfs_fill_super);
 }
-
-
-STATIC struct export_operations linvfs_export_ops = {
-	.get_parent		= linvfs_get_parent,
-	.get_dentry		= linvfs_get_dentry,
-};
 
 STATIC struct super_operations linvfs_sops = {
 	.alloc_inode		= linvfs_alloc_inode,
@@ -942,12 +875,6 @@ init_xfs_fs( void )
 	uuid_init();
 	vfs_initquota();
 
-	xfs_inode_shaker = kmem_shake_register(xfs_inode_shake);
-	if (!xfs_inode_shaker) {
-		error = -ENOMEM;
-		goto undo_shaker;
-	}
-
 	error = register_filesystem(&xfs_fs_type);
 	if (error)
 		goto undo_register;
@@ -955,9 +882,6 @@ init_xfs_fs( void )
 	return 0;
 
 undo_register:
-	kmem_shake_deregister(xfs_inode_shaker);
-
-undo_shaker:
 	pagebuf_terminate();
 
 undo_pagebuf:
@@ -973,7 +897,6 @@ exit_xfs_fs( void )
 	vfs_exitquota();
 	XFS_DM_EXIT(&xfs_fs_type);
 	unregister_filesystem(&xfs_fs_type);
-	kmem_shake_deregister(xfs_inode_shaker);
 	xfs_cleanup();
 	pagebuf_terminate();
 	destroy_inodecache();

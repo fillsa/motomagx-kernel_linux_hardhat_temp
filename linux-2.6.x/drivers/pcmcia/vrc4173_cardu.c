@@ -141,11 +141,6 @@ static int cardu_init(unsigned int slot)
 	return 0;
 }
 
-static int cardu_suspend(unsigned int slot)
-{
-	return -EINVAL;
-}
-
 static int cardu_register_callback(unsigned int sock,
                                            void (*handler)(void *, unsigned int),
                                            void * info)
@@ -300,7 +295,7 @@ static int cardu_get_io_map(unsigned int sock, struct pccard_io_map *io)
 
 	map = io->map;
 	if (map > 1)
-		return -EINVAL; 
+		return -EINVAL;
 
 	io->start = exca_readw(socket, IO_WIN_SA(map));
 	io->stop = exca_readw(socket, IO_WIN_EA(map));
@@ -433,7 +428,6 @@ static void cardu_proc_setup(unsigned int sock, struct proc_dir_entry *base)
 
 static struct pccard_operations cardu_operations = {
 	.init			= cardu_init,
-	.suspend		= cardu_suspend,
 	.register_callback	= cardu_register_callback,
 	.inquire_socket		= cardu_inquire_socket,
 	.get_status		= cardu_get_status,
@@ -467,7 +461,7 @@ static uint16_t get_events(vrc4173_socket_t *socket)
 
 	status = exca_readb(socket, IF_STATUS);
 	csc = exca_readb(socket, CARD_SC);
-	if ((csc & CARD_DT_CHG) && 
+	if ((csc & CARD_DT_CHG) &&
 	    ((status & (CARD_DETECT1|CARD_DETECT2)) == (CARD_DETECT1|CARD_DETECT2)))
 		events |= SS_DETECT;
 
@@ -620,3 +614,4 @@ static void __devexit vrc4173_cardu_exit(void)
 
 module_init(vrc4173_cardu_init);
 module_exit(vrc4173_cardu_exit);
+MODULE_DEVICE_TABLE(pci, vrc4173_cardu_id_table);

@@ -112,9 +112,13 @@
  */
 #define PMAC_TYPE_UNKNOWN_INTREPID	0x11f	/* Generic */
 
-/* MacRISC4 / G5 machines
+/* MacRISC4 / G5 machines. We don't have per-machine selection here anymore,
+ * but rather machine families
  */
-#define PMAC_TYPE_POWERMAC_G5		0x150	/* First tower */
+#define PMAC_TYPE_POWERMAC_G5		0x150	/* U3 & U3H based */
+#define PMAC_TYPE_POWERMAC_G5_U3L	0x151	/* U3L based desktop */
+#define PMAC_TYPE_IMAC_G5		0x152	/* iMac G5 */
+#define PMAC_TYPE_XSERVE_G5		0x153	/* Xserve G5 */
 #define PMAC_TYPE_UNKNOWN_K2		0x19f	/* Any other K2 based */
 
 /*
@@ -125,6 +129,7 @@
 #define PMAC_MB_HAS_FW_POWER		0x00000002
 #define PMAC_MB_OLD_CORE99		0x00000004
 #define PMAC_MB_MOBILE			0x00000008
+#define PMAC_MB_MAY_SLEEP		0x00000010
 
 /*
  * Feature calls supported on pmac
@@ -238,7 +243,10 @@ static inline long pmac_call_feature(int selector, struct device_node* node,
 
 /* PMAC_FTR_SLEEP_STATE		(struct device_node* node, 0, int value)
  * set the sleep state of the motherboard.
+ *
  * Pass -1 as value to query for sleep capability
+ * Pass 1 to set IOs to sleep
+ * Pass 0 to set IOs to wake
  */
 #define PMAC_FTR_SLEEP_STATE		PMAC_FTR_DEF(15)
 
@@ -279,13 +287,38 @@ static inline long pmac_call_feature(int selector, struct device_node* node,
  */
 #define PMAC_FTR_AACK_DELAY_ENABLE     	PMAC_FTR_DEF(20)
 
+/* PMAC_FTR_DEVICE_CAN_WAKE
+ *
+ * Used by video drivers to inform system that they can actually perform
+ * wakeup from sleep
+ */
+#define PMAC_FTR_DEVICE_CAN_WAKE	PMAC_FTR_DEF(22)
+
 
 /* Don't use those directly, they are for the sake of pmac_setup.c */
 extern long pmac_do_feature_call(unsigned int selector, ...);
 extern void pmac_feature_init(void);
 
+/* Video suspend tweak */
+extern void pmac_set_early_video_resume(void (*proc)(void *data), void *data);
+extern void pmac_call_early_video_resume(void);
+
 #define PMAC_FTR_DEF(x) ((_MACH_Pmac << 16) | (x))
 
+/* The AGP driver registers itself here */
+extern void pmac_register_agp_pm(struct pci_dev *bridge,
+				 int (*suspend)(struct pci_dev *bridge),
+				 int (*resume)(struct pci_dev *bridge));
+
+/* Those are meant to be used by video drivers to deal with AGP
+ * suspend resume properly
+ */
+extern void pmac_suspend_agp_for_card(struct pci_dev *dev);
+extern void pmac_resume_agp_for_card(struct pci_dev *dev);
+
+/* Used by the via-pmu driver for suspend/resume
+ */
+extern void pmac_tweak_clock_spreading(int enable);
 
 /*
  * The part below is for use by macio_asic.c only, do not rely

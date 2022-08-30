@@ -48,7 +48,7 @@ struct NCR_Q720_private {
 	struct Scsi_Host	*hosts[4];
 };
 
-struct scsi_host_template NCR_Q720_tpnt = {
+static struct scsi_host_template NCR_Q720_tpnt = {
 	.module			= THIS_MODULE,
 	.proc_name		= "NCR_Q720",
 };
@@ -225,7 +225,7 @@ NCR_Q720_probe(struct device *dev)
 
 	/* The first 1k of the memory buffer is a memory map of the registers
 	 */
-	mem_base = (__u32)dma_mark_declared_memory_occupied(dev, base_addr,
+	mem_base = dma_mark_declared_memory_occupied(dev, base_addr,
 							    1024);
 	if (IS_ERR(mem_base)) {
 		printk("NCR_Q720 failed to reserve memory mapped region\n");
@@ -345,7 +345,7 @@ NCR_Q720_remove(struct device *dev)
 
 static short NCR_Q720_id_table[] = { NCR_Q720_MCA_ID, 0 };
 
-struct mca_driver NCR_Q720_driver = {
+static struct mca_driver NCR_Q720_driver = {
 	.id_table = NCR_Q720_id_table,
 	.driver = {
 		.name		= "NCR_Q720",

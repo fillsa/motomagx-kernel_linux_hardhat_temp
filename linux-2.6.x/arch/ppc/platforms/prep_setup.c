@@ -645,7 +645,7 @@ static void __init prep_init_sound(void)
 static void __init
 prep_init_vesa(void)
 {
-#if     (defined(CONFIG_FB_VGA16) || defined(CONFIG_FB_VGA_16_MODULE) || \
+#if     (defined(CONFIG_FB_VGA16) || defined(CONFIG_FB_VGA16_MODULE) || \
 	 defined(CONFIG_FB_VESA))
 	PPC_DEVICE *vgadev = NULL;
 
@@ -690,8 +690,8 @@ prep_set_bat(void)
 	mb();
 
 	/* setup DBATs */
-	mtspr(DBAT2U, 0x80001ffe);
-	mtspr(DBAT2L, 0x8000002a);
+	mtspr(SPRN_DBAT2U, 0x80001ffe);
+	mtspr(SPRN_DBAT2L, 0x8000002a);
 
 	/* wait for updates */
 	mb();
@@ -1126,7 +1126,7 @@ prep_init(unsigned long r3, unsigned long r4, unsigned long r5,
 		_prep_type = _PREP_Motorola;
 	}
 
-#ifdef CONFIG_PREP_PRESIDUAL
+#ifdef CONFIG_PREP_RESIDUAL
 	/* Switch off all residual data processing if the user requests it */
 	if (strstr(cmd_line, "noresidual") != NULL)
 			res = NULL;
@@ -1143,6 +1143,8 @@ prep_init(unsigned long r3, unsigned long r4, unsigned long r5,
 	ppc_md.init_IRQ       = prep_init_IRQ;
 	/* this gets changed later on if we have an OpenPIC -- Cort */
 	ppc_md.get_irq        = i8259_irq;
+
+	ppc_md.phys_mem_access_prot = pci_phys_mem_access_prot;
 
 	ppc_md.restart        = prep_restart;
 	ppc_md.power_off      = NULL; /* set in prep_setup_arch() */

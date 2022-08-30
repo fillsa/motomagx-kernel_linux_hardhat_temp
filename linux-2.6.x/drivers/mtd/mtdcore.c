@@ -320,10 +320,10 @@ static int mtd_pm_callback(struct pm_dev *dev, pm_request_t rqst, void *data)
 #ifdef CONFIG_MOT_WFN443
 	} else i = MAX_MTD_DEVICES;
 #else
-    } else i = MAX_MTD_DEVICES-1;
+	} else i = MAX_MTD_DEVICES-1;
 #endif /* CONFIG_MOT_WFN443 */
-	
-    if (rqst == PM_RESUME || ret) {
+
+	if (rqst == PM_RESUME || ret) {
 #ifdef CONFIG_MOT_WFN443
 		for (i--; i >= 0; i--) {
 #else

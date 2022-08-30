@@ -222,6 +222,7 @@ EXPORT_SYMBOL(local_bh_enable);
  */
 void irq_exit(void)
 {
+	//2.6.11	account_system_vtime(current);
 	sub_preempt_count(IRQ_EXIT_OFFSET);
 	if (!in_interrupt() && local_softirq_pending())
 		invoke_softirq();
@@ -427,8 +428,12 @@ static int ksoftirqd(void * __bind_cpu)
         current->dpm_state = DPM_NO_STATE;
 
 	while (!kthread_should_stop()) {
-		if (!local_softirq_pending())
+		preempt_disable();
+		if (!local_softirq_pending()) {
+			preempt_enable_no_resched();
 			schedule();
+			preempt_disable();
+		}
 
 		__set_current_state(TASK_RUNNING);
 
@@ -436,14 +441,14 @@ static int ksoftirqd(void * __bind_cpu)
 			/* Preempt disable stops cpu going offline.
 			   If already offline, we'll be on wrong CPU:
 			   don't process */
-			preempt_disable();
 			if (cpu_is_offline((long)__bind_cpu))
 				goto wait_to_die;
-			preempt_enable();
+			preempt_enable_no_resched();
 			_do_softirq();
 			cond_resched();
+			preempt_disable();
 		}
-
+		preempt_enable();
 		set_current_state(TASK_INTERRUPTIBLE);
 	}
 	__set_current_state(TASK_RUNNING);

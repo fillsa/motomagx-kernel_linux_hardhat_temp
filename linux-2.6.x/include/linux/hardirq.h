@@ -4,6 +4,7 @@
 #include <linux/config.h>
 #include <linux/smp_lock.h>
 #include <asm/hardirq.h>
+#include <asm/system.h>
 
 /*
  * We put the hardirq and softirq counter into the preemption
@@ -42,12 +43,16 @@
 #define __IRQ_MASK(x)	((1UL << (x))-1)
 
 #define PREEMPT_MASK	(__IRQ_MASK(PREEMPT_BITS) << PREEMPT_SHIFT)
-#define HARDIRQ_MASK	(__IRQ_MASK(HARDIRQ_BITS) << HARDIRQ_SHIFT)
 #define SOFTIRQ_MASK	(__IRQ_MASK(SOFTIRQ_BITS) << SOFTIRQ_SHIFT)
+#define HARDIRQ_MASK	(__IRQ_MASK(HARDIRQ_BITS) << HARDIRQ_SHIFT)
 
 #define PREEMPT_OFFSET	(1UL << PREEMPT_SHIFT)
 #define SOFTIRQ_OFFSET	(1UL << SOFTIRQ_SHIFT)
 #define HARDIRQ_OFFSET	(1UL << HARDIRQ_SHIFT)
+
+#if PREEMPT_ACTIVE < (1 << (HARDIRQ_SHIFT + HARDIRQ_BITS))
+#error PREEMPT_ACTIVE is too low!
+#endif
 
 #define hardirq_count()	(preempt_count() & HARDIRQ_MASK)
 #define softirq_count()	(preempt_count() & SOFTIRQ_MASK)
@@ -57,12 +62,11 @@
  * Are we doing bottom half or hardware interrupt processing?
  * Are we in a softirq context? Interrupt context?
  */
-#define in_irq()	(hardirq_count() || (current->flags & PF_HARDIRQ))
-#define in_softirq()	(softirq_count() || (current->flags & PF_SOFTIRQ))
-#define in_interrupt()	(irq_count())
+#define in_irq()		(hardirq_count() || (current->flags & PF_HARDIRQ))
+#define in_softirq()		(softirq_count() || (current->flags & PF_SOFTIRQ))
+#define in_interrupt()		(irq_count())
 
-#if defined(CONFIG_PREEMPT) && \
-	!defined(CONFIG_PREEMPT_BKL) && \
+#if defined(CONFIG_PREEMPT) && !defined(CONFIG_PREEMPT_BKL) && \
 		!defined(CONFIG_PREEMPT_RT)
 # define in_atomic()	((preempt_count() & ~PREEMPT_ACTIVE) != kernel_locked())
 #else
@@ -86,7 +90,22 @@ extern void synchronize_irq(unsigned int irq);
 #define nmi_enter()		irq_enter()
 #define nmi_exit()		sub_preempt_count(HARDIRQ_OFFSET)
 
-#define irq_enter()		add_preempt_count(HARDIRQ_OFFSET)
+#ifndef CONFIG_VIRT_CPU_ACCOUNTING
+static inline void account_user_vtime(struct task_struct *tsk)
+{
+}
+
+static inline void account_system_vtime(struct task_struct *tsk)
+{
+}
+#endif
+
+#define irq_enter()					\
+	do {						\
+		account_system_vtime(current);		\
+		add_preempt_count(HARDIRQ_OFFSET);	\
+	} while (0)
+
 extern void irq_exit(void);
 
 #endif /* LINUX_HARDIRQ_H */

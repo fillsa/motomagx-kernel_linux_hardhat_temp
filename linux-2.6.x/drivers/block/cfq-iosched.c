@@ -607,10 +607,7 @@ out:
 	return NULL;
 }
 
-/*
- * make sure the service time gets corrected on reissue of this request
- */
-static void cfq_requeue_request(request_queue_t *q, struct request *rq)
+static void cfq_deactivate_request(request_queue_t *q, struct request *rq)
 {
 	struct cfq_rq *crq = RQ_DATA(rq);
 
@@ -622,9 +619,19 @@ static void cfq_requeue_request(request_queue_t *q, struct request *rq)
 			cfq_sort_rr_list(cfqq, 0);
 		}
 
-		crq->accounted = 0;
-		cfqq->cfqd->rq_in_driver--;
+		if (crq->accounted) {
+			crq->accounted = 0;
+			cfqq->cfqd->rq_in_driver--;
+		}
 	}
+}
+
+/*
+ * make sure the service time gets corrected on reissue of this request
+ */
+static void cfq_requeue_request(request_queue_t *q, struct request *rq)
+{
+	cfq_deactivate_request(q, rq);
 	list_add(&rq->queuelist, &q->queue_head);
 }
 
@@ -1195,13 +1202,16 @@ retry:
 		if (new_cfqq) {
 			cfqq = new_cfqq;
 			new_cfqq = NULL;
-		} else if (gfp_mask & __GFP_WAIT) {
+		} else {
 			spin_unlock_irq(cfqd->queue->queue_lock);
 			new_cfqq = kmem_cache_alloc(cfq_pool, gfp_mask);
 			spin_lock_irq(cfqd->queue->queue_lock);
+
+			if (!new_cfqq && !(gfp_mask & __GFP_WAIT))
+				goto out;
+
 			goto retry;
-		} else
-			goto out;
+		}
 
 		memset(cfqq, 0, sizeof(*cfqq));
 
@@ -1283,19 +1293,19 @@ static int cfq_queue_empty(request_queue_t *q)
 static void cfq_completed_request(request_queue_t *q, struct request *rq)
 {
 	struct cfq_rq *crq = RQ_DATA(rq);
+	struct cfq_queue *cfqq;
 
 	if (unlikely(!blk_fs_request(rq)))
 		return;
 
-	if (crq->in_flight) {
-		struct cfq_queue *cfqq = crq->cfq_queue;
+	cfqq = crq->cfq_queue;
 
+	if (crq->in_flight) {
 		WARN_ON(!cfqq->in_flight);
 		cfqq->in_flight--;
-
-		cfq_account_completion(cfqq, crq);
 	}
 
+	cfq_account_completion(cfqq, crq);
 }
 
 static struct request *
@@ -1788,7 +1798,7 @@ static struct sysfs_ops cfq_sysfs_ops = {
 	.store	= cfq_attr_store,
 };
 
-struct kobj_type cfq_ktype = {
+static struct kobj_type cfq_ktype = {
 	.sysfs_ops	= &cfq_sysfs_ops,
 	.default_attrs	= default_attrs,
 };
@@ -1802,6 +1812,7 @@ static struct elevator_type iosched_cfq = {
 		.elevator_add_req_fn =		cfq_insert_request,
 		.elevator_remove_req_fn =	cfq_remove_request,
 		.elevator_requeue_req_fn =	cfq_requeue_request,
+		.elevator_deactivate_req_fn =	cfq_deactivate_request,
 		.elevator_queue_empty_fn =	cfq_queue_empty,
 		.elevator_completed_req_fn =	cfq_completed_request,
 		.elevator_former_req_fn =	cfq_former_request,
@@ -1817,7 +1828,7 @@ static struct elevator_type iosched_cfq = {
 	.elevator_owner =	THIS_MODULE,
 };
 
-int cfq_init(void)
+static int __init cfq_init(void)
 {
 	int ret;
 

@@ -2,6 +2,7 @@
  * sysfs.h - definitions for the device driver filesystem
  *
  * Copyright (c) 2001,2002 Patrick Mochel
+ * Copyright (c) 2004 Silicon Graphics, Inc.
  *
  * Please see Documentation/filesystems/sysfs.txt for more information.
  */
@@ -47,11 +48,16 @@ struct attribute_group {
 
 #define attr_name(_attr) (_attr).attr.name
 
+struct vm_area_struct;
+
 struct bin_attribute {
 	struct attribute	attr;
 	size_t			size;
+	void			*private;
 	ssize_t (*read)(struct kobject *, char *, loff_t, size_t);
 	ssize_t (*write)(struct kobject *, char *, loff_t, size_t);
+	int (*mmap)(struct kobject *, struct bin_attribute *attr,
+		    struct vm_area_struct *vma);
 };
 
 struct sysfs_ops {
@@ -93,6 +99,9 @@ sysfs_create_file(struct kobject *, const struct attribute *);
 extern int
 sysfs_update_file(struct kobject *, const struct attribute *);
 
+extern int
+sysfs_chmod_file(struct kobject *kobj, struct attribute *attr, mode_t mode);
+
 extern void
 sysfs_remove_file(struct kobject *, const struct attribute *);
 
@@ -131,6 +140,10 @@ static inline int sysfs_create_file(struct kobject * k, const struct attribute *
 }
 
 static inline int sysfs_update_file(struct kobject * k, const struct attribute * a)
+{
+	return 0;
+}
+static inline int sysfs_chmod_file(struct kobject *kobj, struct attribute *attr, mode_t mode)
 {
 	return 0;
 }

@@ -184,8 +184,8 @@ static struct vm_operations_struct shmem_vm_ops;
 
 static struct backing_dev_info shmem_backing_dev_info = {
 	.ra_pages	= 0,	/* No readahead */
-	.memory_backed	= 1,	/* Does not contribute to dirty memory */
-	.unplug_io_fn = default_unplug_io_fn,
+	.capabilities	= BDI_CAP_NO_ACCT_DIRTY | BDI_CAP_NO_WRITEBACK,
+	.unplug_io_fn	= default_unplug_io_fn,
 };
 
 static LIST_HEAD(shmem_swaplist);
@@ -369,9 +369,8 @@ static swp_entry_t *shmem_swp_alloc(struct shmem_inode_info *info, unsigned long
 		}
 
 		spin_unlock(&info->lock);
-		page = shmem_dir_alloc(mapping_gfp_mask(inode->i_mapping));
+		page = shmem_dir_alloc(mapping_gfp_mask(inode->i_mapping) | __GFP_ZERO);
 		if (page) {
-			clear_highpage(page);
 			page->nr_swapped = 0;
 		}
 		spin_lock(&info->lock);
@@ -874,13 +873,13 @@ static struct page *shmem_swapin_async(struct shared_policy *p,
 	pvma.vm_end = PAGE_SIZE;
 	pvma.vm_pgoff = idx;
 	pvma.vm_policy = mpol_shared_policy_lookup(p, idx);
-	page = read_swap_cache_async(entry, &pvma, 0);
+	page = read_swap_cache_async(entry | __GFP_ZERO, &pvma, 0);//2.6.11 page = alloc_page_vma(gfp | __GFP_ZERO, &pvma, 0);
 	mpol_free(pvma.vm_policy);
 	return page;
 }
 
-struct page *shmem_swapin(struct address_space *mapping,
-			  swp_entry_t entry, unsigned long idx)
+struct page *shmem_swapin(struct address_space *mapping, swp_entry_t entry,
+			  unsigned long idx)
 {
 	struct shared_policy *p = &mapping->policy;
 	int i, num;
@@ -900,8 +899,8 @@ struct page *shmem_swapin(struct address_space *mapping,
 }
 
 #else
-static inline struct page *shmem_swapin(struct address_space *mapping,
-					swp_entry_t entry,unsigned long idx)
+static inline struct page *
+shmem_swapin(struct address_space *mapping,swp_entry_t entry,unsigned long idx)
 {
 	swapin_readahead(entry, 0, NULL);
 	return read_swap_cache_async(entry, NULL, 0);
@@ -1080,7 +1079,8 @@ repeat:
 
 		if (!filepage) {
 			spin_unlock(&info->lock);
-			filepage = page_cache_alloc(mapping, idx);
+			filepage = page_cache_alloc(mapping, //2.6			filepage = shmem_alloc_page(mapping_gfp_mask(mapping), info,
+						    idx);
 			if (!filepage) {
 				shmem_unacct_blocks(info->flags, 1);
 				shmem_free_blocks(inode, 1);
@@ -1112,7 +1112,6 @@ repeat:
 
 		info->alloced++;
 		spin_unlock(&info->lock);
-		clear_highpage(filepage);
 		flush_dcache_page(filepage);
 		SetPageUptodate(filepage);
 	}
@@ -2123,7 +2122,7 @@ static int shmem_xattr_security_set(struct inode *inode, const char *name, const
 	return security_inode_setsecurity(inode, name, value, size, flags);
 }
 
-struct xattr_handler shmem_xattr_security_handler = {
+static struct xattr_handler shmem_xattr_security_handler = {
 	.prefix	= XATTR_SECURITY_PREFIX,
 	.list	= shmem_xattr_security_list,
 	.get	= shmem_xattr_security_get,

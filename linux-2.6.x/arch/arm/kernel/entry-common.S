@@ -9,19 +9,10 @@
  */
 #include <linux/config.h>
 
-#include <asm/thread_info.h>
-#include <asm/ptrace.h>
 #include <asm/unistd.h>
 
 #include "entry-header.S"
 
-/* 
- * We rely on the fact that R0 is at the bottom of the stack (due to
- * slow/fast restore user regs).
- */
-#if S_R0 != 0
-#error "Please fix"
-#endif
 
 	.align	5
 /*
@@ -38,11 +29,19 @@ ret_fast_syscall:
 #ifdef CONFIG_CRITICAL_IRQSOFF_TIMING
 	bl trace_irqs_on
 #endif
-	disable_irq r1				@ disable interrupts
+	disable_irq				@ disable interrupts
 	ldr	r1, [tsk, #TI_FLAGS]
 	tst	r1, #_TIF_WORK_MASK
 	bne	fast_work_pending
-	fast_restore_user_regs
+
+	@ fast_restore_user_regs
+	ldr	r1, [sp, #S_OFF + S_PSR]	@ get calling cpsr
+	ldr	lr, [sp, #S_OFF + S_PC]!	@ get pc
+	msr	spsr_cxsf, r1			@ save in spsr_svc
+	ldmdb	sp, {r1 - lr}^			@ get calling r1 - lr
+	mov	r0, r0
+	add	sp, sp, #S_FRAME_SIZE - S_PC
+	movs	pc, lr				@ return & move spsr_svc into cpsr
 
 /*
  * Ok, we need to do extra processing, enter the slow path.
@@ -55,22 +54,22 @@ work_pending:
 	tst	r1, #_TIF_NOTIFY_RESUME | _TIF_SIGPENDING
 	beq	no_work_pending
 	mov	r0, sp				@ 'regs'
-	mov	r2, why				@ 'syscall'	
+	mov	r2, why				@ 'syscall'
 	bl	do_notify_resume
-	disable_irq r1				@ disable interrupts
+	disable_irq				@ disable interrupts
 	b	no_work_pending
 
 work_resched:
-	enable_irq ip
+	enable_irq
 	bl	schedule
-	disable_irq r1                          @ disable interrupts
+	disable_irq                          @ disable interrupts
 
 /*
  * "slow" syscall return path.  "why" tells us if this was a real syscall.
  */
 ENTRY(ret_to_user)
 ret_slow_syscall:
-	disable_irq r1				@ disable interrupts
+	disable_irq				@ disable interrupts
 	ldr	r1, [tsk, #TI_FLAGS]
 	tst	r1, #_TIF_WORK_MASK
 	bne	work_pending
@@ -78,7 +77,14 @@ no_work_pending:
 #ifdef CONFIG_CRITICAL_IRQSOFF_TIMING
 	bl trace_irqs_on
 #endif
-	slow_restore_user_regs
+	@ slow_restore_user_regs
+	ldr	r1, [sp, #S_PSR]		@ get calling cpsr
+	ldr	lr, [sp, #S_PC]!		@ get pc
+	msr	spsr_cxsf, r1			@ save in spsr_svc
+	ldmdb	sp, {r0 - lr}^			@ get calling r1 - lr
+	mov	r0, r0
+	add	sp, sp, #S_FRAME_SIZE - S_PC
+	movs	pc, lr				@ return & move spsr_svc into cpsr
 
 /*
  * This is how we return from a fork.
@@ -114,9 +120,17 @@ ENTRY(ret_from_fork)
 #else
 #define A710(code...)
 #endif
+
 	.align	5
 ENTRY(vector_swi)
-	save_user_regs
+	sub	sp, sp, #S_FRAME_SIZE
+	stmia	sp, {r0 - r12}			@ Calling r0 - r12
+	add	r8, sp, #S_PC
+	stmdb	r8, {sp, lr}^			@ Calling sp, lr
+	mrs	r8, spsr			@ called from non-FIQ mode, so ok.
+	str	lr, [sp, #S_PC]			@ Save calling PC
+	str	r8, [sp, #S_PSR]		@ Save CPSR
+	str	r0, [sp, #S_OLD_R0]		@ Save OLD_R0
 	zero_fp
 
 	/*
@@ -156,7 +170,6 @@ ENTRY(vector_swi)
 	tst	r8, #PSR_T_BIT			@ this is SPSR from save_user_regs
 	addne	scno, r7, #__NR_SYSCALL_BASE	@ put OS number in
 	ldreq	scno, [lr, #-4]
-
 #else
 
 	/* Legacy ABI only. */
@@ -172,7 +185,7 @@ ENTRY(vector_swi)
 	ldr	ip, [ip]
 	mcr	p15, 0, ip, c1, c0		@ update control register
 #endif
-        enable_irq ip
+	enable_irq
 
 #if (CONFIG_LTT)
 	/* zzz note that validity of scno is not yet checked.
@@ -213,8 +226,8 @@ ENTRY(vector_swi)
 
 	add	r1, sp, #S_OFF
 2:	mov	why, #0				@ no longer a real syscall
-	cmp	scno, #ARMSWI_OFFSET
-	eor	r0, scno, #OS_NUMBER << 20	@ put OS number back
+	cmp	scno, #(__ARM_NR_BASE - __NR_SYSCALL_BASE)
+	eor	r0, scno, #__NR_SYSCALL_BASE	@ put OS number back
 	bcs	arm_syscall	
 	b	sys_ni_syscall			@ not private func
 
@@ -336,6 +349,10 @@ sys_fstatfs64_wrapper:
 		teq	r1, #88
 		moveq	r1, #84
 		b	sys_fstatfs64
+
+sys_futex_wrapper:
+		str	r5, [sp, #4]		@ push sixth arg
+		b	sys_futex
 
 /*
  * Note: off_4k (r5) is always units of 4K.  If we can't do the requested

@@ -2,6 +2,8 @@
  * Carsten Langgaard, carstenl@mips.com
  * Copyright (C) 2000 MIPS Technologies, Inc.  All rights reserved.
  *
+ * ########################################################################
+ *
  *  This program is free software; you can distribute it and/or modify it
  *  under the terms of the GNU General Public License (Version 2) as
  *  published by the Free Software Foundation.
@@ -14,6 +16,8 @@
  *  You should have received a copy of the GNU General Public License along
  *  with this program; if not, write to the Free Software Foundation, Inc.,
  *  59 Temple Place - Suite 330, Boston MA 02111-1307, USA.
+ *
+ * ########################################################################
  *
  * SAA9730 ethernet driver.
  *
@@ -223,7 +227,6 @@ static int lan_saa9730_allocate_buffers(struct pci_dev *pdev, struct lan_saa9730
 	lp->DmaRcvPackets = LAN_SAA9730_RCV_Q_SIZE;
 	lp->DmaTxmPackets = LAN_SAA9730_TXM_Q_SIZE;
 
-	
 	/* Init RX buffers */
 	for (i = 0; i < LAN_SAA9730_BUFFERS; i++) {
 		for (j = 0; j < LAN_SAA9730_RCV_Q_SIZE; j++) {
@@ -1034,18 +1037,16 @@ static int lan_saa9730_init(struct net_device *dev, struct pci_dev *pdev,
 	dev->tx_timeout = lan_saa9730_tx_timeout;
 	dev->watchdog_timeo = (HZ >> 1);
 	dev->dma = 0;
-
+	
 	ret = register_netdev (dev);
 	if (ret)
 		goto out_free_lp;
-	
 	return 0;
 
 out_free_lp:
 	/* FIXME: a leak */
 out_free_netdev:
 	free_netdev(dev);
-
 	return ret;
 }
 
@@ -1073,30 +1074,30 @@ static int __devinit saa9730_init_one(struct pci_dev *pdev, const struct pci_dev
 
 	pci_irq_line = pdev->irq;
 	/* LAN base address in located at BAR 1. */
-	
+
 	pci_ioaddr = pci_resource_start(pdev, 1);
 	pci_set_master(pdev);
-	
+
 	printk("Found SAA9730 (PCI) at %lx, irq %d.\n",
 	       pci_ioaddr, pci_irq_line);
 
 	dev = alloc_etherdev(sizeof(struct lan_saa9730_private));
 	if (!dev) 
 		goto out_disable_pdev;
-	
+
 	err = lan_saa9730_init(dev, pdev, pci_ioaddr, pci_irq_line);
 	if (err) {
 		printk("Lan init failed");
 		goto out_disable_pdev;
 	}
-	
+
 	pci_set_drvdata(pdev, dev);
 	SET_NETDEV_DEV(dev, &pdev->dev);
 	return 0;
 	
- out_disable_pdev:
+out_disable_pdev:
 	pci_disable_device(pdev);
- out:
+out:
 	pci_set_drvdata(pdev, NULL);
 	return err;
 }
@@ -1117,10 +1118,12 @@ static int __init saa9730_init(void)
 
 static void __exit saa9730_cleanup(void)
 {
-	pci_unregister_driver(&saa9730_driver);
+        pci_unregister_driver(&saa9730_driver);
 }
 
 module_init(saa9730_init);
 module_exit(saa9730_cleanup);
+
+
 
 MODULE_LICENSE("GPL");

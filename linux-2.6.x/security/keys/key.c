@@ -20,10 +20,10 @@
 static kmem_cache_t	*key_jar;
 static key_serial_t	key_serial_next = 3;
 struct rb_root		key_serial_tree; /* tree of keys indexed by serial */
-spinlock_t		key_serial_lock = SPIN_LOCK_UNLOCKED;
+DEFINE_SPINLOCK(key_serial_lock);
 
 struct rb_root	key_user_tree; /* tree of quota records indexed by UID */
-spinlock_t	key_user_lock = SPIN_LOCK_UNLOCKED;
+DEFINE_SPINLOCK(key_user_lock);
 
 static LIST_HEAD(key_types_list);
 static DECLARE_RWSEM(key_types_sem);
@@ -57,9 +57,10 @@ struct key_user *key_user_lookup(uid_t uid)
 {
 	struct key_user *candidate = NULL, *user;
 	struct rb_node *parent = NULL;
-	struct rb_node **p = &key_user_tree.rb_node;
+	struct rb_node **p;
 
  try_again:
+	p = &key_user_tree.rb_node;
 	spin_lock(&key_user_lock);
 
 	/* search the tree for a user record with a matching UID */

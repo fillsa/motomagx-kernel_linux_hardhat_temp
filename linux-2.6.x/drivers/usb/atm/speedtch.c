@@ -44,28 +44,8 @@
 
 #include "usb_atm.h"
 
-/*
-#define DEBUG
-#define VERBOSE_DEBUG
-*/
-
-#if !defined (DEBUG) && defined (CONFIG_USB_DEBUG)
-#	define DEBUG
-#endif
-
-#include <linux/usb.h>
-
 #if defined(CONFIG_FW_LOADER) || defined(CONFIG_FW_LOADER_MODULE)
 #	define USE_FW_LOADER
-#endif
-
-#ifdef VERBOSE_DEBUG
-static int udsl_print_packet(const unsigned char *data, int len);
-#define PACKETDEBUG(arg...)	udsl_print_packet (arg)
-#define vdbg(arg...)		dbg (arg)
-#else
-#define PACKETDEBUG(arg...)
-#define vdbg(arg...)
 #endif
 
 #define DRIVER_AUTHOR	"Johan Verrept, Duncan Sands <duncan.sands@free.fr>"
@@ -78,8 +58,8 @@ static const char speedtch_driver_name[] = "speedtch";
 #define SPEEDTOUCH_PRODUCTID		0x4061
 
 /* Timeout in jiffies */
-#define CTRL_TIMEOUT (2*HZ)
-#define DATA_TIMEOUT (2*HZ)
+#define CTRL_TIMEOUT 2000
+#define DATA_TIMEOUT 2000
 
 #define OFFSET_7  0		/* size 1 */
 #define OFFSET_b  1		/* size 8 */
@@ -406,6 +386,8 @@ static void speedtch_poll_status(struct speedtch_instance_data *instance)
 		if (instance->u.atm_dev->signal != ATM_PHY_SIG_LOST) {
 			instance->u.atm_dev->signal = ATM_PHY_SIG_LOST;
 			printk(KERN_NOTICE "ADSL line is down\n");
+			/* It'll never resync again unless we ask it to... */
+			speedtch_start_synchro(instance);
 		}
 		break;
 
@@ -494,7 +476,7 @@ static void speedtch_upload_firmware(struct speedtch_instance_data *instance,
 	/* URB 7 */
 	if (dl_512_first) {	/* some modems need a read before writing the firmware */
 		ret = usb_bulk_msg(usb_dev, usb_rcvbulkpipe(usb_dev, SPEEDTCH_ENDPOINT_FIRMWARE),
-				   buffer, 0x200, &actual_length, 2 * HZ);
+				   buffer, 0x200, &actual_length, 2000);
 
 		if (ret < 0 && ret != -ETIMEDOUT)
 			dbg("speedtch_upload_firmware: read BLOCK0 from modem failed (%d)!", ret);
@@ -514,7 +496,7 @@ static void speedtch_upload_firmware(struct speedtch_instance_data *instance,
 			dbg("speedtch_upload_firmware: write BLOCK1 to modem failed (%d)!", ret);
 			goto fail_release;
 		}
-		dbg("speedtch_upload_firmware: BLOCK1 uploaded (%d bytes)", fw1->size);
+		dbg("speedtch_upload_firmware: BLOCK1 uploaded (%zu bytes)", fw1->size);
 	}
 
 	/* USB led blinking green, ADSL led off */
@@ -542,7 +524,7 @@ static void speedtch_upload_firmware(struct speedtch_instance_data *instance,
 			goto fail_release;
 		}
 	}
-	dbg("speedtch_upload_firmware: BLOCK3 uploaded (%d bytes)", fw2->size);
+	dbg("speedtch_upload_firmware: BLOCK3 uploaded (%zu bytes)", fw2->size);
 
 	/* USB led static green, ADSL led static red */
 
@@ -594,7 +576,7 @@ static int speedtch_find_firmware(struct speedtch_instance_data
 				  const struct firmware **fw_p)
 {
 	char buf[24];
-	const u16 bcdDevice = instance->u.usb_dev->descriptor.bcdDevice;
+	const u16 bcdDevice = le16_to_cpu(instance->u.usb_dev->descriptor.bcdDevice);
 	const u8 major_revision = bcdDevice >> 8;
 	const u8 minor_revision = bcdDevice & 0xff;
 
@@ -737,11 +719,12 @@ static int speedtch_usb_probe(struct usb_interface *intf,
 	int ret, i;
 	char buf7[SIZE_7];
 
-	dbg("speedtch_usb_probe: trying device with vendor=0x%x, product=0x%x, ifnum %d", dev->descriptor.idVendor, dev->descriptor.idProduct, ifnum);
+	dbg("speedtch_usb_probe: trying device with vendor=0x%x, product=0x%x, ifnum %d",
+	    le16_to_cpu(dev->descriptor.idVendor),
+	    le16_to_cpu(dev->descriptor.idProduct), ifnum);
 
-	if ((dev->descriptor.bDeviceClass != USB_CLASS_VENDOR_SPEC) ||
-	    (dev->descriptor.idVendor != SPEEDTOUCH_VENDORID) ||
-	    (dev->descriptor.idProduct != SPEEDTOUCH_PRODUCTID) || (ifnum != 1))
+	if ((dev->descriptor.bDeviceClass != USB_CLASS_VENDOR_SPEC) || 
+	    (ifnum != 1))
 		return -ENODEV;
 
 	dbg("speedtch_usb_probe: device accepted");
@@ -785,7 +768,7 @@ static int speedtch_usb_probe(struct usb_interface *intf,
 
 	/* First check whether the modem already seems to be alive */
 	ret = usb_control_msg(dev, usb_rcvctrlpipe(dev, 0),
-			      0x12, 0xc0, 0x07, 0x00, buf7, SIZE_7, HZ / 2);
+			      0x12, 0xc0, 0x07, 0x00, buf7, SIZE_7, 500);
 
 	if (ret == SIZE_7) {
 		dbg("firmware appears to be already loaded");

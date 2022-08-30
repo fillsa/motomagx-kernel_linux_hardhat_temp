@@ -15,7 +15,9 @@
  *
  * Example:
  *	phram=swap,64Mi,128Mi phram=test,900Mi,1Mi
+ *
  */
+
 #include <asm/io.h>
 #include <linux/init.h>
 #include <linux/kernel.h>
@@ -32,6 +34,7 @@ struct phram_mtd_list {
 };
 
 static LIST_HEAD(phram_list);
+
 
 
 static int phram_erase(struct mtd_info *mtd, struct erase_info *instr)

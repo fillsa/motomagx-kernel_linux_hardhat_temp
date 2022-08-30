@@ -32,8 +32,9 @@
 #include <linux/slab.h>
 #include <linux/init.h>
 #include <linux/fs.h>
-#include <linux/device.h>
 #include <asm/uaccess.h>
+
+#include <linux/device.h>
 
 #ifdef CONFIG_DEVFS_FS
 #include <linux/devfs_fs_kernel.h>
@@ -925,7 +926,6 @@ static void __exit cleanup_mtdchar(void)
 {
 	unregister_mtd_user(&notifier);
 	class_simple_destroy(mtd_class);
-
 #ifdef CONFIG_DEVFS_FS
 	devfs_remove("mtd");
 #endif

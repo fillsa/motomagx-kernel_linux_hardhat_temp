@@ -37,7 +37,7 @@ static int pci_master_aborts = 0;
 
 static int clear_master_aborts(void);
 
-static u32 *
+u32 *
 ixp2000_pci_config_addr(unsigned int bus_nr, unsigned int devfn, int where)
 {
 	u32 *paddress;
@@ -142,10 +142,11 @@ int ixp2000_pci_abort_handler(unsigned long addr, unsigned int fsr, struct pt_re
 {
 
 	volatile u32 temp;
+	unsigned long flags;
 
 	pci_master_aborts = 1;
 
-	cli();
+	local_irq_save(flags);
 	temp = *(IXP2000_PCI_CONTROL);
 	if (temp & ((1 << 8) | (1 << 5))) {
 		ixp2000_reg_write(IXP2000_PCI_CONTROL, temp);
@@ -158,7 +159,7 @@ int ixp2000_pci_abort_handler(unsigned long addr, unsigned int fsr, struct pt_re
 			temp = *(IXP2000_PCI_CMDSTAT);
 		}
 	}
-	sti();
+	local_irq_restore(flags);
 
 	/*
 	 * If it was an imprecise abort, then we need to correct the
@@ -174,8 +175,9 @@ int
 clear_master_aborts(void)
 {
 	volatile u32 temp;
+	unsigned long flags;
 
-	cli();
+	local_irq_save(flags);
 	temp = *(IXP2000_PCI_CONTROL);
 	if (temp & ((1 << 8) | (1 << 5))) {	
 		ixp2000_reg_write(IXP2000_PCI_CONTROL, temp);
@@ -188,7 +190,7 @@ clear_master_aborts(void)
 			temp = *(IXP2000_PCI_CMDSTAT);
 		}
 	}
-	sti();
+	local_irq_restore(flags);
 
 	return 0;
 }
@@ -206,15 +208,15 @@ ixp2000_pci_preinit(void)
  * use our own resource space.
  */
 static struct resource ixp2000_pci_mem_space = {
-	.start	= 0x00000000,
+	.start	= 0xe0000000,
 	.end	= 0xffffffff,
 	.flags	= IORESOURCE_MEM,
 	.name	= "PCI Mem Space"
 };
 
 static struct resource ixp2000_pci_io_space = {
-	.start	= 0x00000000,
-	.end	= 0xffffffff,
+	.start	= 0x00010000,
+	.end	= 0x0001ffff,
 	.flags	= IORESOURCE_IO,
 	.name	= "PCI I/O Space"
 };

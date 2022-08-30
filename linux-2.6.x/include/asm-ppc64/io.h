@@ -1,4 +1,4 @@
- #ifndef _PPC64_IO_H
+#ifndef _PPC64_IO_H
 #define _PPC64_IO_H
 
 /* 
@@ -371,7 +371,7 @@ static inline unsigned long in_be64(const volatile unsigned long __iomem *addr)
 {
 	unsigned long ret;
 
-	__asm__ __volatile__("ld %0,0(%1); twi 0,%0,0; isync"
+	__asm__ __volatile__("ld%U1%X1 %0,%1; twi 0,%0,0; isync"
 			     : "=r" (ret) : "m" (*addr));
 	return ret;
 }
@@ -441,6 +441,17 @@ out:
 /* Check of existence of legacy devices */
 extern int check_legacy_ioport(unsigned long base_port);
 
+
+/*
+ * Convert a physical pointer to a virtual kernel pointer for /dev/mem
+ * access
+ */
+#define xlate_dev_mem_ptr(p)	__va(p)
+
+/*
+ * Convert a virtual cached pointer to an uncached pointer
+ */
+#define xlate_dev_kmem_ptr(p)	p
 
 #endif /* __KERNEL__ */
 

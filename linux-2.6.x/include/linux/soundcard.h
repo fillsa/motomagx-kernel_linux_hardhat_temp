@@ -39,6 +39,13 @@
 /* In Linux we need to be prepared for cross compiling */
 #include <linux/ioctl.h>
 
+/* Endian macros. */
+#ifdef __KERNEL__
+#  include <asm/byteorder.h>
+#else
+#  include <endian.h>
+#endif
+
 /*
  *	Supported card ID numbers (Should be somewhere else?)
  */
@@ -179,13 +186,26 @@ typedef struct seq_event_rec {
  * Some big endian/little endian handling macros
  */
 
-#if defined(_AIX) || defined(AIX) || defined(sparc) || defined(__sparc__) || defined(HPPA) || defined(PPC) || defined(__mc68000__)
-/* Big endian machines */
-#  define _PATCHKEY(id) (0xfd00|id)
-#  define AFMT_S16_NE AFMT_S16_BE
-#else
-#  define _PATCHKEY(id) ((id<<8)|0xfd)
-#  define AFMT_S16_NE AFMT_S16_LE
+#define _LINUX_PATCHKEY_H_INDIRECT
+#include <linux/patchkey.h>
+#undef _LINUX_PATCHKEY_H_INDIRECT
+
+#if defined(__KERNEL__)
+#  if defined(__BIG_ENDIAN)
+#    define AFMT_S16_NE AFMT_S16_BE
+#  elif defined(__LITTLE_ENDIAN)
+#    define AFMT_S16_NE AFMT_S16_LE
+#  else
+#    error "could not determine byte order"
+#  endif
+#elif defined(__BYTE_ORDER)
+#  if __BYTE_ORDER == __BIG_ENDIAN
+#    define AFMT_S16_NE AFMT_S16_BE
+#  elif __BYTE_ORDER == __LITTLE_ENDIAN
+#    define AFMT_S16_NE AFMT_S16_LE
+#  else
+#    error "could not determine byte order"
+#  endif
 #endif
 
 /*
@@ -797,7 +817,7 @@ typedef struct copr_msg {
 #define SOUND_MIXER_DEVMASK	0xfe	/* Arg contains a bit for each supported device */
 #define SOUND_MIXER_RECMASK	0xfd	/* Arg contains a bit for each supported recording source */
 #define SOUND_MIXER_CAPS	0xfc
-#define SOUND_CAP_EXCL_INPUT	0x00000001	/* Only one recording source at a time */
+#	define SOUND_CAP_EXCL_INPUT	0x00000001	/* Only one recording source at a time */
 #define SOUND_MIXER_STEREODEVS	0xfb	/* Mixer channels supporting stereo */
 #define SOUND_MIXER_OUTSRC	0xfa	/* Arg contains a bit for each input source to output */
 #define SOUND_MIXER_OUTMASK	0xf9	/* Arg contains a bit for each supported input source to output */

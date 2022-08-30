@@ -28,13 +28,14 @@
 #include <asm/setup.h>
 #include <asm/page.h>
 #include <asm/hardware.h>
+#include <asm/mach-types.h>
 #include <asm/mach/arch.h>
 #include <asm/mach/flash.h>
 #include <asm/mach/map.h>
+
+#include <asm/arch/gpio.h>
 #include <asm/arch/irqs.h>
 #include <asm/arch/mux.h>
-#include <asm/arch/gpio.h>
-#include <asm/mach-types.h>
 #include <asm/arch/tc.h>
 #include <asm/arch/usb.h>
 
@@ -186,6 +187,40 @@ static void __init h3_init(void)
 	(void) platform_add_devices(devices, ARRAY_SIZE(devices));
 	omap_board_config = h3_config;
 	omap_board_config_size = ARRAY_SIZE(h3_config);
+}
+
+static void __init h3_init_smc91x(void)
+{
+	omap_cfg_reg(W15_1710_GPIO40);
+	if (omap_request_gpio(40) < 0) {
+		printk("Error requesting gpio 40 for smc91x irq\n");
+		return;
+	}
+	omap_set_gpio_edge_ctrl(40, OMAP_GPIO_FALLING_EDGE);
+}
+
+void h3_init_irq(void)
+{
+	omap_init_irq();
+	omap_gpio_init();
+	h3_init_smc91x();
+}
+
+static void __init h3_init_smc91x(void)
+{
+	omap_cfg_reg(W15_1710_GPIO40);
+	if (omap_request_gpio(40) < 0) {
+		printk("Error requesting gpio 40 for smc91x irq\n");
+		return;
+	}
+	omap_set_gpio_edge_ctrl(40, OMAP_GPIO_FALLING_EDGE);
+}
+
+void h3_init_irq(void)
+{
+	omap_init_irq();
+	omap_gpio_init();
+	h3_init_smc91x();
 }
 
 static void __init h3_init_smc91x(void)

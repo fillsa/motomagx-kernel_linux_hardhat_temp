@@ -1,7 +1,9 @@
 /*
- * Copyright (C) 2000, 2004  MIPS Technologies, Inc.  All rights reserved.
+ * Copyright (C) 2000, 2004, 2005  MIPS Technologies, Inc.
+ *	All rights reserved.
  *	Authors: Carsten Langgaard <carstenl@mips.com>
  *		 Maciej W. Rozycki <macro@mips.com>
+ * Copyright (C) 2005 Ralf Baechle (ralf@linux-mips.org)
  *
  *  This program is free software; you can distribute it and/or modify it
  *  under the terms of the GNU General Public License (Version 2) as
@@ -19,7 +21,6 @@
 #ifndef _ASM_GT64120_H
 #define _ASM_GT64120_H
 
-#include <linux/config.h>
 #include <asm/addrspace.h>
 #include <asm/byteorder.h>
 

@@ -31,6 +31,7 @@
 #include <linux/spinlock.h>
 #include <linux/preempt.h>
 #include <asm/kdebug.h>
+#include <asm/desc.h>
 
 /* kprobe_status settings */
 #define KPROBE_HIT_ACTIVE	0x00000001
@@ -61,8 +62,12 @@ static inline int is_IF_modifier(kprobe_opcode_t opcode)
 
 int arch_prepare_kprobe(struct kprobe *p)
 {
-	memcpy(p->ainsn.insn, p->addr, MAX_INSN_SIZE * sizeof(kprobe_opcode_t));
 	return 0;
+}
+
+void arch_copy_kprobe(struct kprobe *p)
+{
+	memcpy(p->ainsn.insn, p->addr, MAX_INSN_SIZE * sizeof(kprobe_opcode_t));
 }
 
 void arch_remove_kprobe(struct kprobe *p)
@@ -79,28 +84,49 @@ static inline void prepare_singlestep(struct kprobe *p, struct pt_regs *regs)
 {
 	regs->eflags |= TF_MASK;
 	regs->eflags &= ~IF_MASK;
-	regs->eip = (unsigned long)&p->ainsn.insn;
+	/*single step inline if the instruction is an int3*/
+	if (p->opcode == BREAKPOINT_INSTRUCTION)
+		regs->eip = (unsigned long)p->addr;
+	else
+		regs->eip = (unsigned long)&p->ainsn.insn;
 }
 
 /*
  * Interrupts are disabled on entry as trap3 is an interrupt gate and they
  * remain disabled thorough out this function.
  */
-static inline int kprobe_handler(struct pt_regs *regs)
+static int kprobe_handler(struct pt_regs *regs)
 {
 	struct kprobe *p;
 	int ret = 0;
-	u8 *addr = (u8 *) (regs->eip - 1);
+	kprobe_opcode_t *addr = NULL;
+	unsigned long *lp;
 
 	/* We're in an interrupt, but this is clear and BUG()-safe. */
 	preempt_disable();
-
+	/* Check if the application is using LDT entry for its code segment and
+	 * calculate the address by reading the base address from the LDT entry.
+	 */
+	if ((regs->xcs & 4) && (current->mm)) {
+		lp = (unsigned long *) ((unsigned long)((regs->xcs >> 3) * 8)
+					+ (char *) current->mm->context.ldt);
+		addr = (kprobe_opcode_t *) (get_desc_base(lp) + regs->eip -
+						sizeof(kprobe_opcode_t));
+	} else {
+		addr = (kprobe_opcode_t *)(regs->eip - sizeof(kprobe_opcode_t));
+	}
 	/* Check we're not actually recursing */
 	if (kprobe_running()) {
 		/* We *are* holding lock here, so this is safe.
 		   Disarm the probe we just hit, and ignore it. */
 		p = get_kprobe(addr);
 		if (p) {
+			if (kprobe_status == KPROBE_HIT_SS) {
+				regs->eflags &= ~TF_MASK;
+				regs->eflags |= kprobe_saved_eflags;
+				unlock_kprobes();
+				goto no_kprobe;
+			}
 			disarm_kprobe(p, regs);
 			ret = 1;
 		} else {
@@ -143,17 +169,16 @@ static inline int kprobe_handler(struct pt_regs *regs)
 	if (is_IF_modifier(p->opcode))
 		kprobe_saved_eflags &= ~IF_MASK;
 
-	if (p->pre_handler(p, regs)) {
+	if (p->pre_handler && p->pre_handler(p, regs))
 		/* handler has already set things up, so skip ss setup */
 		return 1;
-	}
 
-      ss_probe:
+ss_probe:
 	prepare_singlestep(p, regs);
 	kprobe_status = KPROBE_HIT_SS;
 	return 1;
 
-      no_kprobe:
+no_kprobe:
 	preempt_enable_no_resched();
 	return ret;
 }
@@ -192,6 +217,13 @@ static void resume_execution(struct kprobe *p, struct pt_regs *regs)
 		*tos &= ~(TF_MASK | IF_MASK);
 		*tos |= kprobe_old_eflags;
 		break;
+	case 0xc3:		/* ret/lret */
+	case 0xcb:
+	case 0xc2:
+	case 0xca:
+		regs->eflags &= ~TF_MASK;
+		/* eip is already adjusted, no more changes required*/
+		return;
 	case 0xe8:		/* call relative - Fix return addr */
 		*tos = orig_eip + (*tos - copy_eip);
 		break;

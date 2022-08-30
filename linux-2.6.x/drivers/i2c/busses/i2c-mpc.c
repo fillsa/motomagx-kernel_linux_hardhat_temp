@@ -55,7 +55,7 @@
 #define CSR_RXAK 0x01
 
 struct mpc_i2c {
-	char *base;
+	void __iomem *base;
 	u32 interrupt;
 	wait_queue_head_t queue;
 	struct i2c_adapter adap;
@@ -233,7 +233,7 @@ static int mpc_read(struct mpc_i2c *i2c, int target,
 	return length;
 }
 
-static int mpc_xfer(struct i2c_adapter *adap, struct i2c_msg msgs[], int num)
+static int mpc_xfer(struct i2c_adapter *adap, struct i2c_msg *msgs, int num)
 {
 	struct i2c_msg *pmsg;
 	int i;

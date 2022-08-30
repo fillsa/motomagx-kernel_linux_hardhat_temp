@@ -7,7 +7,9 @@
  * Copyright (c) 2005 Joern Engel <joern@wh.fh-wedel.de>
  *
  * This code is GPL
+ *
  */
+
 #include <linux/config.h>
 #include <linux/module.h>
 #include <linux/slab.h>
@@ -29,10 +31,13 @@ module_param(erase_size, ulong, 0);
 MODULE_PARM_DESC(erase_size, "Device erase block size in KiB");
 #endif
 
+
 // We could store these in the mtd structure, but we only support 1 device..
 static struct mtd_info *mtd_info;
 
-static int ram_erase(struct mtd_info *mtd, struct erase_info *instr)
+
+static int
+ram_erase(struct mtd_info *mtd, struct erase_info *instr)
 {
 	if (instr->addr + instr->len > mtd->size)
 		return -EINVAL;
@@ -62,7 +67,7 @@ static void ram_unpoint(struct mtd_info *mtd, u_char * addr, loff_t from,
 }
 
 static int ram_read(struct mtd_info *mtd, loff_t from, size_t len,
-		size_t *retlen, u_char *buf)
+	     size_t *retlen, u_char *buf)
 {
 	if (from + len > mtd->size)
 		return -EINVAL;
@@ -158,3 +163,4 @@ module_exit(cleanup_mtdram);
 MODULE_LICENSE("GPL");
 MODULE_AUTHOR("Alexander Larsson <alexl@redhat.com>");
 MODULE_DESCRIPTION("Simulated MTD driver for testing");
+

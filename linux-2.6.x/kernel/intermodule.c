@@ -112,7 +112,7 @@ void inter_module_unregister(const char *im_name)
  * Try to increment the use count on the owning module, if that fails
  * then return NULL.  Otherwise return the userdata.
  */
-const void *inter_module_get(const char *im_name)
+static const void *inter_module_get(const char *im_name)
 {
 	struct list_head *tmp;
 	struct inter_module_entry *ime;
@@ -177,6 +177,5 @@ void inter_module_put(const char *im_name)
 
 EXPORT_SYMBOL(inter_module_register);
 EXPORT_SYMBOL(inter_module_unregister);
-EXPORT_SYMBOL(inter_module_get);
 EXPORT_SYMBOL(inter_module_get_request);
 EXPORT_SYMBOL(inter_module_put);

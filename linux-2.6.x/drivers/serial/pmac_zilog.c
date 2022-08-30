@@ -1590,7 +1590,7 @@ static int pmz_detach(struct macio_dev *mdev)
 }
 
 
-static int pmz_suspend(struct macio_dev *mdev, u32 pm_state)
+static int pmz_suspend(struct macio_dev *mdev, pm_message_t pm_state)
 {
 	struct uart_pmac_port *uap = dev_get_drvdata(&mdev->ofdev.dev);
 	struct uart_state *state;
@@ -1946,6 +1946,8 @@ static void pmz_console_write(struct console *con, const char *s, unsigned int c
 	unsigned long flags;
 	int i;
 
+	if (ZS_IS_ASLEEP(uap))
+		return;
 	spin_lock_irqsave(&uap->port.lock, flags);
 
 	/* Turn of interrupts and enable the transmitter. */

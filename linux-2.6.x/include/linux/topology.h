@@ -31,8 +31,11 @@
 #include <linux/bitops.h>
 #include <linux/mmzone.h>
 #include <linux/smp.h>
-
 #include <asm/topology.h>
+
+#ifndef node_has_online_mem
+#define node_has_online_mem(nid) (1)
+#endif
 
 #ifndef nr_cpus_node
 #define nr_cpus_node(node)							\
@@ -43,19 +46,15 @@
 	})
 #endif
 
-static inline int __next_node_with_cpus(int node)
-{
-	do
-		++node;
-	while (node < numnodes && !nr_cpus_node(node));
-	return node;
-}
-
-#define for_each_node_with_cpus(node) \
-	for (node = 0; node < numnodes; node = __next_node_with_cpus(node))
+#define for_each_node_with_cpus(node)						\
+	for_each_online_node(node)						\
+		if (nr_cpus_node(node))
 
 #ifndef node_distance
-#define node_distance(from,to)	((from) != (to))
+/* Conform to ACPI 2.0 SLIT distance definitions */
+#define LOCAL_DISTANCE		10
+#define REMOTE_DISTANCE		20
+#define node_distance(from,to)	((from) == (to) ? LOCAL_DISTANCE : REMOTE_DISTANCE)
 #endif
 #ifndef PENALTY_FOR_NODE_WITH_CPUS
 #define PENALTY_FOR_NODE_WITH_CPUS	(1)

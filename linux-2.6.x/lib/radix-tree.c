@@ -135,7 +135,6 @@ int radix_tree_preload(int gfp_mask)
 out:
 	return ret;
 }
-
 #endif
 
 static inline void tag_set(struct radix_tree_node *node, int tag, int offset)

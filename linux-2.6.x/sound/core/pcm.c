@@ -126,12 +126,12 @@ static int snd_pcm_control_ioctl(snd_card_t * card,
 #define FORMAT(v) [SNDRV_PCM_FORMAT_##v] = #v
 #define SUBFORMAT(v) [SNDRV_PCM_SUBFORMAT_##v] = #v 
 
-char *snd_pcm_stream_names[] = {
+static char *snd_pcm_stream_names[] = {
 	STREAM(PLAYBACK),
 	STREAM(CAPTURE),
 };
 
-char *snd_pcm_state_names[] = {
+static char *snd_pcm_state_names[] = {
 	STATE(OPEN),
 	STATE(SETUP),
 	STATE(PREPARED),
@@ -142,7 +142,7 @@ char *snd_pcm_state_names[] = {
 	STATE(SUSPENDED),
 };
 
-char *snd_pcm_access_names[] = {
+static char *snd_pcm_access_names[] = {
 	ACCESS(MMAP_INTERLEAVED), 
 	ACCESS(MMAP_NONINTERLEAVED),
 	ACCESS(MMAP_COMPLEX),
@@ -150,7 +150,7 @@ char *snd_pcm_access_names[] = {
 	ACCESS(RW_NONINTERLEAVED),
 };
 
-char *snd_pcm_format_names[] = {
+static char *snd_pcm_format_names[] = {
 	FORMAT(S8),
 	FORMAT(U8),
 	FORMAT(S16_LE),
@@ -191,22 +191,22 @@ char *snd_pcm_format_names[] = {
 	FORMAT(U18_3BE),
 };
 
-char *snd_pcm_subformat_names[] = {
+static char *snd_pcm_subformat_names[] = {
 	SUBFORMAT(STD), 
 };
 
-char *snd_pcm_tstamp_mode_names[] = {
+static char *snd_pcm_tstamp_mode_names[] = {
 	TSTAMP(NONE),
 	TSTAMP(MMAP),
 };
 
-const char *snd_pcm_stream_name(snd_pcm_stream_t stream)
+static const char *snd_pcm_stream_name(snd_pcm_stream_t stream)
 {
 	snd_assert(stream <= SNDRV_PCM_STREAM_LAST, return NULL);
 	return snd_pcm_stream_names[stream];
 }
 
-const char *snd_pcm_access_name(snd_pcm_access_t access)
+static const char *snd_pcm_access_name(snd_pcm_access_t access)
 {
 	snd_assert(access <= SNDRV_PCM_ACCESS_LAST, return NULL);
 	return snd_pcm_access_names[access];
@@ -218,19 +218,19 @@ const char *snd_pcm_format_name(snd_pcm_format_t format)
 	return snd_pcm_format_names[format];
 }
 
-const char *snd_pcm_subformat_name(snd_pcm_subformat_t subformat)
+static const char *snd_pcm_subformat_name(snd_pcm_subformat_t subformat)
 {
 	snd_assert(subformat <= SNDRV_PCM_SUBFORMAT_LAST, return NULL);
 	return snd_pcm_subformat_names[subformat];
 }
 
-const char *snd_pcm_tstamp_mode_name(snd_pcm_tstamp_t mode)
+static const char *snd_pcm_tstamp_mode_name(snd_pcm_tstamp_t mode)
 {
 	snd_assert(mode <= SNDRV_PCM_TSTAMP_LAST, return NULL);
 	return snd_pcm_tstamp_mode_names[mode];
 }
 
-const char *snd_pcm_state_name(snd_pcm_state_t state)
+static const char *snd_pcm_state_name(snd_pcm_state_t state)
 {
 	snd_assert(state <= SNDRV_PCM_STATE_LAST, return NULL);
 	return snd_pcm_state_names[state];
@@ -238,7 +238,7 @@ const char *snd_pcm_state_name(snd_pcm_state_t state)
 
 #if defined(CONFIG_SND_PCM_OSS) || defined(CONFIG_SND_PCM_OSS_MODULE)
 #include <linux/soundcard.h>
-const char *snd_pcm_oss_format_name(int format)
+static const char *snd_pcm_oss_format_name(int format)
 {
 	switch (format) {
 	case AFMT_MU_LAW:
@@ -270,25 +270,35 @@ const char *snd_pcm_oss_format_name(int format)
 #ifdef CONFIG_PROC_FS
 static void snd_pcm_proc_info_read(snd_pcm_substream_t *substream, snd_info_buffer_t *buffer)
 {
-	snd_pcm_info_t info;
+	snd_pcm_info_t *info;
 	int err;
+
 	snd_runtime_check(substream, return);
-	err = snd_pcm_info(substream, &info);
-	if (err < 0) {
-		snd_iprintf(buffer, "error %d\n", err);
+
+	info = kmalloc(sizeof(*info), GFP_KERNEL);
+	if (! info) {
+		printk(KERN_DEBUG "snd_pcm_proc_info_read: cannot malloc\n");
 		return;
 	}
-	snd_iprintf(buffer, "card: %d\n", info.card);
-	snd_iprintf(buffer, "device: %d\n", info.device);
-	snd_iprintf(buffer, "subdevice: %d\n", info.subdevice);
-	snd_iprintf(buffer, "stream: %s\n", snd_pcm_stream_name(info.stream));
-	snd_iprintf(buffer, "id: %s\n", info.id);
-	snd_iprintf(buffer, "name: %s\n", info.name);
-	snd_iprintf(buffer, "subname: %s\n", info.subname);
-	snd_iprintf(buffer, "class: %d\n", info.dev_class);
-	snd_iprintf(buffer, "subclass: %d\n", info.dev_subclass);
-	snd_iprintf(buffer, "subdevices_count: %d\n", info.subdevices_count);
-	snd_iprintf(buffer, "subdevices_avail: %d\n", info.subdevices_avail);
+
+	err = snd_pcm_info(substream, info);
+	if (err < 0) {
+		snd_iprintf(buffer, "error %d\n", err);
+		kfree(info);
+		return;
+	}
+	snd_iprintf(buffer, "card: %d\n", info->card);
+	snd_iprintf(buffer, "device: %d\n", info->device);
+	snd_iprintf(buffer, "subdevice: %d\n", info->subdevice);
+	snd_iprintf(buffer, "stream: %s\n", snd_pcm_stream_name(info->stream));
+	snd_iprintf(buffer, "id: %s\n", info->id);
+	snd_iprintf(buffer, "name: %s\n", info->name);
+	snd_iprintf(buffer, "subname: %s\n", info->subname);
+	snd_iprintf(buffer, "class: %d\n", info->dev_class);
+	snd_iprintf(buffer, "subclass: %d\n", info->dev_subclass);
+	snd_iprintf(buffer, "subdevices_count: %d\n", info->subdevices_count);
+	snd_iprintf(buffer, "subdevices_avail: %d\n", info->subdevices_avail);
+	kfree(info);
 }
 
 static void snd_pcm_stream_proc_info_read(snd_info_entry_t *entry, snd_info_buffer_t *buffer)
@@ -830,8 +840,7 @@ void snd_pcm_release_substream(snd_pcm_substream_t *substream)
 		runtime->private_free(runtime);
 	snd_free_pages((void*)runtime->status, PAGE_ALIGN(sizeof(snd_pcm_mmap_status_t)));
 	snd_free_pages((void*)runtime->control, PAGE_ALIGN(sizeof(snd_pcm_mmap_control_t)));
-	if (runtime->hw_constraints.rules)
-		kfree(runtime->hw_constraints.rules);
+	kfree(runtime->hw_constraints.rules);
 	kfree(runtime);
 	substream->runtime = NULL;
 	substream->pstr->substream_opened--;
@@ -1005,6 +1014,7 @@ static int __init alsa_pcm_init(void)
 	snd_info_entry_t *entry;
 
 	snd_ctl_register_ioctl(snd_pcm_control_ioctl);
+	snd_ctl_register_ioctl_compat(snd_pcm_control_ioctl);
 	if ((entry = snd_info_create_module_entry(THIS_MODULE, "pcm", NULL)) != NULL) {
 		snd_info_set_text_ops(entry, NULL, SNDRV_CARDS * SNDRV_PCM_DEVICES * 128, snd_pcm_proc_read);
 		if (snd_info_register(entry) < 0) {
@@ -1019,6 +1029,7 @@ static int __init alsa_pcm_init(void)
 static void __exit alsa_pcm_exit(void)
 {
 	snd_ctl_unregister_ioctl(snd_pcm_control_ioctl);
+	snd_ctl_unregister_ioctl_compat(snd_pcm_control_ioctl);
 	if (snd_pcm_proc_entry) {
 		snd_info_unregister(snd_pcm_proc_entry);
 		snd_pcm_proc_entry = NULL;
@@ -1035,7 +1046,6 @@ EXPORT_SYMBOL(snd_pcm_notify);
 EXPORT_SYMBOL(snd_pcm_open_substream);
 EXPORT_SYMBOL(snd_pcm_release_substream);
 EXPORT_SYMBOL(snd_pcm_format_name);
-EXPORT_SYMBOL(snd_pcm_subformat_name);
   /* pcm_native.c */
 EXPORT_SYMBOL(snd_pcm_link_rwlock);
 EXPORT_SYMBOL(snd_pcm_start);
@@ -1046,10 +1056,6 @@ EXPORT_SYMBOL(snd_pcm_suspend_all);
 EXPORT_SYMBOL(snd_pcm_kernel_playback_ioctl);
 EXPORT_SYMBOL(snd_pcm_kernel_capture_ioctl);
 EXPORT_SYMBOL(snd_pcm_kernel_ioctl);
-EXPORT_SYMBOL(snd_pcm_open);
-EXPORT_SYMBOL(snd_pcm_release);
-EXPORT_SYMBOL(snd_pcm_playback_poll);
-EXPORT_SYMBOL(snd_pcm_capture_poll);
 EXPORT_SYMBOL(snd_pcm_mmap_data);
 #if SNDRV_PCM_INFO_MMAP_IOMEM
 EXPORT_SYMBOL(snd_pcm_lib_mmap_iomem);
@@ -1062,7 +1068,6 @@ EXPORT_SYMBOL(snd_pcm_format_little_endian);
 EXPORT_SYMBOL(snd_pcm_format_big_endian);
 EXPORT_SYMBOL(snd_pcm_format_width);
 EXPORT_SYMBOL(snd_pcm_format_physical_width);
-EXPORT_SYMBOL(snd_pcm_format_size);
 EXPORT_SYMBOL(snd_pcm_format_silence_64);
 EXPORT_SYMBOL(snd_pcm_format_set_silence);
 EXPORT_SYMBOL(snd_pcm_build_linear_format);

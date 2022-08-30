@@ -47,6 +47,7 @@
 #include <linux/slab.h>
 #include <linux/delay.h>
 #include <linux/ide.h>
+#include <linux/devfs_fs_kernel.h>
 #include <linux/spinlock.h>
 #include <linux/kmod.h>
 #include <linux/pci.h>
@@ -74,7 +75,55 @@ static void generic_id(ide_drive_t *drive)
 	drive->id->cur_heads = drive->head;
 	drive->id->cur_sectors = drive->sect;
 }
-		
+
+static void ide_disk_init_chs(ide_drive_t *drive)
+{
+	struct hd_driveid *id = drive->id;
+
+	/* Extract geometry if we did not already have one for the drive */
+	if (!drive->cyl || !drive->head || !drive->sect) {
+		drive->cyl  = drive->bios_cyl  = id->cyls;
+		drive->head = drive->bios_head = id->heads;
+		drive->sect = drive->bios_sect = id->sectors;
+	}
+
+	/* Handle logical geometry translation by the drive */
+	if ((id->field_valid & 1) && id->cur_cyls &&
+	    id->cur_heads && (id->cur_heads <= 16) && id->cur_sectors) {
+		drive->cyl  = id->cur_cyls;
+		drive->head = id->cur_heads;
+		drive->sect = id->cur_sectors;
+	}
+
+	/* Use physical geometry if what we have still makes no sense */
+	if (drive->head > 16 && id->heads && id->heads <= 16) {
+		drive->cyl  = id->cyls;
+		drive->head = id->heads;
+		drive->sect = id->sectors;
+	}
+}
+
+static void ide_disk_init_mult_count(ide_drive_t *drive)
+{
+	struct hd_driveid *id = drive->id;
+
+	drive->mult_count = 0;
+	if (id->max_multsect) {
+#ifdef CONFIG_IDEDISK_MULTI_MODE
+		id->multsect = ((id->max_multsect/2) > 1) ? id->max_multsect : 0;
+		id->multsect_valid = id->multsect ? 1 : 0;
+		drive->mult_req = id->multsect_valid ? id->max_multsect : INITIAL_MULT_COUNT;
+		drive->special.b.set_multmode = drive->mult_req ? 1 : 0;
+#else	/* original, pre IDE-NFG, per request of AC */
+		drive->mult_req = INITIAL_MULT_COUNT;
+		if (drive->mult_req > id->max_multsect)
+			drive->mult_req = id->max_multsect;
+		if (drive->mult_req || ((id->multsect_valid & 1) && id->multsect))
+			drive->special.b.set_multmode = 1;
+#endif
+	}
+}
+
 /**
  *	do_identify	-	identify a drive
  *	@drive: drive to identify 
@@ -182,6 +231,8 @@ static inline void do_identify (ide_drive_t *drive, u8 cmd)
 		}
 		printk (" drive\n");
 		drive->media = type;
+		/* an ATAPI device ignores DRDY */
+		drive->ready_stat = 0;
 		return;
 	}
 
@@ -553,8 +604,16 @@ static inline u8 probe_for_drive (ide_drive_t *drive)
 	if(!drive->present)
 		return 0;
 	/* The drive wasn't being helpful. Add generic info only */
-	if(!drive->id_read)
+	if (drive->id_read == 0) {
 		generic_id(drive);
+		return 1;
+	}
+
+	if (drive->media == ide_disk) {
+		ide_disk_init_chs(drive);
+		ide_disk_init_mult_count(drive);
+	}
+
 	return drive->present;
 }
 
@@ -603,13 +662,13 @@ static int wait_hwif_ready(ide_hwif_t *hwif)
 	SELECT_DRIVE(&hwif->drives[0]);
 	hwif->OUTB(8, hwif->io_ports[IDE_CONTROL_OFFSET]);
 	mdelay(2);
-	rc = ide_wait_not_busy(hwif, 10000);
+	rc = ide_wait_not_busy(hwif, 35000);
 	if (rc)
 		return rc;
 	SELECT_DRIVE(&hwif->drives[1]);
 	hwif->OUTB(8, hwif->io_ports[IDE_CONTROL_OFFSET]);
 	mdelay(2);
-	rc = ide_wait_not_busy(hwif, 10000);
+	rc = ide_wait_not_busy(hwif, 35000);
 
 	/* Exit function with master reselected (let's be sane) */
 	SELECT_DRIVE(&hwif->drives[0]);
@@ -714,7 +773,7 @@ static void probe_hwif(ide_hwif_t *hwif)
 	 *  
 	 *  BenH.
 	 */
-	if (wait_hwif_ready(hwif))
+	if (wait_hwif_ready(hwif) == -EBUSY)
 		printk(KERN_DEBUG "%s: Wait for ready failed before probe !\n", hwif->name);
 
 	/*
@@ -769,6 +828,13 @@ static void probe_hwif(ide_hwif_t *hwif)
 				drive->autotune == IDE_TUNE_AUTO)
 				/* auto-tune PIO mode */
 				hwif->tuneproc(drive, 255);
+
+			if (drive->autotune != IDE_TUNE_DEFAULT &&
+			    drive->autotune != IDE_TUNE_AUTO)
+				continue;
+
+			drive->nice1 = 1;
+
 			/*
 			 * MAJOR HACK BARF :-/
 			 *
@@ -778,9 +844,7 @@ static void probe_hwif(ide_hwif_t *hwif)
 			 * Move here to prevent module loading clashing.
 			 */
 	//		drive->autodma = hwif->autodma;
-			if ((hwif->ide_dma_check) &&
-				((drive->autotune == IDE_TUNE_DEFAULT) ||
-				(drive->autotune == IDE_TUNE_AUTO))) {
+			if (hwif->ide_dma_check) {
 				/*
 				 * Force DMAing for the beginning of the check.
 				 * Some chipsets appear to do interesting
@@ -806,7 +870,11 @@ int probe_hwif_init_with_fixup(ide_hwif_t *hwif, void (*fixup)(ide_hwif_t *hwif)
 	if (fixup)
 		fixup(hwif);
 
-	hwif_init(hwif);
+	if (!hwif_init(hwif)) {
+		printk(KERN_INFO "%s: failed to initialize IDE interface\n",
+				 hwif->name);
+		return -1;
+	}
 
 	if (hwif->present) {
 		u16 unit = 0;
@@ -816,7 +884,7 @@ int probe_hwif_init_with_fixup(ide_hwif_t *hwif, void (*fixup)(ide_hwif_t *hwif)
 			   want them on default or a new "empty" class
 			   for hotplug reprobing ? */
 			if (drive->present) {
-				ata_attach(drive);
+				device_register(&drive->gendev);
 			}
 		}
 	}
@@ -909,10 +977,8 @@ static int ide_init_queue(ide_drive_t *drive)
 	blk_queue_max_hw_segments(q, max_sg_entries);
 	blk_queue_max_phys_segments(q, max_sg_entries);
 
-	/* assign drive and gendisk queue */
+	/* assign drive queue */
 	drive->queue = q;
-	if (drive->disk)
-		drive->disk->queue = drive->queue;
 
 	/* needs drive->queue to be set */
 	ide_toggle_bounce(drive, 1);
@@ -1112,8 +1178,6 @@ static int ata_lock(dev_t dev, void *data)
 	return 0;
 }
 
-extern ide_driver_t idedefault_driver;
-
 static struct kobject *ata_probe(dev_t dev, int *part, void *data)
 {
 	ide_hwif_t *hwif = data;
@@ -1121,55 +1185,110 @@ static struct kobject *ata_probe(dev_t dev, int *part, void *data)
 	ide_drive_t *drive = &hwif->drives[unit];
 	if (!drive->present)
 		return NULL;
-	if (drive->driver == &idedefault_driver) {
-		if (drive->media == ide_disk)
-			(void) request_module("ide-disk");
-		if (drive->scsi)
-			(void) request_module("ide-scsi");
-		if (drive->media == ide_cdrom || drive->media == ide_optical)
-			(void) request_module("ide-cd");
-		if (drive->media == ide_tape)
-			(void) request_module("ide-tape");
-		if (drive->media == ide_floppy)
-			(void) request_module("ide-floppy");
-	}
-	if (drive->driver == &idedefault_driver)
-		return NULL;
-	*part &= (1 << PARTN_BITS) - 1;
-	return get_disk(drive->disk);
+
+	if (drive->media == ide_disk)
+		request_module("ide-disk");
+	if (drive->scsi)
+		request_module("ide-scsi");
+	if (drive->media == ide_cdrom || drive->media == ide_optical)
+		request_module("ide-cd");
+	if (drive->media == ide_tape)
+		request_module("ide-tape");
+	if (drive->media == ide_floppy)
+		request_module("ide-floppy");
+
+	return NULL;
 }
 
-static int alloc_disks(ide_hwif_t *hwif)
+static struct kobject *exact_match(dev_t dev, int *part, void *data)
 {
-	unsigned int unit;
-	struct gendisk *disks[MAX_DRIVES];
+	struct gendisk *p = data;
+	*part &= (1 << PARTN_BITS) - 1;
+	return &p->kobj;
+}
 
-	for (unit = 0; unit < MAX_DRIVES; unit++) {
-		disks[unit] = alloc_disk(1 << PARTN_BITS);
-		if (!disks[unit])
-			goto Enomem;
-	}
-	for (unit = 0; unit < MAX_DRIVES; ++unit) {
-		ide_drive_t *drive = &hwif->drives[unit];
-		struct gendisk *disk = disks[unit];
-		disk->major  = hwif->major;
-		disk->first_minor = unit << PARTN_BITS;
-		sprintf(disk->disk_name,"hd%c",'a'+hwif->index*MAX_DRIVES+unit);
-		disk->fops = ide_fops;
-		disk->private_data = drive;
-		drive->disk = disk;
-	}
+static int exact_lock(dev_t dev, void *data)
+{
+	struct gendisk *p = data;
+
+	if (!get_disk(p))
+		return -1;
 	return 0;
-Enomem:
-	printk(KERN_WARNING "(ide::init_gendisk) Out of memory\n");
-	while (unit--)
-		put_disk(disks[unit]);
-	return -ENOMEM;
+}
+
+void ide_register_region(struct gendisk *disk)
+{
+	blk_register_region(MKDEV(disk->major, disk->first_minor),
+			    disk->minors, NULL, exact_match, exact_lock, disk);
+}
+
+EXPORT_SYMBOL_GPL(ide_register_region);
+
+void ide_unregister_region(struct gendisk *disk)
+{
+	blk_unregister_region(MKDEV(disk->major, disk->first_minor),
+			      disk->minors);
+}
+
+EXPORT_SYMBOL_GPL(ide_unregister_region);
+
+void ide_init_disk(struct gendisk *disk, ide_drive_t *drive)
+{
+	ide_hwif_t *hwif = drive->hwif;
+	unsigned int unit = (drive->select.all >> 4) & 1;
+
+	disk->major = hwif->major;
+	disk->first_minor = unit << PARTN_BITS;
+	sprintf(disk->disk_name, "hd%c", 'a' + hwif->index * MAX_DRIVES + unit);
+	disk->queue = drive->queue;
+}
+
+EXPORT_SYMBOL_GPL(ide_init_disk);
+
+static void ide_remove_drive_from_hwgroup(ide_drive_t *drive)
+{
+	ide_hwgroup_t *hwgroup = drive->hwif->hwgroup;
+
+	if (drive == drive->next) {
+		/* special case: last drive from hwgroup. */
+		BUG_ON(hwgroup->drive != drive);
+		hwgroup->drive = NULL;
+	} else {
+		ide_drive_t *walk;
+
+		walk = hwgroup->drive;
+		while (walk->next != drive)
+			walk = walk->next;
+		walk->next = drive->next;
+		if (hwgroup->drive == drive) {
+			hwgroup->drive = drive->next;
+			hwgroup->hwif = hwgroup->drive->hwif;
+		}
+	}
+	BUG_ON(hwgroup->drive == drive);
 }
 
 static void drive_release_dev (struct device *dev)
 {
 	ide_drive_t *drive = container_of(dev, ide_drive_t, gendev);
+
+	spin_lock_irq(&ide_lock);
+	if (drive->devfs_name[0] != '\0') {
+		devfs_remove(drive->devfs_name);
+		drive->devfs_name[0] = '\0';
+	}
+	ide_remove_drive_from_hwgroup(drive);
+	if (drive->id != NULL) {
+		kfree(drive->id);
+		drive->id = NULL;
+	}
+	drive->present = 0;
+	/* Messed up locking ... */
+	spin_unlock_irq(&ide_lock);
+	blk_cleanup_queue(drive->queue);
+	spin_lock_irq(&ide_lock);
+	drive->queue = NULL;
+	spin_unlock_irq(&ide_lock);
 
 	complete(&drive->gendev_rel_sem);
 }
@@ -1194,7 +1313,6 @@ static void init_gendisk (ide_hwif_t *hwif)
 		drive->gendev.driver_data = drive;
 		drive->gendev.release = drive_release_dev;
 		if (drive->present) {
-			device_register(&drive->gendev);
 			sprintf(drive->devfs_name, "ide/host%d/bus%d/target%d/lun%d",
 				(hwif->channel && hwif->mate) ?
 				hwif->mate->index : hwif->index,
@@ -1207,10 +1325,11 @@ static void init_gendisk (ide_hwif_t *hwif)
 
 static int hwif_init(ide_hwif_t *hwif)
 {
-	int old_irq, unit;
+	int old_irq;
 
+	/* Return success if no device is connected */
 	if (!hwif->present)
-		return 0;
+		return 1;
 
 	if (!hwif->irq) {
 		if (!(hwif->irq = ide_default_irq(hwif->io_ports[IDE_DATA_OFFSET])))
@@ -1242,9 +1361,6 @@ static int hwif_init(ide_hwif_t *hwif)
 		printk(KERN_ERR "%s: unable to allocate SG table.\n", hwif->name);
 		goto out;
 	}
-
-	if (alloc_disks(hwif) < 0)
-		goto out;
 	
 	if (init_irq(hwif) == 0)
 		goto done;
@@ -1257,12 +1373,12 @@ static int hwif_init(ide_hwif_t *hwif)
 	if (!(hwif->irq = ide_default_irq(hwif->io_ports[IDE_DATA_OFFSET]))) {
 		printk("%s: Disabled unable to get IRQ %d.\n",
 			hwif->name, old_irq);
-		goto out_disks;
+		goto out;
 	}
 	if (init_irq(hwif)) {
 		printk("%s: probed IRQ %d and default IRQ %d failed.\n",
 			hwif->name, old_irq, hwif->irq);
-		goto out_disks;
+		goto out;
 	}
 	printk("%s: probed IRQ %d failed, using default.\n",
 		hwif->name, hwif->irq);
@@ -1272,12 +1388,6 @@ done:
 	hwif->present = 1;	/* success */
 	return 1;
 
-out_disks:
-	for (unit = 0; unit < MAX_DRIVES; unit++) {
-		struct gendisk *disk = hwif->drives[unit].disk;
-		hwif->drives[unit].disk = NULL;
-		put_disk(disk);
-	}
 out:
 	unregister_blkdev(hwif->major, hwif->name);
 	return 0;
@@ -1308,7 +1418,7 @@ int ideprobe_init (void)
 				hwif->chipset = ide_generic;
 			for (unit = 0; unit < MAX_DRIVES; ++unit)
 				if (hwif->drives[unit].present)
-					ata_attach(&hwif->drives[unit]);
+					device_register(&hwif->drives[unit].gendev);
 		}
 	}
 	return 0;

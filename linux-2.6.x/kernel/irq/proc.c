@@ -22,7 +22,12 @@ static struct proc_dir_entry *root_irq_dir, *irq_dir[NR_IRQS];
  */
 static struct proc_dir_entry *smp_affinity_entry[NR_IRQS];
 
-cpumask_t irq_affinity[NR_IRQS] = { [0 ... NR_IRQS-1] = CPU_MASK_ALL };
+void __attribute__((weak))
+proc_set_irq_affinity(unsigned int irq, cpumask_t mask_val)
+{
+	irq_affinity[irq] = mask_val;
+	irq_desc[irq].handler->set_affinity(irq, mask_val);
+}
 
 static int irq_affinity_read_proc(char *page, char **start, off_t off,
 				  int count, int *eof, void *data)
@@ -58,8 +63,7 @@ static int irq_affinity_write_proc(struct file *file, const char __user *buffer,
 	if (cpus_empty(tmp))
 		return -EINVAL;
 
-	irq_affinity[irq] = new_value;
-	irq_desc[irq].handler->set_affinity(irq, new_value);
+	proc_set_irq_affinity(irq, new_value);
 
 	return full_count;
 }

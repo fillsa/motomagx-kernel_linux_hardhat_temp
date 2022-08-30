@@ -57,7 +57,6 @@ EXPORT_SYMBOL(ip_vs_conn_put);
 #ifdef CONFIG_IP_VS_DEBUG
 EXPORT_SYMBOL(ip_vs_get_debug_level);
 #endif
-EXPORT_SYMBOL(check_for_ip_vs_out);
 EXPORT_SYMBOL(ip_vs_make_skb_writable);
 
 
@@ -1029,7 +1028,7 @@ ip_vs_in(unsigned int hooknum, struct sk_buff **pskb,
 
 	/* Check the server status */
 	if (cp->dest && !(cp->dest->flags & IP_VS_DEST_F_AVAILABLE)) {
-		/* the destination server is not availabe */
+		/* the destination server is not available */
 
 		if (sysctl_ip_vs_expire_nodest_conn) {
 			/* try to expire the connection immediately */

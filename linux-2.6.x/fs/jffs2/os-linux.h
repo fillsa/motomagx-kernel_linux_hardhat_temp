@@ -61,7 +61,6 @@ static inline void jffs2_init_inode_info(struct jffs2_inode_info *f)
 	f->usercompr = 0;
 }
 
-
 #define jffs2_is_readonly(c) (OFNI_BS_2SFFJ(c)->s_flags & MS_RDONLY)
 
 #ifndef CONFIG_JFFS2_FS_WRITEBUFFER

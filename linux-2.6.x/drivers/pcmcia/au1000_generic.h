@@ -88,7 +88,7 @@ struct pcmcia_irqs {
 struct au1000_pcmcia_socket {
 	struct pcmcia_socket socket;
 
-	/* 
+	/*
 	 * Info from low level handler
 	 */
 	struct device		*dev;

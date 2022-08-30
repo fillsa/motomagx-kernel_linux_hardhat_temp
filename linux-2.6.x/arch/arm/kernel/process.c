@@ -1,9 +1,9 @@
 /*
- * linux/arch/arm/kernel/process.c
+ *  linux/arch/arm/kernel/process.c
  *
- * Copyright (C) 1996-2000 Russell King - Converted to ARM.
- * Original Copyright (C) 1995  Linus Torvalds
- * Copyright (C) 2005, 2008 Motorola, Inc.
+ *  Copyright (C) 1996-2000 Russell King - Converted to ARM.
+ *  Original Copyright (C) 1995  Linus Torvalds
+ *  Copyright (C) 2005, 2008 Motorola, Inc.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 as
@@ -16,7 +16,6 @@
  * 08/22/2005   Motorola  Power management profiler code 
  * 03/24/2008   Motorola  Fixed mutiprocess use the same stack
  */
-
 #include <stdarg.h>
 
 #include <linux/config.h>
@@ -96,7 +95,6 @@ EXPORT_SYMBOL(pm_idle);
 void (*pm_power_off)(void);
 EXPORT_SYMBOL(pm_power_off);
 
-
 /*
  * This is our default idle handler.  We need to disable
  * interrupts here to ensure we don't miss a wakeup call.
@@ -128,7 +126,7 @@ void cpu_idle(void)
                 /* set idle pointer to profiler idle handler */
 		if (!idle)
 			idle = default_idle;
-               	preempt_disable();
+		preempt_disable();
 		leds_event(led_idle_start);
 		while (!need_resched()) {
 			stop_critical_timing();
@@ -194,12 +192,11 @@ void machine_restart(char * __unused)
 
 EXPORT_SYMBOL(machine_restart);
 
-void show_regs(struct pt_regs * regs)
+void __show_regs(struct pt_regs *regs)
 {
-	unsigned long flags;
+	unsigned long flags = condition_codes(regs);
 
-	flags = condition_codes(regs);
-
+	printk("CPU: %d\n", smp_processor_id());
 	print_symbol("PC is at %s\n", instruction_pointer(regs));
 	print_symbol("LR is at %s\n", regs->ARM_lr);
 	printk("pc : [<%08lx>]    lr : [<%08lx>]    %s\n"
@@ -237,6 +234,14 @@ void show_regs(struct pt_regs * regs)
 		printk("Control: %04X  Table: %08X  DAC: %08X\n",
 		  	ctrl, transbase, dac);
 	}
+}
+
+void show_regs(struct pt_regs * regs)
+{
+	printk("\n");
+	printk("Pid: %d, comm: %20s\n", current->pid, current->comm);
+	__show_regs(regs);
+	__backtrace();
 }
 
 void show_fpregs(struct user_fp *regs)
@@ -279,8 +284,6 @@ struct thread_info_list {
 static DEFINE_PER_CPU(struct thread_info_list, thread_info_list) = { NULL, 0 };
 
 #define EXTRA_TASK_STRUCT	4
-#define ll_alloc_task_struct() ((struct thread_info *) __get_free_pages(GFP_KERNEL,1))
-#define ll_free_task_struct(p) free_pages((unsigned long)(p),1)
 
 struct thread_info *alloc_thread_info(struct task_struct *task)
 {
@@ -288,11 +291,11 @@ struct thread_info *alloc_thread_info(struct task_struct *task)
 
 	if (EXTRA_TASK_STRUCT) {
 		struct thread_info_list *th = &get_cpu_var(thread_info_list);
-	        unsigned long *p = th->head;
+		unsigned long *p = th->head;
 
 		if (p) {
-		    th->head = (unsigned long *)p[0];
-	            th->nr -= 1;
+			th->head = (unsigned long *)p[0];
+			th->nr -= 1;
 
 		}
 		put_cpu_var(thread_info_list);
@@ -301,16 +304,16 @@ struct thread_info *alloc_thread_info(struct task_struct *task)
 	}
 
 	if (!thread)
-		thread = ll_alloc_task_struct();
+		thread = (struct thread_info *)
+			   __get_free_pages(GFP_KERNEL, THREAD_SIZE_ORDER);
 
-#ifdef CONFIG_MAGIC_SYSRQ
+#ifdef CONFIG_DEBUG_STACK_USAGE
 	/*
 	 * The stack must be cleared if you want SYSRQ-T to
 	 * give sensible stack usage information
 	 */
-	if (thread) {
+	if (thread)
 		memzero(thread, THREAD_SIZE);
-	}
 #endif
 	return thread;
 }
@@ -320,17 +323,17 @@ void free_thread_info(struct thread_info *thread)
 	if (EXTRA_TASK_STRUCT) {
                  struct thread_info_list *th = &get_cpu_var(thread_info_list);
                  if (th->nr < EXTRA_TASK_STRUCT) {
-                         unsigned long *p = (unsigned long *)thread;
-                         p[0] = (unsigned long)th->head;
-                         th->head = p;
-                         th->nr += 1;
-                         put_cpu_var(thread_info_list);
-                         return;
+			unsigned long *p = (unsigned long *)thread;
+			p[0] = (unsigned long)th->head;
+			th->head = p;
+			th->nr += 1;
+			put_cpu_var(thread_info_list);
+			return;
                  }
                  put_cpu_var(thread_info_list);
          }
 
-	ll_free_task_struct(thread);
+		free_pages((unsigned long)thread, THREAD_SIZE_ORDER);
 }
 
 /*
@@ -383,7 +386,7 @@ copy_thread(int nr, unsigned long clone_flags, unsigned long stack_start,
 	struct thread_info *thread = p->thread_info;
 	struct pt_regs *childregs;
 
-	childregs = ((struct pt_regs *)((unsigned long)thread + THREAD_SIZE - 8)) - 1;
+	childregs = ((struct pt_regs *)((unsigned long)thread + THREAD_START_SP)) - 1;
 	*childregs = *regs;
 	childregs->ARM_r0 = 0;
 	childregs->ARM_sp = stack_start;
@@ -404,8 +407,8 @@ copy_thread(int nr, unsigned long clone_flags, unsigned long stack_start,
 int dump_task_fpu(struct task_struct *tsk, struct user_fp *fp)
 {
 	struct thread_info *thread = tsk->thread_info;
-       int used_math = thread->used_cp[1] | thread->used_cp[2];
-	
+	int used_math = thread->used_cp[1] | thread->used_cp[2];
+
 	if (used_math)
 		memcpy(fp, &thread->fpstate.soft, sizeof (*fp));
 
@@ -504,15 +507,17 @@ EXPORT_SYMBOL(kernel_thread);
 unsigned long get_wchan(struct task_struct *p)
 {
 	unsigned long fp, lr;
-	unsigned long stack_page;
+	unsigned long stack_start, stack_end;
 	int count = 0;
 	if (!p || p == current || p->state == TASK_RUNNING)
 		return 0;
 
-	stack_page = 4096 + (unsigned long)p->thread_info;
+	stack_start = (unsigned long)(p->thread_info + 1);
+	stack_end = ((unsigned long)p->thread_info) + THREAD_SIZE;
+
 	fp = thread_saved_fp(p);
 	do {
-		if (fp < stack_page || fp > 4092+stack_page)
+		if (fp < stack_start || fp > stack_end)
 			return 0;
 		lr = pc_pointer (((unsigned long *)fp)[-1]);
 		if (!in_sched_functions(lr))

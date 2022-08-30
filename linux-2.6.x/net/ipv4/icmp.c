@@ -207,6 +207,7 @@ int sysctl_icmp_ignore_bogus_error_responses;
 
 int sysctl_icmp_ratelimit = 1 * HZ;
 int sysctl_icmp_ratemask = 0x1818;
+int sysctl_icmp_errors_use_inbound_ifaddr;
 
 /*
  *	ICMP control array. This specifies what to do with each ICMP.
@@ -327,8 +328,8 @@ static void icmp_out_count(int type)
  *	Checksum each fragment, and on the first include the headers and final
  *	checksum.
  */
-int icmp_glue_bits(void *from, char *to, int offset, int len, int odd,
-		   struct sk_buff *skb)
+static int icmp_glue_bits(void *from, char *to, int offset, int len, int odd,
+			  struct sk_buff *skb)
 {
 	struct icmp_bxm *icmp_param = (struct icmp_bxm *)from;
 	unsigned int csum;
@@ -377,7 +378,7 @@ static void icmp_push_reply(struct icmp_bxm *icmp_param,
 static void icmp_reply(struct icmp_bxm *icmp_param, struct sk_buff *skb)
 {
 	struct sock *sk = icmp_socket->sk;
-	struct inet_opt *inet = inet_sk(sk);
+	struct inet_sock *inet = inet_sk(sk);
 	struct ipcm_cookie ipc;
 	struct rtable *rt = (struct rtable *)skb->dst;
 	u32 daddr;
@@ -511,21 +512,17 @@ void icmp_send(struct sk_buff *skb_in, int type, int code, u32 info)
 	 */
 
 	saddr = iph->daddr;
-	if (!(rt->rt_flags & RTCF_LOCAL))
-		saddr = 0;
+	if (!(rt->rt_flags & RTCF_LOCAL)) {
+		if (sysctl_icmp_errors_use_inbound_ifaddr)
+			saddr = inet_select_addr(skb_in->dev, 0, RT_SCOPE_LINK);
+		else
+			saddr = 0;
+	}
 
 	tos = icmp_pointers[type].error ? ((iph->tos & IPTOS_TOS_MASK) |
 					   IPTOS_PREC_INTERNETCONTROL) :
 					  iph->tos;
 
-	{
-		struct flowi fl = { .nl_u = { .ip4_u = { .daddr = iph->saddr,
-							 .saddr = saddr,
-							 .tos = RT_TOS(tos) } },
-				    .proto = IPPROTO_ICMP };
-		if (ip_route_output_key(&rt, &fl))
-		    goto out_unlock;
-	}
 	if (ip_options_echo(&icmp_param.replyopts, skb_in))
 		goto ende;
 
@@ -544,13 +541,26 @@ void icmp_send(struct sk_buff *skb_in, int type, int code, u32 info)
 	inet_sk(icmp_socket->sk)->tos = tos;
 	ipc.addr = iph->saddr;
 	ipc.opt = &icmp_param.replyopts;
-	if (icmp_param.replyopts.srr) {
-		struct flowi fl = { .nl_u = { .ip4_u =
-					      { .daddr = icmp_param.replyopts.faddr,
-						.saddr = saddr,
-						.tos = RT_TOS(tos) } },
-				    .proto = IPPROTO_ICMP };
-		ip_rt_put(rt);
+
+	{
+		struct flowi fl = {
+			.nl_u = {
+				.ip4_u = {
+					.daddr = icmp_param.replyopts.srr ?
+						icmp_param.replyopts.faddr :
+						iph->saddr,
+					.saddr = saddr,
+					.tos = RT_TOS(tos)
+				}
+			},
+			.proto = IPPROTO_ICMP,
+			.uli_u = {
+				.icmpt = {
+					.type = type,
+					.code = code
+				}
+			}
+		};
 		if (ip_route_output_key(&rt, &fl))
 			goto out_unlock;
 	}
@@ -560,7 +570,7 @@ void icmp_send(struct sk_buff *skb_in, int type, int code, u32 info)
 
 	/* RFC says return as much as we can without exceeding 576 bytes. */
 
-	room = dst_pmtu(&rt->u.dst);
+	room = dst_mtu(&rt->u.dst);
 	if (room > 576)
 		room = 576;
 	room -= sizeof(struct iphdr) + icmp_param.replyopts.optlen;
@@ -1097,7 +1107,7 @@ static struct icmp_control icmp_pointers[NR_ICMP_TYPES + 1] = {
 
 void __init icmp_init(struct net_proto_family *ops)
 {
-	struct inet_opt *inet;
+	struct inet_sock *inet;
 	int i;
 
 	for (i = 0; i < NR_CPUS; i++) {

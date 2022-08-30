@@ -278,8 +278,9 @@ static inline void jffs2_remove_node_refs_from_ino_list(struct jffs2_sb_info *c,
 		printk("\n");
 	});
 
-	if (ic->nodes == (void *)ic && ic->nlink == 0)
+	if (ic->nodes == (void *)ic && ic->nlink == 0) {
 		jffs2_del_ino_cache(c, ic);
+	}
 }
 
 static void jffs2_free_all_node_refs(struct jffs2_sb_info *c, struct jffs2_eraseblock *jeb)
@@ -334,7 +335,6 @@ static void jffs2_mark_erased_block(struct jffs2_sb_info *c, struct jffs2_eraseb
 			bad_offset = ofs;
 
 			ret = c->mtd->read(c->mtd, ofs, readlen, &retlen, ebuf);
-
 			if (ret) {
 				printk(KERN_WARNING "Read of newly-erased block at 0x%08x failed: %d. Putting on bad_list\n", ofs, ret);
 				goto bad;

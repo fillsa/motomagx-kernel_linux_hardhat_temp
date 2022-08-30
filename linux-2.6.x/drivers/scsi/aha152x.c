@@ -257,6 +257,7 @@
 #include <scsi/scsicam.h>
 
 #include "scsi.h"
+#include <scsi/scsi_dbg.h>
 #include <scsi/scsi_host.h>
 #include "aha152x.h"
 
@@ -353,58 +354,58 @@ MODULE_LICENSE("GPL");
 
 #if !defined(PCMCIA)
 #if defined(MODULE)
-MODULE_PARM(io, "1-2i");
-MODULE_PARM_DESC(io,"base io address of controller");
 static int io[] = {0, 0};
+module_param_array(io, int, NULL, 0);
+MODULE_PARM_DESC(io,"base io address of controller");
 
-MODULE_PARM(irq, "1-2i");
-MODULE_PARM_DESC(irq,"interrupt for controller");
 static int irq[] = {0, 0};
+module_param_array(irq, int, NULL, 0);
+MODULE_PARM_DESC(irq,"interrupt for controller");
 
-MODULE_PARM(scsiid, "1-2i");
-MODULE_PARM_DESC(scsiid,"scsi id of controller");
 static int scsiid[] = {7, 7};
+module_param_array(scsiid, int, NULL, 0);
+MODULE_PARM_DESC(scsiid,"scsi id of controller");
 
-MODULE_PARM(reconnect, "1-2i");
-MODULE_PARM_DESC(reconnect,"allow targets to disconnect");
 static int reconnect[] = {1, 1};
+module_param_array(reconnect, int, NULL, 0);
+MODULE_PARM_DESC(reconnect,"allow targets to disconnect");
 
-MODULE_PARM(parity, "1-2i");
-MODULE_PARM_DESC(parity,"use scsi parity");
 static int parity[] = {1, 1};
+module_param_array(parity, int, NULL, 0);
+MODULE_PARM_DESC(parity,"use scsi parity");
 
-MODULE_PARM(sync, "1-2i");
-MODULE_PARM_DESC(sync,"use synchronous transfers");
 static int sync[] = {1, 1};
+module_param_array(sync, int, NULL, 0);
+MODULE_PARM_DESC(sync,"use synchronous transfers");
 
-MODULE_PARM(delay, "1-2i");
-MODULE_PARM_DESC(delay,"scsi reset delay");
 static int delay[] = {DELAY_DEFAULT, DELAY_DEFAULT};
+module_param_array(delay, int, NULL, 0);
+MODULE_PARM_DESC(delay,"scsi reset delay");
 
-MODULE_PARM(exttrans, "1-2i");
-MODULE_PARM_DESC(exttrans,"use extended translation");
 static int exttrans[] = {0, 0};
+module_param_array(exttrans, int, NULL, 0);
+MODULE_PARM_DESC(exttrans,"use extended translation");
 
 #if !defined(AHA152X_DEBUG)
-MODULE_PARM(aha152x, "1-8i");
-MODULE_PARM_DESC(aha152x, "parameters for first controller");
 static int aha152x[] = {0, 11, 7, 1, 1, 0, DELAY_DEFAULT, 0};
-
-MODULE_PARM(aha152x1, "1-8i");
-MODULE_PARM_DESC(aha152x1, "parameters for second controller");
-static int aha152x1[] = {0, 11, 7, 1, 1, 0, DELAY_DEFAULT, 0};
-#else
-MODULE_PARM(debug, "1-2i");
-MODULE_PARM_DESC(debug, "flags for driver debugging");
-static int debug[] = {DEBUG_DEFAULT, DEBUG_DEFAULT};
-
-MODULE_PARM(aha152x, "1-9i");
+module_param_array(aha152x, int, NULL, 0);
 MODULE_PARM_DESC(aha152x, "parameters for first controller");
-static int aha152x[]   = {0, 11, 7, 1, 1, 1, DELAY_DEFAULT, 0, DEBUG_DEFAULT};
 
-MODULE_PARM(aha152x1, "1-9i");
+static int aha152x1[] = {0, 11, 7, 1, 1, 0, DELAY_DEFAULT, 0};
+module_param_array(aha152x1, int, NULL, 0);
 MODULE_PARM_DESC(aha152x1, "parameters for second controller");
+#else
+static int debug[] = {DEBUG_DEFAULT, DEBUG_DEFAULT};
+module_param_array(debug, int, NULL, 0);
+MODULE_PARM_DESC(debug, "flags for driver debugging");
+
+static int aha152x[]   = {0, 11, 7, 1, 1, 1, DELAY_DEFAULT, 0, DEBUG_DEFAULT};
+module_param_array(aha152x, int, NULL, 0);
+MODULE_PARM_DESC(aha152x, "parameters for first controller");
+
 static int aha152x1[]  = {0, 11, 7, 1, 1, 1, DELAY_DEFAULT, 0, DEBUG_DEFAULT};
+module_param_array(aha152x1, int, NULL, 0);
+MODULE_PARM_DESC(aha152x1, "parameters for second controller");
 #endif /* !defined(AHA152X_DEBUG) */
 #endif /* MODULE */
 
@@ -986,7 +987,7 @@ static int aha152x_internal_queue(Scsi_Cmnd *SCpnt, struct semaphore *sem, int p
 	if (HOSTDATA(shpnt)->debug & debug_queue) {
 		printk(INFO_LEAD "queue: %p; cmd_len=%d pieces=%d size=%u cmnd=",
 		       CMDINFO(SCpnt), SCpnt, SCpnt->cmd_len, SCpnt->use_sg, SCpnt->request_bufflen);
-		print_command(SCpnt->cmnd);
+		__scsi_print_command(SCpnt->cmnd);
 	}
 #endif
 
@@ -1560,7 +1561,7 @@ static void busfree_run(struct Scsi_Host *shpnt)
 #if 0
 			if(HOSTDATA(shpnt)->debug & debug_eh) {
 				printk(ERR_LEAD "received sense: ", CMDINFO(DONE_SC));
-				print_sense("bh", DONE_SC);
+				scsi_print_sense("bh", DONE_SC);
 			}
 #endif
 
@@ -1846,7 +1847,7 @@ static void msgi_run(struct Scsi_Host *shpnt)
 #if defined(AHA152X_DEBUG)
 		if (HOSTDATA(shpnt)->debug & debug_msgi) {
 			printk(INFO_LEAD "inbound message %02x ", CMDINFO(CURRENT_SC), MSGI(0));
-			print_msg(&MSGI(0));
+			scsi_print_msg(&MSGI(0));
 			printk("\n");
 		}
 #endif
@@ -1934,7 +1935,7 @@ static void msgi_run(struct Scsi_Host *shpnt)
 						break;
 
 					printk(INFO_LEAD, CMDINFO(CURRENT_SC));
-					print_msg(&MSGI(0));
+					scsi_print_msg(&MSGI(0));
 					printk("\n");
 
 					ticks = (MSGI(3) * 4 + 49) / 50;
@@ -2032,7 +2033,7 @@ static void msgo_init(struct Scsi_Host *shpnt)
 		int i;
 
 		printk(DEBUG_LEAD "messages( ", CMDINFO(CURRENT_SC));
-		for (i=0; i<MSGOLEN; i+=print_msg(&MSGO(i)), printk(" "))
+		for (i=0; i<MSGOLEN; i+=scsi_print_msg(&MSGO(i)), printk(" "))
 			;
 		printk(")\n");
 	}
@@ -2104,7 +2105,7 @@ static void cmd_init(struct Scsi_Host *shpnt)
 #if defined(AHA152X_DEBUG)
 	if (HOSTDATA(shpnt)->debug & debug_cmd) {
 		printk(DEBUG_LEAD "cmd_init: ", CMDINFO(CURRENT_SC));
-		print_command(CURRENT_SC->cmnd);
+		__scsi_print_command(CURRENT_SC->cmnd);
 	}
 #endif
 
@@ -2158,7 +2159,7 @@ static void status_run(struct Scsi_Host *shpnt)
 #if defined(AHA152X_DEBUG)
 	if (HOSTDATA(shpnt)->debug & debug_status) {
 		printk(DEBUG_LEAD "inbound status %02x ", CMDINFO(CURRENT_SC), CURRENT_SC->SCp.Status);
-		print_status(CURRENT_SC->SCp.Status);
+		scsi_print_status(CURRENT_SC->SCp.Status);
 		printk("\n");
 	}
 #endif
@@ -2925,7 +2926,7 @@ static void show_command(Scsi_Cmnd *ptr)
 	printk(KERN_DEBUG "0x%08x: target=%d; lun=%d; cmnd=(",
 	       (unsigned int) ptr, ptr->device->id, ptr->device->lun);
 
-	print_command(ptr->cmnd);
+	__scsi_print_command(ptr->cmnd);
 
 	printk(KERN_DEBUG "); request_bufflen=%d; resid=%d; phase |",
 	       ptr->request_bufflen, ptr->resid);

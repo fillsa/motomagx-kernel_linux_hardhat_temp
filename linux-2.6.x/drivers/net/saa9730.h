@@ -367,8 +367,10 @@ struct lan_saa9730_private {
 	unsigned char RcvAIndex;	/* index into RcvBufferSpace[] for Blk A */
 	unsigned char RcvBIndex;	/* index into RcvBufferSpace[] for Blk B */
 
-	void	      *TxmBuffer[LAN_SAA9730_BUFFERS][LAN_SAA9730_TXM_Q_SIZE];
-	void	      *RcvBuffer[LAN_SAA9730_BUFFERS][LAN_SAA9730_RCV_Q_SIZE];
+	void
+	    *TxmBuffer[LAN_SAA9730_BUFFERS][LAN_SAA9730_TXM_Q_SIZE];
+	void
+	    *RcvBuffer[LAN_SAA9730_BUFFERS][LAN_SAA9730_RCV_Q_SIZE];
 	unsigned int TxBufferFree[LAN_SAA9730_BUFFERS];
 
 	unsigned char PhysicalAddress[LAN_SAA9730_CAM_ENTRIES][6];

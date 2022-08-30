@@ -1393,20 +1393,20 @@ static struct address_info cfg;
 static struct address_info cfg_mpu;
 
 static int __initdata spea = -1;
-static int __initdata mss = 0;
+static int mss = 0;
 static int __initdata dma = -1;
 static int __initdata irq = -1;
 static int __initdata io = -1;
 static int __initdata mpu_irq = -1;
 static int __initdata mpu_io = -1;
 
-MODULE_PARM(dma, "i");
-MODULE_PARM(irq, "i");
-MODULE_PARM(io, "i");
-MODULE_PARM(spea, "i");		/* spea=0/1 set the old_hardware */
-MODULE_PARM(mpu_irq, "i");
-MODULE_PARM(mpu_io, "i");
-MODULE_PARM(mss, "i");
+module_param(dma, int, 0);
+module_param(irq, int, 0);
+module_param(io, int, 0);
+module_param(spea, int, 0);		/* spea=0/1 set the old_hardware */
+module_param(mpu_irq, int, 0);
+module_param(mpu_io, int, 0);
+module_param(mss, int, 0);
 
 static int __init init_sscape(void)
 {

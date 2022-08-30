@@ -5,7 +5,7 @@
  *****************************************************************************/
 
 /*
- * Copyright (C) 2000 - 2004, R. Byron Moore
+ * Copyright (C) 2000 - 2005, R. Byron Moore
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -194,6 +194,8 @@ const char                          *acpi_gbl_highest_dstate_names[4] =
  */
 const char                          *acpi_gbl_valid_osi_strings[ACPI_NUM_OSI_STRINGS] =
 {
+	/* Operating System Vendor Strings */
+
 	"Linux",
 	"Windows 2000",
 	"Windows 2001",
@@ -202,7 +204,11 @@ const char                          *acpi_gbl_valid_osi_strings[ACPI_NUM_OSI_STR
 	"Windows 2001 SP1",
 	"Windows 2001 SP2",
 	"Windows 2001 SP3",
-	"Windows 2001 SP4"
+	"Windows 2001 SP4",
+
+	/* Feature Group Strings */
+
+	"Extended Address Space Descriptor"
 };
 
 
@@ -219,6 +225,8 @@ const char                          *acpi_gbl_valid_osi_strings[ACPI_NUM_OSI_STR
  * NOTES:
  * 1) _SB_ is defined to be a device to allow \_SB_._INI to be run
  *    during the initialization sequence.
+ * 2) _TZ_ is defined to be a thermal zone in order to allow ASL code to
+ *    perform a Notify() operation on it.
  */
 const struct acpi_predefined_names      acpi_gbl_pre_defined_names[] =
 { {"_GPE",    ACPI_TYPE_LOCAL_SCOPE,      NULL},
@@ -226,12 +234,12 @@ const struct acpi_predefined_names      acpi_gbl_pre_defined_names[] =
 	{"_SB_",    ACPI_TYPE_DEVICE,           NULL},
 	{"_SI_",    ACPI_TYPE_LOCAL_SCOPE,      NULL},
 	{"_TZ_",    ACPI_TYPE_THERMAL,          NULL},
-	{"_REV",    ACPI_TYPE_INTEGER,          "2"},
+	{"_REV",    ACPI_TYPE_INTEGER,          (char *) ACPI_CA_SUPPORT_LEVEL},
 	{"_OS_",    ACPI_TYPE_STRING,           ACPI_OS_NAME},
-	{"_GL_",    ACPI_TYPE_MUTEX,            "0"},
+	{"_GL_",    ACPI_TYPE_MUTEX,            (char *) 1},
 
 #if !defined (ACPI_NO_METHOD_EXECUTION) || defined (ACPI_CONSTANT_EVAL_ONLY)
-	{"_OSI",    ACPI_TYPE_METHOD,           "1"},
+	{"_OSI",    ACPI_TYPE_METHOD,           (char *) 1},
 #endif
 	{NULL,      ACPI_TYPE_ANY,              NULL}              /* Table terminator */
 };
@@ -353,6 +361,7 @@ struct acpi_bit_register_info       acpi_gbl_bit_register_info[ACPI_NUM_BITREG] 
 	/* ACPI_BITREG_SLEEP_BUTTON_STATUS  */   {ACPI_REGISTER_PM1_STATUS,   ACPI_BITPOSITION_SLEEP_BUTTON_STATUS,   ACPI_BITMASK_SLEEP_BUTTON_STATUS},
 	/* ACPI_BITREG_RT_CLOCK_STATUS      */   {ACPI_REGISTER_PM1_STATUS,   ACPI_BITPOSITION_RT_CLOCK_STATUS,       ACPI_BITMASK_RT_CLOCK_STATUS},
 	/* ACPI_BITREG_WAKE_STATUS          */   {ACPI_REGISTER_PM1_STATUS,   ACPI_BITPOSITION_WAKE_STATUS,           ACPI_BITMASK_WAKE_STATUS},
+	/* ACPI_BITREG_PCIEXP_WAKE_STATUS   */   {ACPI_REGISTER_PM1_STATUS,   ACPI_BITPOSITION_PCIEXP_WAKE_STATUS,    ACPI_BITMASK_PCIEXP_WAKE_STATUS},
 
 	/* ACPI_BITREG_TIMER_ENABLE         */   {ACPI_REGISTER_PM1_ENABLE,   ACPI_BITPOSITION_TIMER_ENABLE,          ACPI_BITMASK_TIMER_ENABLE},
 	/* ACPI_BITREG_GLOBAL_LOCK_ENABLE   */   {ACPI_REGISTER_PM1_ENABLE,   ACPI_BITPOSITION_GLOBAL_LOCK_ENABLE,    ACPI_BITMASK_GLOBAL_LOCK_ENABLE},
@@ -360,6 +369,7 @@ struct acpi_bit_register_info       acpi_gbl_bit_register_info[ACPI_NUM_BITREG] 
 	/* ACPI_BITREG_SLEEP_BUTTON_ENABLE  */   {ACPI_REGISTER_PM1_ENABLE,   ACPI_BITPOSITION_SLEEP_BUTTON_ENABLE,   ACPI_BITMASK_SLEEP_BUTTON_ENABLE},
 	/* ACPI_BITREG_RT_CLOCK_ENABLE      */   {ACPI_REGISTER_PM1_ENABLE,   ACPI_BITPOSITION_RT_CLOCK_ENABLE,       ACPI_BITMASK_RT_CLOCK_ENABLE},
 	/* ACPI_BITREG_WAKE_ENABLE          */   {ACPI_REGISTER_PM1_ENABLE,   0,                                      0},
+	/* ACPI_BITREG_PCIEXP_WAKE_DISABLE  */   {ACPI_REGISTER_PM1_ENABLE,   ACPI_BITPOSITION_PCIEXP_WAKE_DISABLE,   ACPI_BITMASK_PCIEXP_WAKE_DISABLE},
 
 	/* ACPI_BITREG_SCI_ENABLE           */   {ACPI_REGISTER_PM1_CONTROL,  ACPI_BITPOSITION_SCI_ENABLE,            ACPI_BITMASK_SCI_ENABLE},
 	/* ACPI_BITREG_BUS_MASTER_RLD       */   {ACPI_REGISTER_PM1_CONTROL,  ACPI_BITPOSITION_BUS_MASTER_RLD,        ACPI_BITMASK_BUS_MASTER_RLD},

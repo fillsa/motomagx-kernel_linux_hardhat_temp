@@ -2,8 +2,8 @@
 # IP netfilter configuration
 #
 
-menu "IPv6: Netfilter Configuration"
-	depends on INET && IPV6 && NETFILTER
+menu "IPv6: Netfilter Configuration (EXPERIMENTAL)"
+	depends on INET && IPV6 && NETFILTER && EXPERIMENTAL
 
 config IP6_NF_FTP
 	tristate "FTP protocol support"
@@ -282,7 +282,6 @@ config IP6_NF_RAW
 	
 	  If you want to compile it as a module, say M here and read
 	  <file:Documentation/modules.txt>.  If unsure, say `N'.
-	  help
 
 endmenu
 

@@ -60,10 +60,10 @@ __acquires(ohci->lock)
 
 	switch (usb_pipetype (urb->pipe)) {
 	case PIPE_ISOCHRONOUS:
-		hcd_to_bus (&ohci->hcd)->bandwidth_isoc_reqs--;
+		ohci_to_hcd(ohci)->self.bandwidth_isoc_reqs--;
 		break;
 	case PIPE_INTERRUPT:
-		hcd_to_bus (&ohci->hcd)->bandwidth_int_reqs--;
+		ohci_to_hcd(ohci)->self.bandwidth_int_reqs--;
 		break;
 	}
 
@@ -73,12 +73,12 @@ __acquires(ohci->lock)
 
 	/* urb->complete() can reenter this HCD */
 	spin_unlock (&ohci->lock);
-	usb_hcd_giveback_urb (&ohci->hcd, urb, regs);
+	usb_hcd_giveback_urb (ohci_to_hcd(ohci), urb, regs);
 	spin_lock (&ohci->lock);
 
 	/* stop periodic dma if it's not needed */
-	if (hcd_to_bus (&ohci->hcd)->bandwidth_isoc_reqs == 0
-			&& hcd_to_bus (&ohci->hcd)->bandwidth_int_reqs == 0) {
+	if (ohci_to_hcd(ohci)->self.bandwidth_isoc_reqs == 0
+			&& ohci_to_hcd(ohci)->self.bandwidth_int_reqs == 0) {
 		ohci->hc_control &= ~(OHCI_CTRL_PLE|OHCI_CTRL_IE);
 		ohci_writel (ohci, ohci->hc_control, &ohci->regs->control);
 	}
@@ -163,7 +163,7 @@ static void periodic_link (struct ohci_hcd *ohci, struct ed *ed)
 		}
 		ohci->load [i] += ed->load;
 	}
-	hcd_to_bus (&ohci->hcd)->bandwidth_allocated += ed->load / ed->interval;
+	ohci_to_hcd(ohci)->self.bandwidth_allocated += ed->load / ed->interval;
 }
 
 /* link an ed into one of the HC chains */
@@ -172,7 +172,7 @@ static int ed_schedule (struct ohci_hcd *ohci, struct ed *ed)
 {	 
 	int	branch;
 
-	if (ohci->hcd.state == USB_STATE_QUIESCING)
+	if (ohci_to_hcd(ohci)->state == HC_STATE_QUIESCING)
 		return -EAGAIN;
 
 	ed->state = ED_OPER;
@@ -276,7 +276,7 @@ static void periodic_unlink (struct ohci_hcd *ohci, struct ed *ed)
 		}
 		ohci->load [i] -= ed->load;
 	}	
-	hcd_to_bus (&ohci->hcd)->bandwidth_allocated -= ed->load / ed->interval;
+	ohci_to_hcd(ohci)->self.bandwidth_allocated -= ed->load / ed->interval;
 
 	ohci_vdbg (ohci, "unlink %sed %p branch %d [%dus.], interval %d\n",
 		(ed->hwINFO & cpu_to_hc32 (ohci, ED_ISO)) ? "iso " : "",
@@ -386,37 +386,30 @@ static void ed_deschedule (struct ohci_hcd *ohci, struct ed *ed)
 /*-------------------------------------------------------------------------*/
 
 /* get and maybe (re)init an endpoint. init _should_ be done only as part
- * of usb_set_configuration() or usb_set_interface() ... but the USB stack
- * isn't very stateful, so we re-init whenever the HC isn't looking.
+ * of enumeration, usb_set_configuration() or usb_set_interface().
  */
 static struct ed *ed_get (
 	struct ohci_hcd		*ohci,
+	struct usb_host_endpoint *ep,
 	struct usb_device	*udev,
 	unsigned int		pipe,
 	int			interval
 ) {
-	int			is_out = !usb_pipein (pipe);
-	int			type = usb_pipetype (pipe);
-	struct hcd_dev		*dev = (struct hcd_dev *) udev->hcpriv;
 	struct ed		*ed; 
-	unsigned		ep;
 	unsigned long		flags;
-
-	ep = usb_pipeendpoint (pipe) << 1;
-	if (type != PIPE_CONTROL && is_out)
-		ep |= 1;
 
 	spin_lock_irqsave (&ohci->lock, flags);
 
-	if (!(ed = dev->ep [ep])) {
+	if (!(ed = ep->hcpriv)) {
 		struct td	*td;
+		int		is_out;
+		u32		info;
 
 		ed = ed_alloc (ohci, GFP_ATOMIC);
 		if (!ed) {
 			/* out of memory */
 			goto done;
 		}
-		dev->ep [ep] = ed;
 
   		/* dummy td; end of td list for ed */
 		td = td_alloc (ohci, GFP_ATOMIC);
@@ -430,38 +423,39 @@ static struct ed *ed_get (
 		ed->hwTailP = cpu_to_hc32 (ohci, td->td_dma);
 		ed->hwHeadP = ed->hwTailP;	/* ED_C, ED_H zeroed */
 		ed->state = ED_IDLE;
-		ed->type = type;
-	}
 
-	/* NOTE: only ep0 currently needs this "re"init logic, during
-	 * enumeration (after set_address).
-	 */
-  	if (ed->state == ED_IDLE) {
-		u32	info;
+		is_out = !(ep->desc.bEndpointAddress & USB_DIR_IN);
 
+		/* FIXME usbcore changes dev->devnum before SET_ADDRESS
+		 * suceeds ... otherwise we wouldn't need "pipe".
+		 */
 		info = usb_pipedevice (pipe);
-		info |= (ep >> 1) << 7;
-		info |= usb_maxpacket (udev, pipe, is_out) << 16;
+		ed->type = usb_pipetype(pipe);
+
+		info |= (ep->desc.bEndpointAddress & ~USB_DIR_IN) << 7;
+		info |= le16_to_cpu(ep->desc.wMaxPacketSize) << 16;
 		if (udev->speed == USB_SPEED_LOW)
 			info |= ED_LOWSPEED;
 		/* only control transfers store pids in tds */
-		if (type != PIPE_CONTROL) {
+		if (ed->type != PIPE_CONTROL) {
 			info |= is_out ? ED_OUT : ED_IN;
-			if (type != PIPE_BULK) {
+			if (ed->type != PIPE_BULK) {
 				/* periodic transfers... */
-				if (type == PIPE_ISOCHRONOUS)
+				if (ed->type == PIPE_ISOCHRONOUS)
 					info |= ED_ISO;
 				else if (interval > 32)	/* iso can be bigger */
 					interval = 32;
 				ed->interval = interval;
 				ed->load = usb_calc_bus_time (
 					udev->speed, !is_out,
-					type == PIPE_ISOCHRONOUS,
-					usb_maxpacket (udev, pipe, is_out))
+					ed->type == PIPE_ISOCHRONOUS,
+					le16_to_cpu(ep->desc.wMaxPacketSize))
 						/ 1000;
 			}
 		}
 		ed->hwINFO = cpu_to_hc32(ohci, info);
+
+		ep->hcpriv = ed;
 	}
 
 done:
@@ -553,7 +547,8 @@ td_fill (struct ohci_hcd *ohci, u32 info,
 	td->hwINFO = cpu_to_hc32 (ohci, info);
 	if (is_iso) {
 		td->hwCBP = cpu_to_hc32 (ohci, data & 0xFFFFF000);
-		td->hwPSW [0] = cpu_to_hc16 (ohci, (data & 0x0FFF) | 0xE000);
+		*ohci_hwPSWp(ohci, td, 0) = cpu_to_hc16 (ohci,
+						(data & 0x0FFF) | 0xE000);
 		td->ed->last_iso = info & 0xffff;
 	} else {
 		td->hwCBP = cpu_to_hc32 (ohci, data); 
@@ -625,8 +620,8 @@ static void td_submit_urb (
 	 */
 	case PIPE_INTERRUPT:
 		/* ... and periodic urbs have extra accounting */
-		periodic = hcd_to_bus (&ohci->hcd)->bandwidth_int_reqs++ == 0
-			&& hcd_to_bus (&ohci->hcd)->bandwidth_isoc_reqs == 0;
+		periodic = ohci_to_hcd(ohci)->self.bandwidth_int_reqs++ == 0
+			&& ohci_to_hcd(ohci)->self.bandwidth_isoc_reqs == 0;
 		/* FALLTHROUGH */
 	case PIPE_BULK:
 		info = is_out
@@ -668,7 +663,7 @@ static void td_submit_urb (
 			/* NOTE:  mishandles transfers >8K, some >4K */
 			td_fill (ohci, info, data, data_len, urb, cnt++);
 		}
-		info = is_out
+		info = (is_out || data_len == 0)
 			? TD_CC | TD_DP_IN | TD_T_DATA1
 			: TD_CC | TD_DP_OUT | TD_T_DATA1;
 		td_fill (ohci, info, data, 0, urb, cnt++);
@@ -694,8 +689,8 @@ static void td_submit_urb (
 				data + urb->iso_frame_desc [cnt].offset,
 				urb->iso_frame_desc [cnt].length, urb, cnt);
 		}
-		periodic = hcd_to_bus (&ohci->hcd)->bandwidth_isoc_reqs++ == 0
-			&& hcd_to_bus (&ohci->hcd)->bandwidth_int_reqs == 0;
+		periodic = ohci_to_hcd(ohci)->self.bandwidth_isoc_reqs++ == 0
+			&& ohci_to_hcd(ohci)->self.bandwidth_int_reqs == 0;
 		break;
 	}
 
@@ -725,10 +720,12 @@ static void td_done (struct ohci_hcd *ohci, struct urb *urb, struct td *td)
 
 	/* ISO ... drivers see per-TD length/status */
   	if (tdINFO & TD_ISO) {
- 		u16	tdPSW = hc16_to_cpu (ohci, td->hwPSW [0]);
+ 		u16	tdPSW = ohci_hwPSW (ohci, td, 0);
 		int	dlen = 0;
 
-		/* NOTE:  assumes FC in tdINFO == 0 (and MAXPSW == 1) */
+		/* NOTE:  assumes FC in tdINFO == 0, and that
+		 * only the first of 0..MAXPSW psws is used.
+		 */
 
  		cc = (tdPSW >> 12) & 0xF;
   		if (tdINFO & TD_CC)	/* hc didn't touch? */
@@ -926,7 +923,7 @@ rescan_all:
 		/* only take off EDs that the HC isn't using, accounting for
 		 * frame counter wraps and EDs with partially retired TDs
 		 */
-		if (likely (regs && HCD_IS_RUNNING(ohci->hcd.state))) {
+		if (likely (regs && HC_IS_RUNNING(ohci_to_hcd(ohci)->state))) {
 			if (tick_before (tick, ed->tick)) {
 skip_ed:
 				last = &ed->ed_next;
@@ -1008,7 +1005,7 @@ rescan_this:
 
 		/* but if there's work queued, reschedule */
 		if (!list_empty (&ed->td_list)) {
-			if (HCD_IS_RUNNING(ohci->hcd.state))
+			if (HC_IS_RUNNING(ohci_to_hcd(ohci)->state))
 				ed_schedule (ohci, ed);
 		}
 
@@ -1017,13 +1014,15 @@ rescan_this:
    	}
 
 	/* maybe reenable control and bulk lists */ 
-	if (HCD_IS_RUNNING(ohci->hcd.state)
-			&& ohci->hcd.state != USB_STATE_QUIESCING
+	if (HC_IS_RUNNING(ohci_to_hcd(ohci)->state)
+			&& ohci_to_hcd(ohci)->state != HC_STATE_QUIESCING
 			&& !ohci->ed_rm_list) {
 		u32	command = 0, control = 0;
 
 		if (ohci->ed_controltail) {
 			command |= OHCI_CLF;
+			if (ohci->flags & OHCI_QUIRK_ZFMICRO)
+				mdelay(1);
 			if (!(ohci->hc_control & OHCI_CTRL_CLE)) {
 				control |= OHCI_CTRL_CLE;
 				ohci_writel (ohci, 0,
@@ -1032,6 +1031,8 @@ rescan_this:
 		}
 		if (ohci->ed_bulktail) {
 			command |= OHCI_BLF;
+			if (ohci->flags & OHCI_QUIRK_ZFMICRO)
+				mdelay(1);
 			if (!(ohci->hc_control & OHCI_CTRL_BLE)) {
 				control |= OHCI_CTRL_BLE;
 				ohci_writel (ohci, 0,
@@ -1042,12 +1043,17 @@ rescan_this:
 		/* CLE/BLE to enable, CLF/BLF to (maybe) kickstart */
 		if (control) {
 			ohci->hc_control |= control;
+			if (ohci->flags & OHCI_QUIRK_ZFMICRO)
+				mdelay(1);
  			ohci_writel (ohci, ohci->hc_control,
 					&ohci->regs->control);   
  		}
-		if (command)
+		if (command) {
+			if (ohci->flags & OHCI_QUIRK_ZFMICRO)
+				mdelay(1);
 			ohci_writel (ohci, command, &ohci->regs->cmdstatus);   
- 	}
+	 	}
+	}
 }
 
 

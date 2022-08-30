@@ -126,8 +126,6 @@
 	})
 #endif /* CONFIG_MOT_WFN495 */
 
-
-
 /*
  * The value 0x01000000 supports up to 128 processors and
  * lots of processes.  BIAS must be chosen such that sub'ing
@@ -334,6 +332,6 @@
 	: "ip", "lr", "cc", "memory");		\
 	})
 
-
 #endif
+
 #endif

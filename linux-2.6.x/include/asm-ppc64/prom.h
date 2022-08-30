@@ -21,9 +21,6 @@
 #define PTRUNRELOC(x)   ((typeof(x))((unsigned long)(x) + offset))
 #define RELOC(x)        (*PTRRELOC(&(x)))
 
-#define LONG_LSW(X) (((unsigned long)X) & 0xffffffff)
-#define LONG_MSW(X) (((unsigned long)X) >> 32)
-
 /* Definitions used by the flattened device tree */
 #define OF_DT_HEADER		0xd00dfeed	/* 4: version, 4: total size */
 #define OF_DT_BEGIN_NODE	0x1		/* Start node: full name */
@@ -64,8 +61,6 @@ struct boot_param_header
 
 typedef u32 phandle;
 typedef u32 ihandle;
-typedef u32 phandle32;
-typedef u32 ihandle32;
 
 struct address_range {
 	unsigned long space;
@@ -95,13 +90,6 @@ struct isa_range {
 	unsigned int size;
 };
 
-struct of_tce_table {
-	phandle node;
-	unsigned long base;
-	unsigned long size;
-};
-extern struct of_tce_table of_tce_table[];
-
 struct reg_property {
 	unsigned long address;
 	unsigned long size;
@@ -115,19 +103,6 @@ struct reg_property32 {
 struct reg_property64 {
 	unsigned long address;
 	unsigned long size;
-};
-
-struct reg_property_pmac {
-	unsigned int address_hi;
-	unsigned int address_lo;
-	unsigned int size;
-};
-
-struct translation_property {
-	unsigned long virt;
-	unsigned long size;
-	unsigned long phys;
-	unsigned int flags;
 };
 
 struct property {
@@ -160,10 +135,9 @@ struct device_node {
 	int	busno;			/* for pci devices */
 	int	bussubno;		/* for pci devices */
 	int	devfn;			/* for pci devices */
-#define DN_STATUS_BIST_FAILED (1<<0)
-	int	status;			/* Current device status (non-zero is bad) */
 	int	eeh_mode;		/* See eeh.h for possible EEH_MODEs */
 	int	eeh_config_addr;
+	int	pci_ext_config_space;	/* for pci devices */
 	struct  pci_controller *phb;	/* for pci devices */
 	struct	iommu_table *iommu_table;	/* for phb's or bridges */
 
@@ -173,21 +147,16 @@ struct device_node {
 	struct	device_node *sibling;
 	struct	device_node *next;	/* next device of same type */
 	struct	device_node *allnext;	/* next in list of all nodes */
-	struct  proc_dir_entry *pde;       /* this node's proc directory */
-	struct  proc_dir_entry *name_link; /* name symlink */
-	struct  proc_dir_entry *addr_link; /* addr symlink */
-	atomic_t _users;                 /* reference count */
+	struct  proc_dir_entry *pde;	/* this node's proc directory */
+	struct  kref kref;
 	unsigned long _flags;
 };
 
 extern struct device_node *of_chosen;
 
 /* flag descriptions */
-#define OF_STALE   0 /* node is slated for deletion */
 #define OF_DYNAMIC 1 /* node and properties were allocated via kmalloc */
 
-#define OF_IS_STALE(x) test_bit(OF_STALE, &x->_flags)
-#define OF_MARK_STALE(x) set_bit(OF_STALE, &x->_flags)
 #define OF_IS_DYNAMIC(x) test_bit(OF_DYNAMIC, &x->_flags)
 #define OF_MARK_DYNAMIC(x) set_bit(OF_DYNAMIC, &x->_flags)
 
@@ -203,15 +172,6 @@ static inline void set_node_proc_entry(struct device_node *dn, struct proc_dir_e
 	dn->pde = de;
 }
 
-static void inline set_node_name_link(struct device_node *dn, struct proc_dir_entry *de)
-{
-	dn->name_link = de;
-}
-
-static void inline set_node_addr_link(struct device_node *dn, struct proc_dir_entry *de)
-{
-	dn->addr_link = de;
-}
 
 /* OBSOLETE: Old stlye node lookup */
 extern struct device_node *find_devices(const char *name);
@@ -238,13 +198,12 @@ extern struct device_node *of_node_get(struct device_node *node);
 extern void of_node_put(struct device_node *node);
 
 /* For updating the device tree at runtime */
-extern int of_add_node(const char *path, struct property *proplist);
-extern int of_remove_node(struct device_node *np);
+extern void of_attach_node(struct device_node *);
+extern void of_detach_node(const struct device_node *);
 
 /* Other Prototypes */
 extern unsigned long prom_init(unsigned long, unsigned long, unsigned long,
 	unsigned long, unsigned long);
-extern void relocate_nodes(void);
 extern void finish_device_tree(void);
 extern int device_is_compatible(struct device_node *device, const char *);
 extern int machine_is_compatible(const char *compat);

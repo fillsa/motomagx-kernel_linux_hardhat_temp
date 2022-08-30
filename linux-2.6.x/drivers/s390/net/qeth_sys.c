@@ -1,6 +1,6 @@
 /*
  *
- * linux/drivers/s390/net/qeth_sys.c ($Revision: 1.40 $)
+ * linux/drivers/s390/net/qeth_sys.c ($Revision: 1.51 $)
  *
  * Linux on zSeries OSA Express and HiperSockets support
  * This file contains code related to sysfs.
@@ -20,7 +20,7 @@
 #include "qeth_mpc.h"
 #include "qeth_fs.h"
 
-const char *VERSION_QETH_SYS_C = "$Revision: 1.40 $";
+const char *VERSION_QETH_SYS_C = "$Revision: 1.51 $";
 
 /*****************************************************************************/
 /*                                                                           */
@@ -75,8 +75,7 @@ qeth_dev_if_name_show(struct device *dev, char *buf)
 	struct qeth_card *card = dev->driver_data;
 	if (!card)
 		return -EINVAL;
-
-	return sprintf(buf, "%s\n", card->info.if_name);
+	return sprintf(buf, "%s\n", QETH_CARD_IFNAME(card));
 }
 
 static DEVICE_ATTR(if_name, 0444, qeth_dev_if_name_show, NULL);
@@ -249,6 +248,16 @@ qeth_dev_prioqing_store(struct device *dev, const char *buf, size_t count)
 	if ((card->state != CARD_STATE_DOWN) &&
 	    (card->state != CARD_STATE_RECOVER))
 		return -EPERM;
+
+	/* check if 1920 devices are supported ,
+	 * if though we have to permit priority queueing
+	 */
+	if (card->qdio.no_out_queues == 1) {
+		PRINT_WARN("Priority queueing disabled due "
+			   "to hardware limitations!\n");
+		card->qdio.do_prio_queueing = QETH_PRIOQ_DEFAULT;
+		return -EPERM;
+	}
 
 	tmp = strsep((char **) &buf, "\n");
 	if (!strcmp(tmp, "prio_queueing_prec"))
@@ -440,7 +449,7 @@ qeth_dev_route6_store(struct device *dev, const char *buf, size_t count)
 	if (!qeth_is_supported(card, IPA_IPV6)){
 		PRINT_WARN("IPv6 not supported for interface %s.\n"
 			   "Routing status no changed.\n",
-			   card->info.if_name);
+			   QETH_CARD_IFNAME(card));
 		return -ENOTSUPP;
 	}
 
@@ -515,12 +524,11 @@ qeth_dev_fake_ll_store(struct device *dev, const char *buf, size_t count)
 		return -EPERM;
 
 	i = simple_strtoul(buf, &tmp, 16);
-	if ((i == 0) || (i == 1))
-		card->options.fake_ll = i;
-	else {
+	if ((i != 0) && (i != 1)) {
 		PRINT_WARN("fake_ll: write 0 or 1 to this file!\n");
 		return -EINVAL;
 	}
+	card->options.fake_ll = i;
 	return count;
 }
 
@@ -715,8 +723,9 @@ qeth_dev_layer2_store(struct device *dev, const char *buf, size_t count)
 	if (!card)
 		return -EINVAL;
 
-	if ((card->state != CARD_STATE_DOWN) &&
-	    (card->state != CARD_STATE_RECOVER))
+	if (((card->state != CARD_STATE_DOWN) &&
+	     (card->state != CARD_STATE_RECOVER)) ||
+	    (card->info.type != QETH_CARD_TYPE_OSAE))
 		return -EPERM;
 
 	i = simple_strtoul(buf, &tmp, 16);
@@ -731,6 +740,174 @@ qeth_dev_layer2_store(struct device *dev, const char *buf, size_t count)
 
 static DEVICE_ATTR(layer2, 0644, qeth_dev_layer2_show,
 		   qeth_dev_layer2_store);
+
+static ssize_t
+qeth_dev_large_send_show(struct device *dev, char *buf)
+{
+	struct qeth_card *card = dev->driver_data;
+
+	if (!card)
+		return -EINVAL;
+
+	switch (card->options.large_send) {
+	case QETH_LARGE_SEND_NO:
+		return sprintf(buf, "%s\n", "no");
+	case QETH_LARGE_SEND_EDDP:
+		return sprintf(buf, "%s\n", "EDDP");
+	case QETH_LARGE_SEND_TSO:
+		return sprintf(buf, "%s\n", "TSO");
+	default:
+		return sprintf(buf, "%s\n", "N/A");
+	}
+}
+
+static ssize_t
+qeth_dev_large_send_store(struct device *dev, const char *buf, size_t count)
+{
+	struct qeth_card *card = dev->driver_data;
+	enum qeth_large_send_types type;
+	int rc = 0;
+	char *tmp;
+
+	if (!card)
+		return -EINVAL;
+
+	tmp = strsep((char **) &buf, "\n");
+
+	if (!strcmp(tmp, "no")){
+		type = QETH_LARGE_SEND_NO;
+	} else if (!strcmp(tmp, "EDDP")) {
+		type = QETH_LARGE_SEND_EDDP;
+	} else if (!strcmp(tmp, "TSO")) {
+		type = QETH_LARGE_SEND_TSO;
+	} else {
+		PRINT_WARN("large_send: invalid mode %s!\n", tmp);
+		return -EINVAL;
+	}
+	if (card->options.large_send == type)
+		return count;
+	card->options.large_send = type;
+	if ((rc = qeth_set_large_send(card)))
+		return rc;
+
+	return count;
+}
+
+static DEVICE_ATTR(large_send, 0644, qeth_dev_large_send_show,
+		   qeth_dev_large_send_store);
+
+static ssize_t
+qeth_dev_blkt_show(char *buf, struct qeth_card *card, int value )
+{
+
+	if (!card)
+		return -EINVAL;
+
+	return sprintf(buf, "%i\n", value);
+}
+
+static ssize_t
+qeth_dev_blkt_store(struct qeth_card *card, const char *buf, size_t count,
+			  int *value, int max_value)
+{
+	char *tmp;
+	int i;
+
+	if (!card)
+		return -EINVAL;
+
+	if ((card->state != CARD_STATE_DOWN) &&
+	    (card->state != CARD_STATE_RECOVER))
+		return -EPERM;
+
+	i = simple_strtoul(buf, &tmp, 10);
+	if (i <= max_value) {
+		*value = i;
+	} else {
+		PRINT_WARN("blkt total time: write values between"
+			   " 0 and %d to this file!\n", max_value);
+		return -EINVAL;
+	}
+	return count;
+}
+
+static ssize_t
+qeth_dev_blkt_total_show(struct device *dev, char *buf)
+{
+	struct qeth_card *card = dev->driver_data;
+
+	return qeth_dev_blkt_show(buf, card, card->info.blkt.time_total);
+}
+
+
+static ssize_t
+qeth_dev_blkt_total_store(struct device *dev, const char *buf, size_t count)
+{
+	struct qeth_card *card = dev->driver_data;
+
+	return qeth_dev_blkt_store(card, buf, count,
+				   &card->info.blkt.time_total,1000);
+}
+
+
+
+static DEVICE_ATTR(total, 0644, qeth_dev_blkt_total_show,
+		   qeth_dev_blkt_total_store);
+
+static ssize_t
+qeth_dev_blkt_inter_show(struct device *dev, char *buf)
+{
+	struct qeth_card *card = dev->driver_data;
+
+	return qeth_dev_blkt_show(buf, card, card->info.blkt.inter_packet);
+}
+
+
+static ssize_t
+qeth_dev_blkt_inter_store(struct device *dev, const char *buf, size_t count)
+{
+	struct qeth_card *card = dev->driver_data;
+
+	return qeth_dev_blkt_store(card, buf, count,
+				   &card->info.blkt.inter_packet,100);
+}
+
+static DEVICE_ATTR(inter, 0644, qeth_dev_blkt_inter_show,
+		   qeth_dev_blkt_inter_store);
+
+static ssize_t
+qeth_dev_blkt_inter_jumbo_show(struct device *dev, char *buf)
+{
+	struct qeth_card *card = dev->driver_data;
+
+	return qeth_dev_blkt_show(buf, card,
+				  card->info.blkt.inter_packet_jumbo);
+}
+
+
+static ssize_t
+qeth_dev_blkt_inter_jumbo_store(struct device *dev, const char *buf, size_t count)
+{
+	struct qeth_card *card = dev->driver_data;
+
+	return qeth_dev_blkt_store(card, buf, count,
+				   &card->info.blkt.inter_packet_jumbo,100);
+}
+
+static DEVICE_ATTR(inter_jumbo, 0644, qeth_dev_blkt_inter_jumbo_show,
+		   qeth_dev_blkt_inter_jumbo_store);
+
+static struct device_attribute * qeth_blkt_device_attrs[] = {
+	&dev_attr_total,
+	&dev_attr_inter,
+	&dev_attr_inter_jumbo,
+	NULL,
+};
+
+static struct attribute_group qeth_device_blkt_group = {
+	.name = "blkt",
+	.attrs = (struct attribute **)qeth_blkt_device_attrs,
+};
 
 static struct device_attribute * qeth_device_attrs[] = {
 	&dev_attr_state,
@@ -753,6 +930,7 @@ static struct device_attribute * qeth_device_attrs[] = {
 	&dev_attr_broadcast_mode,
 	&dev_attr_canonical_macaddr,
 	&dev_attr_layer2,
+	&dev_attr_large_send,
 	NULL,
 };
 
@@ -1507,6 +1685,8 @@ qeth_create_device_attributes(struct device *dev)
 		sysfs_remove_group(&dev->kobj, &qeth_device_ipato_group);
 		sysfs_remove_group(&dev->kobj, &qeth_device_vipa_group);
 	}
+	if ((ret = sysfs_create_group(&dev->kobj, &qeth_device_blkt_group)))
+		return ret;
 
 	return ret;
 }
@@ -1518,6 +1698,7 @@ qeth_remove_device_attributes(struct device *dev)
 	sysfs_remove_group(&dev->kobj, &qeth_device_ipato_group);
 	sysfs_remove_group(&dev->kobj, &qeth_device_vipa_group);
 	sysfs_remove_group(&dev->kobj, &qeth_device_rxip_group);
+	sysfs_remove_group(&dev->kobj, &qeth_device_blkt_group);
 }
 
 /**********************/

@@ -9,8 +9,11 @@ endif
 
 lib-y := errno.o ctype.o string.o vsprintf.o cmdline.o \
 	 bust_spinlocks.o rbtree.o radix-tree.o dump_stack.o \
-	 kobject.o kref.o idr.o div64.o parser.o int_sqrt.o \
-	 bitmap.o extable.o kobject_uevent.o
+	 kobject.o kref.o idr.o div64.o int_sqrt.o \
+	 bitmap.o extable.o kobject_uevent.o prio_tree.o sha1.o \
+	 halfmd4.o
+
+obj-y += sort.o parser.o
 
 ifeq ($(CONFIG_DEBUG_KOBJECT),y)
 CFLAGS_kobject.o += -DDEBUG
@@ -26,7 +29,7 @@ obj-$(CONFIG_LOCK_KERNEL) += kernel_lock.o
 
 obj-$(CONFIG_MOT_FEAT_HOTPLUG_FILTER) += mothotplug_sysfs.o
 
-ifneq ($(CONFIG_HAVE_DEC_LOCK),y)
+ifneq ($(CONFIG_HAVE_DEC_LOCK),y) 
   lib-y += dec_and_lock.o
 endif
 

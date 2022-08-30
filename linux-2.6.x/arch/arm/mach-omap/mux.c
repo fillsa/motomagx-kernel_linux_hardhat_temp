@@ -40,6 +40,7 @@
 int __init_or_module
 omap_cfg_reg(const reg_cfg_t reg_cfg)
 {
+//+	static DEFINE_SPINLOCK(mux_spin_lock);
 	static DEFINE_RAW_SPINLOCK(mux_spin_lock);
 
 	unsigned long flags;

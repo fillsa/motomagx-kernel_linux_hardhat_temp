@@ -484,6 +484,7 @@ pxafb_setcolreg(u_int regno, u_int red, u_int green, u_int blue,
 	if (fbi->fb.var.grayscale)
 		red = green = blue = (19595 * red + 38470 * green +
 					7471 * blue) >> 16;
+
 	switch (fbi->fb.fix.visual) {
 	case FB_VISUAL_TRUECOLOR:
 		/*
@@ -590,7 +591,6 @@ static int pxafb_check_var(struct fb_var_screeninfo *var, struct fb_info *info)
 	 *Overlays and cursor are disabled with base plane bpp=1,2
 	 *(see 4.7.6 paperback Intel's Bulvrde secret manual)
          */
-
 	if (var->bits_per_pixel == 16) {
 		var->red.offset   = 11; var->red.length   = 5;
 		var->green.offset = 5;  var->green.length = 6;
@@ -924,6 +924,20 @@ static int pxafb_pan_display(struct fb_var_screeninfo *var,
 	return pxafb_activate_var(var, fbi);
 }
 
+static int pxafb_mmap(struct fb_info *info, struct file *file,
+		      struct vm_area_struct *vma)
+{
+	struct pxafb_info *fbi = (struct pxafb_info *)info;
+	unsigned long off = vma->vm_pgoff << PAGE_SHIFT;
+
+	if (off < info->fix.smem_len) {
+		vma->vm_pgoff += 1;
+		return dma_mmap_writecombine(fbi->dev, vma, fbi->map_cpu,
+					     fbi->map_dma, fbi->map_size);
+	}
+	return -EINVAL;
+}
+
 static struct fb_ops pxafb_ops = {
 	.owner		= THIS_MODULE,
 	.fb_check_var	= pxafb_check_var,
@@ -936,6 +950,7 @@ static struct fb_ops pxafb_ops = {
 	.fb_ioctl       = pxafb_ioctl,
 	.fb_pan_display = pxafb_pan_display,
 	.fb_cursor	= soft_cursor,
+	.fb_mmap	= pxafb_mmap,
 };
 
 
@@ -1191,7 +1206,7 @@ static int pxafb_activate_var(struct fb_var_screeninfo *var, struct pxafb_info *
 #if DEBUG_VAR
 	if (var->xres < MIN_XRES || var->xres > MAX_XRES)
 		printk(KERN_ERR "%s: invalid xres %d\n",
-		       fbi->fb.fix.id, var->xres);
+		fbi->fb.fix.id, var->xres);
 	switch(var->bits_per_pixel) {
 	case 1:
 	case 2:
@@ -1270,12 +1285,9 @@ static int pxafb_activate_var(struct fb_var_screeninfo *var, struct pxafb_info *
 	local_irq_save(flags);
 
 	/* setup dma descriptors */
-	fbi->dmadesc_fblow_cpu = (struct pxafb_dma_descriptor *)
-		((unsigned int)fbi->palette_cpu - 3*16);
-	fbi->dmadesc_fbhigh_cpu = (struct pxafb_dma_descriptor *)
-		((unsigned int)fbi->palette_cpu - 2*16);
-	fbi->dmadesc_palette_cpu = (struct pxafb_dma_descriptor *)
-		((unsigned int)fbi->palette_cpu - 1*16);
+	fbi->dmadesc_fblow_cpu = (struct pxafb_dma_descriptor *)((unsigned int)fbi->palette_cpu - 3*16);
+	fbi->dmadesc_fbhigh_cpu = (struct pxafb_dma_descriptor *)((unsigned int)fbi->palette_cpu - 2*16);
+	fbi->dmadesc_palette_cpu = (struct pxafb_dma_descriptor *)((unsigned int)fbi->palette_cpu - 1*16);
 
 	fbi->dmadesc_fblow_dma = fbi->palette_dma - 3*16;
 	fbi->dmadesc_fbhigh_dma = fbi->palette_dma - 2*16;
@@ -1288,8 +1300,7 @@ static int pxafb_activate_var(struct fb_var_screeninfo *var, struct pxafb_info *
 
 	/* populate descriptors */
 	fbi->dmadesc_fblow_cpu->fdadr = fbi->dmadesc_fblow_dma;
-	fbi->dmadesc_fblow_cpu->fsadr =
-		fbi->screen_dma + BYTES_PER_PANEL + fsaddr_offset;
+	fbi->dmadesc_fblow_cpu->fsadr = fbi->screen_dma + BYTES_PER_PANEL + fsaddr_offset;
 	fbi->dmadesc_fblow_cpu->fidr  = 0;
 	fbi->dmadesc_fblow_cpu->ldcmd = BYTES_PER_PANEL | LDCMD_EOFINT;
 	fbi->fdadr1 = fbi->dmadesc_fblow_dma; /* only used in dual-panel mode */
@@ -1428,6 +1439,8 @@ static void pxafb_enable_controller(struct pxafb_info *fbi)
 	DPRINTK("reg_lccr2 0x%08x\n", (unsigned int) fbi->reg_lccr2);
 	DPRINTK("reg_lccr3 0x%08x\n", (unsigned int) fbi->reg_lccr3);
 
+	/* enable LCD controller clock */
+	pxa_set_cken(CKEN16_LCD, 1);
 #ifdef CONFIG_PXA27x
 	/* workaround for insight 41187 */
 	OVL1C2 = 0;
@@ -1476,8 +1489,8 @@ static void pxafb_disable_controller(struct pxafb_info *fbi)
 
 	DPRINTK("Disabling LCD controller\n");
 
-	add_wait_queue(&fbi->ctrlr_wait, &wait);
 	set_current_state(TASK_UNINTERRUPTIBLE);
+	add_wait_queue(&fbi->ctrlr_wait, &wait);
 
 	LCSR = 0xffffffff;	/* Clear LCD Status Register */
 	LCCR0 &= ~LCCR0_LDM;	/* Enable LCD Disable Done Interrupt */
@@ -1726,7 +1739,7 @@ pxafb_freq_policy(struct notifier_block *nb, unsigned long val, void *data)
  * Power management hooks.  Note that we won't be called from IRQ context,
  * unlike the blank functions above, so we may sleep.
  */
-static int pxafb_suspend(struct device *dev, u32 state, u32 level)
+static int pxafb_suspend(struct device *dev, pm_message_t state, u32 level)
 {
 	struct pxafb_info *fbi = pxafbi;
 
@@ -1802,15 +1815,13 @@ static int __init pxafb_map_video_memory(struct pxafb_info *fbi)
 	 */
 	fbi->map_size = PAGE_ALIGN(fbi->fb.fix.smem_len + PAGE_SIZE);
 	fbi->map_cpu = dma_alloc_coherent(fbi->dev, fbi->map_size,
-					  (dma_addr_t *) & fbi->map_dma,
-					  GFP_KERNEL);
+					  (dma_addr_t *) & fbi->map_dma, GFP_KERNEL);
 
 
 	if (fbi->map_cpu) {
 		/* prevent initial garbage on screen */
 		memset(fbi->map_cpu, 0, fbi->map_size);
-		fbi->screen_cpu = fbi->fb.screen_base =
-			fbi->map_cpu + PAGE_SIZE;
+		fbi->screen_cpu = fbi->fb.screen_base = fbi->map_cpu + PAGE_SIZE;
 		fbi->screen_dma = fbi->map_dma + PAGE_SIZE;
 		/*
 		 * FIXME: this is actually the wrong thing to place in
@@ -1828,6 +1839,7 @@ static int __init pxafb_map_video_memory(struct pxafb_info *fbi)
 		fbi->palette_cpu = (u16 *)(fbi->screen_cpu - palette_mem_size);
 		fbi->palette_dma = fbi->screen_dma - palette_mem_size;
 	}
+
 	return fbi->map_cpu ? 0 : -ENOMEM;
 }
 
@@ -3255,8 +3267,6 @@ int __init pxafb_probe(struct device *dev)
 		ret = -ENOMEM;
 		goto failed;
 	}
-	/* enable LCD controller clock */
-	pxa_set_cken(CKEN16_LCD, 1);
 
 	ret = request_irq(IRQ_LCD, pxafb_handle_irq, 
 #ifndef CONFIG_PREEMPT_RT
@@ -3288,6 +3298,7 @@ int __init pxafb_probe(struct device *dev)
 		dev_err(dev, "Failed to register framebuffer device: %d\n", ret);
 		goto failed_sem;
 	}
+
 #ifdef CONFIG_PM
 	// TODO
 #endif
@@ -3410,7 +3421,7 @@ failed:
 	dev_set_drvdata(dev, NULL);
 	if (pxafbi) {
 		fb_dealloc_cmap(&pxafbi->fb.cmap);
-		kfree(pxafbi);
+	kfree(pxafbi);
 	}
 #ifdef CONFIG_PXA27x
 	if (overlay1fb)

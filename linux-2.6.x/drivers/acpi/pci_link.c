@@ -307,50 +307,57 @@ acpi_pci_link_set (
 	struct {
 		struct acpi_resource	res;
 		struct acpi_resource	end;
-	}                       resource;
-	struct acpi_buffer	buffer = {sizeof(resource)+1, &resource};
+	}    *resource;
+	struct acpi_buffer	buffer = {0, NULL};
 
 	ACPI_FUNCTION_TRACE("acpi_pci_link_set");
 
 	if (!link || !irq)
 		return_VALUE(-EINVAL);
 
-	memset(&resource, 0, sizeof(resource));
+	resource = kmalloc( sizeof(*resource)+1, GFP_KERNEL);
+	if(!resource)
+		return_VALUE(-ENOMEM);
+
+	memset(resource, 0, sizeof(*resource)+1);
+	buffer.length = sizeof(*resource) +1;
+	buffer.pointer = resource;
 
 	switch(link->irq.resource_type) {
 	case ACPI_RSTYPE_IRQ:
-		resource.res.id = ACPI_RSTYPE_IRQ;
-		resource.res.length = sizeof(struct acpi_resource);
-		resource.res.data.irq.edge_level = link->irq.edge_level;
-		resource.res.data.irq.active_high_low = link->irq.active_high_low;
+		resource->res.id = ACPI_RSTYPE_IRQ;
+		resource->res.length = sizeof(struct acpi_resource);
+		resource->res.data.irq.edge_level = link->irq.edge_level;
+		resource->res.data.irq.active_high_low = link->irq.active_high_low;
 		if (link->irq.edge_level == ACPI_EDGE_SENSITIVE)
-			resource.res.data.irq.shared_exclusive = ACPI_EXCLUSIVE;
+			resource->res.data.irq.shared_exclusive = ACPI_EXCLUSIVE;
 		else
-			resource.res.data.irq.shared_exclusive = ACPI_SHARED;
-		resource.res.data.irq.number_of_interrupts = 1;
-		resource.res.data.irq.interrupts[0] = irq;
+			resource->res.data.irq.shared_exclusive = ACPI_SHARED;
+		resource->res.data.irq.number_of_interrupts = 1;
+		resource->res.data.irq.interrupts[0] = irq;
 		break;
 	   
 	case ACPI_RSTYPE_EXT_IRQ:
-		resource.res.id = ACPI_RSTYPE_EXT_IRQ;
-		resource.res.length = sizeof(struct acpi_resource);
-		resource.res.data.extended_irq.producer_consumer = ACPI_CONSUMER;
-		resource.res.data.extended_irq.edge_level = link->irq.edge_level;
-		resource.res.data.extended_irq.active_high_low = link->irq.active_high_low;
+		resource->res.id = ACPI_RSTYPE_EXT_IRQ;
+		resource->res.length = sizeof(struct acpi_resource);
+		resource->res.data.extended_irq.producer_consumer = ACPI_CONSUMER;
+		resource->res.data.extended_irq.edge_level = link->irq.edge_level;
+		resource->res.data.extended_irq.active_high_low = link->irq.active_high_low;
 		if (link->irq.edge_level == ACPI_EDGE_SENSITIVE)
-			resource.res.data.irq.shared_exclusive = ACPI_EXCLUSIVE;
+			resource->res.data.irq.shared_exclusive = ACPI_EXCLUSIVE;
 		else
-			resource.res.data.irq.shared_exclusive = ACPI_SHARED;
-		resource.res.data.extended_irq.number_of_interrupts = 1;
-		resource.res.data.extended_irq.interrupts[0] = irq;
+			resource->res.data.irq.shared_exclusive = ACPI_SHARED;
+		resource->res.data.extended_irq.number_of_interrupts = 1;
+		resource->res.data.extended_irq.interrupts[0] = irq;
 		/* ignore resource_source, it's optional */
 		break;
 	default:
 		printk("ACPI BUG: resource_type %d\n", link->irq.resource_type);
-		return_VALUE(-EINVAL);
+		result = -EINVAL;
+		goto end;
 
 	}
-	resource.end.id = ACPI_RSTYPE_END_TAG;
+	resource->end.id = ACPI_RSTYPE_END_TAG;
 
 	/* Attempt to set the resource */
 	status = acpi_set_current_resources(link->handle, &buffer);
@@ -358,14 +365,15 @@ acpi_pci_link_set (
 	/* check for total failure */
 	if (ACPI_FAILURE(status)) {
 		ACPI_DEBUG_PRINT((ACPI_DB_ERROR, "Error evaluating _SRS\n"));
-		return_VALUE(-ENODEV);
+		result = -ENODEV;
+		goto end;
 	}
 
 	/* Query _STA, set device->status */
 	result = acpi_bus_get_status(link->device);
 	if (result) {
 		ACPI_DEBUG_PRINT((ACPI_DB_ERROR, "Unable to read status\n"));
-		return_VALUE(result);
+		goto end;
 	}
 	if (!link->device->status.enabled) {
 		printk(KERN_WARNING PREFIX
@@ -377,7 +385,7 @@ acpi_pci_link_set (
 	/* Query _CRS, set link->irq.active */
 	result = acpi_pci_link_get_current(link);
 	if (result) {
-		return_VALUE(result);
+		goto end;
 	}
 
 	/*
@@ -399,7 +407,9 @@ acpi_pci_link_set (
 
 	ACPI_DEBUG_PRINT((ACPI_DB_INFO, "Set IRQ %d\n", link->irq.active));
 	
-	return_VALUE(0);
+end:
+	kfree(resource);
+	return_VALUE(result);
 }
 
 
@@ -512,9 +522,11 @@ acpi_irq_penalty_init(void)
 
 static int acpi_irq_balance;	/* 0: static, 1: balance */
 
-static int acpi_pci_link_allocate(struct acpi_pci_link* link) {
-	int irq;
-	int i;
+static int acpi_pci_link_allocate(
+	struct acpi_pci_link	*link)
+{
+	int			irq;
+	int			i;
 
 	ACPI_FUNCTION_TRACE("acpi_pci_link_allocate");
 
@@ -587,8 +599,9 @@ int
 acpi_pci_link_get_irq (
 	acpi_handle		handle,
 	int			index,
-	int*			edge_level,
-	int*			active_high_low)
+	int			*edge_level,
+	int			*active_high_low,
+	char			**name)
 {
 	int                     result = 0;
 	struct acpi_device	*device = NULL;
@@ -624,6 +637,7 @@ acpi_pci_link_get_irq (
 
 	if (edge_level) *edge_level = link->irq.edge_level;
 	if (active_high_low) *active_high_low = link->irq.active_high_low;
+	if (name) *name = acpi_device_bid(link->device);
 	return_VALUE(link->irq.active);
 }
 
@@ -810,7 +824,7 @@ void acpi_penalize_isa_irq(int irq)
  */
 static int __init acpi_irq_isa(char *str)
 {
-	return(acpi_irq_penalty_update(str, 1));
+	return acpi_irq_penalty_update(str, 1);
 }
 __setup("acpi_irq_isa=", acpi_irq_isa);
 
@@ -821,7 +835,7 @@ __setup("acpi_irq_isa=", acpi_irq_isa);
  */
 static int __init acpi_irq_pci(char *str)
 {
-	return(acpi_irq_penalty_update(str, 0));
+	return acpi_irq_penalty_update(str, 0);
 }
 __setup("acpi_irq_pci=", acpi_irq_pci);
 

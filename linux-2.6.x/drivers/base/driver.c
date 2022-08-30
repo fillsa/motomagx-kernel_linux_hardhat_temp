@@ -96,12 +96,13 @@ int driver_register(struct device_driver * drv)
  *
  *	Again, we pass off most of the work to the bus-level call.
  *
- *	Though, once that is done, we wait until the driver refcount 
+ *	Though, once that is done, we wait until @drv->unloaded is completed.
  *	reaches 0, and complete() is called in bus_release().
  *	Only modular drivers will call this function, and we
  *	have to guarantee that it won't complete, letting the driver
  *	unload until all references are gone.
  */
+
 void driver_unregister(struct device_driver * drv)
 {
 	bus_remove_driver(drv);

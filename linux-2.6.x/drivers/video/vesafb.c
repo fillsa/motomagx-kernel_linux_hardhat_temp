@@ -19,9 +19,6 @@
 #include <linux/fb.h>
 #include <linux/ioport.h>
 #include <linux/init.h>
-#ifdef __i386__
-#include <video/edid.h>
-#endif
 #include <asm/io.h>
 #include <asm/mtrr.h>
 
@@ -185,7 +182,7 @@ static struct fb_ops vesafb_ops = {
 	.fb_cursor	= soft_cursor,
 };
 
-int __init vesafb_setup(char *options)
+static int __init vesafb_setup(char *options)
 {
 	char *this_opt;
 	
@@ -229,7 +226,7 @@ static int __init vesafb_probe(struct device *device)
 	unsigned int size_total;
 
 	if (screen_info.orig_video_isVGA != VIDEO_TYPE_VLFB)
-		return -ENXIO;
+		return -ENODEV;
 
 	vesafb_fix.smem_start = screen_info.lfb_base;
 	vesafb_defined.bits_per_pixel = screen_info.lfb_depth;
@@ -407,7 +404,7 @@ static int __init vesafb_probe(struct device *device)
 		(ypan) ? FBINFO_HWACCEL_YPAN : 0;
 
 	if (fb_alloc_cmap(&info->cmap, 256, 0) < 0) {
-		err = -ENXIO;
+		err = -ENOMEM;
 		goto err;
 	}
 	if (register_framebuffer(info)<0) {
@@ -434,7 +431,7 @@ static struct platform_device vesafb_device = {
 	.name	= "vesafb",
 };
 
-int __init vesafb_init(void)
+static int __init vesafb_init(void)
 {
 	int ret;
 	char *option = NULL;
@@ -452,13 +449,5 @@ int __init vesafb_init(void)
 	return ret;
 }
 module_init(vesafb_init);
-
-/*
- * Overrides for Emacs so that we follow Linus's tabbing style.
- * ---------------------------------------------------------------------------
- * Local variables:
- * c-basic-offset: 8
- * End:
- */
 
 MODULE_LICENSE("GPL");

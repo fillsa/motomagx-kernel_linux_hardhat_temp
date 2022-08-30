@@ -78,6 +78,7 @@ static const char *cpu_name[] = {
 	[CPU_SR71000]	"Sandcraft SR71000"
 };
 
+
 #if defined(CONFIG_CPU_TIMER)
 extern int missed_timer_count;
 #endif

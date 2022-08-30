@@ -63,7 +63,7 @@ struct cipher_testvec {
  */
 #define MD4_TEST_VECTORS	7
 
-struct hash_testvec md4_tv_template [] = {
+static struct hash_testvec md4_tv_template [] = {
 	{
 		.plaintext = "",
 		.digest	= { 0x31, 0xd6, 0xcf, 0xe0, 0xd1, 0x6a, 0xe9, 0x31,
@@ -109,7 +109,7 @@ struct hash_testvec md4_tv_template [] = {
  */
 #define MD5_TEST_VECTORS	7
 
-struct hash_testvec md5_tv_template[] = {
+static struct hash_testvec md5_tv_template[] = {
 	{
 		.digest	= { 0xd4, 0x1d, 0x8c, 0xd9, 0x8f, 0x00, 0xb2, 0x04,
 			    0xe9, 0x80, 0x09, 0x98, 0xec, 0xf8, 0x42, 0x7e },
@@ -154,7 +154,7 @@ struct hash_testvec md5_tv_template[] = {
  */
 #define SHA1_TEST_VECTORS	2
 
-struct hash_testvec sha1_tv_template[] = {
+static struct hash_testvec sha1_tv_template[] = {
 	{ 
 		.plaintext = "abc",
 		.psize	= 3,
@@ -175,7 +175,7 @@ struct hash_testvec sha1_tv_template[] = {
  */
 #define SHA256_TEST_VECTORS	2
 
-struct hash_testvec sha256_tv_template[] = {	
+static struct hash_testvec sha256_tv_template[] = {	
 	{ 
 		.plaintext = "abc",
 		.psize	= 3,
@@ -200,7 +200,7 @@ struct hash_testvec sha256_tv_template[] = {
  */
 #define SHA384_TEST_VECTORS	4
 
-struct hash_testvec sha384_tv_template[] = {
+static struct hash_testvec sha384_tv_template[] = {
 	{ 
 		.plaintext= "abc",
 		.psize	= 3,
@@ -249,7 +249,7 @@ struct hash_testvec sha384_tv_template[] = {
  */
 #define SHA512_TEST_VECTORS	4
 
-struct hash_testvec sha512_tv_template[] = {
+static struct hash_testvec sha512_tv_template[] = {
 	{ 
 		.plaintext = "abc",
 		.psize	= 3,
@@ -309,7 +309,7 @@ struct hash_testvec sha512_tv_template[] = {
  */
 #define WP512_TEST_VECTORS	8
 
-struct hash_testvec wp512_tv_template[] = {
+static struct hash_testvec wp512_tv_template[] = {
 	{ 
 		.plaintext = "",
 		.psize	= 0,
@@ -407,7 +407,7 @@ struct hash_testvec wp512_tv_template[] = {
 
 #define WP384_TEST_VECTORS	8
 
-struct hash_testvec wp384_tv_template[] = {
+static struct hash_testvec wp384_tv_template[] = {
 	{ 
 		.plaintext = "",
 		.psize	= 0,
@@ -489,7 +489,7 @@ struct hash_testvec wp384_tv_template[] = {
 
 #define WP256_TEST_VECTORS	8
 
-struct hash_testvec wp256_tv_template[] = {
+static struct hash_testvec wp256_tv_template[] = {
 	{ 
 		.plaintext = "",
 		.psize	= 0,
@@ -553,6 +553,137 @@ struct hash_testvec wp256_tv_template[] = {
 	},
 };
 
+/*
+ * TIGER test vectors from Tiger website 
+ */
+#define TGR192_TEST_VECTORS	6
+
+static struct hash_testvec tgr192_tv_template[] = {
+	{
+		.plaintext = "",
+		.psize	= 0,
+		.digest = { 0x24, 0xf0, 0x13, 0x0c, 0x63, 0xac, 0x93, 0x32,
+			    0x16, 0x16, 0x6e, 0x76, 0xb1, 0xbb, 0x92, 0x5f,
+			    0xf3, 0x73, 0xde, 0x2d, 0x49, 0x58, 0x4e, 0x7a },
+	}, {
+		.plaintext = "abc",
+		.psize	= 3,
+		.digest = { 0xf2, 0x58, 0xc1, 0xe8, 0x84, 0x14, 0xab, 0x2a,
+			    0x52, 0x7a, 0xb5, 0x41, 0xff, 0xc5, 0xb8, 0xbf,
+			    0x93, 0x5f, 0x7b, 0x95, 0x1c, 0x13, 0x29, 0x51 },
+	}, {
+		.plaintext = "Tiger",
+		.psize	= 5,
+		.digest = { 0x9f, 0x00, 0xf5, 0x99, 0x07, 0x23, 0x00, 0xdd,
+			    0x27, 0x6a, 0xbb, 0x38, 0xc8, 0xeb, 0x6d, 0xec,
+			    0x37, 0x79, 0x0c, 0x11, 0x6f, 0x9d, 0x2b, 0xdf },
+	}, {
+		.plaintext = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+-",
+		.psize	= 64,
+		.digest = { 0x87, 0xfb, 0x2a, 0x90, 0x83, 0x85, 0x1c, 0xf7,
+			    0x47, 0x0d, 0x2c, 0xf8, 0x10, 0xe6, 0xdf, 0x9e,
+			    0xb5, 0x86, 0x44, 0x50, 0x34, 0xa5, 0xa3, 0x86 },
+	}, {
+		.plaintext = "ABCDEFGHIJKLMNOPQRSTUVWXYZ=abcdefghijklmnopqrstuvwxyz+0123456789",
+		.psize	= 64,
+		.digest = { 0x46, 0x7d, 0xb8, 0x08, 0x63, 0xeb, 0xce, 0x48,
+			    0x8d, 0xf1, 0xcd, 0x12, 0x61, 0x65, 0x5d, 0xe9,
+			    0x57, 0x89, 0x65, 0x65, 0x97, 0x5f, 0x91, 0x97 },
+	}, {
+		.plaintext = "Tiger - A Fast New Hash Function, "
+			     "by Ross Anderson and Eli Biham, "
+			     "proceedings of Fast Software Encryption 3, "
+			     "Cambridge, 1996.",
+		.psize  = 125,
+		.digest = { 0x3d, 0x9a, 0xeb, 0x03, 0xd1, 0xbd, 0x1a, 0x63,
+			    0x57, 0xb2, 0x77, 0x4d, 0xfd, 0x6d, 0x5b, 0x24,
+			    0xdd, 0x68, 0x15, 0x1d, 0x50, 0x39, 0x74, 0xfc },
+	},
+};
+
+#define TGR160_TEST_VECTORS	6
+
+static struct hash_testvec tgr160_tv_template[] = {
+	{
+		.plaintext = "",
+		.psize	= 0,
+		.digest = { 0x24, 0xf0, 0x13, 0x0c, 0x63, 0xac, 0x93, 0x32,
+			    0x16, 0x16, 0x6e, 0x76, 0xb1, 0xbb, 0x92, 0x5f,
+			    0xf3, 0x73, 0xde, 0x2d },
+	}, {
+		.plaintext = "abc",
+		.psize	= 3,
+		.digest = { 0xf2, 0x58, 0xc1, 0xe8, 0x84, 0x14, 0xab, 0x2a,
+			    0x52, 0x7a, 0xb5, 0x41, 0xff, 0xc5, 0xb8, 0xbf,
+			    0x93, 0x5f, 0x7b, 0x95 },
+	}, {
+		.plaintext = "Tiger",
+		.psize	= 5,
+		.digest = { 0x9f, 0x00, 0xf5, 0x99, 0x07, 0x23, 0x00, 0xdd,
+			    0x27, 0x6a, 0xbb, 0x38, 0xc8, 0xeb, 0x6d, 0xec,
+			    0x37, 0x79, 0x0c, 0x11 },
+	}, {
+		.plaintext = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+-",
+		.psize	= 64,
+		.digest = { 0x87, 0xfb, 0x2a, 0x90, 0x83, 0x85, 0x1c, 0xf7,
+			    0x47, 0x0d, 0x2c, 0xf8, 0x10, 0xe6, 0xdf, 0x9e,
+			    0xb5, 0x86, 0x44, 0x50 },
+	}, {
+		.plaintext = "ABCDEFGHIJKLMNOPQRSTUVWXYZ=abcdefghijklmnopqrstuvwxyz+0123456789",
+		.psize	= 64,
+		.digest = { 0x46, 0x7d, 0xb8, 0x08, 0x63, 0xeb, 0xce, 0x48,
+			    0x8d, 0xf1, 0xcd, 0x12, 0x61, 0x65, 0x5d, 0xe9,
+			    0x57, 0x89, 0x65, 0x65 },
+	}, {
+		.plaintext = "Tiger - A Fast New Hash Function, "
+			     "by Ross Anderson and Eli Biham, "
+			     "proceedings of Fast Software Encryption 3, "
+			     "Cambridge, 1996.",
+		.psize  = 125,
+		.digest = { 0x3d, 0x9a, 0xeb, 0x03, 0xd1, 0xbd, 0x1a, 0x63,
+			    0x57, 0xb2, 0x77, 0x4d, 0xfd, 0x6d, 0x5b, 0x24,
+			    0xdd, 0x68, 0x15, 0x1d },
+	},
+};
+
+#define TGR128_TEST_VECTORS	6
+
+static struct hash_testvec tgr128_tv_template[] = {
+	{
+		.plaintext = "",
+		.psize	= 0,
+		.digest = { 0x24, 0xf0, 0x13, 0x0c, 0x63, 0xac, 0x93, 0x32,
+			    0x16, 0x16, 0x6e, 0x76, 0xb1, 0xbb, 0x92, 0x5f },
+	}, {
+		.plaintext = "abc",
+		.psize	= 3,
+		.digest = { 0xf2, 0x58, 0xc1, 0xe8, 0x84, 0x14, 0xab, 0x2a,
+			    0x52, 0x7a, 0xb5, 0x41, 0xff, 0xc5, 0xb8, 0xbf },
+	}, {
+		.plaintext = "Tiger",
+		.psize	= 5,
+		.digest = { 0x9f, 0x00, 0xf5, 0x99, 0x07, 0x23, 0x00, 0xdd,
+			    0x27, 0x6a, 0xbb, 0x38, 0xc8, 0xeb, 0x6d, 0xec },
+	}, {
+		.plaintext = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+-",
+		.psize	= 64,
+		.digest = { 0x87, 0xfb, 0x2a, 0x90, 0x83, 0x85, 0x1c, 0xf7,
+			    0x47, 0x0d, 0x2c, 0xf8, 0x10, 0xe6, 0xdf, 0x9e },
+	}, {
+		.plaintext = "ABCDEFGHIJKLMNOPQRSTUVWXYZ=abcdefghijklmnopqrstuvwxyz+0123456789",
+		.psize	= 64,
+		.digest = { 0x46, 0x7d, 0xb8, 0x08, 0x63, 0xeb, 0xce, 0x48,
+			    0x8d, 0xf1, 0xcd, 0x12, 0x61, 0x65, 0x5d, 0xe9 },
+	}, {
+		.plaintext = "Tiger - A Fast New Hash Function, "
+			     "by Ross Anderson and Eli Biham, "
+			     "proceedings of Fast Software Encryption 3, "
+			     "Cambridge, 1996.",
+		.psize  = 125,
+		.digest = { 0x3d, 0x9a, 0xeb, 0x03, 0xd1, 0xbd, 0x1a, 0x63,
+			    0x57, 0xb2, 0x77, 0x4d, 0xfd, 0x6d, 0x5b, 0x24 },
+	},
+};
 
 #ifdef CONFIG_CRYPTO_HMAC
 /*
@@ -561,7 +692,7 @@ struct hash_testvec wp256_tv_template[] = {
  */
 #define HMAC_MD5_TEST_VECTORS	7
 
-struct hmac_testvec hmac_md5_tv_template[] =
+static struct hmac_testvec hmac_md5_tv_template[] =
 {	
 	{
 		.key	= { [0 ... 15] =  0x0b },
@@ -625,7 +756,7 @@ struct hmac_testvec hmac_md5_tv_template[] =
  */
 #define HMAC_SHA1_TEST_VECTORS	7
 
-struct hmac_testvec hmac_sha1_tv_template[] = {	
+static struct hmac_testvec hmac_sha1_tv_template[] = {	
 	{
 		.key	= { [0 ... 19] = 0x0b },
 		.ksize	= 20,
@@ -690,7 +821,7 @@ struct hmac_testvec hmac_sha1_tv_template[] = {
  */
 #define HMAC_SHA256_TEST_VECTORS	10
 
-struct hmac_testvec hmac_sha256_tv_template[] = {
+static struct hmac_testvec hmac_sha256_tv_template[] = {
 	{
 		.key	= { 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08,
 			    0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e, 0x0f, 0x10,
@@ -813,7 +944,7 @@ struct hmac_testvec hmac_sha256_tv_template[] = {
 #define DES3_EDE_ENC_TEST_VECTORS	3
 #define DES3_EDE_DEC_TEST_VECTORS	3
 
-struct cipher_testvec des_enc_tv_template[] = {
+static struct cipher_testvec des_enc_tv_template[] = {
 	{ /* From Applied Cryptography */
 		.key	= { 0x01, 0x23, 0x45, 0x67, 0x89, 0xab, 0xcd, 0xef },
 		.klen	= 8,
@@ -917,7 +1048,7 @@ struct cipher_testvec des_enc_tv_template[] = {
 	},
 };
 
-struct cipher_testvec des_dec_tv_template[] = {
+static struct cipher_testvec des_dec_tv_template[] = {
 	{ /* From Applied Cryptography */
 		.key	= { 0x01, 0x23, 0x45, 0x67, 0x89, 0xab, 0xcd, 0xef },
 		.klen	= 8,
@@ -957,7 +1088,7 @@ struct cipher_testvec des_dec_tv_template[] = {
 	},
 };
 
-struct cipher_testvec des_cbc_enc_tv_template[] = {
+static struct cipher_testvec des_cbc_enc_tv_template[] = {
 	{ /* From OpenSSL */
 		.key	= { 0x01, 0x23, 0x45, 0x67, 0x89, 0xab, 0xcd, 0xef},
 		.klen	= 8,
@@ -1012,7 +1143,7 @@ struct cipher_testvec des_cbc_enc_tv_template[] = {
 	},
 };
 
-struct cipher_testvec des_cbc_dec_tv_template[] = {
+static struct cipher_testvec des_cbc_dec_tv_template[] = {
 	{ /* FIPS Pub 81 */
 		.key	= { 0x01, 0x23, 0x45, 0x67, 0x89, 0xab, 0xcd, 0xef },
 		.klen	= 8,
@@ -1053,7 +1184,7 @@ struct cipher_testvec des_cbc_dec_tv_template[] = {
 /*
  * We really need some more test vectors, especially for DES3 CBC.
  */
-struct cipher_testvec des3_ede_enc_tv_template[] = {
+static struct cipher_testvec des3_ede_enc_tv_template[] = {
 	{ /* These are from openssl */
 		.key	= { 0x01, 0x23, 0x45, 0x67, 0x89, 0xab, 0xcd, 0xef,
 			    0x55, 0x55, 0x55, 0x55, 0x55, 0x55, 0x55, 0x55,
@@ -1084,7 +1215,7 @@ struct cipher_testvec des3_ede_enc_tv_template[] = {
 	},
 };
 
-struct cipher_testvec des3_ede_dec_tv_template[] = {
+static struct cipher_testvec des3_ede_dec_tv_template[] = {
 	{ /* These are from openssl */
 		.key	= { 0x01, 0x23, 0x45, 0x67, 0x89, 0xab, 0xcd, 0xef,
 			    0x55, 0x55, 0x55, 0x55, 0x55, 0x55, 0x55, 0x55,
@@ -1123,7 +1254,7 @@ struct cipher_testvec des3_ede_dec_tv_template[] = {
 #define BF_CBC_ENC_TEST_VECTORS	1
 #define BF_CBC_DEC_TEST_VECTORS	1
 
-struct cipher_testvec bf_enc_tv_template[] = {
+static struct cipher_testvec bf_enc_tv_template[] = {
 	{ /* DES test vectors from OpenSSL */
 		.key	= { 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, },
 		.klen	= 8,
@@ -1178,7 +1309,7 @@ struct cipher_testvec bf_enc_tv_template[] = {
 	},
 };
 
-struct cipher_testvec bf_dec_tv_template[] = {
+static struct cipher_testvec bf_dec_tv_template[] = {
 	{ /* DES test vectors from OpenSSL */
 		.key	= { 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00 },
 		.klen	= 8,
@@ -1233,7 +1364,7 @@ struct cipher_testvec bf_dec_tv_template[] = {
 	},
 };
 
-struct cipher_testvec bf_cbc_enc_tv_template[] = {
+static struct cipher_testvec bf_cbc_enc_tv_template[] = {
 	{ /* From OpenSSL */
 		.key	= { 0x01, 0x23, 0x45, 0x67, 0x89, 0xab, 0xcd, 0xef,
 			    0xf0, 0xe1, 0xd2, 0xc3, 0xb4, 0xa5, 0x96, 0x87 },
@@ -1252,7 +1383,7 @@ struct cipher_testvec bf_cbc_enc_tv_template[] = {
 	},
 };
 
-struct cipher_testvec bf_cbc_dec_tv_template[] = {
+static struct cipher_testvec bf_cbc_dec_tv_template[] = {
 	{ /* From OpenSSL */
 		.key	= { 0x01, 0x23, 0x45, 0x67, 0x89, 0xab, 0xcd, 0xef,
 			    0xf0, 0xe1, 0xd2, 0xc3, 0xb4, 0xa5, 0x96, 0x87 },
@@ -1279,7 +1410,7 @@ struct cipher_testvec bf_cbc_dec_tv_template[] = {
 #define TF_CBC_ENC_TEST_VECTORS		4
 #define TF_CBC_DEC_TEST_VECTORS		4
 
-struct cipher_testvec tf_enc_tv_template[] = {
+static struct cipher_testvec tf_enc_tv_template[] = {
 	{
 		.key	= { [0 ... 15] = 0x00 },
 		.klen	= 16,
@@ -1312,7 +1443,7 @@ struct cipher_testvec tf_enc_tv_template[] = {
 	},
 };
 
-struct cipher_testvec tf_dec_tv_template[] = {
+static struct cipher_testvec tf_dec_tv_template[] = {
 	{
 		.key	= { [0 ... 15] = 0x00 },
 		.klen	= 16,
@@ -1345,7 +1476,7 @@ struct cipher_testvec tf_dec_tv_template[] = {
 	},
 };
 
-struct cipher_testvec tf_cbc_enc_tv_template[] = {
+static struct cipher_testvec tf_cbc_enc_tv_template[] = {
 	{ /* Generated with Nettle */
 		.key	= { [0 ... 15] = 0x00 },
 		.klen	= 16,
@@ -1391,7 +1522,7 @@ struct cipher_testvec tf_cbc_enc_tv_template[] = {
 	},
 };
 
-struct cipher_testvec tf_cbc_dec_tv_template[] = {
+static struct cipher_testvec tf_cbc_dec_tv_template[] = {
 	{ /* Reverse of the first four above */
 		.key	= { [0 ... 15] = 0x00 },
 		.klen	= 16,
@@ -1447,7 +1578,7 @@ struct cipher_testvec tf_cbc_dec_tv_template[] = {
 #define TNEPRES_ENC_TEST_VECTORS	4
 #define TNEPRES_DEC_TEST_VECTORS	4
 
-struct cipher_testvec serpent_enc_tv_template[] = 
+static struct cipher_testvec serpent_enc_tv_template[] = 
 {
 	{
 		.input	= { 0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07,
@@ -1489,7 +1620,7 @@ struct cipher_testvec serpent_enc_tv_template[] =
 	},
 };
 
-struct cipher_testvec tnepres_enc_tv_template[] = 
+static struct cipher_testvec tnepres_enc_tv_template[] = 
 {
 	{ /* KeySize=128, PT=0, I=1 */
 		.input	= { 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
@@ -1540,7 +1671,7 @@ struct cipher_testvec tnepres_enc_tv_template[] =
 };
 
 
-struct cipher_testvec serpent_dec_tv_template[] = 
+static struct cipher_testvec serpent_dec_tv_template[] = 
 {
 	{
 		.input	= { 0x12, 0x07, 0xfc, 0xce, 0x9b, 0xd0, 0xd6, 0x47,
@@ -1582,7 +1713,7 @@ struct cipher_testvec serpent_dec_tv_template[] =
 	},
 };
 
-struct cipher_testvec tnepres_dec_tv_template[] =
+static struct cipher_testvec tnepres_dec_tv_template[] =
 {
 	{
 		.input	= { 0x41, 0xcc, 0x6b, 0x31, 0x59, 0x31, 0x45, 0x97,
@@ -1629,7 +1760,7 @@ struct cipher_testvec tnepres_dec_tv_template[] =
 #define CAST6_ENC_TEST_VECTORS	3
 #define CAST6_DEC_TEST_VECTORS  3
 
-struct cipher_testvec cast6_enc_tv_template[] = 
+static struct cipher_testvec cast6_enc_tv_template[] = 
 {
 	{
 		.key	= { 0x23, 0x42, 0xbb, 0x9e, 0xfa, 0x38, 0x54, 0x2c, 
@@ -1664,7 +1795,7 @@ struct cipher_testvec cast6_enc_tv_template[] =
 	},
 };
 
-struct cipher_testvec cast6_dec_tv_template[] = 
+static struct cipher_testvec cast6_dec_tv_template[] = 
 {
 	{
 		.key	= { 0x23, 0x42, 0xbb, 0x9e, 0xfa, 0x38, 0x54, 0x2c, 
@@ -1706,7 +1837,7 @@ struct cipher_testvec cast6_dec_tv_template[] =
 #define AES_ENC_TEST_VECTORS 3
 #define AES_DEC_TEST_VECTORS 3
 
-struct cipher_testvec aes_enc_tv_template[] = { 
+static struct cipher_testvec aes_enc_tv_template[] = { 
 	{ /* From FIPS-197 */
 		.key	= { 0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 
 			    0x08, 0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e, 0x0f },
@@ -1743,7 +1874,7 @@ struct cipher_testvec aes_enc_tv_template[] = {
 	},
 };
 
-struct cipher_testvec aes_dec_tv_template[] = { 
+static struct cipher_testvec aes_dec_tv_template[] = { 
 	{ /* From FIPS-197 */
 		.key	= { 0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 
 			    0x08, 0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e, 0x0f },
@@ -1784,7 +1915,7 @@ struct cipher_testvec aes_dec_tv_template[] = {
 #define CAST5_ENC_TEST_VECTORS	3
 #define CAST5_DEC_TEST_VECTORS	3
 
-struct cipher_testvec cast5_enc_tv_template[] =
+static struct cipher_testvec cast5_enc_tv_template[] =
 {
 	{
 		.key	= { 0x01, 0x23, 0x45, 0x67, 0x12, 0x34, 0x56, 0x78,
@@ -1812,7 +1943,7 @@ struct cipher_testvec cast5_enc_tv_template[] =
 	},
 };
 
-struct cipher_testvec cast5_dec_tv_template[] =
+static struct cipher_testvec cast5_dec_tv_template[] =
 {
 	{
 		.key	= { 0x01, 0x23, 0x45, 0x67, 0x12, 0x34, 0x56, 0x78,
@@ -1846,7 +1977,7 @@ struct cipher_testvec cast5_dec_tv_template[] =
 #define ARC4_ENC_TEST_VECTORS	7
 #define ARC4_DEC_TEST_VECTORS	7
 
-struct cipher_testvec arc4_enc_tv_template[] =
+static struct cipher_testvec arc4_enc_tv_template[] =
 {
 	{
 		.key	= { 0x01, 0x23, 0x45, 0x67, 0x89, 0xab, 0xcd, 0xef },
@@ -1913,7 +2044,7 @@ struct cipher_testvec arc4_enc_tv_template[] =
 	},
 };
 
-struct cipher_testvec arc4_dec_tv_template[] =
+static struct cipher_testvec arc4_dec_tv_template[] =
 {
 	{
 		.key	= { 0x01, 0x23, 0x45, 0x67, 0x89, 0xab, 0xcd, 0xef },
@@ -1986,7 +2117,7 @@ struct cipher_testvec arc4_dec_tv_template[] =
 #define TEA_ENC_TEST_VECTORS	4
 #define TEA_DEC_TEST_VECTORS	4
 
-struct cipher_testvec tea_enc_tv_template[] =
+static struct cipher_testvec tea_enc_tv_template[] =
 {
 	{
 		.key    = { [0 ... 15] = 0x00 },
@@ -2030,7 +2161,7 @@ struct cipher_testvec tea_enc_tv_template[] =
 	}
 };
 
-struct cipher_testvec tea_dec_tv_template[] =
+static struct cipher_testvec tea_dec_tv_template[] =
 {
 	{
 		.key    = { [0 ... 15] = 0x00 },
@@ -2080,7 +2211,7 @@ struct cipher_testvec tea_dec_tv_template[] =
 #define XTEA_ENC_TEST_VECTORS	4
 #define XTEA_DEC_TEST_VECTORS	4
 
-struct cipher_testvec xtea_enc_tv_template[] =
+static struct cipher_testvec xtea_enc_tv_template[] =
 {
 	{
 		.key    = { [0 ... 15] = 0x00 },
@@ -2124,7 +2255,7 @@ struct cipher_testvec xtea_enc_tv_template[] =
 	}
 };
 
-struct cipher_testvec xtea_dec_tv_template[] =
+static struct cipher_testvec xtea_dec_tv_template[] =
 {
 	{
 		.key    = { [0 ... 15] = 0x00 },
@@ -2174,7 +2305,7 @@ struct cipher_testvec xtea_dec_tv_template[] =
 #define KHAZAD_ENC_TEST_VECTORS 5
 #define KHAZAD_DEC_TEST_VECTORS 5
 
-struct cipher_testvec khazad_enc_tv_template[] = { 
+static struct cipher_testvec khazad_enc_tv_template[] = { 
 	{ 
 		.key	= { 0x80, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 
 			    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00 },
@@ -2220,7 +2351,7 @@ struct cipher_testvec khazad_enc_tv_template[] = {
 	},
 };
 
-struct cipher_testvec khazad_dec_tv_template[] = { 
+static struct cipher_testvec khazad_dec_tv_template[] = { 
 	{
 		.key	= { 0x80, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 
 			    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00 },
@@ -2275,7 +2406,7 @@ struct cipher_testvec khazad_dec_tv_template[] = {
 #define ANUBIS_CBC_ENC_TEST_VECTORS		2
 #define ANUBIS_CBC_DEC_TEST_VECTORS		2
 
-struct cipher_testvec anubis_enc_tv_template[] = {
+static struct cipher_testvec anubis_enc_tv_template[] = {
 	{
 		.key	= { 0xfe, 0xfe, 0xfe, 0xfe, 0xfe, 0xfe, 0xfe, 0xfe,
 			    0xfe, 0xfe, 0xfe, 0xfe, 0xfe, 0xfe, 0xfe, 0xfe },
@@ -2338,7 +2469,7 @@ struct cipher_testvec anubis_enc_tv_template[] = {
 	},
 };
 
-struct cipher_testvec anubis_dec_tv_template[] = {
+static struct cipher_testvec anubis_dec_tv_template[] = {
 	{
 		.key	= { 0xfe, 0xfe, 0xfe, 0xfe, 0xfe, 0xfe, 0xfe, 0xfe,
 			    0xfe, 0xfe, 0xfe, 0xfe, 0xfe, 0xfe, 0xfe, 0xfe },
@@ -2401,7 +2532,7 @@ struct cipher_testvec anubis_dec_tv_template[] = {
 	},
 };
 
-struct cipher_testvec anubis_cbc_enc_tv_template[] = {
+static struct cipher_testvec anubis_cbc_enc_tv_template[] = {
 	{
 		.key	= { 0xfe, 0xfe, 0xfe, 0xfe, 0xfe, 0xfe, 0xfe, 0xfe,
 			    0xfe, 0xfe, 0xfe, 0xfe, 0xfe, 0xfe, 0xfe, 0xfe },
@@ -2436,7 +2567,7 @@ struct cipher_testvec anubis_cbc_enc_tv_template[] = {
 	},
 };
 
-struct cipher_testvec anubis_cbc_dec_tv_template[] = {
+static struct cipher_testvec anubis_cbc_dec_tv_template[] = {
 	{
 		.key	= { 0xfe, 0xfe, 0xfe, 0xfe, 0xfe, 0xfe, 0xfe, 0xfe,
 			    0xfe, 0xfe, 0xfe, 0xfe, 0xfe, 0xfe, 0xfe, 0xfe },
@@ -2489,7 +2620,7 @@ struct comp_testvec {
 #define DEFLATE_COMP_TEST_VECTORS 2
 #define DEFLATE_DECOMP_TEST_VECTORS 2
 
-struct comp_testvec deflate_comp_tv_template[] = {
+static struct comp_testvec deflate_comp_tv_template[] = {
 	{
 		.inlen	= 70,
 		.outlen	= 38,
@@ -2525,7 +2656,7 @@ struct comp_testvec deflate_comp_tv_template[] = {
 	},
 };
 
-struct comp_testvec deflate_decomp_tv_template[] = {
+static struct comp_testvec deflate_decomp_tv_template[] = {
 	{
 		.inlen	= 122,
 		.outlen	= 191,
@@ -2566,7 +2697,7 @@ struct comp_testvec deflate_decomp_tv_template[] = {
  */
 #define MICHAEL_MIC_TEST_VECTORS 6
 
-struct hash_testvec michael_mic_tv_template[] =
+static struct hash_testvec michael_mic_tv_template[] =
 {
 	{
 		.key = { 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00 },

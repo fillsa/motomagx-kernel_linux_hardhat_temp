@@ -25,9 +25,8 @@ int show_interrupts(struct seq_file *p, void *v)
 
 	if (i == 0) {
 		seq_puts(p, "           ");
-		for (j=0; j<NR_CPUS; j++)
-			if (cpu_online(j))
-				seq_printf(p, "CPU%d       ",j);
+		for_each_online_cpu(j)
+			seq_printf(p, "CPU%d       ",j);
 		seq_putc(p, '\n');
 	}
 
@@ -36,9 +35,8 @@ int show_interrupts(struct seq_file *p, void *v)
 #ifndef CONFIG_SMP
 		seq_printf(p, "%10u ", kstat_irqs(i));
 #else
-		for (j = 0; j < NR_CPUS; j++)
-			if (cpu_online(j))
-				seq_printf(p, "%10u ", kstat_cpu(j).irqs[i]);
+		for_each_online_cpu(j)
+			seq_printf(p, "%10u ", kstat_cpu(j).irqs[i]);
 #endif
                 seq_putc(p, '\n');
 
@@ -71,6 +69,10 @@ asmlinkage void do_softirq(void)
 
 	local_irq_save(flags);
 
+	account_system_vtime(current);
+
+	local_bh_disable();
+
 	if (local_softirq_pending()) {
 		/* Get current stack pointer. */
 		asm volatile("la %0,0(15)" : "=a" (old));
@@ -92,6 +94,10 @@ asmlinkage void do_softirq(void)
 			/* We are already on the async stack. */
 			__do_softirq();
 	}
+
+	account_system_vtime(current);
+
+	__local_bh_enable();
 
 	local_irq_restore(flags);
 }

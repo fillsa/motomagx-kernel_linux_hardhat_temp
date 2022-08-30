@@ -66,4 +66,6 @@ source "drivers/power_ic/Kconfig"
 
 source "drivers/cap_touch/Kconfig"
 
+source "drivers/infiniband/Kconfig"
+
 endmenu

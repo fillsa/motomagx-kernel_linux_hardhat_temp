@@ -42,6 +42,7 @@
 #include <net/tcp.h>
 #include <net/sock.h>
 #include <net/ip_fib.h>
+#include <net/ip_mp_alg.h>
 
 #include "fib_lookup.h"
 
@@ -268,6 +269,74 @@ int ip_fib_check_default(u32 gw, struct net_device *dev)
 	read_unlock(&fib_info_lock);
 
 	return -1;
+}
+
+void rtmsg_fib(int event, u32 key, struct fib_alias *fa,
+	       int z, int tb_id,
+	       struct nlmsghdr *n, struct netlink_skb_parms *req)
+{
+	struct sk_buff *skb;
+	u32 pid = req ? req->pid : 0;
+	int size = NLMSG_SPACE(sizeof(struct rtmsg)+256);
+
+	skb = alloc_skb(size, GFP_KERNEL);
+	if (!skb)
+		return;
+
+	if (fib_dump_info(skb, pid, n->nlmsg_seq, event, tb_id,
+			  fa->fa_type, fa->fa_scope, &key, z,
+			  fa->fa_tos,
+			  fa->fa_info) < 0) {
+		kfree_skb(skb);
+		return;
+	}
+	NETLINK_CB(skb).dst_groups = RTMGRP_IPV4_ROUTE;
+	if (n->nlmsg_flags&NLM_F_ECHO)
+		atomic_inc(&skb->users);
+	netlink_broadcast(rtnl, skb, pid, RTMGRP_IPV4_ROUTE, GFP_KERNEL);
+	if (n->nlmsg_flags&NLM_F_ECHO)
+		netlink_unicast(rtnl, skb, pid, MSG_DONTWAIT);
+}
+
+/* Return the first fib alias matching TOS with
+ * priority less than or equal to PRIO.
+ */
+struct fib_alias *fib_find_alias(struct list_head *fah, u8 tos, u32 prio)
+{
+	if (fah) {
+		struct fib_alias *fa;
+		list_for_each_entry(fa, fah, fa_list) {
+			if (fa->fa_tos > tos)
+				continue;
+			if (fa->fa_info->fib_priority >= prio ||
+			    fa->fa_tos < tos)
+				return fa;
+		}
+	}
+	return NULL;
+}
+
+int fib_detect_death(struct fib_info *fi, int order,
+		     struct fib_info **last_resort, int *last_idx, int *dflt)
+{
+	struct neighbour *n;
+	int state = NUD_NONE;
+
+	n = neigh_lookup(&arp_tbl, &fi->fib_nh[0].nh_gw, fi->fib_dev);
+	if (n) {
+		state = n->nud_state;
+		neigh_release(n);
+	}
+	if (state==NUD_REACHABLE)
+		return 0;
+	if ((state&NUD_VALID) && order != *dflt)
+		return 0;
+	if ((state&NUD_VALID) ||
+	    (*last_idx<0 && order > *dflt)) {
+		*last_resort = fi;
+		*last_idx = order;
+	}
+	return 1;
 }
 
 #ifdef CONFIG_IP_ROUTE_MULTIPATH
@@ -581,6 +650,9 @@ fib_create_info(const struct rtmsg *r, struct kern_rta *rta,
 #else
 	const int nhs = 1;
 #endif
+#ifdef CONFIG_IP_ROUTE_MULTIPATH_CACHED
+	u32 mp_alg = IP_MP_ALG_NONE;
+#endif
 
 	/* Fast check to catch the most weird cases */
 	if (fib_props[r->rtm_type].scope > r->rtm_scope)
@@ -590,6 +662,15 @@ fib_create_info(const struct rtmsg *r, struct kern_rta *rta,
 	if (rta->rta_mp) {
 		nhs = fib_count_nexthops(rta->rta_mp);
 		if (nhs == 0)
+			goto err_inval;
+	}
+#endif
+#ifdef CONFIG_IP_ROUTE_MULTIPATH_CACHED
+	if (rta->rta_mp_alg) {
+		mp_alg = *rta->rta_mp_alg;
+
+		if (mp_alg < IP_MP_ALG_NONE ||
+		    mp_alg > IP_MP_ALG_MAX)
 			goto err_inval;
 	}
 #endif
@@ -684,6 +765,10 @@ fib_create_info(const struct rtmsg *r, struct kern_rta *rta,
 #endif
 	}
 
+#ifdef CONFIG_IP_ROUTE_MULTIPATH_CACHED
+	fi->fib_mp_alg = mp_alg;
+#endif
+
 	if (fib_props[r->rtm_type].error) {
 		if (rta->rta_gw || rta->rta_oif || rta->rta_mp)
 			goto err_inval;
@@ -763,7 +848,8 @@ failure:
 }
 
 int fib_semantic_match(struct list_head *head, const struct flowi *flp,
-		       struct fib_result *res, int prefixlen)
+		       struct fib_result *res, __u32 zone, __u32 mask, 
+			int prefixlen)
 {
 	struct fib_alias *fa;
 	int nh_sel = 0;
@@ -827,6 +913,11 @@ out_fill_res:
 	res->type = fa->fa_type;
 	res->scope = fa->fa_scope;
 	res->fi = fa->fa_info;
+#ifdef CONFIG_IP_ROUTE_MULTIPATH_CACHED
+	res->netmask = mask;
+	res->network = zone &
+		(0xFFFFFFFF >> (32 - prefixlen));
+#endif
 	atomic_inc(&res->fi->fib_clntref);
 	return 0;
 }

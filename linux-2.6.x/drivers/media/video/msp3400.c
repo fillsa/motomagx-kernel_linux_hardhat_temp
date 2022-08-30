@@ -36,6 +36,7 @@
 
 #include <linux/config.h>
 #include <linux/module.h>
+#include <linux/moduleparam.h>
 #include <linux/kernel.h>
 #include <linux/sched.h>
 #include <linux/string.h>
@@ -379,6 +380,8 @@ static void msp3400c_setvolume(struct i2c_client *client,
 	int val = 0, bal = 0;
 
 	if (!muted) {
+		/* 0x7f instead if 0x73 here has sound quality issues,
+		 * probably due to overmodulation + clipping ... */
 		val = (volume * 0x73 / 65535) << 8;
 	}
 	if (val) {
@@ -633,14 +636,6 @@ struct REGISTER_DUMP {
 	char *name;
 };
 
-struct REGISTER_DUMP d1[] = {
-	{ 0x007e, "autodetect" },
-	{ 0x0023, "C_AD_BITS " },
-	{ 0x0038, "ADD_BITS  " },
-	{ 0x003e, "CIB_BITS  " },
-	{ 0x0057, "ERROR_RATE" },
-};
-
 static int
 autodetect_stereo(struct i2c_client *client)
 {
@@ -741,6 +736,7 @@ static int msp34xx_sleep(struct msp3400c *msp, int timeout)
 {
 	DECLARE_WAITQUEUE(wait, current);
 
+again:
 	add_wait_queue(&msp->wq, &wait);
 	if (!kthread_should_stop()) {
 		if (timeout < 0) {
@@ -756,9 +752,12 @@ static int msp34xx_sleep(struct msp3400c *msp, int timeout)
 #endif
 		}
 	}
-	if (current->flags & PF_FREEZE)
-		refrigerator(PF_FREEZE);
+
 	remove_wait_queue(&msp->wq, &wait);
+
+	if (try_to_freeze(PF_FREEZE))
+		goto again;
+
 	return msp->restart;
 }
 
@@ -1000,7 +999,13 @@ static int msp34xx_modus(int norm)
 {
 	switch (norm) {
 	case VIDEO_MODE_PAL:
+#if 1
+		/* experimental: not sure this works with all chip versions */
+		return 0x7003;
+#else
+		/* previous value, try this if it breaks ... */
 		return 0x1003;
+#endif
 	case VIDEO_MODE_NTSC:  /* BTSC */
 		return 0x2003;
 	case VIDEO_MODE_SECAM:
@@ -1210,7 +1215,7 @@ static void msp34xxg_set_source(struct i2c_client *client, int source);
 static int msp34xxg_init(struct i2c_client *client)
 {
 	struct msp3400c *msp = i2c_get_clientdata(client);
-	int modus;
+	int modus,std;
 
 	if (msp3400c_reset(client))
 		return -1;
@@ -1224,12 +1229,18 @@ static int msp34xxg_init(struct i2c_client *client)
 
 	/* step-by-step initialisation, as described in the manual */
 	modus = msp34xx_modus(msp->norm);
+	std   = msp34xx_standard(msp->norm);
 	modus &= ~0x03; /* STATUS_CHANGE=0 */
 	modus |= 0x01;  /* AUTOMATIC_SOUND_DETECTION=1 */
 	if (msp3400c_write(client,
 			   I2C_MSP3400C_DEM,
 			   0x30/*MODUS*/,
 			   modus))
+		return -1;
+	if (msp3400c_write(client,
+			   I2C_MSP3400C_DEM,
+			   0x20/*stanard*/,
+			   std))
 		return -1;
 
 	/* write the dfps that may have an influence on
@@ -1261,6 +1272,7 @@ static int msp34xxg_thread(void *data)
 	int val, std, i;
 
 	printk("msp34xxg: daemon started\n");
+	msp->source = 1; /* default */
 	for (;;) {
 		d2printk(KERN_DEBUG "msp34xxg: thread: sleep\n");
 		msp34xx_sleep(msp,-1);
@@ -1331,8 +1343,9 @@ static void msp34xxg_set_source(struct i2c_client *client, int source)
 
 	/* fix matrix mode to stereo and let the msp choose what
 	 * to output according to 'source', as recommended
+	 * for MONO (source==0) downmixing set bit[7:0] to 0x30
 	 */
-	int value = (source&0x07)<<8|(source==0 ? 0x00:0x20);
+	int value = (source&0x07)<<8|(source==0 ? 0x30:0x20);
 	dprintk("msp34xxg: set source to %d (0x%x)\n", source, value);
 	msp3400c_write(client,
 		       I2C_MSP3400C_DFP,
@@ -1356,7 +1369,7 @@ static void msp34xxg_set_source(struct i2c_client *client, int source)
 	msp3400c_write(client,
 		       I2C_MSP3400C_DEM,
 		       0x22, /* a2 threshold for stereo/bilingual */
-		       source==0 ? 0x7f0:stereo_threshold);
+		       stereo_threshold);
 	msp->source=source;
 }
 
@@ -1391,7 +1404,7 @@ static void msp34xxg_detect_stereo(struct i2c_client *client)
 static void msp34xxg_set_audmode(struct i2c_client *client, int audmode)
 {
 	struct msp3400c *msp = i2c_get_clientdata(client);
-	int source = 0;
+	int source;
 
 	switch (audmode) {
 	case V4L2_TUNER_MODE_MONO:
@@ -1407,9 +1420,10 @@ static void msp34xxg_set_audmode(struct i2c_client *client, int audmode)
 	case V4L2_TUNER_MODE_LANG2:
 		source=4; /* stereo or B */
 		break;
-	default: /* doing nothing: a safe, sane default */
+	default:
 		audmode = 0;
-		return;
+		source  = 1;
+		break;
 	}
 	msp->audmode = audmode;
 	msp34xxg_set_source(client, source);
@@ -1423,7 +1437,7 @@ static int msp_detach(struct i2c_client *client);
 static int msp_probe(struct i2c_adapter *adap);
 static int msp_command(struct i2c_client *client, unsigned int cmd, void *arg);
 
-static int msp_suspend(struct device * dev, u32 state, u32 level);
+static int msp_suspend(struct device * dev, pm_message_t state, u32 level);
 static int msp_resume(struct device * dev, u32 level);
 
 static void msp_wake_thread(struct i2c_client *client);
@@ -1511,12 +1525,9 @@ static int msp_attach(struct i2c_adapter *adap, int addr, int kind)
 
 	msp->opmode = opmode;
 	if (OPMODE_AUTO == msp->opmode) {
-#if 0 /* seems to work for ivtv only, disable by default for now ... */
 		if (HAVE_SIMPLER(msp))
 			msp->opmode = OPMODE_SIMPLER;
-		else
-#endif
-		if (HAVE_SIMPLE(msp))
+		else if (HAVE_SIMPLE(msp))
 			msp->opmode = OPMODE_SIMPLE;
 		else
 			msp->opmode = OPMODE_MANUAL;
@@ -1831,7 +1842,7 @@ static int msp_command(struct i2c_client *client, unsigned int cmd, void *arg)
 	return 0;
 }
 
-static int msp_suspend(struct device * dev, u32 state, u32 level)
+static int msp_suspend(struct device * dev, pm_message_t state, u32 level)
 {
 	struct i2c_client *c = container_of(dev, struct i2c_client, dev);
 

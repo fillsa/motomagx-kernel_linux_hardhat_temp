@@ -44,6 +44,7 @@ struct dm_dev {
 	atomic_t count;
 	int mode;
 	struct block_device *bdev;
+	char name[16];
 };
 
 struct dm_table;
@@ -115,7 +116,8 @@ void dm_table_set_restrictions(struct dm_table *t, struct request_queue *q);
 unsigned int dm_table_get_num_targets(struct dm_table *t);
 struct list_head *dm_table_get_devices(struct dm_table *t);
 int dm_table_get_mode(struct dm_table *t);
-void dm_table_suspend_targets(struct dm_table *t);
+void dm_table_presuspend_targets(struct dm_table *t);
+void dm_table_postsuspend_targets(struct dm_table *t);
 void dm_table_resume_targets(struct dm_table *t);
 int dm_table_any_congested(struct dm_table *t, int bdi_bits);
 void dm_table_unplug_all(struct dm_table *t);
@@ -142,21 +144,22 @@ static inline int array_too_big(unsigned long fixed, unsigned long obj,
 }
 
 /*
- * ceiling(n / size) * size
+ * Ceiling(n / sz)
  */
-static inline unsigned long dm_round_up(unsigned long n, unsigned long size)
-{
-	unsigned long r = n % size;
-	return n + (r ? (size - r) : 0);
-}
+#define dm_div_up(n, sz) (((n) + (sz) - 1) / (sz))
+
+#define dm_sector_div_up(n, sz) ( \
+{ \
+	sector_t _r = ((n) + (sz) - 1); \
+	sector_div(_r, (sz)); \
+	_r; \
+} \
+)
 
 /*
- * Ceiling(n / size)
+ * ceiling(n / size) * size
  */
-static inline unsigned long dm_div_up(unsigned long n, unsigned long size)
-{
-	return dm_round_up(n, size) / size;
-}
+#define dm_round_up(n, sz) (dm_div_up((n), (sz)) * (sz))
 
 static inline sector_t to_sector(unsigned long n)
 {
@@ -187,5 +190,6 @@ int dm_stripe_init(void);
 void dm_stripe_exit(void);
 
 void *dm_vcalloc(unsigned long nmemb, unsigned long elem_size);
+union map_info *dm_get_mapinfo(struct bio *bio);
 
 #endif

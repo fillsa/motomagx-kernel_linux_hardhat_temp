@@ -126,7 +126,6 @@ int qdisc_restart(struct net_device *dev)
 					kfree_skb(skb);
 					if (net_ratelimit())
 						printk(KERN_DEBUG "Dead loop on netdevice %s, fix it urgently!\n", dev->name);
-
 					return -1;
 				}
 				__get_cpu_var(netdev_rx_stat).cpu_collision++;
@@ -207,10 +206,9 @@ int qdisc_restart(struct net_device *dev)
 requeue:
 		q->ops->requeue(skb, q);
 		netif_schedule(dev);
-
 		return 1;
 	}
-
+	BUG_ON((int) q->q.qlen < 0);
 	return q->q.qlen;
 }
 
@@ -315,7 +313,7 @@ struct Qdisc noop_qdisc = {
 	.list		=	LIST_HEAD_INIT(noop_qdisc.list),
 };
 
-struct Qdisc_ops noqueue_qdisc_ops = {
+static struct Qdisc_ops noqueue_qdisc_ops = {
 	.next		=	NULL,
 	.cl_ops		=	NULL,
 	.id		=	"noqueue",
@@ -326,7 +324,7 @@ struct Qdisc_ops noqueue_qdisc_ops = {
 	.owner		=	THIS_MODULE,
 };
 
-struct Qdisc noqueue_qdisc = {
+static struct Qdisc noqueue_qdisc = {
 	.enqueue	=	NULL,
 	.dequeue	=	noop_dequeue,
 	.flags		=	TCQ_F_BUILTIN,
@@ -570,6 +568,10 @@ void dev_activate(struct net_device *dev)
 		dev->qdisc_sleeping = qdisc;
 		write_unlock_bh(&qdisc_tree_lock);
 	}
+
+	if (!netif_carrier_ok(dev))
+		/* Delay activation until next carrier-on event */
+		return;
 
 	spin_lock_bh(&dev->queue_lock);
 	rcu_assign_pointer(dev->qdisc, dev->qdisc_sleeping);

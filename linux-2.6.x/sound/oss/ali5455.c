@@ -3528,7 +3528,7 @@ static void __devexit ali_remove(struct pci_dev *pci_dev)
 }
 
 #ifdef CONFIG_PM
-static int ali_pm_suspend(struct pci_dev *dev, u32 pm_state)
+static int ali_pm_suspend(struct pci_dev *dev, pm_message_t pm_state)
 {
 	struct ali_card *card = pci_get_drvdata(dev);
 	struct ali_state *state;
@@ -3651,12 +3651,13 @@ static int ali_pm_resume(struct pci_dev *dev)
 MODULE_AUTHOR("");
 MODULE_DESCRIPTION("ALI 5455 audio support");
 MODULE_LICENSE("GPL");
-MODULE_PARM(clocking, "i");
-MODULE_PARM(strict_clocking, "i");
-MODULE_PARM(codec_pcmout_share_spdif_locked, "i");
-MODULE_PARM(codec_independent_spdif_locked, "i");
-MODULE_PARM(controller_pcmout_share_spdif_locked, "i");
-MODULE_PARM(controller_independent_spdif_locked, "i");
+module_param(clocking, int, 0);
+/* FIXME: bool? */
+module_param(strict_clocking, uint, 0);
+module_param(codec_pcmout_share_spdif_locked, uint, 0);
+module_param(codec_independent_spdif_locked, uint, 0);
+module_param(controller_pcmout_share_spdif_locked, uint, 0);
+module_param(controller_independent_spdif_locked, uint, 0);
 #define ALI5455_MODULE_NAME "ali5455"
 static struct pci_driver ali_pci_driver = {
 	.name		= ALI5455_MODULE_NAME,

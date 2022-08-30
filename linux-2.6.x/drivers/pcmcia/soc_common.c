@@ -197,15 +197,12 @@ static int soc_common_pcmcia_sock_init(struct pcmcia_socket *sock)
 static int soc_common_pcmcia_suspend(struct pcmcia_socket *sock)
 {
 	struct soc_pcmcia_socket *skt = to_soc_pcmcia_socket(sock);
-	int ret;
 
 	debug(skt, 2, "suspending socket\n");
 
-	ret = soc_common_pcmcia_config_skt(skt, &dead_socket);
-	if (ret == 0)
-		skt->ops->socket_suspend(skt);
+	skt->ops->socket_suspend(skt);
 
-	return ret;
+	return 0;
 }
 
 static DEFINE_SPINLOCK(status_lock);
@@ -397,8 +394,8 @@ soc_common_pcmcia_set_io_map(struct pcmcia_socket *sock, struct pccard_io_map *m
 		map->stop = PAGE_SIZE-1;
 
 	map->stop -= map->start;
-	map->stop += (unsigned long)skt->virt_io;
-	map->start = (unsigned long)skt->virt_io;
+	map->stop += skt->socket.io_offset;
+	map->start = skt->socket.io_offset;
 
 	return 0;
 }
@@ -758,6 +755,7 @@ int soc_common_drv_pcmcia_probe(struct device *dev, struct pcmcia_low_level *ops
 			goto out_err_6;
 
 		skt->socket.features = SS_CAP_STATIC_MAP|SS_CAP_PCCARD;
+		skt->socket.resource_ops = &pccard_static_ops;
 		skt->socket.irq_mask = 0;
 		skt->socket.map_size = PAGE_SIZE;
 		skt->socket.pci_irq = skt->irq;

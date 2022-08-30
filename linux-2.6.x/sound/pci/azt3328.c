@@ -160,19 +160,19 @@ MODULE_SUPPORTED_DEVICE("{{Aztech,AZF3328}}");
 #endif
 	    
 static int index[SNDRV_CARDS] = SNDRV_DEFAULT_IDX;	/* Index 0-MAX */
-static char *id[SNDRV_CARDS] = SNDRV_DEFAULT_STR;	/* ID for this card */
-static int enable[SNDRV_CARDS] = SNDRV_DEFAULT_ENABLE_PNP;	/* Enable this card */
-#ifdef SUPPORT_JOYSTICK
-static int joystick[SNDRV_CARDS];
-#endif
-
 module_param_array(index, int, NULL, 0444);
 MODULE_PARM_DESC(index, "Index value for AZF3328 soundcard.");
+
+static char *id[SNDRV_CARDS] = SNDRV_DEFAULT_STR;	/* ID for this card */
 module_param_array(id, charp, NULL, 0444);
 MODULE_PARM_DESC(id, "ID string for AZF3328 soundcard.");
+
+static int enable[SNDRV_CARDS] = SNDRV_DEFAULT_ENABLE_PNP;	/* Enable this card */
 module_param_array(enable, bool, NULL, 0444);
 MODULE_PARM_DESC(enable, "Enable AZF3328 soundcard.");
+
 #ifdef SUPPORT_JOYSTICK
+static int joystick[SNDRV_CARDS];
 module_param_array(joystick, bool, NULL, 0444);
 MODULE_PARM_DESC(joystick, "Enable joystick for AZF3328 soundcard.");
 #endif
@@ -189,8 +189,7 @@ struct _snd_azf3328 {
 	unsigned long mixer_port;
 
 #ifdef SUPPORT_JOYSTICK
-	struct gameport gameport;
-	struct resource *res_joystick;
+	struct gameport *gameport;
 #endif
 
 	struct pci_dev *pci;
@@ -214,17 +213,17 @@ static struct pci_device_id snd_azf3328_ids[] = {
 
 MODULE_DEVICE_TABLE(pci, snd_azf3328_ids);
 
-void snd_azf3328_io2_write(azf3328_t *chip, int reg, unsigned char value)
+static inline void snd_azf3328_io2_write(azf3328_t *chip, int reg, unsigned char value)
 {
 	outb(value, chip->io2_port + reg);
 }
 
-unsigned char snd_azf3328_io2_read(azf3328_t *chip, int reg)
+static inline unsigned char snd_azf3328_io2_read(azf3328_t *chip, int reg)
 {
 	return inb(chip->io2_port + reg);
 }
 
-void snd_azf3328_mixer_write(azf3328_t *chip, int reg, unsigned long value, int type)
+static void snd_azf3328_mixer_write(azf3328_t *chip, int reg, unsigned long value, int type)
 {
 	switch(type) {
 	case WORD_VALUE:
@@ -239,26 +238,7 @@ void snd_azf3328_mixer_write(azf3328_t *chip, int reg, unsigned long value, int 
 	}
 }
 
-unsigned long snd_azf3328_mixer_read(azf3328_t *chip, int reg, int type)
-{
-	unsigned long res = 0;
-
-	switch(type) {
-	case WORD_VALUE:
-		res = (unsigned long)inw(chip->mixer_port + reg);
-		break;
-	case DWORD_VALUE:
-		res = (unsigned long)inl(chip->mixer_port + reg);
-		break;
-	case BYTE_VALUE:
-		res = (unsigned long)inb(chip->mixer_port + reg);
-		break;
-	}
-
-	return res;
-}
-
-void snd_azf3328_mixer_set_mute(azf3328_t *chip, int reg, int do_mute)
+static void snd_azf3328_mixer_set_mute(azf3328_t *chip, int reg, int do_mute)
 {
 	unsigned char oldval;
 
@@ -272,7 +252,7 @@ void snd_azf3328_mixer_set_mute(azf3328_t *chip, int reg, int do_mute)
 	outb(oldval, chip->mixer_port + reg + 1);
 }
 
-void snd_azf3328_mixer_write_volume_gradually(azf3328_t *chip, int reg, unsigned char dst_vol_left, unsigned char dst_vol_right, int chan_sel, int delay)
+static void snd_azf3328_mixer_write_volume_gradually(azf3328_t *chip, int reg, unsigned char dst_vol_left, unsigned char dst_vol_right, int chan_sel, int delay)
 {
 	unsigned char curr_vol_left = 0, curr_vol_right = 0;
 	int left_done = 0, right_done = 0;
@@ -1241,6 +1221,63 @@ static int __devinit snd_azf3328_pcm(azf3328_t *chip, int device)
 
 /******************************************************************/
 
+#ifdef SUPPORT_JOYSTICK
+static int __devinit snd_azf3328_config_joystick(azf3328_t *chip, int dev)
+{
+	struct gameport *gp;
+	struct resource *r;
+
+	if (!joystick[dev])
+		return -ENODEV;
+
+	if (!(r = request_region(0x200, 8, "AZF3328 gameport"))) {
+		printk(KERN_WARNING "azt3328: cannot reserve joystick ports\n");
+		return -EBUSY;
+	}
+
+	chip->gameport = gp = gameport_allocate_port();
+	if (!gp) {
+		printk(KERN_ERR "azt3328: cannot allocate memory for gameport\n");
+		release_resource(r);
+		kfree_nocheck(r);
+		return -ENOMEM;
+	}
+
+	gameport_set_name(gp, "AZF3328 Gameport");
+	gameport_set_phys(gp, "pci%s/gameport0", pci_name(chip->pci));
+	gameport_set_dev_parent(gp, &chip->pci->dev);
+	gp->io = 0x200;
+	gameport_set_port_data(gp, r);
+
+	snd_azf3328_io2_write(chip, IDX_IO2_LEGACY_ADDR,
+			      snd_azf3328_io2_read(chip, IDX_IO2_LEGACY_ADDR) | LEGACY_JOY);
+
+	gameport_register_port(chip->gameport);
+
+	return 0;
+}
+
+static void snd_azf3328_free_joystick(azf3328_t *chip)
+{
+	if (chip->gameport) {
+		struct resource *r = gameport_get_port_data(chip->gameport);
+
+		gameport_unregister_port(chip->gameport);
+		chip->gameport = NULL;
+		/* disable gameport */
+		snd_azf3328_io2_write(chip, IDX_IO2_LEGACY_ADDR,
+				      snd_azf3328_io2_read(chip, IDX_IO2_LEGACY_ADDR) & ~LEGACY_JOY);
+		release_resource(r);
+		kfree_nocheck(r);
+	}
+}
+#else
+static inline int snd_azf3328_config_joystick(azf3328_t *chip, int dev) { return -ENOSYS; }
+static inline void snd_azf3328_free_joystick(azf3328_t *chip) { }
+#endif
+
+/******************************************************************/
+
 static int snd_azf3328_free(azf3328_t *chip)
 {
         if (chip->irq < 0)
@@ -1255,16 +1292,7 @@ static int snd_azf3328_free(azf3328_t *chip)
 
         synchronize_irq(chip->irq);
       __end_hw:
-#ifdef SUPPORT_JOYSTICK
-	if (chip->res_joystick) {
-		gameport_unregister_port(&chip->gameport);
-		/* disable gameport */
-		snd_azf3328_io2_write(chip, IDX_IO2_LEGACY_ADDR,
-				      snd_azf3328_io2_read(chip, IDX_IO2_LEGACY_ADDR) & ~LEGACY_JOY);
-		release_resource(chip->res_joystick);
-		kfree_nocheck(chip->res_joystick);
-	}
-#endif
+	snd_azf3328_free_joystick(chip);
         if (chip->irq >= 0)
 		free_irq(chip->irq, (void *)chip);
 	pci_release_regions(chip->pci);
@@ -1363,14 +1391,14 @@ static int __devinit snd_azf3328_create(snd_card_t * card,
 	for (tmp=0; tmp <= 0x01; tmp += 1)
 		snd_azf3328_dbgmisc("0x%02x: opl 0x%04x, mpu300 0x%04x, mpu310 0x%04x, mpu320 0x%04x, mpu330 0x%04x\n", tmp, inb(0x388 + tmp), inb(0x300 + tmp), inb(0x310 + tmp), inb(0x320 + tmp), inb(0x330 + tmp));
 
-	/* create mixer interface & switches */
-	if ((err = snd_azf3328_mixer_new(chip)) < 0)
-		return err;
-
 	if ((err = snd_device_new(card, SNDRV_DEV_LOWLEVEL, chip, &ops)) < 0) {
 		snd_azf3328_free(chip);
 		return err;
 	}
+
+	/* create mixer interface & switches */
+	if ((err = snd_azf3328_mixer_new(chip)) < 0)
+		return err;
 
 #if 0
 	/* set very low bitrate to reduce noise and power consumption? */
@@ -1391,28 +1419,6 @@ static int __devinit snd_azf3328_create(snd_card_t * card,
 	*rchip = chip;
 	return 0;
 }
-
-#ifdef SUPPORT_JOYSTICK
-static void __devinit snd_azf3328_config_joystick(azf3328_t *chip, int joystick)
-{
-	unsigned char val;
-
-	if (joystick == 1) {
-		if ((chip->res_joystick = request_region(0x200, 8, "AZF3328 gameport")) != NULL)
-			chip->gameport.io = 0x200;
-	}
-
-	val = inb(chip->io2_port + IDX_IO2_LEGACY_ADDR);
-	if (chip->res_joystick)
-		val |= LEGACY_JOY;
-	else
-		val &= ~LEGACY_JOY;
-
-	outb(val, chip->io2_port + IDX_IO2_LEGACY_ADDR);
-	if (chip->res_joystick)
-		gameport_register_port(&chip->gameport);
-}
-#endif
 
 static int __devinit snd_azf3328_probe(struct pci_dev *pci,
 					  const struct pci_device_id *pci_id)
@@ -1484,9 +1490,9 @@ static int __devinit snd_azf3328_probe(struct pci_dev *pci,
 "azt3328: Feel free to contact hw7oshyuv3001@sneakemail.com for bug reports etc.!\n");
 #endif
 
-#ifdef SUPPORT_JOYSTICK
-	snd_azf3328_config_joystick(chip, joystick[dev]);
-#endif
+	if (snd_azf3328_config_joystick(chip, dev) < 0)
+		snd_azf3328_io2_write(chip, IDX_IO2_LEGACY_ADDR,
+			      snd_azf3328_io2_read(chip, IDX_IO2_LEGACY_ADDR) & ~LEGACY_JOY);
 
 	pci_set_drvdata(pci, card);
 	dev++;

@@ -37,6 +37,7 @@ struct kern_rta {
 	u32		*rta_flow;
 	struct rta_cacheinfo *rta_ci;
 	struct rta_session *rta_sess;
+	u32		*rta_mp_alg;
 };
 
 struct fib_info;
@@ -81,6 +82,9 @@ struct fib_info {
 #ifdef CONFIG_IP_ROUTE_MULTIPATH
 	int			fib_power;
 #endif
+#ifdef CONFIG_IP_ROUTE_MULTIPATH_CACHED
+	u32			fib_mp_alg;
+#endif
 	struct fib_nh		fib_nh[0];
 #define fib_dev		fib_nh[0].nh_dev
 };
@@ -95,6 +99,10 @@ struct fib_result {
 	unsigned char	nh_sel;
 	unsigned char	type;
 	unsigned char	scope;
+#ifdef CONFIG_IP_ROUTE_MULTIPATH_CACHED
+	__u32           network;
+	__u32           netmask;
+#endif
 	struct fib_info *fi;
 #ifdef CONFIG_IP_MULTIPLE_TABLES
 	struct fib_rule	*r;
@@ -118,6 +126,14 @@ struct fib_result {
 #define FIB_RES_GW(res)			(FIB_RES_NH(res).nh_gw)
 #define FIB_RES_DEV(res)		(FIB_RES_NH(res).nh_dev)
 #define FIB_RES_OIF(res)		(FIB_RES_NH(res).nh_oif)
+
+#ifdef CONFIG_IP_ROUTE_MULTIPATH_CACHED
+#define FIB_RES_NETWORK(res)		((res).network)
+#define FIB_RES_NETMASK(res)	        ((res).netmask)
+#else /* CONFIG_IP_ROUTE_MULTIPATH_CACHED */
+#define FIB_RES_NETWORK(res)		(0)
+#define FIB_RES_NETMASK(res)	        (0)
+#endif /* CONFIG_IP_ROUTE_MULTIPATH_WRANDOM */
 
 struct fib_table {
 	unsigned char	tb_id;
@@ -200,7 +216,6 @@ extern void fib_select_default(const struct flowi *flp, struct fib_result *res);
 
 /* Exported by fib_frontend.c */
 extern void		ip_fib_init(void);
-extern void		fib_flush(void);
 extern int inet_rtm_delroute(struct sk_buff *skb, struct nlmsghdr* nlh, void *arg);
 extern int inet_rtm_newroute(struct sk_buff *skb, struct nlmsghdr* nlh, void *arg);
 extern int inet_rtm_getroute(struct sk_buff *skb, struct nlmsghdr* nlh, void *arg);
@@ -226,7 +241,6 @@ extern struct fib_table *fib_hash_init(int id);
 extern int inet_rtm_delrule(struct sk_buff *skb, struct nlmsghdr* nlh, void *arg);
 extern int inet_rtm_newrule(struct sk_buff *skb, struct nlmsghdr* nlh, void *arg);
 extern int inet_dump_rules(struct sk_buff *skb, struct netlink_callback *cb);
-extern u32 fib_rules_map_destination(u32 daddr, struct fib_result *res);
 #ifdef CONFIG_NET_CLS_ROUTE
 extern u32 fib_rules_tclass(struct fib_result *res);
 #endif

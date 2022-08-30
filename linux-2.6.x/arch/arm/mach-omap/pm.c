@@ -48,6 +48,7 @@
 #include <asm/arch/omap16xx.h>
 #include <asm/arch/pm.h>
 #include <asm/arch/mux.h>
+#include <asm/arch/tc.h>
 #include <asm/arch/gpio.h>
 #include <asm/irq.h>
 #include <asm/arch/tps65010.h>
@@ -781,3 +782,4 @@ static int __init omap_pm_init(void)
 	return 0;
 }
 __initcall(omap_pm_init);
+

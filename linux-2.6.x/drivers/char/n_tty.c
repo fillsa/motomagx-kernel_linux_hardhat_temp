@@ -152,7 +152,7 @@ static void reset_buffer_flags(struct tty_struct *tty)
  *	lock_kernel() still.
  */
  
-void n_tty_flush_buffer(struct tty_struct * tty)
+static void n_tty_flush_buffer(struct tty_struct * tty)
 {
 	/* clear everything and unthrottle the driver */
 	reset_buffer_flags(tty);
@@ -174,7 +174,7 @@ void n_tty_flush_buffer(struct tty_struct * tty)
  *	at this instant in time. 
  */
  
-ssize_t n_tty_chars_in_buffer(struct tty_struct *tty)
+static ssize_t n_tty_chars_in_buffer(struct tty_struct *tty)
 {
 	unsigned long flags;
 	ssize_t n = 0;
@@ -317,8 +317,6 @@ static ssize_t opost_block(struct tty_struct * tty,
 		return 0;
 	if (nr > space)
 		nr = space;
-	if (nr > sizeof(buf))
-	    nr = sizeof(buf);
 
 	for (i = 0, cp = buf; i < nr; i++, cp++) {
 		switch (*cp) {
@@ -608,9 +606,11 @@ static inline void n_tty_receive_overrun(struct tty_struct *tty)
 	char buf[64];
 
 	tty->num_overrun++;
-	if (time_before(tty->overrun_time, jiffies - HZ)) {
-		printk(KERN_WARNING "%s: %d input overrun(s)\n", tty_name(tty, buf),
-		       tty->num_overrun);
+	if (time_before(tty->overrun_time, jiffies - HZ) ||
+			time_after(tty->overrun_time, jiffies)) {
+		printk(KERN_WARNING "%s: %d input overrun(s)\n",
+			tty_name(tty, buf),
+			tty->num_overrun);
 		tty->overrun_time = jiffies;
 		tty->num_overrun = 0;
 	}

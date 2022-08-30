@@ -18,9 +18,9 @@
 #include <linux/file.h>
 #include <linux/uio.h>
 #include <linux/smp_lock.h>
-#ifdef CONFIG_MOT_FEAT_INOTIFY
+#ifdef CONFIG_MOT_FEAT_INOTIFY // < 2.6.13
 #include <linux/fsnotify.h>
-#else
+#else // do 2.6.13
 #include <linux/dnotify.h>
 #endif
 #include <linux/security.h>
@@ -275,9 +275,8 @@ ssize_t vfs_read(struct file *file, char __user *buf, size_t count, loff_t *pos)
 				ret = file->f_op->read(file, buf, count, pos);
 			else
 				ret = do_sync_read(file, buf, count, pos);
-			if (ret > 0)
+			if (ret > 0) {
 #ifdef CONFIG_MOT_FEAT_INOTIFY
-			{
 				struct dentry *dentry = file->f_dentry;
 				fsnotify_access(dentry, dentry->d_inode,
 						dentry->d_name.name);
@@ -285,6 +284,9 @@ ssize_t vfs_read(struct file *file, char __user *buf, size_t count, loff_t *pos)
 
 #else
 				dnotify_parent(file->f_dentry, DN_ACCESS);
+				current->rchar += ret;
+			}
+			current->syscr++;
 #endif
 		}
 	}
@@ -330,15 +332,17 @@ ssize_t vfs_write(struct file *file, const char __user *buf, size_t count, loff_
 				ret = file->f_op->write(file, buf, count, pos);
 			else
 				ret = do_sync_write(file, buf, count, pos);
-			if (ret > 0)
+			if (ret > 0) {
 #ifdef CONFIG_MOT_FEAT_INOTIFY
-			{
 				struct dentry *dentry = file->f_dentry;
 				fsnotify_modify(dentry, dentry->d_inode,
 						dentry->d_name.name);
 			}
 #else
 				dnotify_parent(file->f_dentry, DN_MODIFY);
+				current->wchar += ret;
+			}
+			current->syscw++;
 #endif
 		}
 	}
@@ -441,7 +445,7 @@ asmlinkage ssize_t sys_pwrite64(unsigned int fd, const char __user *buf,
 	file = fget_light(fd, &fput_needed);
 	if (file) {
 		ret = -ESPIPE;
-		if (file->f_mode & FMODE_PWRITE) {
+		if (file->f_mode & FMODE_PWRITE)  {
  			ltt_ev_file_system(LTT_EV_FILE_SYSTEM_WRITE,
  					  fd,
  					  count,
@@ -657,6 +661,9 @@ sys_readv(unsigned long fd, const struct iovec __user *vec, unsigned long vlen)
 		fput_light(file, fput_needed);
 	}
 
+	if (ret > 0)
+		current->wchar += ret;
+	current->syscw++;
 	return ret;
 }
 
@@ -679,6 +686,9 @@ sys_writev(unsigned long fd, const struct iovec __user *vec, unsigned long vlen)
 		fput_light(file, fput_needed);
 	}
 
+	if (ret > 0)
+		current->wchar += ret;
+	current->syscw++;
 	return ret;
 }
 
@@ -758,6 +768,13 @@ static ssize_t do_sendfile(int out_fd, int in_fd, loff_t *ppos,
 	}
 
 	retval = in_file->f_op->sendfile(in_file, ppos, count, file_send_actor, out_file);
+
+	if (retval > 0) {
+		current->rchar += retval;
+		current->wchar += retval;
+	}
+	current->syscr++;
+	current->syscw++;
 
 	if (*ppos > max)
 		retval = -EOVERFLOW;

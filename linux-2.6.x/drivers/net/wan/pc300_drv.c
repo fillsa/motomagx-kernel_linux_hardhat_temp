@@ -1776,7 +1776,7 @@ void cpc_tx_timeout(struct net_device *dev)
 	pc300_t *card = (pc300_t *) chan->card;
 	struct net_device_stats *stats = hdlc_stats(dev);
 	int ch = chan->channel;
-	uclong flags;
+	unsigned long flags;
 	ucchar ilar;
 
 	stats->tx_errors++;
@@ -1804,7 +1804,7 @@ int cpc_queue_xmit(struct sk_buff *skb, struct net_device *dev)
 	pc300_t *card = (pc300_t *) chan->card;
 	struct net_device_stats *stats = hdlc_stats(dev);
 	int ch = chan->channel;
-	uclong flags;
+	unsigned long flags;
 #ifdef PC300_DEBUG_TX
 	int i;
 #endif
@@ -2407,7 +2407,7 @@ void cpc_sca_status(pc300_t * card, int ch)
 {
 	ucchar ilar;
 	void __iomem *scabase = card->hw.scabase;
-	uclong flags;
+	unsigned long flags;
 
 	tx_dma_buf_check(card, ch);
 	rx_dma_buf_check(card, ch);
@@ -2499,7 +2499,7 @@ void cpc_falc_status(pc300_t * card, int ch)
 {
 	pc300ch_t *chan = &card->chan[ch];
 	falc_t *pfalc = (falc_t *) & chan->falc;
-	uclong flags;
+	unsigned long flags;
 
 	CPC_LOCK(card, flags);
 	printk("CH%d:   %s %s  %d channels\n",
@@ -3179,7 +3179,7 @@ int cpc_close(struct net_device *dev)
 	pc300dev_t *d = (pc300dev_t *) dev->priv;
 	pc300ch_t *chan = (pc300ch_t *) d->chan;
 	pc300_t *card = (pc300_t *) chan->card;
-	uclong flags;
+	unsigned long flags;
 
 #ifdef	PC300_DEBUG_OTHER
 	printk("pc300: cpc_close");
@@ -3427,7 +3427,7 @@ cpc_init_one(struct pci_dev *pdev, const struct pci_device_id *ent)
 {
 	static int first_time = 1;
 	ucchar cpc_rev_id;
-	int err = 0, eeprom_outdated = 0;
+	int err, eeprom_outdated = 0;
 	ucshort device_id;
 	pc300_t *card;
 
@@ -3439,14 +3439,20 @@ cpc_init_one(struct pci_dev *pdev, const struct pci_device_id *ent)
 #endif
 	}
 
+	if ((err = pci_enable_device(pdev)) < 0)
+		return err;
+
 	card = (pc300_t *) kmalloc(sizeof(pc300_t), GFP_KERNEL);
 	if (card == NULL) {
 		printk("PC300 found at RAM 0x%08lx, "
 		       "but could not allocate card structure.\n",
 		       pci_resource_start(pdev, 3));
-		return -ENOMEM;
+		err = -ENOMEM;
+		goto err_disable_dev;
 	}
 	memset(card, 0, sizeof(pc300_t));
+
+	err = -ENODEV;
 
 	/* read PCI configuration area */
 	device_id = ent->device;
@@ -3507,7 +3513,6 @@ cpc_init_one(struct pci_dev *pdev, const struct pci_device_id *ent)
 		printk("PC300 found at RAM 0x%08x, "
 		       "but could not allocate PLX mem region.\n",
 		       card->hw.ramphys);
-		err = -ENODEV;
 		goto err_release_io;
 	}
 	if (!request_mem_region(card->hw.ramphys, card->hw.alloc_ramsize,
@@ -3515,7 +3520,6 @@ cpc_init_one(struct pci_dev *pdev, const struct pci_device_id *ent)
 		printk("PC300 found at RAM 0x%08x, "
 		       "but could not allocate RAM mem region.\n",
 		       card->hw.ramphys);
-		err = -ENODEV;
 		goto err_release_plx;
 	}
 	if (!request_mem_region(card->hw.scaphys, card->hw.scasize,
@@ -3523,12 +3527,8 @@ cpc_init_one(struct pci_dev *pdev, const struct pci_device_id *ent)
 		printk("PC300 found at RAM 0x%08x, "
 		       "but could not allocate SCA mem region.\n",
 		       card->hw.ramphys);
-		err = -ENODEV;
 		goto err_release_ram;
 	}
-
-	if ((err = pci_enable_device(pdev)) != 0)
-		goto err_release_sca;
 
 	card->hw.plxbase = ioremap(card->hw.plxphys, card->hw.plxsize);
 	card->hw.rambase = ioremap(card->hw.ramphys, card->hw.alloc_ramsize);
@@ -3619,7 +3619,6 @@ err_io_unmap:
 		iounmap(card->hw.falcbase);
 		release_mem_region(card->hw.falcphys, card->hw.falcsize);
 	}
-err_release_sca:
 	release_mem_region(card->hw.scaphys, card->hw.scasize);
 err_release_ram:
 	release_mem_region(card->hw.ramphys, card->hw.alloc_ramsize);
@@ -3628,7 +3627,9 @@ err_release_plx:
 err_release_io:
 	release_region(card->hw.iophys, card->hw.iosize);
 	kfree(card);
-	return -ENODEV;
+err_disable_dev:
+	pci_disable_device(pdev);
+	return err;
 }
 
 static void __devexit cpc_remove_one(struct pci_dev *pdev)
@@ -3662,6 +3663,7 @@ static void __devexit cpc_remove_one(struct pci_dev *pdev)
 		if (card->hw.irq)
 			free_irq(card->hw.irq, card);
 		kfree(card);
+		pci_disable_device(pdev);
 	}
 }
 

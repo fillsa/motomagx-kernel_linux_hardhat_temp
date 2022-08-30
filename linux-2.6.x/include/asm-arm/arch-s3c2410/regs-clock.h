@@ -10,17 +10,19 @@
  * S3C2410 clock register definitions
  *
  *  Changelog:
- *    18-Aug-2004 Ben Dooks      Added 2440 definitions
- *    08-Aug-2004 Herbert Pötzl  Added CLKCON definitions
- *    19-06-2003  Ben Dooks      Created file
- *    12-03-2004  Ben Dooks      Updated include protection
- *    29-Sep-2004 Ben Dooks	 Fixed usage for assembly inclusion
+ *    18-Aug-2004 Ben Dooks         Added 2440 definitions
+ *    08-Aug-2004 Herbert Pötzl     Added CLKCON definitions
+ *    19-06-2003  Ben Dooks         Created file
+ *    12-03-2004  Ben Dooks         Updated include protection
+ *    29-Sep-2004 Ben Dooks	    Fixed usage for assembly inclusion
+ *    10-Feb-2005 Ben Dooks	    Fixed CAMDIVN address (Guillaume Gourat)
+ *    10-Mar-2005 Lucas Villa Real  Changed S3C2410_VA to S3C24XX_VA
  */
 
 #ifndef __ASM_ARM_REGS_CLOCK
 #define __ASM_ARM_REGS_CLOCK "$Id: clock.h,v 1.4 2003/04/30 14:50:51 ben Exp $"
 
-#define S3C2410_CLKREG(x) ((x) + S3C2410_VA_CLKPWR)
+#define S3C2410_CLKREG(x) ((x) + S3C24XX_VA_CLKPWR)
 
 #define S3C2410_PLLVAL(_m,_p,_s) ((_m) << 12 | ((_p) << 4) | ((_s)))
 
@@ -77,17 +79,17 @@
 static inline unsigned int
 s3c2410_get_pll(int pllval, int baseclk)
 {
-  int mdiv, pdiv, sdiv;
+	int mdiv, pdiv, sdiv;
 
-  mdiv = pllval >> S3C2410_PLLCON_MDIVSHIFT;
-  pdiv = pllval >> S3C2410_PLLCON_PDIVSHIFT;
-  sdiv = pllval >> S3C2410_PLLCON_SDIVSHIFT;
+	mdiv = pllval >> S3C2410_PLLCON_MDIVSHIFT;
+	pdiv = pllval >> S3C2410_PLLCON_PDIVSHIFT;
+	sdiv = pllval >> S3C2410_PLLCON_SDIVSHIFT;
 
-  mdiv &= S3C2410_PLLCON_MDIVMASK;
-  pdiv &= S3C2410_PLLCON_PDIVMASK;
-  sdiv &= S3C2410_PLLCON_SDIVMASK;
+	mdiv &= S3C2410_PLLCON_MDIVMASK;
+	pdiv &= S3C2410_PLLCON_PDIVMASK;
+	sdiv &= S3C2410_PLLCON_SDIVMASK;
 
-  return (baseclk * (mdiv + 8)) / ((pdiv + 2) << sdiv);
+	return (baseclk * (mdiv + 8)) / ((pdiv + 2) << sdiv);
 }
 
 #endif /* __ASSEMBLY__ */
@@ -95,7 +97,7 @@ s3c2410_get_pll(int pllval, int baseclk)
 #ifdef CONFIG_CPU_S3C2440
 
 /* extra registers */
-#define S3C2440_CAMDIVN	    S3C2410_CLKREG(0x14)
+#define S3C2440_CAMDIVN	    S3C2410_CLKREG(0x18)
 
 #define S3C2440_CLKCON_CAMERA        (1<<19)
 #define S3C2440_CLKCON_AC97          (1<<20)

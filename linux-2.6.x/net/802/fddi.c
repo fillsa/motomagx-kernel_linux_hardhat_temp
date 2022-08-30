@@ -10,7 +10,7 @@
  * Authors:	Lawrence V. Stefani, <stefani@lkg.dec.com>
  *
  *		fddi.c is based on previous eth.c and tr.c work by
- *			Ross Biro, <bir7@leland.Stanford.Edu>
+ *			Ross Biro
  *			Fred N. van Kempen, <waltje@uWalt.NL.Mugnet.ORG>
  *			Mark Evans, <evansmp@uhura.aston.ac.uk>
  *			Florian La Roche, <rzsfl@rz.uni-sb.de>
@@ -52,8 +52,9 @@
  * daddr=NULL	means leave destination address (eg unresolved arp)
  */
 
-int fddi_header(struct sk_buff	*skb, struct net_device *dev, unsigned short type,
-		void *daddr, void *saddr, unsigned len)
+static int fddi_header(struct sk_buff *skb, struct net_device *dev,
+		       unsigned short type,
+		       void *daddr, void *saddr, unsigned len)
 {
 	int hl = FDDI_K_SNAP_HLEN;
 	struct fddihdr *fddi;
@@ -96,7 +97,7 @@ int fddi_header(struct sk_buff	*skb, struct net_device *dev, unsigned short type
  * this sk_buff.  We now let ARP fill in the other fields.
  */
  
-int fddi_rebuild_header(struct sk_buff	*skb)
+static int fddi_rebuild_header(struct sk_buff	*skb)
 {
 	struct fddihdr *fddi = (struct fddihdr *)skb->data;
 

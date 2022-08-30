@@ -91,7 +91,7 @@ static int maceps2_open(struct serio *dev)
 {
 	struct maceps2_data *data = (struct maceps2_data *)dev->port_data;
 
-	if (request_irq(data->irq, maceps2_interrupt, 0, "PS/2 port", dev)) {
+	if (request_irq(data->irq, maceps2_interrupt, 0, "PS2 port", dev)) {
 		printk(KERN_ERR "Could not allocate PS/2 IRQ\n");
 		return -EBUSY;
 	}
@@ -125,7 +125,7 @@ static struct serio * __init maceps2_allocate_port(int idx)
 	serio = kmalloc(sizeof(struct serio), GFP_KERNEL);
 	if (serio) {
 		memset(serio, 0, sizeof(struct serio));
-		serio->type		= SERIO_8042;
+		serio->id.type		= SERIO_8042;
 		serio->write		= maceps2_write;
 		serio->open		= maceps2_open;
 		serio->close		= maceps2_close;

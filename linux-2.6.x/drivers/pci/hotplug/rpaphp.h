@@ -45,11 +45,6 @@
 #define LED_ID		2	/* slow blinking */
 #define LED_ACTION	3	/* fast blinking */
 
-/* Error status from rtas_get-sensor */
-#define NEED_POWER    -9000	/* slot must be power up and unisolated to get state */
-#define PWR_ONLY      -9001	/* slot must be powerd up to get state, leave isolated */
-#define ERR_SENSE_USE -9002	/* No DR operation will succeed, slot is unusable  */
-
 /* Sensor values from rtas_get-sensor */
 #define EMPTY           0	/* No card in slot */
 #define PRESENT         1	/* Card in slot */
@@ -99,7 +94,7 @@ struct slot {
 				/* dn has phb info */
 	struct pci_dev *bridge;	/* slot's pci_dev in pci_devices */
 	union {
-		struct list_head pci_funcs; /* pci_devs in PCI slot */ 
+		struct list_head *pci_devs; /* pci_devs in PCI slot */
 		struct vio_dev *vio_dev; /* vio_dev in VIO slot */
 	} dev;
 	struct hotplug_slot *hotplug_slot;
@@ -108,13 +103,6 @@ struct slot {
 extern struct hotplug_slot_ops rpaphp_hotplug_slot_ops;
 extern struct list_head rpaphp_slot_head;
 extern int num_slots;
-
-static inline int is_hotplug_capable(struct device_node *dn)
-{
-	unsigned char *ptr = get_property(dn, "ibm,fw-pci-hot-plug-ctrl", NULL);
-
-	return (int) (ptr != NULL);
-}
 
 /* function prototypes */
 

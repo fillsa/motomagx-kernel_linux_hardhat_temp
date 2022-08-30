@@ -77,6 +77,27 @@ static void __init Intel_errata_workarounds(struct cpuinfo_x86 *c)
 }
 
 
+/*
+ * find out the number of processor cores on the die
+ */
+static int __init num_cpu_cores(struct cpuinfo_x86 *c)
+{
+	unsigned int eax;
+
+	if (c->cpuid_level < 4)
+		return 1;
+
+	__asm__("cpuid"
+		: "=a" (eax)
+		: "0" (4), "c" (0)
+		: "bx", "dx");
+
+	if (eax & 0x1f)
+		return ((eax >> 26) + 1);
+	else
+		return 1;
+}
+
 static void __init init_intel(struct cpuinfo_x86 *c)
 {
 	unsigned int l2 = 0;
@@ -139,50 +160,9 @@ static void __init init_intel(struct cpuinfo_x86 *c)
 	if ( p )
 		strcpy(c->x86_model_id, p);
 	
-#ifdef CONFIG_X86_HT
-	if (cpu_has(c, X86_FEATURE_HT)) {
-		extern	int phys_proc_id[NR_CPUS];
-		
-		u32 	eax, ebx, ecx, edx;
-		int 	index_lsb, index_msb, tmp;
-		int 	cpu = smp_processor_id();
+	c->x86_num_cores = num_cpu_cores(c);
 
-		cpuid(1, &eax, &ebx, &ecx, &edx);
-		smp_num_siblings = (ebx & 0xff0000) >> 16;
-
-		if (smp_num_siblings == 1) {
-			printk(KERN_INFO  "CPU: Hyper-Threading is disabled\n");
-		} else if (smp_num_siblings > 1 ) {
-			index_lsb = 0;
-			index_msb = 31;
-
-			if (smp_num_siblings > NR_CPUS) {
-				printk(KERN_WARNING "CPU: Unsupported number of the siblings %d", smp_num_siblings);
-				smp_num_siblings = 1;
-				goto too_many_siblings;
-			}
-			tmp = smp_num_siblings;
-			while ((tmp & 1) == 0) {
-				tmp >>=1 ;
-				index_lsb++;
-			}
-			tmp = smp_num_siblings;
-			while ((tmp & 0x80000000 ) == 0) {
-				tmp <<=1 ;
-				index_msb--;
-			}
-			if (index_lsb != index_msb )
-				index_msb++;
-			phys_proc_id[cpu] = phys_pkg_id((ebx >> 24) & 0xFF, index_msb);
-
-			printk(KERN_INFO  "CPU: Physical Processor ID: %d\n",
-                               phys_proc_id[cpu]);
-		}
-
-	}
-too_many_siblings:
-
-#endif
+	detect_ht(c);
 
 	/* Work around errata */
 	Intel_errata_workarounds(c);

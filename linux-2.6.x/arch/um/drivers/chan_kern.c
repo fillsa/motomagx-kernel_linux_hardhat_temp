@@ -20,6 +20,14 @@
 #include "os.h"
 
 #ifdef CONFIG_NOCONFIG_CHAN
+
+/* The printk's here are wrong because we are complaining that there is no
+ * output device, but printk is printing to that output device.  The user will
+ * never see the error.  printf would be better, except it can't run on a
+ * kernel stack because it will overflow it.
+ * Use printk for now since that will avoid crashing.
+ */
+
 static void *not_configged_init(char *str, int device, struct chan_opts *opts)
 {
 	printk(KERN_ERR "Using a channel type which is configured out of "
@@ -73,7 +81,7 @@ static int not_configged_window_size(int fd, void *data, unsigned short *rows,
 
 static void not_configged_free(void *data)
 {
-	printk(KERN_ERR "Using a channel type which is configured out of "
+	printf(KERN_ERR "Using a channel type which is configured out of "
 	       "UML\n");
 }
 
@@ -189,7 +197,7 @@ int open_chan(struct list_head *chans)
 	return(err);
 }
 
-void chan_enable_winch(struct list_head *chans, void *line)
+void chan_enable_winch(struct list_head *chans, struct tty_struct *tty)
 {
 	struct list_head *ele;
 	struct chan *chan;
@@ -197,13 +205,13 @@ void chan_enable_winch(struct list_head *chans, void *line)
 	list_for_each(ele, chans){
 		chan = list_entry(ele, struct chan, list);
 		if(chan->primary && chan->output && chan->ops->winch){
-			register_winch(chan->fd, line);
+			register_winch(chan->fd, tty);
 			return;
 		}
 	}
 }
 
-void enable_chan(struct list_head *chans, void *data)
+void enable_chan(struct list_head *chans, struct tty_struct *tty)
 {
 	struct list_head *ele;
 	struct chan *chan;
@@ -212,13 +220,12 @@ void enable_chan(struct list_head *chans, void *data)
 		chan = list_entry(ele, struct chan, list);
 		if(!chan->opened) continue;
 
-		line_setup_irq(chan->fd, chan->input, chan->output, data);
+		line_setup_irq(chan->fd, chan->input, chan->output, tty);
 	}
 }
 
 void close_chan(struct list_head *chans)
 {
-	struct list_head *ele;
 	struct chan *chan;
 
 	/* Close in reverse order as open in case more than one of them
@@ -226,8 +233,7 @@ void close_chan(struct list_head *chans)
 	 * state.  Then, the first one opened will have the original state,
 	 * so it must be the last closed.
 	 */
-        for(ele = chans->prev; ele != chans; ele = ele->prev){
-                chan = list_entry(ele, struct chan, list);
+	list_for_each_entry_reverse(chan, chans, list) {
 		if(!chan->opened) continue;
 		if(chan->ops->close != NULL)
 			(*chan->ops->close)(chan->fd, chan->data);
@@ -240,19 +246,18 @@ int write_chan(struct list_head *chans, const char *buf, int len,
 	       int write_irq)
 {
 	struct list_head *ele;
-	struct chan *chan;
+	struct chan *chan = NULL;
 	int n, ret = 0;
 
-	list_for_each(ele, chans){
+	list_for_each(ele, chans) {
 		chan = list_entry(ele, struct chan, list);
-		if(!chan->output || (chan->ops->write == NULL)) continue;
+		if (!chan->output || (chan->ops->write == NULL))
+			continue;
 		n = chan->ops->write(chan->fd, buf, len, chan->data);
-		if(chan->primary){
+		if (chan->primary) {
 			ret = n;
-			if((ret == -EAGAIN) || ((ret >= 0) && (ret < len))){
+			if ((ret == -EAGAIN) || ((ret >= 0) && (ret < len)))
 				reactivate_fd(chan->fd, write_irq);
-				if(ret == -EAGAIN) ret = 0;
-			}
 		}
 	}
 	return(ret);
@@ -272,6 +277,20 @@ int console_write_chan(struct list_head *chans, const char *buf, int len)
 		if(chan->primary) ret = n;
 	}
 	return(ret);
+}
+
+int console_open_chan(struct line *line, struct console *co, struct chan_opts *opts)
+{
+	if (!list_empty(&line->chan_list))
+		return 0;
+
+	if (0 != parse_chan_pair(line->init_str, &line->chan_list,
+				 line->init_pri, co->index, opts))
+		return -1;
+	if (0 != open_chan(&line->chan_list))
+		return -1;
+	printk("Console initialized on /dev/%s%d\n",co->name,co->index);
+	return 0;
 }
 
 int chan_window_size(struct list_head *chans, unsigned short *rows_out,
@@ -383,11 +402,7 @@ struct chan_type {
 };
 
 struct chan_type chan_table[] = {
-#ifdef CONFIG_FD_CHAN
 	{ "fd", &fd_ops },
-#else
-	{ "fd", &not_configged_ops },
-#endif
 
 #ifdef CONFIG_NULL_CHAN
 	{ "null", &null_ops },
@@ -516,7 +531,7 @@ int chan_out_fd(struct list_head *chans)
 }
 
 void chan_interrupt(struct list_head *chans, struct work_struct *task,
-		    struct tty_struct *tty, int irq, void *dev)
+		    struct tty_struct *tty, int irq)
 {
 	struct list_head *ele, *next;
 	struct chan *chan;
@@ -542,7 +557,7 @@ void chan_interrupt(struct list_head *chans, struct work_struct *task,
 			if(chan->primary){
 				if(tty != NULL)
 					tty_hangup(tty);
-				line_disable(dev, irq);
+				line_disable(tty, irq);
 				close_chan(chans);
 				free_chan(chans);
 				return;

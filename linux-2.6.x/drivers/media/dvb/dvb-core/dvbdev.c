@@ -1,4 +1,4 @@
-/* 
+/*
  * dvbdev.c
  *
  * Copyright (C) 2000 Ralph  Metzler <ralph@convergence.de>
@@ -31,6 +31,8 @@
 #include <linux/init.h>
 #include <linux/slab.h>
 #include <linux/device.h>
+#include <linux/fs.h>
+#include <linux/cdev.h>
 
 #include "dvbdev.h"
 
@@ -49,9 +51,10 @@ static const char * const dnames[] = {
 	"net", "osd"
 };
 
-
-#define DVB_MAX_IDS              4
-#define nums2minor(num,type,id)  ((num << 6) | (id << 4) | type)
+#define DVB_MAX_ADAPTERS	8
+#define DVB_MAX_IDS		4
+#define nums2minor(num,type,id)	((num << 6) | (id << 4) | type)
+#define MAX_DVB_MINORS		(DVB_MAX_ADAPTERS*64)
 
 struct class_simple *dvb_class;
 EXPORT_SYMBOL(dvb_class);
@@ -79,7 +82,7 @@ static struct dvb_device* dvbdev_find_device (int minor)
 static int dvb_device_open(struct inode *inode, struct file *file)
 {
 	struct dvb_device *dvbdev;
-	
+
 	dvbdev = dvbdev_find_device (iminor(inode));
 
 	if (dvbdev && dvbdev->fops) {
@@ -108,6 +111,10 @@ static struct file_operations dvb_device_fops =
 	.open =		dvb_device_open,
 };
 
+static struct cdev dvb_device_cdev = {
+	.kobj   = {.name = "dvb", },
+	.owner  =       THIS_MODULE,
+};
 
 int dvb_generic_open(struct inode *inode, struct file *file)
 {
@@ -158,7 +165,7 @@ int dvb_generic_ioctl(struct inode *inode, struct file *file,
 		      unsigned int cmd, unsigned long arg)
 {
         struct dvb_device *dvbdev = file->private_data;
-	
+
         if (!dvbdev)
 	        return -ENODEV;
 
@@ -190,7 +197,7 @@ skip:
 }
 
 
-int dvb_register_device(struct dvb_adapter *adap, struct dvb_device **pdvbdev, 
+int dvb_register_device(struct dvb_adapter *adap, struct dvb_device **pdvbdev,
 			const struct dvb_device *template, void *priv, int type)
 {
 	struct dvb_device *dvbdev;
@@ -214,7 +221,7 @@ int dvb_register_device(struct dvb_adapter *adap, struct dvb_device **pdvbdev,
 	}
 
 	up (&dvbdev_register_lock);
-	
+
 	memcpy(dvbdev, template, sizeof(struct dvb_device));
 	dvbdev->type = type;
 	dvbdev->id = id;
@@ -246,15 +253,15 @@ void dvb_unregister_device(struct dvb_device *dvbdev)
 	if (!dvbdev)
 		return;
 
-		devfs_remove("dvb/adapter%d/%s%d", dvbdev->adapter->num,
-				dnames[dvbdev->type], dvbdev->id);
+	devfs_remove("dvb/adapter%d/%s%d", dvbdev->adapter->num,
+			dnames[dvbdev->type], dvbdev->id);
 
 	class_simple_device_remove(MKDEV(DVB_MAJOR, nums2minor(dvbdev->adapter->num,
 					dvbdev->type, dvbdev->id)));
 
-		list_del(&dvbdev->list_head);
-		kfree(dvbdev);
-	}
+	list_del (&dvbdev->list_head);
+	kfree (dvbdev);
+}
 EXPORT_SYMBOL(dvb_unregister_device);
 
 
@@ -262,7 +269,7 @@ static int dvbdev_get_free_adapter_num (void)
 {
 	int num = 0;
 
-	while (1) {
+	while (num < DVB_MAX_ADAPTERS) {
 		struct list_head *entry;
 		list_for_each (entry, &dvb_adapter_list) {
 			struct dvb_adapter *adap;
@@ -279,9 +286,8 @@ skip:
 }
 
 
-int dvb_register_adapter(struct dvb_adapter **padap, const char *name, struct module *module)
+int dvb_register_adapter(struct dvb_adapter *adap, const char *name, struct module *module)
 {
-	struct dvb_adapter *adap;
 	int num;
 
 	if (down_interruptible (&dvbdev_register_lock))
@@ -292,18 +298,12 @@ int dvb_register_adapter(struct dvb_adapter **padap, const char *name, struct mo
 		return -ENFILE;
 	}
 
-	if (!(*padap = adap = kmalloc(sizeof(struct dvb_adapter), GFP_KERNEL))) {
-		up(&dvbdev_register_lock);
-		return -ENOMEM;
-	}
-
 	memset (adap, 0, sizeof(struct dvb_adapter));
 	INIT_LIST_HEAD (&adap->device_list);
 
 	printk ("DVB: registering new adapter (%s).\n", name);
-	
-	devfs_mk_dir("dvb/adapter%d", num);
 
+	devfs_mk_dir("dvb/adapter%d", num);
 	adap->num = num;
 	adap->name = name;
 	adap->module = module;
@@ -325,7 +325,6 @@ int dvb_unregister_adapter(struct dvb_adapter *adap)
 		return -ERESTARTSYS;
 	list_del (&adap->list_head);
 	up (&dvbdev_register_lock);
-	kfree (adap);
 	return 0;
 }
 EXPORT_SYMBOL(dvb_unregister_adapter);
@@ -391,34 +390,48 @@ int dvb_usercopy(struct inode *inode, struct file *file,
         }
 
 out:
-        if (mbuf)
-                kfree(mbuf);
-
+        kfree(mbuf);
         return err;
 }
 
 static int __init init_dvbdev(void)
 {
 	int retval;
+	dev_t dev = MKDEV(DVB_MAJOR, 0);
 
-	if ((retval = register_chrdev(DVB_MAJOR,"DVB", &dvb_device_fops)))
+	if ((retval = register_chrdev_region(dev, MAX_DVB_MINORS, "DVB")) != 0) {
 		printk("dvb-core: unable to get major %d\n", DVB_MAJOR);
+		return retval;
+	}
+
+	cdev_init(&dvb_device_cdev, &dvb_device_fops);
+	if ((retval = cdev_add(&dvb_device_cdev, dev, MAX_DVB_MINORS)) != 0) {
+		printk("dvb-core: unable to get major %d\n", DVB_MAJOR);
+		goto error;
+	}
 
 	devfs_mk_dir("dvb");
 
 	dvb_class = class_simple_create(THIS_MODULE, "dvb");
-	if (IS_ERR(dvb_class))
-		return PTR_ERR(dvb_class);
+	if (IS_ERR(dvb_class)) {
+		retval = PTR_ERR(dvb_class);
+		goto error;
+	}
+	return 0;
 
+error:
+	cdev_del(&dvb_device_cdev);
+	unregister_chrdev_region(dev, MAX_DVB_MINORS);
 	return retval;
 }
 
 
 static void __exit exit_dvbdev(void)
 {
-	unregister_chrdev(DVB_MAJOR, "DVB");
         devfs_remove("dvb");
 	class_simple_destroy(dvb_class);
+	cdev_del(&dvb_device_cdev);
+        unregister_chrdev_region(MKDEV(DVB_MAJOR, 0), MAX_DVB_MINORS);
 }
 
 module_init(init_dvbdev);
@@ -427,4 +440,3 @@ module_exit(exit_dvbdev);
 MODULE_DESCRIPTION("DVB Core Driver");
 MODULE_AUTHOR("Marcus Metzler, Ralph Metzler, Holger Waechtler");
 MODULE_LICENSE("GPL");
-

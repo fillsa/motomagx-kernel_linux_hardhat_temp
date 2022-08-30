@@ -51,7 +51,7 @@ static void au1xxx_start_hc(struct platform_device *dev)
 
 	/* wait for reset complete (read register twice; see au1500 errata) */
 	while (au_readl(USB_HOST_CONFIG),
-		!(au_readl(USB_HOST_CONFIG) & USBH_ENABLE_RD)) 
+		!(au_readl(USB_HOST_CONFIG) & USBH_ENABLE_RD))
 		udelay(1000);
 
 	printk(KERN_DEBUG __FILE__
@@ -70,19 +70,6 @@ static void au1xxx_stop_hc(struct platform_device *dev)
 
 /*-------------------------------------------------------------------------*/
 
-
-static irqreturn_t usb_hcd_au1xxx_hcim_irq (int irq, void *__hcd,
-					     struct pt_regs * r)
-{
-	struct usb_hcd *hcd = __hcd;
-
-	return usb_hcd_irq(irq, hcd, r);
-}
-
-/*-------------------------------------------------------------------------*/
-
-void usb_hcd_au1xxx_remove (struct usb_hcd *, struct platform_device *);
-
 /* configure so an HC device and id are always provided */
 /* always called with process context; sleeping is OK */
 
@@ -97,31 +84,10 @@ void usb_hcd_au1xxx_remove (struct usb_hcd *, struct platform_device *);
  *
  */
 int usb_hcd_au1xxx_probe (const struct hc_driver *driver,
-			  struct usb_hcd **hcd_out,
 			  struct platform_device *dev)
 {
 	int retval;
-	struct usb_hcd *hcd = 0;
-
-	unsigned int *addr = NULL;
-
-	if (!request_mem_region(dev->resource[0].start,
-				dev->resource[0].end
-				- dev->resource[0].start + 1, hcd_name)) {
-		pr_debug("request_mem_region failed");
-		return -EBUSY;
-	}
-	
-	au1xxx_start_hc(dev);
-	
-	addr = ioremap(dev->resource[0].start,
-		       dev->resource[0].end
-		       - dev->resource[0].start + 1);
-	if (!addr) {
-		pr_debug("ioremap failed");
-		retval = -ENOMEM;
-		goto err1;
-	}
+	struct usb_hcd *hcd;
 	
 
 	hcd = driver->hcd_alloc ();
@@ -131,10 +97,9 @@ int usb_hcd_au1xxx_probe (const struct hc_driver *driver,
 		goto err1;
 	}
 
-	if(dev->resource[1].flags != IORESOURCE_IRQ){
+	if(dev->resource[1].flags != IORESOURCE_IRQ) {
 		pr_debug ("resource[1] is not IORESOURCE_IRQ");
-		retval = -ENOMEM;
-		goto err1;
+		return -ENOMEM;
 	}
 
 	hcd->driver = (struct hc_driver *) driver;
@@ -143,9 +108,15 @@ int usb_hcd_au1xxx_probe (const struct hc_driver *driver,
 	hcd->regs = addr;
 	hcd->self.controller = &dev->dev;
 
-	retval = hcd_buffer_create (hcd);
-	if (retval != 0) {
-		pr_debug ("pool alloc fail");
+	hcd = usb_create_hcd(driver, &dev->dev, "au1xxx");
+	if (!hcd)
+		return -ENOMEM;
+	hcd->rsrc_start = dev->resource[0].start;
+	hcd->rsrc_len = dev->resource[0].end - dev->resource[0].start + 1;
+
+	if (!request_mem_region(hcd->rsrc_start, hcd->rsrc_len, hcd_name)) {
+		pr_debug("request_mem_region failed");
+		retval = -EBUSY;
 		goto err1;
 	}
 
@@ -167,27 +138,19 @@ int usb_hcd_au1xxx_probe (const struct hc_driver *driver,
 	hcd->product_desc = "Au1xxx OHCI";
 
 	INIT_LIST_HEAD (&hcd->dev_list);
+	au1xxx_start_hc(dev);
+	ohci_hcd_init(hcd_to_ohci(hcd));
 
-	usb_register_bus (&hcd->self);
-
-	if ((retval = driver->start (hcd)) < 0)
-	{
-		usb_hcd_au1xxx_remove(hcd, dev);
-		printk("bad driver->start\n");
+	retval = usb_add_hcd(hcd, dev->resource[1].start, SA_INTERRUPT);
+	if (retval == 0)
 		return retval;
-	}
 
-	*hcd_out = hcd;
-	return 0;
-
- err2:
-	hcd_buffer_destroy (hcd);
- err1:
-	kfree(hcd);
 	au1xxx_stop_hc(dev);
-	release_mem_region(dev->resource[0].start,
-				dev->resource[0].end
-			   - dev->resource[0].start + 1);
+	iounmap(hcd->regs);
+ err2:
+	release_mem_region(hcd->rsrc_start, hcd->rsrc_len);
+ err1:
+	usb_put_hcd(hcd);
 	return retval;
 }
 
@@ -240,7 +203,7 @@ ohci_au1xxx_start (struct usb_hcd *hcd)
 	int		ret;
 
 	ohci_dbg (ohci, "ohci_au1xxx_start, ohci:%p", ohci);
-			
+
 	if ((ret = ohci_init (ohci)) < 0)
 		return ret;
 

@@ -17,11 +17,9 @@ struct esp_decap_data {
 	__u8		proto;
 };
 
-static int esp_output(struct sk_buff *skb)
+static int esp_output(struct xfrm_state *x, struct sk_buff *skb)
 {
 	int err;
-	struct dst_entry *dst = skb->dst;
-	struct xfrm_state *x  = dst->xfrm;
 	struct iphdr *top_iph;
 	struct ip_esp_hdr *esph;
 	struct crypto_tfm *tfm;
@@ -162,6 +160,7 @@ static int esp_input(struct xfrm_state *x, struct xfrm_decap_state *decap, struc
 	if (esp->auth.icv_full_len) {
 		u8 sum[esp->auth.icv_full_len];
 		u8 sum1[alen];
+		
 		if (x->props.replay_window && xfrm_replay_check(x, esph->seq_no))
 			goto out;
 		esp->auth.icv(esp, skb, 0, skb->len-alen, sum);

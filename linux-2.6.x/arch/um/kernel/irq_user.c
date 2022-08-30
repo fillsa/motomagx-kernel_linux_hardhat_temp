@@ -83,8 +83,11 @@ void sigio_handler(int sig, union uml_pt_regs *regs)
 				 * can be freed here.
 				 */
 				next = irq_fd->next;
-				if(irq_fd->freed)
+				if(irq_fd->freed){
 					free_irq(irq_fd->irq, irq_fd->id);
+					free_irq_by_irq_and_dev(irq_fd->irq,
+								irq_fd->id);
+				}
 			}
 		}
 	}
@@ -233,9 +236,15 @@ static void free_irq_by_cb(int (*test)(struct irq_fd *, void *), void *arg)
 				       (*prev)->fd, pollfds[i].fd);
 				goto out;
 			}
-			memcpy(&pollfds[i], &pollfds[i + 1],
-			       (pollfds_num - i - 1) * sizeof(pollfds[0]));
+
 			pollfds_num--;
+
+			/* This moves the *whole* array after pollfds[i] (though
+			 * it doesn't spot as such)! */
+
+			memmove(&pollfds[i], &pollfds[i + 1],
+			       (pollfds_num - i) * sizeof(pollfds[0]));
+
 			if(last_irq_ptr == &old_fd->next) 
 				last_irq_ptr = prev;
 			*prev = (*prev)->next;
@@ -374,6 +383,8 @@ int deactivate_all_fds(void)
 		if(err)
 			return(err);
 	}
+	/* If there is a signal already queued, after unblocking ignore it */
+	set_handler(SIGIO, SIG_IGN, 0, -1);
 
 	return(0);
 }

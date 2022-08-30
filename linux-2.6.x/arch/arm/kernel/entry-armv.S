@@ -21,13 +21,13 @@
  * 10/15/2007   Motorola    FIQ related modified.
  */
 #include <linux/config.h>
-#include <linux/init.h>
 #include <asm/kgdb.h>
 
-#include <asm/thread_info.h>
 #include <asm/glue.h>
-#include <asm/ptrace.h>
 #include <asm/vfpmacros.h>
+#include <asm/hardware.h>		/* should be moved into entry-macro.S */
+#include <asm/arch/irqs.h>		/* should be moved into entry-macro.S */
+#include <asm/arch/entry-macro.S>
 
 #include "entry-header.S"
 
@@ -100,16 +100,29 @@ __dabt_svc:	sub	sp, sp, #S_FRAME_SIZE
 #else
 		bl	CPU_ABORT_HANDLER
 #endif
-		msr	cpsr_c, r9
-		mov	r2, sp
-		bl	do_DataAbort
-		disable_irq r0
-		ldr	r0, [sp, #S_PSR]
-		msr	spsr_cxsf, r0
-		ldmia	sp, {r0 - pc}^			@ load r0 - pc, cpsr
 
-		.align	5
-__irq_svc:	sub	sp, sp, #S_FRAME_SIZE
+	@
+	@ set desired IRQ state, then call main handler
+	@
+	msr	cpsr_c, r9
+	mov	r2, sp
+	bl	do_DataAbort
+
+	@
+	@ IRQs off again before pulling preserved data off the stack
+	@
+	disable_irq
+
+	@
+	@ restore SPSR and restart the instruction
+	@
+	ldr	r0, [sp, #S_PSR]
+	msr	spsr_cxsf, r0
+	ldmia	sp, {r0 - pc}^			@ load r0 - pc, cpsr
+
+	.align	5
+__irq_svc:
+	sub	sp, sp, #S_FRAME_SIZE
 	SPFIX(	tst	sp, #4		)
 	SPFIX(	bicne	sp, sp, #4	)
 		stmia	sp, {r0 - r12}			@ save r0 - r12
@@ -168,7 +181,7 @@ svc_preempt:	teq	r9, #0				@ was preempt count = 0
 		movne	pc, lr
 		mov	r7, #0				@ preempt_schedule_irq
 		str	r7, [r8, #TI_PREEMPT]		@ expects preempt_count == 0
-1:		disable_irq r0				@ disable IRQs
+1:		disable_irq				@ disable IRQs
 		bl	preempt_schedule_irq
 		ldr	r0, [r8, #TI_FLAGS]		@ get new tasks TI_FLAGS
 		tst	r0, #_TIF_NEED_RESCHED
@@ -199,7 +212,7 @@ __und_svc:	sub	sp, sp, #S_FRAME_SIZE
 		mov	r0, sp				@ struct pt_regs *regs
 		bl	do_undefinstr
 
-1:		disable_irq r0
+1:	disable_irq
 		ldr	lr, [sp, #S_PSR]		@ Get SVC cpsr
 		msr	spsr_cxsf, lr
 		ldmia	sp, {r0 - pc}^			@ Restore SVC registers
@@ -223,7 +236,7 @@ __pabt_svc:	sub	sp, sp, #S_FRAME_SIZE
 		mov	r0, r2				@ address (pc)
 		mov	r1, sp				@ regs
 		bl	do_PrefetchAbort		@ call abort handler
-		disable_irq r0
+		disable_irq
 		ldr	r0, [sp, #S_PSR]
 		msr	spsr_cxsf, r0
 		ldmia	sp, {r0 - pc}^			@ load r0 - pc, cpsr
@@ -267,19 +280,24 @@ __dabt_usr:	sub	sp, sp, #S_FRAME_SIZE		@ Allocate frame size in one go
 		zero_fp
 
 #ifdef MULTI_ABORT
-		ldr	r4, .LCprocfns			@ pass r2, r3 to
-		mov	lr, pc				@ processor code
-		ldr	pc, [r4]			@ call processor specific code
+	ldr	r4, .LCprocfns			@ pass r2, r3 to
+	mov	lr, pc				@ processor code
+	ldr	pc, [r4]			@ call processor specific code
 #else
-		bl	CPU_ABORT_HANDLER
+	bl	CPU_ABORT_HANDLER
 #endif
-		enable_irq r2				@ Enable interrupts
-		mov	r2, sp
-		adrsvc	al, lr, ret_from_exception
-		b	do_DataAbort
 
-		.align	5
-__irq_usr:	sub	sp, sp, #S_FRAME_SIZE
+	@
+	@ IRQs on, then call the main handler
+	@
+	enable_irq				@ Enable interrupts
+	mov	r2, sp
+	adrsvc	al, lr, ret_from_exception
+	b	do_DataAbort
+
+	.align	5
+__irq_usr:
+	sub	sp, sp, #S_FRAME_SIZE
 		stmia	sp, {r0 - r12}			@ save r0 - r12
 		ldr	r4, .LCirq
 		add	r8, sp, #S_PC
@@ -305,25 +323,26 @@ __irq_usr:	sub	sp, sp, #S_FRAME_SIZE
 		@ routine called with r0 = irq number, r1 = struct pt_regs *
 		@
 
-		adrsvc	ne, lr, 1b
-  		bne	asm_do_IRQ
+	adrsvc	ne, lr, 1b
+	bne	asm_do_IRQ
 
 #ifdef CONFIG_PREEMPT
-		ldr	r0, [r8, #TI_PREEMPT]
-		teq	r0, r7
-		str	r9, [r8, #TI_PREEMPT]
-		strne	r0, [r0, -r0]
-		mov	tsk, r8
+	ldr	r0, [r8, #TI_PREEMPT]
+	teq	r0, r7
+	str	r9, [r8, #TI_PREEMPT]
+	strne	r0, [r0, -r0]
+	mov	tsk, r8
 #else
-		get_thread_info tsk
+	get_thread_info tsk
 #endif
-		mov	why, #0
-		b	ret_to_user
+	mov	why, #0
+	b	ret_to_user
 
-		.ltorg
+	.ltorg
 
-		.align	5
-__und_usr:	sub	sp, sp, #S_FRAME_SIZE		@ Allocate frame size in one go
+	.align	5
+__und_usr:
+	sub	sp, sp, #S_FRAME_SIZE		@ Allocate frame size in one go
 		stmia	sp, {r0 - r12}			@ Save r0 - r12
 		ldr	r4, .LCund
 		add	r8, sp, #S_PC
@@ -342,12 +361,12 @@ __und_usr:	sub	sp, sp, #S_FRAME_SIZE		@ Allocate frame size in one go
 /*
  * The out of line fixup for the ldrt above.
  */
-		.section .fixup, "ax"
-2:		mov	pc, r9
-		.previous
-		.section __ex_table,"a"
-		.long	1b, 2b
-		.previous
+	.section .fixup, "ax"
+2:	mov	pc, r9
+	.previous
+	.section __ex_table,"a"
+	.long	1b, 2b
+	.previous
 
 /*
  * Check whether the instruction is a co-processor instruction.
@@ -365,53 +384,54 @@ __und_usr:	sub	sp, sp, #S_FRAME_SIZE		@ Allocate frame size in one go
  *  r10 = this threads thread_info structure.
  */
 call_fpe:
-		tst	r0, #0x08000000			@ only CDP/CPRT/LDC/STC have bit 27
+	tst	r0, #0x08000000			@ only CDP/CPRT/LDC/STC have bit 27
 #if defined(CONFIG_CPU_ARM610) || defined(CONFIG_CPU_ARM710)
-		and	r8, r0, #0x0f000000		@ mask out op-code bits
-		teqne	r8, #0x0f000000			@ SWI (ARM6/7 bug)?
+	and	r8, r0, #0x0f000000		@ mask out op-code bits
+	teqne	r8, #0x0f000000			@ SWI (ARM6/7 bug)?
 #endif
-		moveq	pc, lr
-		get_thread_info r10			@ get current thread
-		and	r8, r0, #0x00000f00		@ mask out CP number
-		mov	r7, #1
-		add	r6, r10, #TI_USED_CP
-		strb	r7, [r6, r8, lsr #8]		@ set appropriate used_cp[]
+	moveq	pc, lr
+	get_thread_info r10			@ get current thread
+	and	r8, r0, #0x00000f00		@ mask out CP number
+	mov	r7, #1
+	add	r6, r10, #TI_USED_CP
+	strb	r7, [r6, r8, lsr #8]		@ set appropriate used_cp[]
 #ifdef CONFIG_IWMMXT
-		@ Test if we need to give access to iWMMXt coprocessors
-		ldr	r5, [r10, #TI_FLAGS]
-		rsbs	r7, r8, #(1 << 8)		@ CP 0 or 1 only
-		movcss	r7, r5, lsr #(TIF_USING_IWMMXT + 1)
-		bcs	iwmmxt_task_enable
+	@ Test if we need to give access to iWMMXt coprocessors
+	ldr	r5, [r10, #TI_FLAGS]
+	rsbs	r7, r8, #(1 << 8)		@ CP 0 or 1 only
+	movcss	r7, r5, lsr #(TIF_USING_IWMMXT + 1)
+	bcs	iwmmxt_task_enable
 #endif
-		enable_irq r7
-		add	pc, pc, r8, lsr #6
-		mov	r0, r0
+	enable_irq
+	add	pc, pc, r8, lsr #6
+	mov	r0, r0
 
-		mov	pc, lr				@ CP#0
-		b	do_fpe				@ CP#1 (FPE)
-		b	do_fpe				@ CP#2 (FPE)
-		mov	pc, lr				@ CP#3
-		mov	pc, lr				@ CP#4
-		mov	pc, lr				@ CP#5
-		mov	pc, lr				@ CP#6
-		mov	pc, lr				@ CP#7
-		mov	pc, lr				@ CP#8
-		mov	pc, lr				@ CP#9
+	mov	pc, lr				@ CP#0
+	b	do_fpe				@ CP#1 (FPE)
+	b	do_fpe				@ CP#2 (FPE)
+	mov	pc, lr				@ CP#3
+	mov	pc, lr				@ CP#4
+	mov	pc, lr				@ CP#5
+	mov	pc, lr				@ CP#6
+	mov	pc, lr				@ CP#7
+	mov	pc, lr				@ CP#8
+	mov	pc, lr				@ CP#9
 #ifdef CONFIG_VFP
-		b	do_vfp				@ CP#10 (VFP)
-		b	do_vfp				@ CP#11 (VFP)
+	b	do_vfp				@ CP#10 (VFP)
+	b	do_vfp				@ CP#11 (VFP)
 #else
-		mov	pc, lr				@ CP#10 (VFP)
-		mov	pc, lr				@ CP#11 (VFP)
+	mov	pc, lr				@ CP#10 (VFP)
+	mov	pc, lr				@ CP#11 (VFP)
 #endif
-		mov	pc, lr				@ CP#12
-		mov	pc, lr				@ CP#13
-		mov	pc, lr				@ CP#14 (Debug)
-		mov	pc, lr				@ CP#15 (Control)
+	mov	pc, lr				@ CP#12
+	mov	pc, lr				@ CP#13
+	mov	pc, lr				@ CP#14 (Debug)
+	mov	pc, lr				@ CP#15 (Control)
 
-do_fpe:		ldr	r4, .LCfp
-		add	r10, r10, #TI_FPSTATE		@ r10 = workspace
-		ldr	pc, [r4]			@ Call FP module USR entry point
+do_fpe:
+	ldr	r4, .LCfp
+	add	r10, r10, #TI_FPSTATE		@ r10 = workspace
+	ldr	pc, [r4]			@ Call FP module USR entry point
 
 /*
  * The FP module is called with these registers set:
@@ -422,38 +442,40 @@ do_fpe:		ldr	r4, .LCfp
  *  lr  = unrecognised FP instruction return address
  */
 
-		.data
+	.data
 ENTRY(fp_enter)
-		.word	fpundefinstr
-		.text
+	.word	fpundefinstr
+	.text
 
-fpundefinstr:	mov	r0, sp
-		adrsvc	al, lr, ret_from_exception
-		b	do_undefinstr
+fpundefinstr:
+	mov	r0, sp
+	adrsvc	al, lr, ret_from_exception
+	b	do_undefinstr
 
-		.align	5
-__pabt_usr:	sub	sp, sp, #S_FRAME_SIZE		@ Allocate frame size in one go
-		stmia	sp, {r0 - r12}			@ Save r0 - r12
-		ldr	r4, .LCabt
-		add	r8, sp, #S_PC
-		ldmia	r4, {r5 - r7}			@ Get USR pc, cpsr
-		stmia	r8, {r5 - r7}			@ Save USR pc, cpsr, old_r0
-		stmdb	r8, {sp, lr}^			@ Save sp_usr lr_usr
-		alignment_trap r4, r7, __temp_abt
-		zero_fp
-		enable_irq r0				@ Enable interrupts
-		mov	r0, r5				@ address (pc)
-		mov	r1, sp				@ regs
-		bl	do_PrefetchAbort		@ call abort handler
-		/* fall through */
+	.align	5
+__pabt_usr:
+	sub	sp, sp, #S_FRAME_SIZE		@ Allocate frame size in one go
+	stmia	sp, {r0 - r12}			@ Save r0 - r12
+	ldr	r4, .LCabt
+	add	r8, sp, #S_PC
+	ldmia	r4, {r5 - r7}			@ Get USR pc, cpsr
+	stmia	r8, {r5 - r7}			@ Save USR pc, cpsr, old_r0
+	stmdb	r8, {sp, lr}^			@ Save sp_usr lr_usr
+	alignment_trap r4, r7, __temp_abt
+	zero_fp
+	enable_irq				@ Enable interrupts
+	mov	r0, r5				@ address (pc)
+	mov	r1, sp				@ regs
+	bl	do_PrefetchAbort		@ call abort handler
+	/* fall through */
 /*
  * This is the return code to user mode for abort handlers
  */
 ENTRY(ret_from_exception)
-		bl	latency_check
-		get_thread_info tsk
-		mov	why, #0
-		b	ret_to_user
+	bl	latency_check
+	get_thread_info tsk
+	mov	why, #0
+	b	ret_to_user
 
 /*
  * Register switch for ARMv3 and ARMv4 processors
@@ -461,38 +483,38 @@ ENTRY(ret_from_exception)
  * previous and next are guaranteed not to be the same.
  */
 ENTRY(__switch_to)
-		add	ip, r1, #TI_CPU_SAVE
-		ldr	r3, [r2, #TI_TP_VALUE]
-		stmia	ip!, {r4 - sl, fp, sp, lr}	@ Store most regs on stack
-		ldr	r6, [r2, #TI_CPU_DOMAIN]!
+	add	ip, r1, #TI_CPU_SAVE
+	ldr	r3, [r2, #TI_TP_VALUE]
+	stmia	ip!, {r4 - sl, fp, sp, lr}	@ Store most regs on stack
+	ldr	r6, [r2, #TI_CPU_DOMAIN]!
 #if defined(CONFIG_CPU_XSCALE) && !defined(CONFIG_IWMMXT)
-		mra	r4, r5, acc0
-		stmia   ip, {r4, r5}
+	mra	r4, r5, acc0
+	stmia   ip, {r4, r5}
 #endif
 #ifdef CONFIG_HAS_TLS_REG
-		mcr	p15, 0, r3, c13, c0, 3		@ set TLS register
+	mcr	p15, 0, r3, c13, c0, 3		@ set TLS register
 #else
-		mov	r4, #0xffff0fff
-		str	r3, [r4, #-15]			@ TLS val at 0xffff0ff0
+	mov	r4, #0xffff0fff
+	str	r3, [r4, #-15]			@ TLS val at 0xffff0ff0
 #endif
-		mcr	p15, 0, r6, c3, c0, 0		@ Set domain register
+	mcr	p15, 0, r6, c3, c0, 0		@ Set domain register
 #ifdef CONFIG_VFP
-		@ Always disable VFP so we can lazily save/restore the old
-		@ state. This occurs in the context of the previous thread.
-		VFPFMRX	r4, FPEXC
-		bic	r4, r4, #FPEXC_ENABLE
-		VFPFMXR	FPEXC, r4
+	@ Always disable VFP so we can lazily save/restore the old
+	@ state. This occurs in the context of the previous thread.
+	VFPFMRX	r4, FPEXC
+	bic	r4, r4, #FPEXC_ENABLE
+	VFPFMXR	FPEXC, r4
 #endif
 #if defined(CONFIG_IWMMXT)
-		bl	iwmmxt_task_switch
+	bl	iwmmxt_task_switch
 #elif defined(CONFIG_CPU_XSCALE)
-		add	r4, r2, #40			@ cpu_context_save->extra
-		ldmib	r4, {r4, r5}
-		mar	acc0, r4, r5
+	add	r4, r2, #40			@ cpu_context_save->extra
+	ldmib	r4, {r4, r5}
+	mar	acc0, r4, r5
 #endif
-		ldmib	r2, {r4 - sl, fp, sp, pc}	@ Load all regs saved previously
+	ldmib	r2, {r4 - sl, fp, sp, pc}	@ Load all regs saved previously
 
-		__INIT
+	__INIT
 
 /*
  * User helpers.
@@ -525,6 +547,7 @@ ENTRY(__switch_to)
  */
 
 	.align	5
+	.globl	__kuser_helper_start
 __kuser_helper_start:
 
 /*
@@ -622,7 +645,17 @@ __kuser_memory_barrier:				@ 0xffff0fa0
 
 __kuser_cmpxchg:				@ 0xffff0fc0
 
-#if __LINUX_ARM_ARCH__ < 6
+#if defined(CONFIG_NEEDS_SYSCALL_FOR_CMPXCHG)
+
+	/*
+	 * Poor you.  No fast solution possible...
+	 * The kernel itself must perform the operation.
+	 * A special ghost syscall is used for that (see traps.c).
+	 */
+	swi	#0x9ffff0
+	mov	pc, lr
+
+#elif __LINUX_ARM_ARCH__ < 6
 
 	/*
 	 * Theory of operation:
@@ -730,14 +763,17 @@ __kuser_get_tls:				@ 0xffff0fe0
 
 __kuser_helper_version:				@ 0xffff0ffc
 	.word	((__kuser_helper_end - __kuser_helper_start) >> 5)
+
+	.globl	__kuser_helper_end
 __kuser_helper_end:
 
 
 /*
  * Vector stubs.
  *
- * This code is copied to 0x200 or 0xffff0200 so we can use branches in the
- * vectors, rather than ldr's.
+ * This code is copied to 0xffff0200 so we can use branches in the
+ * vectors, rather than ldr's.  Note that this code must not
+ * exceed 0x300 bytes.
  *
  * Common stub entry macro:
  *   Enter in IRQ mode, spsr = SVC/USR CPSR, lr = SVC/USR PC
@@ -758,7 +794,7 @@ vector_\name:
 	@
 	mrs	r13, cpsr
 	bic	r13, r13, #MODE_MASK
-	orr	r13, r13, #MODE_SVC
+	orr	r13, r13, #SVC_MODE
 	msr	spsr_cxsf, r13			@ switch to SVC_32 mode
 
 	and	lr, lr, #15
@@ -766,6 +802,7 @@ vector_\name:
 	movs	pc, lr				@ Changes mode and branches
 	.endm
 
+	.globl	__stubs_start
 __stubs_start:
 /*
  * Interrupt dispatcher
@@ -886,61 +923,44 @@ vector_fiq:	mov	pc, r8		@ r8 is FIQ dispatcher in C
  */
 
 vector_addrexcptn:
-		b	vector_addrexcptn
+	b	vector_addrexcptn
 
 /*
  * We group all the following data together to optimise
  * for CPUs with separate I & D caches.
  */
-		.align	5
+	.align	5
 
-.LCvswi:	.word	vector_swi
+.LCvswi:
+	.word	vector_swi
 
-.LCsirq:	.word	__temp_irq
-.LCsund:	.word	__temp_und
-.LCsabt:	.word	__temp_abt
+.LCsirq:
+	.word	__temp_irq
+.LCsund:
+	.word	__temp_und
+.LCsabt:
+	.word	__temp_abt
 
+	.globl	__stubs_end
 __stubs_end:
 
-		.equ	__real_stubs_start, .LCvectors + 0x200
+	.equ	stubs_offset, __vectors_start + 0x200 - __stubs_start
 
-.LCvectors:	swi	SYS_ERROR0
-		b	__real_stubs_start + (vector_und - __stubs_start)
-		ldr	pc, __real_stubs_start + (.LCvswi - __stubs_start)
-		b	__real_stubs_start + (vector_pabt - __stubs_start)
-		b	__real_stubs_start + (vector_dabt - __stubs_start)
-		b	__real_stubs_start + (vector_addrexcptn - __stubs_start)
-		b	__real_stubs_start + (vector_irq - __stubs_start)
-		b	__real_stubs_start + (vector_fiq - __stubs_start)
+	.globl	__vectors_start
+__vectors_start:
+	swi	SYS_ERROR0
+	b	vector_und + stubs_offset
+	ldr	pc, .LCvswi + stubs_offset
+	b	vector_pabt + stubs_offset
+	b	vector_dabt + stubs_offset
+	b	vector_addrexcptn + stubs_offset
+	b	vector_irq + stubs_offset
+	b	vector_fiq + stubs_offset
 
-ENTRY(__trap_init)
-		stmfd	sp!, {r4 - r6, lr}
+	.globl	__vectors_end
+__vectors_end:
 
-		mov	r0, #0xff000000
-		orr	r0, r0, #0x00ff0000		@ high vectors position
-		adr	r1, .LCvectors			@ set up the vectors
-		ldmia	r1, {r1, r2, r3, r4, r5, r6, ip, lr}
-		stmia	r0, {r1, r2, r3, r4, r5, r6, ip, lr}
-
-		add	r2, r0, #0x200
-		adr	r1, __stubs_start		@ copy stubs to 0x200
-		adr	r4, __stubs_end
-1:		ldr	r3, [r1], #4
-		str	r3, [r2], #4
-		cmp	r1, r4
-		blo	1b
-
-		add	r2, r0, #0x1000			@ top of high vector page
-		adr	r4, __kuser_helper_end		@ user helpers to top of page
-		adr	r1, __kuser_helper_start	@ going downwards.
-1:		ldr	r3, [r4, #-4]!
-		str	r3, [r2, #-4]!
-		cmp	r4, r1
-		bhi	1b
-
-		LOADREGS(fd, sp!, {r4 - r6, pc})
-
-		.data
+	.data
 
 /*
  * Do not reorder these, and do not insert extra data between...
