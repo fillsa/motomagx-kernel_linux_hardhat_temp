@@ -40,6 +40,7 @@ static char *_riotty_c_sccs_ = "@(#)riotty.c	1.3";
 #include <linux/slab.h>
 #include <linux/errno.h>
 #include <linux/tty.h>
+#include <linux/string.h>
 #include <asm/io.h>
 #include <asm/system.h>
 #include <asm/string.h>
@@ -97,6 +98,9 @@ static void RIOClearUp(struct Port *PortP);
 int RIOShortCommand(struct rio_info *p, struct Port *PortP, 
 			   int command, int len, int arg);
 
+#if 0
+static int RIOCookMode(struct ttystatics *);
+#endif
 
 extern int	conv_vb[];	/* now defined in ttymgr.c */
 extern int	conv_bv[];	/* now defined in ttymgr.c */
@@ -520,16 +524,16 @@ riotclose(void  *ptr)
 	register uint SysPort = dev;
 	struct ttystatics *tp;		/* pointer to our ttystruct */
 #endif
-	struct Port *PortP =ptr;	/* pointer to the port structure */
+	struct Port *PortP = ptr;	/* pointer to the port structure */
 	int deleted = 0;
 	int	try = -1; /* Disable the timeouts by setting them to -1 */
 	int	repeat_this = -1; /* Congrats to those having 15 years of 
 				     uptime! (You get to break the driver.) */
-	long end_time;
+	unsigned long end_time;
 	struct tty_struct * tty;
 	unsigned long flags;
 	int Modem;
-	int rv =0;
+	int rv = 0;
 	
 	rio_dprintk (RIO_DEBUG_TTY, "port close SysPort %d\n",PortP->PortNum);
 
@@ -616,7 +620,7 @@ riotclose(void  *ptr)
 		if (repeat_this -- <= 0) {
 			rv = -EINTR;
 			rio_dprintk (RIO_DEBUG_TTY, "Waiting for not idle closed broken by signal\n");
-			RIOPreemptiveCmd(p, PortP, FCLOSE ); 
+			RIOPreemptiveCmd(p, PortP, FCLOSE);
 			goto close_end;
 		}
 		rio_dprintk (RIO_DEBUG_TTY, "Calling timeout to flush in closing\n");
@@ -652,14 +656,12 @@ riotclose(void  *ptr)
 		goto close_end;
 	}
 
-	
-
 	/* Can't call RIOShortCommand with the port locked. */
 	rio_spin_unlock_irqrestore(&PortP->portSem, flags);
 
 	if (RIOShortCommand(p, PortP, CLOSE, 1, 0) == RIO_FAIL) {
-	  RIOPreemptiveCmd(p, PortP,FCLOSE);
-	  goto close_end;
+		RIOPreemptiveCmd(p, PortP, FCLOSE);
+		goto close_end;
 	}
 
 	if (!deleted)
@@ -694,7 +696,6 @@ riotclose(void  *ptr)
 */
 	PortP->Config &= ~(RIO_CTSFLOW|RIO_RTSFLOW);
 
-
 #ifdef STATS
 	PortP->Stat.CloseCnt++;
 #endif
@@ -726,7 +727,8 @@ close_end:
 ** COOK_WELL if the line discipline must be used to do the processing
 ** COOK_MEDIUM if the card can do all the processing necessary.
 */
-int
+#if 0
+static int
 RIOCookMode(struct ttystatics *tp)
 {
 	/*
@@ -757,7 +759,7 @@ RIOCookMode(struct ttystatics *tp)
 	*/
 	return COOK_MEDIUM;
 }
-
+#endif
 
 static void
 RIOClearUp(PortP)
@@ -1011,8 +1013,8 @@ riotioctl(struct rio_info *p, struct tty_struct *tty, int cmd, caddr_t arg)
 				pseterr(EFAULT);
 			}
 			PortP->Xprint.XpOn[MAX_XP_CTRL_LEN-1] = '\0';
-			PortP->Xprint.XpLen = RIOStrlen(PortP->Xprint.XpOn)+
-												RIOStrlen(PortP->Xprint.XpOff);
+			PortP->Xprint.XpLen = strlen(PortP->Xprint.XpOn)+
+												strlen(PortP->Xprint.XpOff);
 			rio_spin_unlock_irqrestore(&PortP->portSem, flags);
 			return 0;
 
@@ -1026,8 +1028,8 @@ riotioctl(struct rio_info *p, struct tty_struct *tty, int cmd, caddr_t arg)
 				pseterr(EFAULT);
 			}
 			PortP->Xprint.XpOff[MAX_XP_CTRL_LEN-1] = '\0';
-			PortP->Xprint.XpLen = RIOStrlen(PortP->Xprint.XpOn)+
-										RIOStrlen(PortP->Xprint.XpOff);
+			PortP->Xprint.XpLen = strlen(PortP->Xprint.XpOn)+
+										strlen(PortP->Xprint.XpOff);
 			rio_spin_unlock_irqrestore(&PortP->portSem, flags);
 			return 0;
 

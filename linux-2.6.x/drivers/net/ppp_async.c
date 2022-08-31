@@ -94,7 +94,7 @@ struct asyncppp {
 #define SC_RCV_BITS	(SC_RCV_B7_1|SC_RCV_B7_0|SC_RCV_ODDP|SC_RCV_EVNP)
 
 static int flag_time = HZ;
-MODULE_PARM(flag_time, "i");
+module_param(flag_time, int, 0);
 MODULE_PARM_DESC(flag_time, "ppp_async: interval between flagged packets (in clock ticks)");
 MODULE_LICENSE("GPL");
 MODULE_ALIAS_LDISC(N_PPP);
@@ -387,7 +387,7 @@ ppp_asynctty_receive(struct tty_struct *tty, const unsigned char *buf,
 	spin_lock_irqsave(&ap->recv_lock, flags);
 	ppp_async_input(ap, buf, cflags, count);
 	spin_unlock_irqrestore(&ap->recv_lock, flags);
-	if (skb_queue_len(&ap->rqueue))
+	if (!skb_queue_empty(&ap->rqueue))
 		tasklet_schedule(&ap->tsk);
 	ap_put(ap);
 	if (test_and_clear_bit(TTY_THROTTLED, &tty->flags)
@@ -1048,7 +1048,7 @@ static void async_lcp_peek(struct asyncppp *ap, unsigned char *data,
 
 static void __exit ppp_async_cleanup(void)
 {
-	if (tty_register_ldisc(N_PPP, NULL) != 0)
+	if (tty_unregister_ldisc(N_PPP) != 0)
 		printk(KERN_ERR "failed to unregister PPP line discipline\n");
 }
 

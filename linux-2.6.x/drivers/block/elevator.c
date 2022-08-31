@@ -92,7 +92,7 @@ inline int elv_try_last_merge(request_queue_t *q, struct bio *bio)
 }
 EXPORT_SYMBOL(elv_try_last_merge);
 
-struct elevator_type *elevator_find(const char *name)
+static struct elevator_type *elevator_find(const char *name)
 {
 	struct elevator_type *e = NULL;
 	struct list_head *entry;
@@ -170,8 +170,6 @@ static void elevator_setup_default(void)
 #else
 #error "You must build at least 1 IO scheduler into the kernel"
 #endif
-	printk(KERN_INFO "elevator: using %s as default io scheduler\n",
-							chosen_elevator);
 }
 
 static int __init elevator_setup(char *str)
@@ -222,11 +220,6 @@ void elevator_exit(elevator_t *e)
 	kfree(e);
 }
 
-int elevator_global_init(void)
-{
-	return 0;
-}
-
 int elv_merge(request_queue_t *q, struct request **req, struct bio *bio)
 {
 	elevator_t *e = q->elevator;
@@ -257,14 +250,47 @@ void elv_merge_requests(request_queue_t *q, struct request *rq,
 		e->ops->elevator_merge_req_fn(q, rq, next);
 }
 
-void elv_requeue_request(request_queue_t *q, struct request *rq)
+/*
+ * For careful internal use by the block layer. Essentially the same as
+ * a requeue in that it tells the io scheduler that this request is not
+ * active in the driver or hardware anymore, but we don't want the request
+ * added back to the scheduler. Function is not exported.
+ */
+void elv_deactivate_request(request_queue_t *q, struct request *rq)
 {
+	elevator_t *e = q->elevator;
+
 	/*
 	 * it already went through dequeue, we need to decrement the
 	 * in_flight count again
 	 */
 	if (blk_account_rq(rq))
 		q->in_flight--;
+
+	rq->flags &= ~REQ_STARTED;
+
+	if (e->ops->elevator_deactivate_req_fn)
+		e->ops->elevator_deactivate_req_fn(q, rq);
+}
+
+void elv_requeue_request(request_queue_t *q, struct request *rq)
+{
+	elv_deactivate_request(q, rq);
+
+	/*
+	 * if this is the flush, requeue the original instead and drop the flush
+	 */
+	if (rq->flags & REQ_BAR_FLUSH) {
+		clear_bit(QUEUE_FLAG_FLUSH, &q->queue_flags);
+		rq = rq->end_io_data;
+	}
+
+	/*
+	 * the request is prepped and may have some resources allocated.
+	 * allowing unprepped requests to pass this one may cause resource
+	 * deadlock.  turn on softbarrier.
+	 */
+	rq->flags |= REQ_SOFTBARRIER;
 
 	/*
 	 * if iosched has an explicit requeue hook, then use that. otherwise
@@ -298,7 +324,7 @@ void __elv_add_request(request_queue_t *q, struct request *rq, int where,
 			int nrq = q->rq.count[READ] + q->rq.count[WRITE]
 				  - q->in_flight;
 
-			if (nrq == q->unplug_thresh)
+			if (nrq >= q->unplug_thresh)
 				__generic_unplug_device(q);
 		}
 	} else
@@ -322,7 +348,21 @@ void elv_add_request(request_queue_t *q, struct request *rq, int where,
 
 static inline struct request *__elv_next_request(request_queue_t *q)
 {
-	return q->elevator->ops->elevator_next_req_fn(q);
+	struct request *rq = q->elevator->ops->elevator_next_req_fn(q);
+
+	/*
+	 * if this is a barrier write and the device has to issue a
+	 * flush sequence to support it, check how far we are
+	 */
+	if (rq && blk_fs_request(rq) && blk_barrier_rq(rq)) {
+		BUG_ON(q->ordered == QUEUE_ORDERED_NONE);
+
+		if (q->ordered == QUEUE_ORDERED_FLUSH &&
+		    !blk_barrier_preflush(rq))
+			rq = blk_start_pre_flush(q, rq);
+	}
+
+	return rq;
 }
 
 struct request *elv_next_request(request_queue_t *q)
@@ -348,6 +388,12 @@ struct request *elv_next_request(request_queue_t *q)
 		if (ret == BLKPREP_OK) {
 			break;
 		} else if (ret == BLKPREP_DEFER) {
+			/*
+			 * the request may have been (partially) prepped.
+			 * we need to keep this request in the front to
+			 * avoid resource deadlock.  turn on softbarrier.
+			 */
+			rq->flags |= REQ_SOFTBARRIER;
 			rq = NULL;
 			break;
 		} else if (ret == BLKPREP_KILL) {
@@ -440,12 +486,13 @@ struct request *elv_former_request(request_queue_t *q, struct request *rq)
 	return NULL;
 }
 
-int elv_set_request(request_queue_t *q, struct request *rq, int gfp_mask)
+int elv_set_request(request_queue_t *q, struct request *rq, struct bio *bio,
+		    int gfp_mask)
 {
 	elevator_t *e = q->elevator;
 
 	if (e->ops->elevator_set_req_fn)
-		return e->ops->elevator_set_req_fn(q, rq, gfp_mask);
+		return e->ops->elevator_set_req_fn(q, rq, bio, gfp_mask);
 
 	rq->elevator_private = NULL;
 	return 0;
@@ -459,12 +506,12 @@ void elv_put_request(request_queue_t *q, struct request *rq)
 		e->ops->elevator_put_req_fn(q, rq);
 }
 
-int elv_may_queue(request_queue_t *q, int rw)
+int elv_may_queue(request_queue_t *q, int rw, struct bio *bio)
 {
 	elevator_t *e = q->elevator;
 
 	if (e->ops->elevator_may_queue_fn)
-		return e->ops->elevator_may_queue_fn(q, rw);
+		return e->ops->elevator_may_queue_fn(q, rw, bio);
 
 	return ELV_MQUEUE_MAY;
 }
@@ -515,7 +562,10 @@ int elv_register(struct elevator_type *e)
 	list_add_tail(&e->list, &elv_list);
 	spin_unlock_irq(&elv_list_lock);
 
-	printk(KERN_INFO "io scheduler %s registered\n", e->elevator_name);
+	printk(KERN_INFO "io scheduler %s registered", e->elevator_name);
+	if (!strcmp(e->elevator_name, chosen_elevator))
+		printk(" (default)");
+	printk("\n");
 	return 0;
 }
 EXPORT_SYMBOL_GPL(elv_register);
@@ -650,8 +700,6 @@ ssize_t elv_iosched_show(request_queue_t *q, char *name)
 	len += sprintf(len+name, "\n");
 	return len;
 }
-
-module_init(elevator_global_init);
 
 EXPORT_SYMBOL(elv_add_request);
 EXPORT_SYMBOL(__elv_add_request);

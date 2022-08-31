@@ -94,6 +94,8 @@ static struct pnp_card_device_id snd_als100_pnpids[] = {
 	{ .id = "ALS0120", .devs = { { "@@@2001" }, { "@X@2001" }, { "@H@2001" } } },
 	/* ALS200 */
 	{ .id = "ALS0200", .devs = { { "@@@0020" }, { "@X@0020" }, { "@H@0001" } } },
+	/* ALS200 OEM */
+	{ .id = "ALS0200", .devs = { { "@@@0020" }, { "@X@0020" }, { "@H@0020" } } },
 	/* RTL3000 */
 	{ .id = "RTL3000", .devs = { { "@@@2001" }, { "@X@2001" }, { "@H@2001" } } },
 	{ .id = "", } /* end */
@@ -119,7 +121,7 @@ static int __devinit snd_card_als100_pnp(int dev, struct snd_card_als100 *acard,
 		return -ENODEV;
 	}
 	acard->devmpu = pnp_request_card_device(card, id->devs[1].id, acard->dev);
-	acard->devopl = pnp_request_card_device(card, id->devs[2].id, acard->devmpu);
+	acard->devopl = pnp_request_card_device(card, id->devs[2].id, acard->dev);
 
 	pdev = acard->dev;
 

@@ -45,6 +45,7 @@ static struct timer_list dst_gc_timer =
 static void dst_run_gc(unsigned long dummy)
 {
 	int    delayed = 0;
+	int    work_performed;
 	struct dst_entry * dst, **dstp;
 
 	if (!spin_trylock(&dst_lock)) {
@@ -52,9 +53,9 @@ static void dst_run_gc(unsigned long dummy)
 		return;
 	}
 
-
 	del_timer(&dst_gc_timer);
 	dstp = &dst_garbage_list;
+	work_performed = 0;
 	while ((dst = *dstp) != NULL) {
 		if (atomic_read(&dst->__refcnt)) {
 			dstp = &dst->next;
@@ -62,6 +63,7 @@ static void dst_run_gc(unsigned long dummy)
 			continue;
 		}
 		*dstp = dst->next;
+		work_performed = 1;
 
 		dst = dst_destroy(dst);
 		if (dst) {
@@ -86,9 +88,14 @@ static void dst_run_gc(unsigned long dummy)
 		dst_gc_timer_inc = DST_GC_MAX;
 		goto out;
 	}
-	if ((dst_gc_timer_expires += dst_gc_timer_inc) > DST_GC_MAX)
-		dst_gc_timer_expires = DST_GC_MAX;
-	dst_gc_timer_inc += DST_GC_INC;
+	if (!work_performed) {
+		if ((dst_gc_timer_expires += dst_gc_timer_inc) > DST_GC_MAX)
+			dst_gc_timer_expires = DST_GC_MAX;
+		dst_gc_timer_inc += DST_GC_INC;
+	} else {
+		dst_gc_timer_inc = DST_GC_INC;
+		dst_gc_timer_expires = DST_GC_MIN;
+	}
 	dst_gc_timer.expires = jiffies + dst_gc_timer_expires;
 #if RT_CACHE_DEBUG >= 2
 	printk("dst_total: %d/%d %ld\n",
@@ -169,6 +176,8 @@ struct dst_entry *dst_destroy(struct dst_entry * dst)
 	struct neighbour *neigh;
 	struct hh_cache *hh;
 
+	smp_rmb();
+
 again:
 	neigh = dst->neighbour;
 	hh = dst->hh;
@@ -196,13 +205,15 @@ again:
 
 	dst = child;
 	if (dst) {
+		int nohash = dst->flags & DST_NOHASH;
+
 		if (atomic_dec_and_test(&dst->__refcnt)) {
 			/* We were real parent of this dst, so kill child. */
-			if (dst->flags&DST_NOHASH)
+			if (nohash)
 				goto again;
 		} else {
 			/* Child is still referenced, return it for freeing. */
-			if (dst->flags&DST_NOHASH)
+			if (nohash)
 				return dst;
 			/* Child is still in his hash table */
 		}
@@ -218,12 +229,14 @@ again:
  *
  * Commented and originally written by Alexey.
  */
-static inline void dst_ifdown(struct dst_entry *dst, int unregister)
+static inline void dst_ifdown(struct dst_entry *dst, struct net_device *dev,
+			      int unregister)
 {
-	struct net_device *dev = dst->dev;
-
 	if (dst->ops->ifdown)
-		dst->ops->ifdown(dst, unregister);
+		dst->ops->ifdown(dst, dev, unregister); //mvl		dst->ops->ifdown(dst, unregister);
+
+	if (dev != dst->dev)
+		return;
 
 	if (!unregister) {
 		dst->input = dst_discard_in;
@@ -250,8 +263,7 @@ static int dst_dev_event(struct notifier_block *this, unsigned long event, void 
 	case NETDEV_DOWN:
 		spin_lock_bh(&dst_lock);
 		for (dst = dst_garbage_list; dst; dst = dst->next) {
-			if (dst->dev == dev)
-				dst_ifdown(dst, event != NETDEV_DOWN);
+			dst_ifdown(dst, dev, event != NETDEV_DOWN);
 		}
 		spin_unlock_bh(&dst_lock);
 		break;
@@ -259,7 +271,7 @@ static int dst_dev_event(struct notifier_block *this, unsigned long event, void 
 	return NOTIFY_DONE;
 }
 
-struct notifier_block dst_dev_notifier = {
+static struct notifier_block dst_dev_notifier = {
 	.notifier_call	= dst_dev_event,
 };
 

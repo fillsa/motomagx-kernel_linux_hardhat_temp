@@ -210,7 +210,7 @@ static int do_sony_cmd(Byte * cmd, int nCmd, Byte status[2],
 /* The base I/O address of the Sony Interface.  This is a variable (not a
    #define) so it can be easily changed via some future ioctl() */
 static unsigned int sony535_cd_base_io = CDU535_ADDRESS;
-MODULE_PARM(sony535_cd_base_io, "i");
+module_param(sony535_cd_base_io, int, 0);
 
 /*
  * The following are I/O addresses of the various registers for the drive.  The
@@ -1605,8 +1605,7 @@ out7:
 	put_disk(cdu_disk);
 out6:
 	for (i = 0; i < sony_buffer_sectors; i++)
-		if (sony_buffer[i]) 
-			kfree(sony_buffer[i]);
+		kfree(sony_buffer[i]);
 out5:
 	kfree(sony_buffer);
 out4:

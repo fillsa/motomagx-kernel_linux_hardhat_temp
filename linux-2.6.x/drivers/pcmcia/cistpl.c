@@ -1,35 +1,16 @@
-/*======================================================================
-
-    PCMCIA Card Information Structure parser
-
-    cistpl.c 1.99 2002/10/24 06:11:48
-
-    The contents of this file are subject to the Mozilla Public
-    License Version 1.1 (the "License"); you may not use this file
-    except in compliance with the License. You may obtain a copy of
-    the License at http://www.mozilla.org/MPL/
-
-    Software distributed under the License is distributed on an "AS
-    IS" basis, WITHOUT WARRANTY OF ANY KIND, either express or
-    implied. See the License for the specific language governing
-    rights and limitations under the License.
-
-    The initial developer of the original code is David A. Hinds
-    <dahinds@users.sourceforge.net>.  Portions created by David A. Hinds
-    are Copyright (C) 1999 David A. Hinds.  All Rights Reserved.
-
-    Alternatively, the contents of this file may be used under the
-    terms of the GNU General Public License version 2 (the "GPL"), in
-    which case the provisions of the GPL are applicable instead of the
-    above.  If you wish to allow the use of your version of this file
-    only under the terms of the GPL and not to allow others to use
-    your version of this file under the MPL, indicate your decision
-    by deleting the provisions above and replace them with the notice
-    and other provisions required by the GPL.  If you do not delete
-    the provisions above, a recipient may use your version of this
-    file under either the MPL or the GPL.
-    
-======================================================================*/
+/*
+ * cistpl.c -- 16-bit PCMCIA Card Information Structure parser
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation.
+ *
+ * The initial developer of the original code is David A. Hinds
+ * <dahinds@users.sourceforge.net>.  Portions created by David A. Hinds
+ * are Copyright (C) 1999 David A. Hinds.  All Rights Reserved.
+ *
+ * (C) 1999		David A. Hinds
+ */
 
 #include <linux/config.h>
 #include <linux/module.h>
@@ -97,6 +78,7 @@ void release_cis_mem(struct pcmcia_socket *s)
 	s->cis_virt = NULL;
     }
 }
+EXPORT_SYMBOL(release_cis_mem);
 
 /*
  * Map the card memory at "card_offset" into virtual space.
@@ -106,25 +88,38 @@ void release_cis_mem(struct pcmcia_socket *s)
 static void __iomem *
 set_cis_map(struct pcmcia_socket *s, unsigned int card_offset, unsigned int flags)
 {
-    pccard_mem_map *mem = &s->cis_mem;
-    if (!(s->features & SS_CAP_STATIC_MAP) && mem->res == NULL) {
-	mem->res = find_mem_region(0, s->map_size, s->map_size, 0,
-				   "card services", s);
-	if (mem->res == NULL) {
-	    printk(KERN_NOTICE "cs: unable to map card memory!\n");
-	    return NULL;
+	pccard_mem_map *mem = &s->cis_mem;
+	int ret;
+
+	if (!(s->features & SS_CAP_STATIC_MAP) && (mem->res == NULL)) {
+		mem->res = pcmcia_find_mem_region(0, s->map_size, s->map_size, 0, s);
+		if (mem->res == NULL) {
+			printk(KERN_NOTICE "cs: unable to map card memory!\n");
+			return NULL;
+		}
+		s->cis_virt = NULL;
 	}
-	s->cis_virt = ioremap(mem->res->start, s->map_size);
-    }
-    mem->card_start = card_offset;
-    mem->flags = flags;
-    s->ops->set_mem_map(s, mem);
-    if (s->features & SS_CAP_STATIC_MAP) {
-	if (s->cis_virt)
-	    iounmap(s->cis_virt);
-	s->cis_virt = ioremap(mem->static_start, s->map_size);
-    }
-    return s->cis_virt;
+
+	if (!(s->features & SS_CAP_STATIC_MAP) && (!s->cis_virt))
+		s->cis_virt = ioremap(mem->res->start, s->map_size);
+
+	mem->card_start = card_offset;
+	mem->flags = flags;
+
+	ret = s->ops->set_mem_map(s, mem);
+	if (ret) {
+		iounmap(s->cis_virt);
+		s->cis_virt = NULL;
+		return NULL;
+	}
+
+	if (s->features & SS_CAP_STATIC_MAP) {
+		if (s->cis_virt)
+			iounmap(s->cis_virt);
+		s->cis_virt = ioremap(mem->static_start, s->map_size);
+	}
+
+	return s->cis_virt;
 }
 
 /*======================================================================
@@ -138,13 +133,13 @@ set_cis_map(struct pcmcia_socket *s, unsigned int card_offset, unsigned int flag
 #define IS_ATTR		1
 #define IS_INDIRECT	8
 
-int read_cis_mem(struct pcmcia_socket *s, int attr, u_int addr,
+int pcmcia_read_cis_mem(struct pcmcia_socket *s, int attr, u_int addr,
 		 u_int len, void *ptr)
 {
     void __iomem *sys, *end;
     unsigned char *buf = ptr;
     
-    cs_dbg(s, 3, "read_cis_mem(%d, %#x, %u)\n", attr, addr, len);
+    cs_dbg(s, 3, "pcmcia_read_cis_mem(%d, %#x, %u)\n", attr, addr, len);
 
     if (attr & IS_INDIRECT) {
 	/* Indirect accesses use a bunch of special registers at fixed
@@ -201,14 +196,16 @@ int read_cis_mem(struct pcmcia_socket *s, int attr, u_int addr,
 	  *(u_char *)(ptr+2), *(u_char *)(ptr+3));
     return 0;
 }
+EXPORT_SYMBOL(pcmcia_read_cis_mem);
 
-void write_cis_mem(struct pcmcia_socket *s, int attr, u_int addr,
+
+void pcmcia_write_cis_mem(struct pcmcia_socket *s, int attr, u_int addr,
 		   u_int len, void *ptr)
 {
     void __iomem *sys, *end;
     unsigned char *buf = ptr;
     
-    cs_dbg(s, 3, "write_cis_mem(%d, %#x, %u)\n", attr, addr, len);
+    cs_dbg(s, 3, "pcmcia_write_cis_mem(%d, %#x, %u)\n", attr, addr, len);
 
     if (attr & IS_INDIRECT) {
 	/* Indirect accesses use a bunch of special registers at fixed
@@ -258,6 +255,8 @@ void write_cis_mem(struct pcmcia_socket *s, int attr, u_int addr,
 	}
     }
 }
+EXPORT_SYMBOL(pcmcia_write_cis_mem);
+
 
 /*======================================================================
 
@@ -293,7 +292,7 @@ static void read_cis_cache(struct pcmcia_socket *s, int attr, u_int addr,
 	ret = read_cb_mem(s, attr, addr, len, ptr);
     else
 #endif
-	ret = read_cis_mem(s, attr, addr, len, ptr);
+	ret = pcmcia_read_cis_mem(s, attr, addr, len, ptr);
 
 	if (ret == 0) {
 		/* Copy data into the cache */
@@ -340,6 +339,7 @@ void destroy_cis_cache(struct pcmcia_socket *s)
 		s->fake_cis = NULL;
 	}
 }
+EXPORT_SYMBOL(destroy_cis_cache);
 
 /*======================================================================
 
@@ -366,7 +366,7 @@ int verify_cis_cache(struct pcmcia_socket *s)
 			read_cb_mem(s, cis->attr, cis->addr, len, buf);
 		else
 #endif
-			read_cis_mem(s, cis->attr, cis->addr, len, buf);
+			pcmcia_read_cis_mem(s, cis->attr, cis->addr, len, buf);
 
 		if (memcmp(buf, cis->cache, len) != 0) {
 			kfree(buf);
@@ -399,6 +399,7 @@ int pcmcia_replace_cis(struct pcmcia_socket *s, cisdump_t *cis)
     memcpy(s->fake_cis, cis->Data, cis->Length);
     return CS_SUCCESS;
 }
+EXPORT_SYMBOL(pcmcia_replace_cis);
 
 /*======================================================================
 

@@ -313,6 +313,7 @@ static void ip6_frag_expire(unsigned long data)
 #ifdef CONFIG_IPV6_STATISTICS
 	struct inet6_dev *idev = NULL;
 #endif
+
 	spin_lock(&fq->lock);
 
 	if (fq->last_in & COMPLETE)

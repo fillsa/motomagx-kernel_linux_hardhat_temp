@@ -1,4 +1,5 @@
 #include <linux/module.h>
+#include <linux/moduleparam.h>
 #include <linux/kernel.h>
 #include <linux/i2c.h>
 #include <linux/types.h>
@@ -27,11 +28,11 @@
 
 /* Addresses to scan */
 static unsigned short normal_i2c[] = {
+	0x84 >>1,
 	0x86 >>1,
 	0x96 >>1,
 	I2C_CLIENT_END,
 };
-static unsigned short normal_i2c_range[] = {I2C_CLIENT_END,I2C_CLIENT_END};
 I2C_CLIENT_INSMOD;
 
 /* insmod options */
@@ -52,6 +53,7 @@ struct tda9887 {
 	unsigned int       config;
 	unsigned int       pinnacle_id;
 	unsigned int       using_v4l2;
+	unsigned int 	   radio_mode;
 };
 
 struct tvnorm {
@@ -211,12 +213,22 @@ static struct tvnorm tvnorms[] = {
 	}
 };
 
-static struct tvnorm radio = {
-	.name = "radio",
+static struct tvnorm radio_stereo = {
+	.name = "Radio Stereo",
+	.b    = ( cFmRadio       |
+		  cQSS           ),
+	.c    = ( cDeemphasisOFF |
+		  cAudioGain6 ),
+	.e    = ( cAudioIF_5_5   |
+		  cRadioIF_38_90 ),
+};
+
+static struct tvnorm radio_mono = {
+	.name = "Radio Mono",
 	.b    = ( cFmRadio       |
 		  cQSS           ),
 	.c    = ( cDeemphasisON  |
-		  cDeemphasis50  ),
+		  cDeemphasis50),
 	.e    = ( cAudioIF_5_5   |
 		  cRadioIF_38_90 ),
 };
@@ -303,9 +315,9 @@ static void dump_write_message(unsigned char *buf)
 	printk("  B5   force mute audio: %s\n",
 	       (buf[1] & 0x20) ? "yes" : "no");
 	printk("  B6   output port 1   : %s\n",
-	       (buf[1] & 0x40) ? "high" : "low");
+	       (buf[1] & 0x40) ? "high (inactive)" : "low (active)");
 	printk("  B7   output port 2   : %s\n",
-	       (buf[1] & 0x80) ? "high" : "low");
+	       (buf[1] & 0x80) ? "high (inactive)" : "low (active)");
 
 	printk(PREFIX "write: byte C 0x%02x\n",buf[2]);
 	printk("  C0-4 top adjustment  : %s dB\n", adjust[buf[2] & 0x1f]);
@@ -353,7 +365,10 @@ static int tda9887_set_tvnorm(struct tda9887 *t, char *buf)
 	int i;
 
 	if (t->radio) {
-		norm = &radio;
+		if (t->radio_mode == V4L2_TUNER_MODE_MONO)
+			norm = &radio_mono;
+		else
+			norm = &radio_stereo;
 	} else {
 		for (i = 0; i < ARRAY_SIZE(tvnorms); i++) {
 			if (tvnorms[i].std & t->std) {
@@ -374,8 +389,8 @@ static int tda9887_set_tvnorm(struct tda9887 *t, char *buf)
 	return 0;
 }
 
-static unsigned int port1  = 1;
-static unsigned int port2  = 1;
+static unsigned int port1  = UNSET;
+static unsigned int port2  = UNSET;
 static unsigned int qss    = UNSET;
 static unsigned int adjust = 0x10;
 module_param(port1, int, 0644);
@@ -385,10 +400,19 @@ module_param(adjust, int, 0644);
 
 static int tda9887_set_insmod(struct tda9887 *t, char *buf)
 {
-	if (port1)
-		buf[1] |= cOutputPort1Inactive;
-	if (port2)
-		buf[1] |= cOutputPort2Inactive;
+	if (UNSET != port1) {
+		if (port1)
+			buf[1] |= cOutputPort1Inactive;
+		else
+			buf[1] &= ~cOutputPort1Inactive;
+	}
+	if (UNSET != port2) {
+		if (port2)
+			buf[1] |= cOutputPort2Inactive;
+		else
+			buf[1] &= ~cOutputPort2Inactive;
+	}
+
 	if (UNSET != qss) {
 		if (qss)
 			buf[1] |= cQSS;
@@ -403,10 +427,15 @@ static int tda9887_set_insmod(struct tda9887 *t, char *buf)
 
 static int tda9887_set_config(struct tda9887 *t, char *buf)
 {
-	if (t->config & TDA9887_PORT1)
+	if (t->config & TDA9887_PORT1_ACTIVE)
+		buf[1] &= ~cOutputPort1Inactive;
+	if (t->config & TDA9887_PORT1_INACTIVE)
 		buf[1] |= cOutputPort1Inactive;
-	if (t->config & TDA9887_PORT2)
+	if (t->config & TDA9887_PORT2_ACTIVE)
+		buf[1] &= ~cOutputPort2Inactive;
+	if (t->config & TDA9887_PORT2_INACTIVE)
 		buf[1] |= cOutputPort2Inactive;
+
 	if (t->config & TDA9887_QSS)
 		buf[1] |= cQSS;
 	if (t->config & TDA9887_INTERCARRIER)
@@ -437,14 +466,14 @@ static int tda9887_set_pinnacle(struct tda9887 *t, char *buf)
 {
 	unsigned int bCarrierMode = UNSET;
 
-	if (t->std & V4L2_STD_PAL) {
+	if (t->std & V4L2_STD_625_50) {
 		if ((1 == t->pinnacle_id) || (7 == t->pinnacle_id)) {
 			bCarrierMode = cIntercarrier;
 		} else {
 			bCarrierMode = cQSS;
 		}
 	}
-	if (t->std & V4L2_STD_NTSC) {
+	if (t->std & V4L2_STD_525_60) {
                 if ((5 == t->pinnacle_id) || (6 == t->pinnacle_id)) {
 			bCarrierMode = cIntercarrier;
 		} else {
@@ -462,9 +491,9 @@ static int tda9887_set_pinnacle(struct tda9887 *t, char *buf)
 /* ---------------------------------------------------------------------- */
 
 static char pal[] = "-";
-module_param_string(pal, pal, 0644, sizeof(pal));
+module_param_string(pal, pal, sizeof(pal), 0644);
 static char secam[] = "-";
-module_param_string(secam, secam, 0644, sizeof(secam));
+module_param_string(secam, secam, sizeof(secam), 0644);
 
 static int tda9887_fixup_std(struct tda9887 *t)
 {
@@ -530,16 +559,16 @@ static int tda9887_configure(struct tda9887 *t)
 
 	memset(buf,0,sizeof(buf));
 	tda9887_set_tvnorm(t,buf);
+
+	buf[1] |= cOutputPort1Inactive;
+	buf[1] |= cOutputPort2Inactive;
+
 	if (UNSET != t->pinnacle_id) {
 		tda9887_set_pinnacle(t,buf);
 	}
 	tda9887_set_config(t,buf);
 	tda9887_set_insmod(t,buf);
 
-	if (t->std & V4L2_STD_SECAM_L) {
-		/* secam fixup (FIXME: move this to tvnorms array?) */
-		buf[1] &= ~cOutputPort2Inactive;
-	}
 
 	dprintk(PREFIX "writing: b=0x%02x c=0x%02x e=0x%02x\n",
 		buf[1],buf[2],buf[3]);
@@ -570,11 +599,14 @@ static int tda9887_attach(struct i2c_adapter *adap, int addr, int kind)
         if (NULL == (t = kmalloc(sizeof(*t), GFP_KERNEL)))
                 return -ENOMEM;
 	memset(t,0,sizeof(*t));
+
 	t->client      = client_template;
 	t->std         = 0;
 	t->pinnacle_id = UNSET;
-        i2c_set_clientdata(&t->client, t);
-        i2c_attach_client(&t->client);
+	t->radio_mode = V4L2_TUNER_MODE_STEREO;
+
+	i2c_set_clientdata(&t->client, t);
+	i2c_attach_client(&t->client);
 
 	return 0;
 }
@@ -708,6 +740,16 @@ tda9887_command(struct i2c_client *client, unsigned int cmd, void *arg)
 			tuner->afc=0;
 			if (1 == i2c_master_recv(&t->client,&reg,1))
 				tuner->afc = AFC_BITS_2_kHz[(reg>>1)&0x0f];
+		}
+		break;
+	}
+	case VIDIOC_S_TUNER:
+	{
+		struct v4l2_tuner* tuner = arg;
+
+		if (t->radio) {
+			t->radio_mode = tuner->audmode;
+			tda9887_configure (t);
 		}
 		break;
 	}

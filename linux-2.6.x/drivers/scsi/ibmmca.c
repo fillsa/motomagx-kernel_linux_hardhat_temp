@@ -292,7 +292,7 @@ struct subsys_list_struct {
 #define INTEGRATED_SCSI          101
 
 /* List of possible IBM-SCSI-adapters */
-struct subsys_list_struct subsys_list[] = {
+static struct subsys_list_struct subsys_list[] = {
 	{0x8efc, "IBM SCSI-2 F/W Adapter"},	/* special = 0 */
 	{0x8efd, "IBM 7568 Industrial Computer SCSI Adapter w/Cache"},	/* special = 1 */
 	{0x8ef8, "IBM Expansion Unit SCSI Controller"},	/* special = 2 */
@@ -451,13 +451,16 @@ static int scsi_id[IM_MAX_HOSTS] = { 7, 7, 7, 7, 7, 7, 7, 7 };
    (that is kernel version 2.1.x) */
 #if defined(MODULE)
 static char *boot_options = NULL;
-MODULE_PARM(boot_options, "s");
-MODULE_PARM(io_port, "1-" __MODULE_STRING(IM_MAX_HOSTS) "i");
-MODULE_PARM(scsi_id, "1-" __MODULE_STRING(IM_MAX_HOSTS) "i");
+module_param(boot_options, charp, 0);
+module_param_array(io_port, int, NULL, 0);
+module_param_array(scsi_id, int, NULL, 0);
+
+#if 0 /* FIXME: No longer exist? --RR */
 MODULE_PARM(display, "1i");
 MODULE_PARM(adisplay, "1i");
 MODULE_PARM(normal, "1i");
 MODULE_PARM(ansi, "1i");
+#endif
 #endif
 /*counter of concurrent disk read/writes, to turn on/off disk led */
 static int disk_rw_in_progress = 0;
@@ -2115,7 +2118,7 @@ static int ibmmca_queuecommand(Scsi_Cmnd * cmd, void (*done) (Scsi_Cmnd *))
 	return 0;
 }
 
-static int ibmmca_abort(Scsi_Cmnd * cmd)
+static int __ibmmca_abort(Scsi_Cmnd * cmd)
 {
 	/* Abort does not work, as the adapter never generates an interrupt on
 	 * whatever situation is simulated, even when really pending commands
@@ -2222,7 +2225,19 @@ static int ibmmca_abort(Scsi_Cmnd * cmd)
 	}
 }
 
-static int ibmmca_host_reset(Scsi_Cmnd * cmd)
+static int ibmmca_abort(Scsi_Cmnd * cmd)
+{
+	struct Scsi_Host *shpnt = cmd->device->host;
+	int rc;
+
+	spin_lock_irq(shpnt->host_lock);
+	rc = __ibmmca_abort(cmd);
+	spin_unlock_irq(shpnt->host_lock);
+
+	return rc;
+}
+
+static int __ibmmca_host_reset(Scsi_Cmnd * cmd)
 {
 	struct Scsi_Host *shpnt;
 	Scsi_Cmnd *cmd_aid;
@@ -2307,6 +2322,18 @@ static int ibmmca_host_reset(Scsi_Cmnd * cmd)
 		}
 	}
 	return SUCCESS;
+}
+
+static int ibmmca_host_reset(Scsi_Cmnd * cmd)
+{
+	struct Scsi_Host *shpnt = cmd->device->host;
+	int rc;
+
+	spin_lock_irq(shpnt->host_lock);
+	rc = __ibmmca_host_reset(cmd);
+	spin_unlock_irq(shpnt->host_lock);
+
+	return rc;
 }
 
 static int ibmmca_biosparam(struct scsi_device *sdev, struct block_device *bdev, sector_t capacity, int *info)

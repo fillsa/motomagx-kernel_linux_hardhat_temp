@@ -40,10 +40,10 @@
 #include <asm/mach/map.h>
 #include <asm/mach/flash.h>
 
-#include <asm/arch/clocks.h>
 #include <asm/arch/gpio.h>
-#include <asm/arch/fpga.h>
 #include <asm/arch/usb.h>
+#include <asm/arch/mux.h>
+#include <asm/arch/tc.h>
 #include <asm/arch/tc.h>
 
 #include "common.h"
@@ -119,9 +119,27 @@ static struct resource osk5912_smc91x_resources[] = {
 
 static struct platform_device osk5912_smc91x_device = {
 	.name		= "smc91x",
-	.id		= 0,
+	.id		= -1,
 	.num_resources	= ARRAY_SIZE(osk5912_smc91x_resources),
 	.resource	= osk5912_smc91x_resources,
+};
+ 
+static struct resource osk5912_cf_resources[] = {
+	[0] = {
+		.start	= OMAP_GPIO_IRQ(62),
+		.end	= OMAP_GPIO_IRQ(62),
+		.flags	= IORESOURCE_IRQ,
+	},
+};
+
+static struct platform_device osk5912_cf_device = {
+	.name		= "omap_cf",
+	.id		= -1,
+	.dev = {
+		.platform_data	= (void *) 2 /* CS2 */,
+	},
+	.num_resources	= ARRAY_SIZE(osk5912_cf_resources),
+	.resource	= osk5912_cf_resources,
 };
 
 static struct platform_device keypad_device = {
@@ -132,6 +150,7 @@ static struct platform_device keypad_device = {
 static struct platform_device *osk5912_devices[] __initdata = {
 	&osk5912_flash_device,
 	&osk5912_smc91x_device,
+	&osk5912_cf_device,
 	&keypad_device,
 };
 
@@ -147,17 +166,52 @@ static void __init osk_init_smc91x(void)
 	EMIFS_CCS(1) |= 0x2;
 }
 
+static void __init osk_init_smc91x(void)
+{
+	if ((omap_request_gpio(0)) < 0) {
+		printk("Error requesting gpio 0 for smc91x irq\n");
+		return;
+	}
+	omap_set_gpio_edge_ctrl(0, OMAP_GPIO_RISING_EDGE);
+
+	/* Check EMIFS wait states to fix errors with SMC_GET_PKT_HDR */
+	EMIFS_CCS(1) |= 0x2;
+}
+
+static void __init osk_init_cf(void)
+{
+	omap_cfg_reg(M7_1610_GPIO62);
+	if ((omap_request_gpio(62)) < 0) {
+		printk("Error requesting gpio 62 for CF irq\n");
+		return;
+	}
+	/* it's really active-low */
+	omap_set_gpio_edge_ctrl(62, OMAP_GPIO_FALLING_EDGE);
+}
+
 void osk_init_irq(void)
 {
 	omap_init_irq();
 	omap_gpio_init();
 	osk_init_smc91x();
+	omap_gpio_init();
+	osk_init_smc91x();
+	osk_init_cf();
 }
 
 static struct omap_usb_config osk_usb_config __initdata = {
-	/* has usb host and device, but no Mini-AB port */
+	/* has usb host connector (A) ... for development it can also
+	 * be used, with a NONSTANDARD gender-bending cable/dongle, as
+	 * a peripheral.
+	 */
+#ifdef	CONFIG_USB_GADGET_OMAP
+	.register_dev	= 1,
+	.hmc_mode	= 0,
+#else
 	.register_host	= 1,
 	.hmc_mode	= 16,
+	.rwc		= 1,
+#endif
 	.pins[0]	= 2,
 };
 
@@ -169,9 +223,11 @@ static void __init osk_init(void)
 {
 	osk_flash_resource.end = osk_flash_resource.start = omap_cs3_phys();
 	osk_flash_resource.end += SZ_32M - 1;
-        platform_add_devices(osk5912_devices, ARRAY_SIZE(osk5912_devices));
+	platform_add_devices(osk5912_devices, ARRAY_SIZE(osk5912_devices));
 	omap_board_config = osk_config;
 	omap_board_config_size = ARRAY_SIZE(osk_config);
+	USB_TRANSCEIVER_CTRL_REG |= (3 << 1);
+	USB_TRANSCEIVER_CTRL_REG |= (3 << 1);
 }
 
 static void __init osk_map_io(void)

@@ -2,9 +2,9 @@
 #define _NET_IP6_ROUTE_H
 
 #define IP6_RT_PRIO_FW		16
+#define IP6_RT_PRIO_USER	1024
 #define IP6_RT_PRIO_ADDRCONF	256
 #define IP6_RT_PRIO_KERN	512
-#define IP6_RT_PRIO_USER 	1024
 #define IP6_RT_FLOW_MASK	0x00ff
 
 #ifdef __KERNEL__
@@ -144,11 +144,10 @@ extern void			ip6_route_cleanup(void);
 
 extern int			ipv6_route_ioctl(unsigned int cmd, void __user *arg);
 
-extern int			ip6_tb_route_add(int table_id,
-						 struct in6_rtmsg *rtmsg,
-						 struct nlmsghdr *,
-						 void *rtattr);
-int				rt6_ins(struct rt6_info *,
+extern int			ip6_tb_route_add(int table_id, struct in6_rtmsg *rtmsg,
+					      struct nlmsghdr *,
+					      void *rtattr);
+int			rt6_ins(struct rt6_info *,
 					   struct nlmsghdr *,
 					   void *rtattr);
 extern int			ip6_del_rt(struct rt6_info *,
@@ -220,8 +219,8 @@ extern void rt6_mtu_change(struct net_device *dev, unsigned mtu);
  *	Store a destination cache entry in a socket
  */
 static inline void ip6_dst_store(struct sock *sk, struct dst_entry *dst,
-				 struct in6_addr *daddr,
-				 struct in6_addr *saddr)
+				     struct in6_addr *daddr,
+				     struct in6_addr *saddr)
 {
 	struct ipv6_pinfo *np = inet6_sk(sk);
 
@@ -277,15 +276,19 @@ static inline struct rt6_table *rt6_new_table(int id)
 #endif /*CONFIG_IPV6_MULTIPLE_TABLES */
 
 static inline int ip6_route_add(struct in6_rtmsg *rtmsg, 
-				struct nlmsghdr *nlh, void *rtattr)
+					      struct nlmsghdr *nlh,
+					      void *rtattr,
+					      struct netlink_skb_parms *req);
 {
 	return ip6_tb_route_add(0, rtmsg, nlh, rtattr);
 }
 
+/* 2.6.12	struct rt6_info *rt6_lookup(struct in6_addr *daddr, struct in6_addr *saddr,
+                            int oif, int strict)*/
 static inline struct rt6_info *rt6_tb_lookup(struct rt6_table *table,
 					     struct in6_addr *daddr,
-					     struct in6_addr *saddr,
-					     int oif, int flags)
+					    struct in6_addr *saddr,
+					    int oif, int flags)
 {
 	struct flowi fl = {
 		.oif = oif,

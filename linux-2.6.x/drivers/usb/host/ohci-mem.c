@@ -23,34 +23,28 @@
 
 /*-------------------------------------------------------------------------*/
 
-static struct usb_hcd *ohci_hcd_alloc (void)
+static void ohci_hcd_init (struct ohci_hcd *ohci)
 {
-	struct ohci_hcd *ohci;
-
-	ohci = (struct ohci_hcd *) kmalloc (sizeof *ohci, GFP_KERNEL);
-	if (ohci != 0) {
-		memset (ohci, 0, sizeof (struct ohci_hcd));
-		ohci->hcd.product_desc = "OHCI Host Controller";
-		ohci->next_statechange = jiffies;
-		spin_lock_init (&ohci->lock);
-		INIT_LIST_HEAD (&ohci->pending);
-		INIT_WORK (&ohci->rh_resume, ohci_rh_resume, &ohci->hcd);
-		return &ohci->hcd;
-	}
-	return NULL;
+	ohci->next_statechange = jiffies;
+	spin_lock_init (&ohci->lock);
+	INIT_LIST_HEAD (&ohci->pending);
+	INIT_WORK (&ohci->rh_resume, ohci_rh_resume, ohci_to_hcd(ohci));
+	ohci->reboot_notifier.notifier_call = ohci_reboot;
 }
 
 /*-------------------------------------------------------------------------*/
 
 static int ohci_mem_init (struct ohci_hcd *ohci)
 {
-	ohci->td_cache = dma_pool_create ("ohci_td", ohci->hcd.self.controller,
+	ohci->td_cache = dma_pool_create ("ohci_td",
+		ohci_to_hcd(ohci)->self.controller,
 		sizeof (struct td),
 		32 /* byte alignment */,
 		0 /* no page-crossing issues */);
 	if (!ohci->td_cache)
 		return -ENOMEM;
-	ohci->ed_cache = dma_pool_create ("ohci_ed", ohci->hcd.self.controller,
+	ohci->ed_cache = dma_pool_create ("ohci_ed",
+		ohci_to_hcd(ohci)->self.controller,
 		sizeof (struct ed),
 		16 /* byte alignment */,
 		0 /* no page-crossing issues */);
@@ -90,7 +84,7 @@ dma_to_td (struct ohci_hcd *hc, dma_addr_t td_dma)
 
 /* TDs ... */
 static struct td *
-td_alloc (struct ohci_hcd *hc, int mem_flags)
+td_alloc (struct ohci_hcd *hc, unsigned mem_flags)
 {
 	dma_addr_t	dma;
 	struct td	*td;
@@ -124,7 +118,7 @@ td_free (struct ohci_hcd *hc, struct td *td)
 
 /* EDs ... */
 static struct ed *
-ed_alloc (struct ohci_hcd *hc, int mem_flags)
+ed_alloc (struct ohci_hcd *hc, unsigned mem_flags)
 {
 	dma_addr_t	dma;
 	struct ed	*ed;

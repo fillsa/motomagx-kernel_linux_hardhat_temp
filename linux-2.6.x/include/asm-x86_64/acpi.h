@@ -28,6 +28,8 @@
 
 #ifdef __KERNEL__
 
+#include <acpi/pdc_intel.h>
+
 #define COMPILER_DEPENDENT_INT64   long long
 #define COMPILER_DEPENDENT_UINT64  unsigned long long
 
@@ -99,12 +101,6 @@ __acpi_release_global_lock (unsigned int *lock)
         :"=r"(n_hi), "=r"(n_lo)     \
         :"0"(n_hi), "1"(n_lo))
 
-/*
- * Refer Intel ACPI _PDC support document for bit definitions
- */
-#define ACPI_PDC_EST_CAPABILITY_SMP 	0xa
-#define ACPI_PDC_EST_CAPABILITY_MSR	0x1
-
 #ifdef CONFIG_ACPI_BOOT
 extern int acpi_lapic;
 extern int acpi_ioapic;
@@ -131,6 +127,10 @@ extern int acpi_gsi_to_irq(u32 gsi, unsigned int *irq);
 #define acpi_ioapic 0
 #endif /* !CONFIG_ACPI_BOOT */
 
+extern int acpi_numa;
+extern int acpi_scan_nodes(unsigned long start, unsigned long end);
+#define NR_NODE_MEMBLKS (MAX_NUMNODES*2)
+
 #ifdef CONFIG_ACPI_PCI
 static inline void acpi_noirq_set(void) { acpi_noirq = 1; }
 static inline void acpi_disable_pci(void) 
@@ -149,7 +149,6 @@ static inline int acpi_irq_balance_set(char *str) { return 0; }
 
 /* routines for saving/restoring kernel state */
 extern int acpi_save_state_mem(void);
-extern int acpi_save_state_disk(void);
 extern void acpi_restore_state_mem(void);
 
 extern unsigned long acpi_wakeup_address;

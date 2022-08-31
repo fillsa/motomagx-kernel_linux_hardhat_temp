@@ -80,6 +80,8 @@ static char *_rioboot_c_sccs_ = "@(#)rioboot.c	1.3";
 #include "cmdblk.h"
 #include "route.h"
 
+static int RIOBootComplete( struct rio_info *p, struct Host *HostP, uint Rup, struct PktCmd *PktCmdP );
+
 static uchar
 RIOAtVec2Ctrl[] =
 {
@@ -802,7 +804,7 @@ struct PKT *PacketP;
 ** If booted by an RTA, HostP->Mapping[Rup].RtaUniqueNum is the booting RTA.
 ** RtaUniq is the booted RTA.
 */
-int RIOBootComplete( struct rio_info *p, struct Host *HostP, uint Rup, struct PktCmd *PktCmdP )
+static int RIOBootComplete( struct rio_info *p, struct Host *HostP, uint Rup, struct PktCmd *PktCmdP )
 {
 	struct Map	*MapP = NULL;
 	struct Map	*MapP2 = NULL;
@@ -900,7 +902,7 @@ int RIOBootComplete( struct rio_info *p, struct Host *HostP, uint Rup, struct Pk
 	       (HostP->Mapping[entry].RtaUniqueNum==RtaUniq))
 	    {
 	        HostP->Mapping[entry].Flags |= RTA_BOOTED|RTA_NEWBOOT;
-#if NEED_TO_FIX
+#ifdef NEED_TO_FIX
 		RIO_SV_BROADCAST(HostP->svFlags[entry]);
 #endif
 		if ( (sysport=HostP->Mapping[entry].SysPort) != NO_PORT )
@@ -916,7 +918,7 @@ int RIOBootComplete( struct rio_info *p, struct Host *HostP, uint Rup, struct Pk
 		   {
 			entry2 = HostP->Mapping[entry].ID2 - 1;
 			HostP->Mapping[entry2].Flags |= RTA_BOOTED|RTA_NEWBOOT;
-#if NEED_TO_FIX
+#ifdef NEED_TO_FIX
 			RIO_SV_BROADCAST(HostP->svFlags[entry2]);
 #endif
 			sysport = HostP->Mapping[entry2].SysPort;
@@ -1141,7 +1143,7 @@ int RIOBootComplete( struct rio_info *p, struct Host *HostP, uint Rup, struct Pk
 		    CCOPY( MapP->Name, HostP->Mapping[entry].Name, MAX_NAME_LEN );
 		    HostP->Mapping[entry].Flags =
 		     SLOT_IN_USE | RTA_BOOTED | RTA_NEWBOOT;
-#if NEED_TO_FIX
+#ifdef NEED_TO_FIX
 		    RIO_SV_BROADCAST(HostP->svFlags[entry]);
 #endif
 		    RIOReMapPorts( p, HostP, &HostP->Mapping[entry] );
@@ -1157,7 +1159,7 @@ int RIOBootComplete( struct rio_info *p, struct Host *HostP, uint Rup, struct Pk
    "This RTA has a tentative entry on another host - delete that entry (1)\n");
 		    HostP->Mapping[entry].Flags =
 		     SLOT_TENTATIVE | RTA_BOOTED | RTA_NEWBOOT;
-#if NEED_TO_FIX
+#ifdef NEED_TO_FIX
 		    RIO_SV_BROADCAST(HostP->svFlags[entry]);
 #endif
 		}
@@ -1167,7 +1169,7 @@ int RIOBootComplete( struct rio_info *p, struct Host *HostP, uint Rup, struct Pk
 		    {
 			HostP->Mapping[entry2].Flags = SLOT_IN_USE |
 			 RTA_BOOTED | RTA_NEWBOOT | RTA16_SECOND_SLOT;
-#if NEED_TO_FIX
+#ifdef NEED_TO_FIX
 			RIO_SV_BROADCAST(HostP->svFlags[entry2]);
 #endif
 			HostP->Mapping[entry2].SysPort = MapP2->SysPort;
@@ -1186,7 +1188,7 @@ int RIOBootComplete( struct rio_info *p, struct Host *HostP, uint Rup, struct Pk
 		    else
 			HostP->Mapping[entry2].Flags = SLOT_TENTATIVE |
 			 RTA_BOOTED | RTA_NEWBOOT | RTA16_SECOND_SLOT;
-#if NEED_TO_FIX
+#ifdef NEED_TO_FIX
 			RIO_SV_BROADCAST(HostP->svFlags[entry2]);
 #endif
 		    bzero( (caddr_t)MapP2, sizeof(struct Map) );

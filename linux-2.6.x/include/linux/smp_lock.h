@@ -20,7 +20,6 @@ extern void __lockfunc __release_kernel_lock(void);
 		__release_kernel_lock();	\
 } while (0)
 
-
 /*
  * Non-SMP kernels will never block on the kernel lock,
  * so we are better off returning a constant zero from

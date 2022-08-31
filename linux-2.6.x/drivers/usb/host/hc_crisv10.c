@@ -113,17 +113,17 @@ static __u8 root_hub_dev_des[] =
 {
 	0x12,  /*  __u8  bLength; */
 	0x01,  /*  __u8  bDescriptorType; Device */
-	0x00,  /*  __u16 bcdUSB; v1.0 */
+	0x00,  /*  __le16 bcdUSB; v1.0 */
 	0x01,
 	0x09,  /*  __u8  bDeviceClass; HUB_CLASSCODE */
 	0x00,  /*  __u8  bDeviceSubClass; */
 	0x00,  /*  __u8  bDeviceProtocol; */
 	0x08,  /*  __u8  bMaxPacketSize0; 8 Bytes */
-	0x00,  /*  __u16 idVendor; */
+	0x00,  /*  __le16 idVendor; */
 	0x00,
-	0x00,  /*  __u16 idProduct; */
+	0x00,  /*  __le16 idProduct; */
 	0x00,
-	0x00,  /*  __u16 bcdDevice; */
+	0x00,  /*  __le16 bcdDevice; */
 	0x00,
 	0x00,  /*  __u8  iManufacturer; */
 	0x02,  /*  __u8  iProduct; */
@@ -136,7 +136,7 @@ static __u8 root_hub_config_des[] =
 {
 	0x09,  /*  __u8  bLength; */
 	0x02,  /*  __u8  bDescriptorType; Configuration */
-	0x19,  /*  __u16 wTotalLength; */
+	0x19,  /*  __le16 wTotalLength; */
 	0x00,
 	0x01,  /*  __u8  bNumInterfaces; */
 	0x01,  /*  __u8  bConfigurationValue; */
@@ -160,7 +160,7 @@ static __u8 root_hub_config_des[] =
 	0x05,  /*  __u8  ep_bDescriptorType; Endpoint */
 	0x81,  /*  __u8  ep_bEndpointAddress; IN Endpoint 1 */
 	0x03,  /*  __u8  ep_bmAttributes; Interrupt */
-	0x08,  /*  __u16 ep_wMaxPacketSize; 8 Bytes */
+	0x08,  /*  __le16 ep_wMaxPacketSize; 8 Bytes */
 	0x00,
 	0xff   /*  __u8  ep_bInterval; 255 ms */
 };
@@ -463,7 +463,8 @@ static void etrax_usb_free_epid(int epid);
 
 static int etrax_remove_from_sb_list(struct urb *urb);
 
-static void* etrax_usb_buffer_alloc(struct usb_bus* bus, size_t size, int mem_flags, dma_addr_t *dma);
+static void* etrax_usb_buffer_alloc(struct usb_bus* bus, size_t size,
+	unsigned mem_flags, dma_addr_t *dma);
 static void etrax_usb_buffer_free(struct usb_bus *bus, size_t size, void *addr, dma_addr_t dma);
 
 static void etrax_usb_add_to_bulk_sb_list(struct urb *urb, int epid);
@@ -476,11 +477,9 @@ static int etrax_usb_submit_ctrl_urb(struct urb *urb);
 static int etrax_usb_submit_intr_urb(struct urb *urb);
 static int etrax_usb_submit_isoc_urb(struct urb *urb);
 
-static int etrax_usb_submit_urb(struct urb *urb, int mem_flags);
+static int etrax_usb_submit_urb(struct urb *urb, unsigned mem_flags);
 static int etrax_usb_unlink_urb(struct urb *urb, int status);
 static int etrax_usb_get_frame_number(struct usb_device *usb_dev);
-static int etrax_usb_allocate_dev(struct usb_device *usb_dev);
-static int etrax_usb_deallocate_dev(struct usb_device *usb_dev);
 
 static irqreturn_t etrax_usb_tx_interrupt(int irq, void *vhc, struct pt_regs *regs);
 static irqreturn_t etrax_usb_rx_interrupt(int irq, void *vhc, struct pt_regs *regs);
@@ -512,8 +511,6 @@ static void etrax_usb_hc_cleanup(void);
 
 static struct usb_operations etrax_usb_device_operations =
 {
-	.allocate = etrax_usb_allocate_dev,
-	.deallocate = etrax_usb_deallocate_dev,
 	.get_frame_number = etrax_usb_get_frame_number,
 	.submit_urb = etrax_usb_submit_urb,
 	.unlink_urb = etrax_usb_unlink_urb,
@@ -1266,7 +1263,7 @@ static int etrax_usb_allocate_epid(void)
 	return -1;
 }
 
-static int etrax_usb_submit_urb(struct urb *urb, int mem_flags)
+static int etrax_usb_submit_urb(struct urb *urb, unsigned mem_flags)
 {
 	etrax_hc_t *hc;
 	int ret = -EINVAL;
@@ -1577,20 +1574,6 @@ static int etrax_usb_get_frame_number(struct usb_device *usb_dev)
 	DBFENTER;
 	DBFEXIT;
 	return (*R_USB_FM_NUMBER & 0x7ff);
-}
-
-static int etrax_usb_allocate_dev(struct usb_device *usb_dev)
-{
-	DBFENTER;
-	DBFEXIT;
-	return 0;
-}
-
-static int etrax_usb_deallocate_dev(struct usb_device *usb_dev)
-{
-	DBFENTER;
-	DBFEXIT;
-	return 0;
 }
 
 static irqreturn_t etrax_usb_tx_interrupt(int irq, void *vhc, struct pt_regs *regs)
@@ -4295,7 +4278,8 @@ etrax_usb_bulk_eot_timer_func(unsigned long dummy)
 }
 
 static void*
-etrax_usb_buffer_alloc(struct usb_bus* bus, size_t size, int mem_flags, dma_addr_t *dma)
+etrax_usb_buffer_alloc(struct usb_bus* bus, size_t size,
+	unsigned mem_flags, dma_addr_t *dma)
 {
   return kmalloc(size, mem_flags);
 }
@@ -4347,7 +4331,7 @@ static int __init etrax_usb_hc_init(void)
 	bus->bus_name="ETRAX 100LX";
 	bus->hcpriv = hc;
 
-	/* Initalize RH to the default address.
+	/* Initialize RH to the default address.
 	   And make sure that we have no status change indication */
 	hc->rh.numports = 2;  /* The RH has two ports */
 	hc->rh.devnum = 1;
@@ -4414,6 +4398,7 @@ static int __init etrax_usb_hc_init(void)
         device_initialize(&fake_device);
         kobject_set_name(&fake_device.kobj, "etrax_usb");
         kobject_add(&fake_device.kobj);
+        kobject_hotplug(&fake_device.kobj, KOBJ_ADD);
         hc->bus->controller = &fake_device;
 	usb_register_bus(hc->bus);
 
@@ -4546,7 +4531,7 @@ static int __init etrax_usb_hc_init(void)
         usb_rh->speed = USB_SPEED_FULL;
         usb_rh->devnum = 1;
         hc->bus->devnum_next = 2;
-        usb_rh->epmaxpacketin[0] = usb_rh->epmaxpacketout[0] = 64;
+        usb_rh->ep0.desc.wMaxPacketSize = __const_cpu_to_le16(64);
         usb_get_device_descriptor(usb_rh, USB_DT_DEVICE_SIZE);
 	usb_new_device(usb_rh);
 

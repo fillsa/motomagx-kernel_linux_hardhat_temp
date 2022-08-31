@@ -26,9 +26,6 @@
 #include <linux/module.h>
 #include <linux/moduleparam.h>
 #include <linux/init.h>
-#ifdef CONFIG_MCA
-#include <linux/mca.h>
-#endif /* CONFIG_MCA */
 #include "sound_config.h"
 #include "sb_mixer.h"
 #include "sb.h"
@@ -52,7 +49,7 @@ static int __initdata esstype   = 0; /* ESS chip type */
 static int __initdata acer 	= 0; /* Do acer notebook init? */
 static int __initdata sm_games 	= 0; /* Logitech soundman games? */
 
-struct sb_card_config *legacy = NULL;
+static struct sb_card_config *legacy = NULL;
 
 #ifdef CONFIG_PNP
 static int __initdata pnp       = 1;
@@ -289,6 +286,7 @@ static struct pnp_card_driver sb_pnp_driver = {
 	.probe         = sb_pnp_probe,
 	.remove        = sb_pnp_remove,
 };
+MODULE_DEVICE_TABLE(pnp_card, sb_pnp_card_table);
 #endif /* CONFIG_PNP */
 
 static int __init sb_init(void)

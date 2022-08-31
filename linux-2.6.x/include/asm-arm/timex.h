@@ -15,6 +15,4 @@
 typedef unsigned long cycles_t;
 #include <asm/arch/timex.h>
 
-extern cycles_t cacheflush_time;
-
 #endif

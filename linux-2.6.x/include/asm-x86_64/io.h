@@ -36,11 +36,7 @@
   *  - Arnaldo Carvalho de Melo <acme@conectiva.com.br>
   */
 
-#ifdef SLOW_IO_BY_JUMPING
-#define __SLOW_DOWN_IO "\njmp 1f\n1:\tjmp 1f\n1:"
-#else
 #define __SLOW_DOWN_IO "\noutb %%al,$0x80"
-#endif
 
 #ifdef REALLY_SLOW_IO
 #define __FULL_SLOW_DOWN_IO __SLOW_DOWN_IO __SLOW_DOWN_IO __SLOW_DOWN_IO __SLOW_DOWN_IO
@@ -128,12 +124,7 @@ extern inline void * phys_to_virt(unsigned long address)
 /*
  * Change "struct page" to physical address.
  */
-#ifdef CONFIG_DISCONTIGMEM
-#include <asm/mmzone.h>
 #define page_to_phys(page)    ((dma_addr_t)page_to_pfn(page) << PAGE_SHIFT)
-#else
-#define page_to_phys(page)	((page - mem_map) << PAGE_SHIFT)
-#endif
 
 #include <asm-generic/iomap.h>
 
@@ -175,19 +166,19 @@ extern void iounmap(volatile void __iomem *addr);
  * memory location directly.
  */
 
-static inline __u8 __readb(volatile void __iomem *addr)
+static inline __u8 __readb(const volatile void __iomem *addr)
 {
 	return *(__force volatile __u8 *)addr;
 }
-static inline __u16 __readw(volatile void __iomem *addr)
+static inline __u16 __readw(const volatile void __iomem *addr)
 {
 	return *(__force volatile __u16 *)addr;
 }
-static inline __u32 __readl(volatile void __iomem *addr)
+static inline __u32 __readl(const volatile void __iomem *addr)
 {
 	return *(__force volatile __u32 *)addr;
 }
-static inline __u64 __readq(volatile void __iomem *addr)
+static inline __u64 __readq(const volatile void __iomem *addr)
 {
 	return *(__force volatile __u64 *)addr;
 }
@@ -249,21 +240,19 @@ static inline void __writew(__u16 b, volatile void __iomem *addr)
 #define __raw_writel writel
 #define __raw_writeq writeq
 
-void *__memcpy_fromio(void*,unsigned long,unsigned);
-void *__memcpy_toio(unsigned long,const void*,unsigned);
+void __memcpy_fromio(void*,unsigned long,unsigned);
+void __memcpy_toio(unsigned long,const void*,unsigned);
 
-static inline void *memcpy_fromio(void *to, volatile void __iomem *from, unsigned len)
+static inline void memcpy_fromio(void *to, const volatile void __iomem *from, unsigned len)
 {
-	return __memcpy_fromio(to,(unsigned long)from,len);
+	__memcpy_fromio(to,(unsigned long)from,len);
 }
-static inline void *memcpy_toio(volatile void __iomem *to, const void *from, unsigned len)
+static inline void memcpy_toio(volatile void __iomem *to, const void *from, unsigned len)
 {
-	return __memcpy_toio((unsigned long)to,from,len);
+	__memcpy_toio((unsigned long)to,from,len);
 }
-static inline void *memset_io(volatile void __iomem *a, int b, size_t c)
-{
-	return memset((__force void *)a,b,c);
-}
+
+void memset_io(volatile void __iomem *a, int b, size_t c);
 
 /*
  * ISA space is 'always mapped' on a typical x86 system, no need to
@@ -330,6 +319,17 @@ out:
 
 extern int iommu_bio_merge;
 #define BIO_VMERGE_BOUNDARY iommu_bio_merge
+
+/*
+ * Convert a physical pointer to a virtual kernel pointer for /dev/mem
+ * access
+ */
+#define xlate_dev_mem_ptr(p)	__va(p)
+
+/*
+ * Convert a virtual cached pointer to an uncached pointer
+ */
+#define xlate_dev_kmem_ptr(p)	p
 
 #endif /* __KERNEL__ */
 

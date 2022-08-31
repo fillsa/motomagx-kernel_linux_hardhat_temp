@@ -8,9 +8,9 @@
 #include <errno.h>
 #include <signal.h>
 #include <linux/unistd.h>
-#include <sys/ptrace.h>
 #include <sys/mman.h>
 #include <sys/wait.h>
+#include "ptrace_user.h"
 #include "os.h"
 #include "user.h"
 #include "user_util.h"
@@ -95,9 +95,16 @@ void os_kill_process(int pid, int reap_child)
 		
 }
 
+/* Kill off a ptraced child by all means available.  kill it normally first,
+ * then PTRACE_KILL it, then PTRACE_CONT it in case it's in a run state from
+ * which it can't exit directly.
+ */
+
 void os_kill_ptraced_process(int pid, int reap_child)
 {
+	kill(pid, SIGKILL);
 	ptrace(PTRACE_KILL, pid);
+	ptrace(PTRACE_CONT, pid);
 	if(reap_child)
 		CATCH_EINTR(waitpid(pid, NULL, 0));
 }
@@ -114,6 +121,11 @@ inline _syscall0(pid_t, getpid)
 int os_getpid(void)
 {
 	return(getpid());
+}
+
+int os_getpgrp(void)
+{
+	return getpgrp();
 }
 
 int os_map_memory(void *virt, int fd, unsigned long long off, unsigned long len,

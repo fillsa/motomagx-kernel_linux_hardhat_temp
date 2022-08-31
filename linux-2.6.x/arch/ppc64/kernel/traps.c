@@ -29,6 +29,8 @@
 #include <linux/interrupt.h>
 #include <linux/init.h>
 #include <linux/module.h>
+#include <linux/delay.h>
+#include <asm/kdebug.h>
 
 #include <asm/pgtable.h>
 #include <asm/uaccess.h>
@@ -37,11 +39,9 @@
 #include <asm/processor.h>
 #include <asm/ppcdebug.h>
 #include <asm/rtas.h>
-
-#ifdef CONFIG_PPC_PSERIES
-/* This is true if we are using the firmware NMI handler (typically LPAR) */
-extern int fwnmi_active;
-#endif
+#include <asm/systemcfg.h>
+#include <asm/machdep.h>
+#include <asm/pmc.h>
 
 #ifdef CONFIG_DEBUGGER
 int (*__debugger)(struct pt_regs *regs);
@@ -60,6 +60,20 @@ EXPORT_SYMBOL(__debugger_iabr_match);
 EXPORT_SYMBOL(__debugger_dabr_match);
 EXPORT_SYMBOL(__debugger_fault_handler);
 #endif
+
+struct notifier_block *ppc64_die_chain;
+static DEFINE_SPINLOCK(die_notifier_lock);
+
+int register_die_notifier(struct notifier_block *nb)
+{
+	int err = 0;
+	unsigned long flags;
+
+	spin_lock_irqsave(&die_notifier_lock, flags);
+	err = notifier_chain_register(&ppc64_die_chain, nb);
+	spin_unlock_irqrestore(&die_notifier_lock, flags);
+	return err;
+}
 
 /*
  * Trap & Exception support
@@ -112,9 +126,14 @@ int die(const char *str, struct pt_regs *regs, long err)
 			printk("POWERMAC ");
 			nl = 1;
 			break;
+		case PLATFORM_BPA:
+			printk("BPA ");
+			nl = 1;
+			break;
 	}
 	if (nl)
 		printk("\n");
+	print_modules();
 	show_regs(regs);
 	bust_spinlocks(0);
 	spin_unlock_irq(&die_lock);
@@ -124,8 +143,7 @@ int die(const char *str, struct pt_regs *regs, long err)
 
 	if (panic_on_oops) {
 		printk(KERN_EMERG "Fatal exception: panic in 5 seconds\n");
-		set_current_state(TASK_UNINTERRUPTIBLE);
-		schedule_timeout(5 * HZ);
+		ssleep(5);
 		panic("Fatal exception");
 	}
 	do_exit(SIGSEGV);
@@ -133,8 +151,7 @@ int die(const char *str, struct pt_regs *regs, long err)
 	return 0;
 }
 
-static void
-_exception(int signr, struct pt_regs *regs, int code, unsigned long addr)
+void _exception(int signr, struct pt_regs *regs, int code, unsigned long addr)
 {
 	siginfo_t info;
 
@@ -150,53 +167,11 @@ _exception(int signr, struct pt_regs *regs, int code, unsigned long addr)
 	force_sig_info(signr, &info, current);
 }
 
-#ifdef CONFIG_PPC_PSERIES
-/* Get the error information for errors coming through the
- * FWNMI vectors.  The pt_regs' r3 will be updated to reflect
- * the actual r3 if possible, and a ptr to the error log entry
- * will be returned if found.
- */
-static struct rtas_error_log *FWNMI_get_errinfo(struct pt_regs *regs)
+void system_reset_exception(struct pt_regs *regs)
 {
-	unsigned long errdata = regs->gpr[3];
-	struct rtas_error_log *errhdr = NULL;
-	unsigned long *savep;
-
-	if ((errdata >= 0x7000 && errdata < 0x7fff0) ||
-	    (errdata >= rtas.base && errdata < rtas.base + rtas.size - 16)) {
-		savep = __va(errdata);
-		regs->gpr[3] = savep[0];	/* restore original r3 */
-		errhdr = (struct rtas_error_log *)(savep + 1);
-	} else {
-		printk("FWNMI: corrupt r3\n");
-	}
-	return errhdr;
-}
-
-/* Call this when done with the data returned by FWNMI_get_errinfo.
- * It will release the saved data area for other CPUs in the
- * partition to receive FWNMI errors.
- */
-static void FWNMI_release_errinfo(void)
-{
-	int ret = rtas_call(rtas_token("ibm,nmi-interlock"), 0, 1, NULL);
-	if (ret != 0)
-		printk("FWNMI: nmi-interlock failed: %d\n", ret);
-}
-#endif
-
-void
-SystemResetException(struct pt_regs *regs)
-{
-#ifdef CONFIG_PPC_PSERIES
-	if (fwnmi_active) {
-		struct rtas_error_log *errhdr = FWNMI_get_errinfo(regs);
-		if (errhdr) {
-			/* XXX Should look at FWNMI information */
-		}
-		FWNMI_release_errinfo();
-	}
-#endif
+	/* See if any machine dependent calls */
+	if (ppc_md.system_reset_exception)
+		ppc_md.system_reset_exception(regs);
 
 	die("System Reset", regs, 0);
 
@@ -207,64 +182,16 @@ SystemResetException(struct pt_regs *regs)
 	/* What should we do here? We could issue a shutdown or hard reset. */
 }
 
-#ifdef CONFIG_PPC_PSERIES
-/* 
- * See if we can recover from a machine check exception.
- * This is only called on power4 (or above) and only via
- * the Firmware Non-Maskable Interrupts (fwnmi) handler
- * which provides the error analysis for us.
- *
- * Return 1 if corrected (or delivered a signal).
- * Return 0 if there is nothing we can do.
- */
-static int recover_mce(struct pt_regs *regs, struct rtas_error_log err)
+void machine_check_exception(struct pt_regs *regs)
 {
-	if (err.disposition == RTAS_DISP_FULLY_RECOVERED) {
-		/* Platform corrected itself */
-		return 1;
-	} else if ((regs->msr & MSR_RI) &&
-		   user_mode(regs) &&
-		   err.severity == RTAS_SEVERITY_ERROR_SYNC &&
-		   err.disposition == RTAS_DISP_NOT_RECOVERED &&
-		   err.target == RTAS_TARGET_MEMORY &&
-		   err.type == RTAS_TYPE_ECC_UNCORR &&
-		   !(current->pid == 0 || current->pid == 1)) {
-		/* Kill off a user process with an ECC error */
-		printk(KERN_ERR "MCE: uncorrectable ecc error for pid %d\n",
-		       current->pid);
-		/* XXX something better for ECC error? */
-		_exception(SIGBUS, regs, BUS_ADRERR, regs->nip);
-		return 1;
-	}
-	return 0;
-}
-#endif
+	int recover = 0;
 
-/*
- * Handle a machine check.
- *
- * Note that on Power 4 and beyond Firmware Non-Maskable Interrupts (fwnmi)
- * should be present.  If so the handler which called us tells us if the
- * error was recovered (never true if RI=0).
- *
- * On hardware prior to Power 4 these exceptions were asynchronous which
- * means we can't tell exactly where it occurred and so we can't recover.
- */
-void
-MachineCheckException(struct pt_regs *regs)
-{
-#ifdef CONFIG_PPC_PSERIES
-	struct rtas_error_log err, *errp;
+	/* See if any machine dependent calls */
+	if (ppc_md.machine_check_exception)
+		recover = ppc_md.machine_check_exception(regs);
 
-	if (fwnmi_active) {
-		errp = FWNMI_get_errinfo(regs);
-		if (errp)
-			err = *errp;
-		FWNMI_release_errinfo();	/* frees errp */
-		if (errp && recover_mce(regs, err))
-			return;
-	}
-#endif
+	if (recover)
+		return;
 
 	if (debugger_fault_handler(regs))
 		return;
@@ -275,8 +202,7 @@ MachineCheckException(struct pt_regs *regs)
 		panic("Unrecoverable Machine check");
 }
 
-void
-UnknownException(struct pt_regs *regs)
+void unknown_exception(struct pt_regs *regs)
 {
 	printk("Bad trap at PC: %lx, SR: %lx, vector=%lx\n",
 	       regs->nip, regs->msr, regs->trap);
@@ -284,19 +210,23 @@ UnknownException(struct pt_regs *regs)
 	_exception(SIGTRAP, regs, 0, 0);
 }
 
-void
-InstructionBreakpointException(struct pt_regs *regs)
+void instruction_breakpoint_exception(struct pt_regs *regs)
 {
+	if (notify_die(DIE_IABR_MATCH, "iabr_match", regs, 5,
+					5, SIGTRAP) == NOTIFY_STOP)
+		return;
 	if (debugger_iabr_match(regs))
 		return;
 	_exception(SIGTRAP, regs, TRAP_BRKPT, regs->nip);
 }
 
-void
-SingleStepException(struct pt_regs *regs)
+void single_step_exception(struct pt_regs *regs)
 {
 	regs->msr &= ~MSR_SE;  /* Turn off 'trace' bit */
 
+	if (notify_die(DIE_SSTEP, "single_step", regs, 5,
+					5, SIGTRAP) == NOTIFY_STOP)
+		return;
 	if (debugger_sstep(regs))
 		return;
 
@@ -312,7 +242,7 @@ SingleStepException(struct pt_regs *regs)
 static inline void emulate_single_step(struct pt_regs *regs)
 {
 	if (regs->msr & MSR_SE)
-		SingleStepException(regs);
+		single_step_exception(regs);
 }
 
 static void parse_fpe(struct pt_regs *regs)
@@ -353,6 +283,9 @@ static void parse_fpe(struct pt_regs *regs)
  * fault.  Return zero on success.
  */
 
+#define INST_MFSPR_PVR		0x7c1f42a6
+#define INST_MFSPR_PVR_MASK	0xfc1fffff
+
 #define INST_DCBA		0x7c0005ec
 #define INST_DCBA_MASK		0x7c0007fe
 
@@ -370,6 +303,15 @@ static int emulate_instruction(struct pt_regs *regs)
 
 	if (get_user(instword, (unsigned int __user *)(regs->nip)))
 		return -EFAULT;
+
+	/* Emulate the mfspr rD, PVR. */
+	if ((instword & INST_MFSPR_PVR_MASK) == INST_MFSPR_PVR) {
+		unsigned int rd;
+
+		rd = (instword >> 21) & 0x1f;
+		regs->gpr[rd] = mfspr(SPRN_PVR);
+		return 0;
+	}
 
 	/* Emulating the dcba insn is just a no-op.  */
 	if ((instword & INST_DCBA_MASK) == INST_DCBA) {
@@ -419,7 +361,7 @@ extern struct bug_entry __start___bug_table[], __stop___bug_table[];
 #define module_find_bug(x)	NULL
 #endif
 
-static struct bug_entry *find_bug(unsigned long bugaddr)
+struct bug_entry *find_bug(unsigned long bugaddr)
 {
 	struct bug_entry *bug;
 
@@ -429,7 +371,7 @@ static struct bug_entry *find_bug(unsigned long bugaddr)
 	return module_find_bug(bugaddr);
 }
 
-int
+static int
 check_bug_trap(struct pt_regs *regs)
 {
 	struct bug_entry *bug;
@@ -456,20 +398,20 @@ check_bug_trap(struct pt_regs *regs)
 	return 0;
 }
 
-void
-ProgramCheckException(struct pt_regs *regs)
+void program_check_exception(struct pt_regs *regs)
 {
+	if (debugger_fault_handler(regs))
+		return;
+
 	if (regs->msr & 0x100000) {
 		/* IEEE FP exception */
 		parse_fpe(regs);
-
-	} else if (regs->msr & 0x40000) {
-		/* Privileged instruction */
-		_exception(SIGILL, regs, ILL_PRVOPC, regs->nip);
-
 	} else if (regs->msr & 0x20000) {
 		/* trap exception */
 
+		if (notify_die(DIE_BPT, "breakpoint", regs, 5,
+					5, SIGTRAP) == NOTIFY_STOP)
+			return;
 		if (debugger_bpt(regs))
 			return;
 
@@ -480,7 +422,7 @@ ProgramCheckException(struct pt_regs *regs)
 		_exception(SIGTRAP, regs, TRAP_BRKPT, regs->nip);
 
 	} else {
-		/* Illegal instruction; try to emulate it.  */
+		/* Privileged or illegal instruction; try to emulate it. */
 		switch (emulate_instruction(regs)) {
 		case 0:
 			regs->nip += 4;
@@ -492,58 +434,45 @@ ProgramCheckException(struct pt_regs *regs)
 			break;
 
 		default:
-			_exception(SIGILL, regs, ILL_ILLOPC, regs->nip);
+			if (regs->msr & 0x40000)
+				/* priveleged */
+				_exception(SIGILL, regs, ILL_PRVOPC, regs->nip);
+			else
+				/* illegal */
+				_exception(SIGILL, regs, ILL_ILLOPC, regs->nip);
 			break;
 		}
 	}
 }
 
-void KernelFPUnavailableException(struct pt_regs *regs)
+void kernel_fp_unavailable_exception(struct pt_regs *regs)
 {
 	printk(KERN_EMERG "Unrecoverable FP Unavailable Exception "
 			  "%lx at %lx\n", regs->trap, regs->nip);
 	die("Unrecoverable FP Unavailable Exception", regs, SIGABRT);
 }
 
-void AltivecUnavailableException(struct pt_regs *regs)
+void altivec_unavailable_exception(struct pt_regs *regs)
 {
-#ifndef CONFIG_ALTIVEC
 	if (user_mode(regs)) {
 		/* A user program has executed an altivec instruction,
 		   but this kernel doesn't support altivec. */
 		_exception(SIGILL, regs, ILL_ILLOPC, regs->nip);
 		return;
 	}
-#endif
 	printk(KERN_EMERG "Unrecoverable VMX/Altivec Unavailable Exception "
 			  "%lx at %lx\n", regs->trap, regs->nip);
 	die("Unrecoverable VMX/Altivec Unavailable Exception", regs, SIGABRT);
 }
 
-/* Ensure exceptions are disabled */
-#define MMCR0_PMXE      (1UL << (31 - 5))
-#define MMCR0_PMAO      (1UL << (31 - 24))
+extern perf_irq_t perf_irq;
 
-static void dummy_perf(struct pt_regs *regs)
-{
-	unsigned int mmcr0 = mfspr(SPRN_MMCR0);
-
-	mmcr0 &= ~(MMCR0_PMXE|MMCR0_PMAO);
-	mtspr(SPRN_MMCR0, mmcr0);
-}
-
-void (*perf_irq)(struct pt_regs *) = dummy_perf;
-
-EXPORT_SYMBOL(perf_irq);
-
-void
-PerformanceMonitorException(struct pt_regs *regs)
+void performance_monitor_exception(struct pt_regs *regs)
 {
 	perf_irq(regs);
 }
 
-void
-AlignmentException(struct pt_regs *regs)
+void alignment_exception(struct pt_regs *regs)
 {
 	int fixed;
 
@@ -571,8 +500,7 @@ AlignmentException(struct pt_regs *regs)
 }
 
 #ifdef CONFIG_ALTIVEC
-void
-AltivecAssistException(struct pt_regs *regs)
+void altivec_assist_exception(struct pt_regs *regs)
 {
 	int err;
 	siginfo_t info;

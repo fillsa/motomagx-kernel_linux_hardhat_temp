@@ -7,7 +7,7 @@
  *
  * For licensing information, see the file 'LICENCE' in this directory.
  *
- * $Id: compr_zlib.c,v 1.30 2005/05/20 15:39:54 gleixner Exp $
+ * $Id: compr_zlib.c,v 1.31 2005/05/20 19:30:06 gleixner Exp $
  *
  */
 

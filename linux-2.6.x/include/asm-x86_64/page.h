@@ -28,6 +28,7 @@
 #define HPAGE_SIZE	((1UL) << HPAGE_SHIFT)
 #define HPAGE_MASK	(~(HPAGE_SIZE - 1))
 #define HUGETLB_PAGE_ORDER	(HPAGE_SHIFT - PAGE_SHIFT)
+#define ARCH_HAS_HUGETLB_CLEAN_STALE_PGTABLE
 
 #ifdef __KERNEL__
 #ifndef __ASSEMBLY__
@@ -38,48 +39,48 @@ void copy_page(void *, void *);
 #define clear_user_page(page, vaddr, pg)	clear_page(page)
 #define copy_user_page(to, from, vaddr, pg)	copy_page(to, from)
 
+#define alloc_zeroed_user_highpage(vma, vaddr) alloc_page_vma(GFP_HIGHUSER | __GFP_ZERO, vma, vaddr)
+#define __HAVE_ARCH_ALLOC_ZEROED_USER_HIGHPAGE
 /*
  * These are used to make use of C type-checking..
  */
 typedef struct { unsigned long pte; } pte_t;
 typedef struct { unsigned long pmd; } pmd_t;
+typedef struct { unsigned long pud; } pud_t;
 typedef struct { unsigned long pgd; } pgd_t;
-typedef struct { unsigned long pml4; } pml4_t;
 #define PTE_MASK	PHYSICAL_PAGE_MASK
 
 typedef struct { unsigned long pgprot; } pgprot_t;
 
 #define pte_val(x)	((x).pte)
 #define pmd_val(x)	((x).pmd)
+#define pud_val(x)	((x).pud)
 #define pgd_val(x)	((x).pgd)
-#define pml4_val(x)	((x).pml4)
 #define pgprot_val(x)	((x).pgprot)
 
 #define __pte(x) ((pte_t) { (x) } )
 #define __pmd(x) ((pmd_t) { (x) } )
+#define __pud(x) ((pud_t) { (x) } )
 #define __pgd(x) ((pgd_t) { (x) } )
-#define __pml4(x) ((pml4_t) { (x) } )
 #define __pgprot(x)	((pgprot_t) { (x) } )
 
-extern unsigned long vm_stack_flags, vm_stack_flags32;
-extern unsigned long vm_data_default_flags, vm_data_default_flags32;
-extern unsigned long vm_force_exec32;
-
-#define __START_KERNEL		0xffffffff80100000UL
+#define __PHYSICAL_START	((unsigned long)CONFIG_PHYSICAL_START)
+#define __START_KERNEL		(__START_KERNEL_map + __PHYSICAL_START)
 #define __START_KERNEL_map	0xffffffff80000000UL
-#define __PAGE_OFFSET           0x0000010000000000UL	/* 1 << 40 */
+#define __PAGE_OFFSET           0xffff810000000000UL
 
 #else
-#define __START_KERNEL		0xffffffff80100000
+#define __PHYSICAL_START	CONFIG_PHYSICAL_START
+#define __START_KERNEL		(__START_KERNEL_map + __PHYSICAL_START)
 #define __START_KERNEL_map	0xffffffff80000000
-#define __PAGE_OFFSET           0x0000010000000000	/* 1 << 40 */
+#define __PAGE_OFFSET           0xffff810000000000
 #endif /* !__ASSEMBLY__ */
 
 /* to align the pointer to the (next) page boundary */
 #define PAGE_ALIGN(addr)	(((addr)+PAGE_SIZE-1)&PAGE_MASK)
 
 /* See Documentation/x86_64/mm.txt for a description of the memory map. */
-#define __PHYSICAL_MASK_SHIFT	40
+#define __PHYSICAL_MASK_SHIFT	46
 #define __PHYSICAL_MASK		((1UL << __PHYSICAL_MASK_SHIFT) - 1)
 #define __VIRTUAL_MASK_SHIFT	48
 #define __VIRTUAL_MASK		((1UL << __VIRTUAL_MASK_SHIFT) - 1)
@@ -120,7 +121,9 @@ extern __inline__ int get_order(unsigned long size)
 	  __pa(v); })
 
 #define __va(x)			((void *)((unsigned long)(x)+PAGE_OFFSET))
-#ifndef CONFIG_DISCONTIGMEM
+#define __boot_va(x)		__va(x)
+#define __boot_pa(x)		__pa(x)
+#ifdef CONFIG_FLATMEM
 #define pfn_to_page(pfn)	(mem_map + (pfn))
 #define page_to_pfn(page)	((unsigned long)((page) - mem_map))
 #define pfn_valid(pfn)		((pfn) < max_mapnr)

@@ -210,13 +210,14 @@ static void __init mxc_board_init(void)
  * initialize __mach_desc_SCMA11PHONE data structure.
  */
 MACHINE_START(SCMA11PHONE, "Motorola Product - SCM-A11 Phone")
-        MAINTAINER("Motorola, Inc.")
-        /*       physical memory    physical IO        virtual IO     */
-        BOOT_MEM(PHYS_OFFSET_ASM, AIPS1_BASE_ADDR, AIPS1_BASE_ADDR_VIRT)
-	BOOT_PARAMS(PHYS_OFFSET_ASM + 0x100)
-        FIXUP(fixup_mxc_board)
-        MAPIO(mxc_map_io)
-        INITIRQ(mxc_init_irq)
-        INIT_MACHINE(mxc_board_init)
-        .timer		= &mxc_timer,
+	/* Maintainer: MontaVista Software Inc. */
+	.phys_ram	= PHYS_OFFSET_ASM,
+	.phys_io	= AIPS1_BASE_ADDR,
+	.io_pg_offst	= (AIPS1_BASE_ADDR_VIRT >> 18) & 0xfffc,
+    .fixup          = fixup_mxc_board,
+	.map_io		= mxc_map_io,
+	.init_irq	= mxc_init_irq,
+	.timer		= &mxc_timer,
+    .boot_params    = (PHYS_OFFSET_ASM + 0x0100),
+	.init_machine	= mxc_board_init,
 MACHINE_END

@@ -121,25 +121,7 @@ ml300_setup_arch(void)
 void __init
 ml300_init_irq(void)
 {
-	unsigned int i;
-
 	ppc4xx_init_IRQ();
-
-	/*
-	 * For PowerPC 405 cores the default value for NR_IRQS is 32.
-	 * See include/asm-ppc/irq.h for details.
-	 * This is just fine for ML300.
-	 */
-#if (NR_IRQS != 32)
-#error NR_IRQS must be 32 for ML300
-#endif
-
-	for (i = 0; i < NR_IRQS; i++) {
-		if (XPAR_INTC_0_KIND_OF_INTR & (0x80000000 >> i))
-			irq_desc[i].status &= ~IRQ_LEVEL;
-		else
-			irq_desc[i].status |= IRQ_LEVEL;
-	}
 }
 
 void __init
@@ -156,3 +138,4 @@ platform_init(unsigned long r3, unsigned long r4, unsigned long r5,
 	ppc_md.power_off = xilinx_power_off;
 #endif
 }
+

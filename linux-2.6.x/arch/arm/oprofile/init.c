@@ -12,13 +12,16 @@
 #include <linux/errno.h>
 #include "op_arm_model.h"
 
-int __init oprofile_arch_init(struct oprofile_operations **ops)
+int __init oprofile_arch_init(struct oprofile_operations *ops)
 {
 	int ret = -ENODEV;
 
 #if defined(CONFIG_CPU_XSCALE) || defined(CONFIG_CPU_V6)
 	ret = pmu_init(ops, &op_arm_spec);
 #endif
+
+	ops->backtrace = arm_backtrace;
+
 	return ret;
 }
 

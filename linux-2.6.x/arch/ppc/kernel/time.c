@@ -99,7 +99,8 @@ unsigned long tb_to_ns_scale;
 
 extern unsigned long wall_jiffies;
 
-static long time_offset;
+/* used for timezone offset */
+static long timezone_offset;
 
 DEFINE_SPINLOCK(rtc_lock);
 
@@ -221,6 +222,7 @@ void timer_interrupt(struct pt_regs * regs)
 		jiffy_stamp += tb_ticks_per_jiffy;
 		
 		profile_tick(CPU_PROFILING, regs);
+		update_process_times(user_mode(regs));
 
 	  	if (smp_processor_id())
 			continue;
@@ -229,9 +231,6 @@ void timer_interrupt(struct pt_regs * regs)
 		write_seqlock(&xtime_lock);
 		tb_last_stamp = jiffy_stamp;
 		do_timer(regs);
-#ifndef CONFIG_SMP
-		update_process_times(user_mode(regs));
-#endif
 
 		/*
 		 * update the rtc when needed, this should be performed on the
@@ -253,7 +252,7 @@ void timer_interrupt(struct pt_regs * regs)
 		     xtime.tv_sec - last_rtc_update >= 659 &&
 		     abs((xtime.tv_nsec / 1000) - (1000000-1000000/HZ)) < 500000/HZ &&
 		     jiffies - wall_jiffies == 1) {
-		  	if (ppc_md.set_rtc_time(xtime.tv_sec+1 + time_offset) == 0)
+		  	if (ppc_md.set_rtc_time(xtime.tv_sec+1 + timezone_offset) == 0)
 				last_rtc_update = xtime.tv_sec+1;
 			else
 				/* Try again one minute later */
@@ -270,10 +269,6 @@ void timer_interrupt(struct pt_regs * regs)
 	}
 #endif
 	last_jiffy_stamp(cpu) = jiffy_stamp;
-
-#ifdef CONFIG_SMP
-	smp_local_timer_interrupt(regs);
-#endif /* CONFIG_SMP */
 
 	if (ppc_md.heartbeat && !ppc_md.heartbeat_count--)
 		ppc_md.heartbeat();
@@ -378,7 +373,6 @@ int do_settimeofday(struct timespec *tv)
 
 	time_adjust = 0;                /* stop active adjtime() */
 	time_status |= STA_UNSYNC;
-	time_state = TIME_ERROR;        /* p. 24, (a) */
 	time_maxerror = NTP_PHASE_LIMIT;
 	time_esterror = NTP_PHASE_LIMIT;
 	write_sequnlock_irqrestore(&xtime_lock, flags);
@@ -395,7 +389,7 @@ void __init time_init(void)
 	unsigned old_stamp, stamp, elapsed;
 
         if (ppc_md.time_init != NULL)
-                time_offset = ppc_md.time_init();
+                timezone_offset = ppc_md.time_init();
 
 	if (__USE_RTC()) {
 		/* 601 processor: dec counts down by 128 every 128ns */
@@ -443,10 +437,10 @@ void __init time_init(void)
 	set_dec(tb_ticks_per_jiffy);
 
 	/* If platform provided a timezone (pmac), we correct the time */
-        if (time_offset) {
-		sys_tz.tz_minuteswest = -time_offset / 60;
+        if (timezone_offset) {
+		sys_tz.tz_minuteswest = -timezone_offset / 60;
 		sys_tz.tz_dsttime = 0;
-		xtime.tv_sec -= time_offset;
+		xtime.tv_sec -= timezone_offset;
         }
         set_normalized_timespec(&wall_to_monotonic,
                                 -xtime.tv_sec, -xtime.tv_nsec);

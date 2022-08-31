@@ -11,6 +11,7 @@
 #include <linux/mm.h>
 #include <linux/string.h>
 #include <linux/pci.h>
+#include <linux/module.h>
 #include <asm/io.h>
 
 struct dma_coherent_mem {
@@ -22,7 +23,7 @@ struct dma_coherent_mem {
 };
 
 void *dma_alloc_coherent(struct device *dev, size_t size,
-			   dma_addr_t *dma_handle, int gfp)
+			   dma_addr_t *dma_handle, unsigned int __nocast gfp)
 {
 	void *ret;
 	struct dma_coherent_mem *mem = dev ? dev->dma_mem : NULL;
@@ -54,6 +55,7 @@ void *dma_alloc_coherent(struct device *dev, size_t size,
 	}
 	return ret;
 }
+EXPORT_SYMBOL(dma_alloc_coherent);
 
 void dma_free_coherent(struct device *dev, size_t size,
 			 void *vaddr, dma_addr_t dma_handle)
@@ -68,6 +70,7 @@ void dma_free_coherent(struct device *dev, size_t size,
 	} else
 		free_pages((unsigned long)vaddr, order);
 }
+EXPORT_SYMBOL(dma_free_coherent);
 
 int dma_declare_coherent_memory(struct device *dev, dma_addr_t bus_addr,
 				dma_addr_t device_addr, size_t size, int flags)
@@ -89,11 +92,11 @@ int dma_declare_coherent_memory(struct device *dev, dma_addr_t bus_addr,
 	if (!mem_base)
 		goto out;
 
-	dev->dma_mem = kmalloc(GFP_KERNEL, sizeof(struct dma_coherent_mem));
+	dev->dma_mem = kmalloc(sizeof(struct dma_coherent_mem), GFP_KERNEL);
 	if (!dev->dma_mem)
 		goto out;
 	memset(dev->dma_mem, 0, sizeof(struct dma_coherent_mem));
-	dev->dma_mem->bitmap = kmalloc(GFP_KERNEL, bitmap_size);
+	dev->dma_mem->bitmap = kmalloc(bitmap_size, GFP_KERNEL);
 	if (!dev->dma_mem->bitmap)
 		goto free1_out;
 	memset(dev->dma_mem->bitmap, 0, bitmap_size);
@@ -122,6 +125,7 @@ void dma_release_declared_memory(struct device *dev)
 	if(!mem)
 		return;
 	dev->dma_mem = NULL;
+	iounmap(mem->virt_base);
 	kfree(mem->bitmap);
 	kfree(mem);
 }

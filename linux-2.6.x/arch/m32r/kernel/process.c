@@ -1,6 +1,5 @@
 /*
  *  linux/arch/m32r/kernel/process.c
- *    orig : sh
  *
  *  Copyright (c) 2001, 2002  Hiroyuki Kondo, Hirokazu Takata,
  *                            Hitoshi Yamamoto
@@ -116,8 +115,6 @@ void machine_restart(char *__unused)
 		cpu_relax();
 }
 
-EXPORT_SYMBOL(machine_restart);
-
 void machine_halt(void)
 {
 	printk("Please push reset button!\n");
@@ -125,14 +122,10 @@ void machine_halt(void)
 		cpu_relax();
 }
 
-EXPORT_SYMBOL(machine_halt);
-
 void machine_power_off(void)
 {
 	/* M32R_FIXME */
 }
-
-EXPORT_SYMBOL(machine_power_off);
 
 static int __init idle_setup (char *str)
 {
@@ -290,13 +283,16 @@ asmlinkage int sys_fork(unsigned long r0, unsigned long r1, unsigned long r2,
 }
 
 asmlinkage int sys_clone(unsigned long clone_flags, unsigned long newsp,
-	unsigned long r2, unsigned long r3, unsigned long r4, unsigned long r5,
-	unsigned long r6, struct pt_regs regs)
+			 unsigned long parent_tidptr,
+			 unsigned long child_tidptr,
+			 unsigned long r4, unsigned long r5, unsigned long r6,
+			 struct pt_regs regs)
 {
 	if (!newsp)
 		newsp = regs.spu;
 
-	return do_fork(clone_flags, newsp, &regs, 0, NULL, NULL);
+	return do_fork(clone_flags, newsp, &regs, 0,
+		       (int __user *)parent_tidptr, (int __user *)child_tidptr);
 }
 
 /*
@@ -320,9 +316,10 @@ asmlinkage int sys_vfork(unsigned long r0, unsigned long r1, unsigned long r2,
 /*
  * sys_execve() executes a new program.
  */
-asmlinkage int sys_execve(char __user *ufilename, char __user * __user *uargv, char __user * __user *uenvp,
-  unsigned long r3, unsigned long r4, unsigned long r5, unsigned long r6,
-  struct pt_regs regs)
+asmlinkage int sys_execve(char __user *ufilename, char __user * __user *uargv,
+			  char __user * __user *uenvp,
+			  unsigned long r3, unsigned long r4, unsigned long r5,
+			  unsigned long r6, struct pt_regs regs)
 {
 	int error;
 	char *filename;
@@ -354,4 +351,3 @@ unsigned long get_wchan(struct task_struct *p)
 	/* M32R_FIXME */
 	return (0);
 }
-

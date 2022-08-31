@@ -86,7 +86,7 @@ struct mxc_pf_data {
 
 static struct mxc_pf_data pf_data;
 static u8 open_count = 0;
-static struct class_simple *mxc_pf_class;
+static struct class *mxc_pf_class;
 
 /*
  * Function definitions
@@ -910,23 +910,23 @@ int mxc_pf_dev_init(void)
 		return mxc_pf_major;
 	}
 
-	mxc_pf_class = class_simple_create(THIS_MODULE, "mxc_ipu_pf");
+	mxc_pf_class = class_create(THIS_MODULE, "mxc_ipu_pf");
 	if (IS_ERR(mxc_pf_class)) {
 		printk(KERN_ERR "Error creating mxc_ipu_pf class.\n");
 		devfs_remove("mxc_ipu_pf");
-		class_simple_device_remove(MKDEV(mxc_pf_major, 0));
+		class_device_destroy(mxc_pf_class, MKDEV(mxc_pf_major, 0));
 		unregister_chrdev(mxc_pf_major, "mxc_ipu_pf");
 		return PTR_ERR(mxc_pf_class);
 	}
 
 	temp_class =
-	    class_simple_device_add(mxc_pf_class, MKDEV(mxc_pf_major, 0), NULL,
+	    class_device_create(mxc_pf_class, MKDEV(mxc_pf_major, 0), NULL,
 				    "mxc_ipu_pf");
 	if (IS_ERR(temp_class)) {
 		printk(KERN_ERR "Error creating mxc_ipu_pf class device.\n");
 		devfs_remove("mxc_ipu_pf");
-		class_simple_device_remove(MKDEV(mxc_pf_major, 0));
-		class_simple_destroy(mxc_pf_class);
+		class_device_destroy(mxc_pf_class, MKDEV(mxc_pf_major, 0));
+		class_destroy(mxc_pf_class);
 		unregister_chrdev(mxc_pf_major, "mxc_ipu_pf");
 		return -1;
 	}
@@ -955,8 +955,8 @@ static void mxc_pf_exit(void)
 
 	if (mxc_pf_major > 0) {
 		devfs_remove("mxc_ipu_pf");
-		class_simple_device_remove(MKDEV(mxc_pf_major, 0));
-		class_simple_destroy(mxc_pf_class);
+		class_device_destroy(mxc_pf_class, MKDEV(mxc_pf_major, 0));
+		class_destroy(mxc_pf_class);
 		unregister_chrdev(mxc_pf_major, "mxc_ipu_pf");
 	}
 

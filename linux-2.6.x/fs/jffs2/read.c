@@ -7,7 +7,7 @@
  *
  * For licensing information, see the file 'LICENCE' in this directory.
  *
- * $Id: read.c,v 1.38 2004/11/16 20:36:12 dwmw2 Exp $
+ * $Id: read.c,v 1.39 2005/03/01 10:34:03 dedekind Exp $
  *
  */
 

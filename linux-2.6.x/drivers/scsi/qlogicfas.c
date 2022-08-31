@@ -137,8 +137,8 @@ err:
 static struct qlogicfas408_priv *cards;
 static int iobase[MAX_QLOGICFAS];
 static int irq[MAX_QLOGICFAS] = { [0 ... MAX_QLOGICFAS-1] = -1 };
-MODULE_PARM(iobase, "1-" __MODULE_STRING(MAX_QLOGICFAS) "i");
-MODULE_PARM(irq, "1-" __MODULE_STRING(MAX_QLOGICFAS) "i");
+module_param_array(iobase, int, NULL, 0);
+module_param_array(irq, int, NULL, 0);
 MODULE_PARM_DESC(iobase, "I/O address");
 MODULE_PARM_DESC(irq, "IRQ");
 
@@ -191,8 +191,6 @@ static Scsi_Host_Template qlogicfas_driver_template = {
 	.queuecommand		= qlogicfas408_queuecommand,
 	.eh_abort_handler	= qlogicfas408_abort,
 	.eh_bus_reset_handler	= qlogicfas408_bus_reset,
-	.eh_device_reset_handler= qlogicfas408_device_reset,
-	.eh_host_reset_handler	= qlogicfas408_host_reset,
 	.bios_param		= qlogicfas408_biosparam,
 	.can_queue		= 1,
 	.this_id		= -1,

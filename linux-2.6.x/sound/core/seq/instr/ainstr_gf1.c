@@ -31,8 +31,6 @@ MODULE_AUTHOR("Jaroslav Kysela <perex@suse.cz>");
 MODULE_DESCRIPTION("Advanced Linux Sound Architecture GF1 (GUS) Patch support.");
 MODULE_LICENSE("GPL");
 
-char *snd_seq_gf1_id = SNDRV_SEQ_INSTR_ID_GUS_PATCH;
-
 static unsigned int snd_seq_gf1_size(unsigned int size, unsigned int format)
 {
 	unsigned int result = size;
@@ -52,7 +50,8 @@ static int snd_seq_gf1_copy_wave_from_stream(snd_gf1_ops_t *ops,
 {
 	gf1_wave_t *wp, *prev;
 	gf1_xwave_t xp;
-	int err, gfp_mask;
+	int err;
+	unsigned int gfp_mask;
 	unsigned int real_size;
 	
 	gfp_mask = atomic ? GFP_ATOMIC : GFP_KERNEL;
@@ -331,7 +330,7 @@ int snd_seq_gf1_init(snd_gf1_ops_t *ops,
 	ops->private_data = private_data;
 	ops->kops.private_data = ops;
 	ops->kops.add_len = sizeof(gf1_instrument_t);
-	ops->kops.instr_type = snd_seq_gf1_id;
+	ops->kops.instr_type = SNDRV_SEQ_INSTR_ID_GUS_PATCH;
 	ops->kops.put = snd_seq_gf1_put;
 	ops->kops.get = snd_seq_gf1_get;
 	ops->kops.get_size = snd_seq_gf1_get_size;
@@ -357,5 +356,4 @@ static void __exit alsa_ainstr_gf1_exit(void)
 module_init(alsa_ainstr_gf1_init)
 module_exit(alsa_ainstr_gf1_exit)
 
-EXPORT_SYMBOL(snd_seq_gf1_id);
 EXPORT_SYMBOL(snd_seq_gf1_init);

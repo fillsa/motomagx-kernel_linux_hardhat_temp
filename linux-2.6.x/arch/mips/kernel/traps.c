@@ -271,7 +271,7 @@ void show_registers(struct pt_regs *regs)
 	printk("\n");
 }
 
-static raw_spinlock_t die_lock = RAW_SPIN_LOCK_UNLOCKED;
+static DEFINE_RAW_SPINLOCK(die_lock);
 
 NORET_TYPE void __die(const char * str, struct pt_regs * regs,
 	const char * file, const char * func, unsigned long line)
@@ -672,11 +672,11 @@ asmlinkage void do_cpu(struct pt_regs *regs)
 
 	case 1:
 		own_fpu();
-		if (current->used_math) {	/* Using the FPU again.  */
+		if (used_math()) {	/* Using the FPU again.  */
 			restore_fp(current);
 		} else {			/* First time FPU user.  */
 			init_fpu();
-			current->used_math = 1;
+			set_used_math();
 		}
 
 		if (!cpu_has_fpu) {

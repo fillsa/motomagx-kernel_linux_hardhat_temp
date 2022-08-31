@@ -12,7 +12,6 @@
 #include <linux/signal.h>
 #include <linux/ptrace.h>
 #include <linux/personality.h>
-#include <linux/suspend.h>
 
 #include <asm/cacheflush.h>
 #include <asm/ucontext.h>
@@ -20,6 +19,7 @@
 #include <asm/unistd.h>
 
 #include "ptrace.h"
+#include "signal.h"
 
 #define _BLOCKABLE (~(sigmask(SIGKILL) | sigmask(SIGSTOP)))
 
@@ -42,9 +42,9 @@
 #define SWI_THUMB_SIGRETURN	(0xdf00 << 16 | 0x2700 | (__NR_sigreturn - __NR_SYSCALL_BASE))
 #define SWI_THUMB_RT_SIGRETURN	(0xdf00 << 16 | 0x2700 | (__NR_rt_sigreturn - __NR_SYSCALL_BASE))
 
-static const unsigned long retcodes[7] = {
-	MOV_R7_NR_SIGRETURN,    SWI_SYS_SIGRETURN,    SWI_THUMB_SIGRETURN,
-	MOV_R7_NR_RT_SIGRETURN, SWI_SYS_RT_SIGRETURN, SWI_THUMB_RT_SIGRETURN,
+const unsigned long sigreturn_codes[7] = {
+	MOV_R7_NR_SIGRETURN,    SWI_SYS_SIGRETURN,	SWI_THUMB_SIGRETURN,
+	MOV_R7_NR_RT_SIGRETURN, SWI_SYS_RT_SIGRETURN,	SWI_THUMB_RT_SIGRETURN
 };
 
 static int do_signal(sigset_t *oldset, struct pt_regs * regs, int syscall);
@@ -109,7 +109,7 @@ sys_sigaction(int sig, const struct old_sigaction __user *act,
 
 	if (act) {
 		old_sigset_t mask;
-		if (verify_area(VERIFY_READ, act, sizeof(*act)) ||
+		if (!access_ok(VERIFY_READ, act, sizeof(*act)) ||
 		    __get_user(new_ka.sa.sa_handler, &act->sa_handler) ||
 		    __get_user(new_ka.sa.sa_restorer, &act->sa_restorer))
 			return -EFAULT;
@@ -121,7 +121,7 @@ sys_sigaction(int sig, const struct old_sigaction __user *act,
 	ret = do_sigaction(sig, act ? &new_ka : NULL, oact ? &old_ka : NULL);
 
 	if (!ret && oact) {
-		if (verify_area(VERIFY_WRITE, oact, sizeof(*oact)) ||
+		if (!access_ok(VERIFY_WRITE, oact, sizeof(*oact)) ||
 		    __put_user(old_ka.sa.sa_handler, &oact->sa_handler) ||
 		    __put_user(old_ka.sa.sa_restorer, &oact->sa_restorer))
 			return -EFAULT;
@@ -324,7 +324,7 @@ asmlinkage int sys_sigreturn(struct pt_regs *regs)
 
 	frame = (struct sigframe __user *)regs->ARM_sp;
 
-	if (verify_area(VERIFY_READ, frame, sizeof (*frame)))
+	if (!access_ok(VERIFY_READ, frame, sizeof (*frame)))
 		goto badframe;
 	if (__get_user(set.sig[0], &frame->sc.oldmask)
 	    || (_NSIG_WORDS > 1
@@ -372,7 +372,7 @@ asmlinkage int sys_rt_sigreturn(struct pt_regs *regs)
 
 	frame = (struct rt_sigframe __user *)regs->ARM_sp;
 
-	if (verify_area(VERIFY_READ, frame, sizeof (*frame)))
+	if (!access_ok(VERIFY_READ, frame, sizeof (*frame)))
 		goto badframe;
 	if (__copy_from_user(&set, &frame->uc.uc_sigmask, sizeof(set)))
 		goto badframe;
@@ -507,18 +507,26 @@ setup_return(struct pt_regs *regs, struct k_sigaction *ka,
 		if (ka->sa.sa_flags & SA_SIGINFO)
 			idx += 3;
 
-		if (__put_user(retcodes[idx],   rc) ||
-		    __put_user(retcodes[idx+1], rc+1))
+		if (__put_user(sigreturn_codes[idx], rc) ||
+		    __put_user(sigreturn_codes[idx+1], rc+1))
 			return 1;
 
-		/*
-		 * Ensure that the instruction cache sees
-		 * the return code written onto the stack.
-		 */
-		flush_icache_range((unsigned long)rc,
-				   (unsigned long)(rc + 2));
+		if (cpsr & MODE32_BIT) {
+			/*
+			 * 32-bit code can use the new high-page
+			 * signal return code support.
+			 */
+			retcode = KERN_SIGRETURN_CODE + (idx << 2) + thumb;
+		} else {
+			/*
+			 * Ensure that the instruction cache sees
+			 * the return code written onto the stack.
+			 */
+			flush_icache_range((unsigned long)rc,
+					   (unsigned long)(rc + 1));
 
-		retcode = ((unsigned long)rc) + thumb;
+			retcode = ((unsigned long)rc) + thumb;
+		}
 	}
 
 	regs->ARM_r0 = usig;
@@ -704,10 +712,8 @@ static int do_signal(sigset_t *oldset, struct pt_regs *regs, int syscall)
 	if (!user_mode(regs))
 		return 0;
 
-	if (current->flags & PF_FREEZE) {
-		refrigerator(0);
+	if (try_to_freeze())
 		goto no_signal;
-	}
 
 	if (current->ptrace & PT_SINGLESTEP)
 		ptrace_cancel_bpt(current);

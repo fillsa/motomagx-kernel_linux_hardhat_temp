@@ -17,7 +17,6 @@
 #include <asm/tlbflush.h>
 
 #ifdef CONFIG_CPU_CACHE_VIPT
-
 #define ALIAS_FLUSH_START	0xffff4000
 
 #define TOP_PTE(x)	pte_offset_kernel(top_pmd, x)

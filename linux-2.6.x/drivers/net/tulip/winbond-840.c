@@ -121,6 +121,7 @@ static int full_duplex[MAX_UNITS] = {-1, -1, -1, -1, -1, -1, -1, -1};
 #include <linux/slab.h>
 #include <linux/interrupt.h>
 #include <linux/pci.h>
+#include <linux/dma-mapping.h>
 #include <linux/netdevice.h>
 #include <linux/etherdevice.h>
 #include <linux/skbuff.h>
@@ -144,13 +145,14 @@ KERN_INFO "  http://www.scyld.com/network/drivers.html\n";
 MODULE_AUTHOR("Donald Becker <becker@scyld.com>");
 MODULE_DESCRIPTION("Winbond W89c840 Ethernet driver");
 MODULE_LICENSE("GPL");
+MODULE_VERSION(DRV_VERSION);
 
-MODULE_PARM(max_interrupt_work, "i");
-MODULE_PARM(debug, "i");
-MODULE_PARM(rx_copybreak, "i");
-MODULE_PARM(multicast_filter_limit, "i");
-MODULE_PARM(options, "1-" __MODULE_STRING(MAX_UNITS) "i");
-MODULE_PARM(full_duplex, "1-" __MODULE_STRING(MAX_UNITS) "i");
+module_param(max_interrupt_work, int, 0);
+module_param(debug, int, 0);
+module_param(rx_copybreak, int, 0);
+module_param(multicast_filter_limit, int, 0);
+module_param_array(options, int, NULL, 0);
+module_param_array(full_duplex, int, NULL, 0);
 MODULE_PARM_DESC(max_interrupt_work, "winbond-840 maximum events handled per interrupt");
 MODULE_PARM_DESC(debug, "winbond-840 debug level (0-6)");
 MODULE_PARM_DESC(rx_copybreak, "winbond-840 copy breakpoint for copy-only-tiny-frames");
@@ -393,7 +395,7 @@ static int __devinit w840_probe1 (struct pci_dev *pdev,
 
 	irq = pdev->irq;
 
-	if (pci_set_dma_mask(pdev,0xFFFFffff)) {
+	if (pci_set_dma_mask(pdev, DMA_32BIT_MASK)) {
 		printk(KERN_WARNING "Winbond-840: Device %s disabled due to DMA limitations.\n",
 		       pci_name(pdev));
 		return -EIO;
@@ -847,7 +849,7 @@ static void init_rxtx_rings(struct net_device *dev)
 		if (skb == NULL)
 			break;
 		skb->dev = dev;			/* Mark as being used by this device. */
-		np->rx_addr[i] = pci_map_single(np->pci_dev,skb->tail,
+		np->rx_addr[i] = pci_map_single(np->pci_dev,skb->data,
 					skb->len,PCI_DMA_FROMDEVICE);
 
 		np->rx_ring[i].buffer1 = np->rx_addr[i];
@@ -1267,7 +1269,7 @@ static int netdev_rx(struct net_device *dev)
 				pci_dma_sync_single_for_cpu(np->pci_dev,np->rx_addr[entry],
 							    np->rx_skbuff[entry]->len,
 							    PCI_DMA_FROMDEVICE);
-				eth_copy_and_sum(skb, np->rx_skbuff[entry]->tail, pkt_len, 0);
+				eth_copy_and_sum(skb, np->rx_skbuff[entry]->data, pkt_len, 0);
 				skb_put(skb, pkt_len);
 				pci_dma_sync_single_for_device(np->pci_dev,np->rx_addr[entry],
 							       np->rx_skbuff[entry]->len,
@@ -1313,7 +1315,7 @@ static int netdev_rx(struct net_device *dev)
 				break;			/* Better luck next round. */
 			skb->dev = dev;			/* Mark as being used by this device. */
 			np->rx_addr[entry] = pci_map_single(np->pci_dev,
-							skb->tail,
+							skb->data,
 							skb->len, PCI_DMA_FROMDEVICE);
 			np->rx_ring[entry].buffer1 = np->rx_addr[entry];
 		}
@@ -1409,7 +1411,7 @@ static u32 __set_rx_mode(struct net_device *dev)
 			 i++, mclist = mclist->next) {
 			int filterbit = (ether_crc(ETH_ALEN, mclist->dmi_addr) >> 26) ^ 0x3F;
 			filterbit &= 0x3f;
-			mc_filter[filterbit >> 5] |= cpu_to_le32(1 << (filterbit & 31));
+			mc_filter[filterbit >> 5] |= 1 << (filterbit & 31);
 		}
 		rx_mode = AcceptBroadcast | AcceptMulticast | AcceptMyPhys;
 	}
@@ -1619,7 +1621,7 @@ static void __devexit w840_remove1 (struct pci_dev *pdev)
  * Detach must occur under spin_unlock_irq(), interrupts from a detached
  * device would cause an irq storm.
  */
-static int w840_suspend (struct pci_dev *pdev, u32 state)
+static int w840_suspend (struct pci_dev *pdev, pm_message_t state)
 {
 	struct net_device *dev = pci_get_drvdata (pdev);
 	struct netdev_private *np = netdev_priv(dev);

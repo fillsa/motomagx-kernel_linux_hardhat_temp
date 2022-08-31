@@ -146,6 +146,7 @@
 #include <linux/delay.h>
 #include <linux/init.h>
 #include <linux/pci.h>
+#include <linux/dma-mapping.h>
 #include <linux/netdevice.h>
 #include <linux/etherdevice.h>
 #include <linux/mii.h>
@@ -163,13 +164,13 @@
 
 #define DRV_NAME		"e100"
 #ifdef CONFIG_E100_NAPI
-#define DRV_EXT 		"-NAPI"
+#define DRV_EXT		"-NAPI"
 #else
 #define DRV_EXT
 #endif
-#define DRV_VERSION		"3.2.3-k2"DRV_EXT
+#define DRV_VERSION		"3.4.8-k2"DRV_EXT
 #define DRV_DESCRIPTION		"Intel(R) PRO/100 Network Driver"
-#define DRV_COPYRIGHT		"Copyright(c) 1999-2004 Intel Corporation"
+#define DRV_COPYRIGHT		"Copyright(c) 1999-2005 Intel Corporation"
 #define PFX			DRV_NAME ": "
 
 #define E100_WATCHDOG_PERIOD	(2 * HZ)
@@ -178,6 +179,7 @@
 MODULE_DESCRIPTION(DRV_DESCRIPTION);
 MODULE_AUTHOR(DRV_COPYRIGHT);
 MODULE_LICENSE("GPL");
+MODULE_VERSION(DRV_VERSION);
 
 static int debug = 0;
 module_param(debug, int, 0);
@@ -212,6 +214,7 @@ static struct pci_device_id e100_id_table[] = {
 	INTEL_8255X_ETHERNET_DEVICE(0x1055, 5),
 	INTEL_8255X_ETHERNET_DEVICE(0x1056, 5),
 	INTEL_8255X_ETHERNET_DEVICE(0x1057, 5),
+	INTEL_8255X_ETHERNET_DEVICE(0x1059, 0),
 	INTEL_8255X_ETHERNET_DEVICE(0x1064, 6),
 	INTEL_8255X_ETHERNET_DEVICE(0x1065, 6),
 	INTEL_8255X_ETHERNET_DEVICE(0x1066, 6),
@@ -220,12 +223,17 @@ static struct pci_device_id e100_id_table[] = {
 	INTEL_8255X_ETHERNET_DEVICE(0x1069, 6),
 	INTEL_8255X_ETHERNET_DEVICE(0x106A, 6),
 	INTEL_8255X_ETHERNET_DEVICE(0x106B, 6),
-	INTEL_8255X_ETHERNET_DEVICE(0x1059, 0),
+	INTEL_8255X_ETHERNET_DEVICE(0x1091, 7),
+	INTEL_8255X_ETHERNET_DEVICE(0x1092, 7),
+	INTEL_8255X_ETHERNET_DEVICE(0x1093, 7),
+	INTEL_8255X_ETHERNET_DEVICE(0x1094, 7),
+	INTEL_8255X_ETHERNET_DEVICE(0x1095, 7),
 	INTEL_8255X_ETHERNET_DEVICE(0x1209, 0),
 	INTEL_8255X_ETHERNET_DEVICE(0x1229, 0),
 	INTEL_8255X_ETHERNET_DEVICE(0x2449, 2),
 	INTEL_8255X_ETHERNET_DEVICE(0x2459, 2),
 	INTEL_8255X_ETHERNET_DEVICE(0x245D, 2),
+	INTEL_8255X_ETHERNET_DEVICE(0x27DC, 7),
 	{ 0, }
 };
 MODULE_DEVICE_TABLE(pci, e100_id_table);
@@ -278,6 +286,12 @@ struct csr {
 enum scb_status {
 	rus_ready        = 0x10,
 	rus_mask         = 0x3C,
+};
+
+enum ru_state  {
+	RU_SUSPENDED = 0,
+	RU_RUNNING	 = 1,
+	RU_UNINITIALIZED = -1,
 };
 
 enum scb_stat_ack {
@@ -504,7 +518,6 @@ struct cb {
 			u16 tcb_byte_count;
 			u8 threshold;
 			u8 tbd_count;
-			
 			union {
 				struct ipcb ipcb;
 				struct tbd tbd[TBD_ARRAY_SIZE];
@@ -566,7 +579,7 @@ struct nic {
 	struct rx *rx_to_use;
 	struct rx *rx_to_clean;
 	struct rfd blank_rfd;
-	int ru_running;
+	enum ru_state ru_running;
 
 	spinlock_t cb_lock			____cacheline_aligned;
 	spinlock_t cmd_lock;
@@ -606,6 +619,7 @@ struct nic {
 	struct timer_list watchdog;
 	struct timer_list blink_timer;
 	struct mii_if_info mii;
+	struct work_struct tx_timeout_task;
 	enum loopback loopback;
 
 	struct mem *mem;
@@ -690,8 +704,7 @@ static int e100_self_test(struct nic *nic)
 	writel(selftest | dma_addr, &nic->csr->port);
 	e100_write_flush(nic);
 	/* Wait 10 msec for self-test to complete */
-	set_current_state(TASK_UNINTERRUPTIBLE);
-	schedule_timeout(HZ / 100 + 1);
+	msleep(10);
 
 	/* Interrupts are enabled after self-test */
 	e100_disable_irq(nic);
@@ -739,8 +752,7 @@ static void e100_eeprom_write(struct nic *nic, u16 addr_len, u16 addr, u16 data)
 			e100_write_flush(nic); udelay(4);
 		}
 		/* Wait 10 msec for cmd to complete */
-		set_current_state(TASK_UNINTERRUPTIBLE);
-		schedule_timeout(HZ / 100 + 1);
+		msleep(10);
 
 		/* Chip deselect */
 		writeb(0, &nic->csr->eeprom_ctrl_lo);
@@ -841,7 +853,7 @@ static int e100_eeprom_save(struct nic *nic, u16 start, u16 count)
 	return 0;
 }
 
-#define E100_WAIT_SCB_TIMEOUT 40
+#define E100_WAIT_SCB_TIMEOUT 20000 /* we might have to wait 100ms!!! */
 static inline int e100_exec_cmd(struct nic *nic, u8 cmd, dma_addr_t dma_addr)
 {
 	unsigned long flags;
@@ -911,6 +923,10 @@ static inline int e100_exec_cb(struct nic *nic, struct sk_buff *skb,
 			 * because the controller is too busy, so
 			 * let's just queue the command and try again
 			 * when another command is scheduled. */
+			if(err == -ENOSPC) {
+				//request a reset
+				schedule_work(&nic->tx_timeout_task);
+			}
 			break;
 		} else {
 			nic->cuc_cmd = cuc_resume;
@@ -955,7 +971,7 @@ static void mdio_write(struct net_device *netdev, int addr, int reg, int data)
 
 static void e100_get_defaults(struct nic *nic)
 {
-	struct param_range rfds = { .min = 64, .max = 256, .count = 64 };
+	struct param_range rfds = { .min = 16, .max = 256, .count = 64 };
 	struct param_range cbs  = { .min = 64, .max = 256, .count = 64 };
 
 	pci_read_config_byte(nic->pdev, PCI_REVISION_ID, &nic->rev_id);
@@ -992,8 +1008,9 @@ static void e100_get_defaults(struct nic *nic)
 	/* Quadwords to DMA into FIFO before starting frame transmit */
 	nic->tx_threshold = 0xE0;
 
-	nic->tx_command = cpu_to_le16(cb_i | cb_tx_sf |
-		((nic->mac >= mac_82558_D101_A4) ? cb_cid : 0));
+	/* no interrupt for every tx completion, delay = 256us if not 557*/
+	nic->tx_command = cpu_to_le16(cb_tx | cb_tx_sf |
+		((nic->mac >= mac_82558_D101_A4) ? cb_cid : cb_i));
 
 	/* Template for a freshly allocated RFD */
 	nic->blank_rfd.command = cpu_to_le16(cb_el);
@@ -1096,7 +1113,8 @@ static void e100_configure(struct nic *nic, struct cb *cb, struct sk_buff *skb)
 	if(nic->flags & multicast_all)
 		config->multicast_all = 0x1;		/* 1=accept, 0=no */
 
-	if(!(nic->flags & wol_magic))
+	/* disable WoL when up */
+	if(netif_running(nic->netdev) || !(nic->flags & wol_magic))
 		config->magic_packet_disable = 0x1;	/* 1=off, 0=on */
 
 	if(nic->mac >= mac_82558_D101_A4) {
@@ -1298,11 +1316,16 @@ static int e100_phy_init(struct nic *nic)
 	}
 
 	if((nic->mac >= mac_82550_D102) || ((nic->flags & ich) && 
-		(mdio_read(netdev, nic->mii.phy_id, MII_TPISTATUS) & 0x8000) && 
-		(nic->eeprom[eeprom_cnfg_mdix] & eeprom_mdix_enabled)))
-		/* enable/disable MDI/MDI-X auto-switching */
-		mdio_write(netdev, nic->mii.phy_id, MII_NCONFIG,
-			nic->mii.force_media ? 0 : NCONFIG_AUTO_SWITCH);
+	   (mdio_read(netdev, nic->mii.phy_id, MII_TPISTATUS) & 0x8000))) {
+		/* enable/disable MDI/MDI-X auto-switching.
+		   MDI/MDI-X auto-switching is disabled for 82551ER/QM chips */
+		if((nic->mac == mac_82551_E) || (nic->mac == mac_82551_F) ||
+		   (nic->mac == mac_82551_10) || (nic->mii.force_media) || 
+		   !(nic->eeprom[eeprom_cnfg_mdix] & eeprom_mdix_enabled)) 
+			mdio_write(netdev, nic->mii.phy_id, MII_NCONFIG, 0);
+		else
+			mdio_write(netdev, nic->mii.phy_id, MII_NCONFIG, NCONFIG_AUTO_SWITCH);
+	}
 
 	/* Set Flow Control parameters */
 	e100_set_fc(nic);
@@ -1431,7 +1454,9 @@ static void e100_update_stats(struct nic *nic)
 		}
 	}
 
-	e100_exec_cmd(nic, cuc_dump_reset, 0);
+	
+	if(e100_exec_cmd(nic, cuc_dump_reset, 0))
+		DPRINTK(TX_ERR, DEBUG, "exec cuc_dump_reset failed\n");
 }
 
 static void e100_adjust_adaptive_ifs(struct nic *nic, int speed, int duplex)
@@ -1507,29 +1532,31 @@ static void e100_watchdog(unsigned long data)
 static inline void e100_xmit_prepare(struct nic *nic, struct cb *cb,
 	struct sk_buff *skb)
 {
-
 	cb->status = 0;
 	cb->command = nic->tx_command;
+	/* interrupt every 16 packets regardless of delay */
+	if((nic->cbs_avail & ~15) == nic->cbs_avail) cb->command |= cb_i;
+	cb->u.tcb.tbd_array = cb->dma_addr + offsetof(struct cb, u.tcb.tbd);
 	cb->u.tcb.tcb_byte_count = 0;
 	cb->u.tcb.threshold = nic->tx_threshold;
 
-#define IPCB (cb->u.tcb.tcbu.ipcb)
+//#define IPCB (cb->u.tcb.tcbu.ipcb)
 	if(nic->offload_features & use_ipcb) {
 		cb->command |= __constant_cpu_to_le16(cb_ipcbtx);
 
-		IPCB.ip_activation_high = ipcb_ip_activation_default;
+		cb->u.tcb.tcbu.ipcb.ip_activation_high = ipcb_ip_activation_default;
 
-		IPCB.ip_activation_low &= ~ipcb_largesend_enable; 
-		IPCB.ip_activation_low &= ~ipcb_tcp_packet;
-		IPCB.ip_activation_low &= ~ipcb_tcpudp_checksum_enable;
-		IPCB.ip_activation_low &= ~ipcb_ip_checksum_enable;
+		cb->u.tcb.tcbu.ipcb.ip_activation_low &= ~ipcb_largesend_enable; 
+		cb->u.tcb.tcbu.ipcb.ip_activation_low &= ~ipcb_tcp_packet;
+		cb->u.tcb.tcbu.ipcb.ip_activation_low &= ~ipcb_tcpudp_checksum_enable;
+		cb->u.tcb.tcbu.ipcb.ip_activation_low &= ~ipcb_ip_checksum_enable;
 	} else {
 		cb->command |= __constant_cpu_to_le16(cb_tx);
 	}
 
 	if(nic->vlangrp && vlan_tx_tag_present(skb)) {
-		IPCB.ip_activation_high |= ipcb_insertvlan_enable;
-		IPCB.vlan = cpu_to_be16(vlan_tx_tag_get(skb));
+		cb->u.tcb.tcbu.ipcb.ip_activation_high |= ipcb_insertvlan_enable;
+		cb->u.tcb.tcbu.ipcb.vlan = cpu_to_be16(vlan_tx_tag_get(skb));
 	}
 
 	cb->command |= __constant_cpu_to_le16(cb_s);
@@ -1566,6 +1593,7 @@ static inline void e100_xmit_prepare(struct nic *nic, struct cb *cb,
 		(cb->tbd_ptr)->buf_addr = cpu_to_le32(pci_map_single(nic->pdev,
 						      skb->data, skb->len, 
 						      PCI_DMA_TODEVICE));
+	// check for mapping failure?
 		(cb->tbd_ptr)->size = cpu_to_le16(skb->len);
 		cb->u.tcb.tbd_array = cb->tbd_nonseg; 
 	} else {
@@ -1614,7 +1642,8 @@ static int e100_xmit_frame(struct sk_buff *skb, struct net_device *netdev)
 		/* SW workaround for ICH[x] 10Mbps/half duplex Tx hang.
 		   Issue a NOP command followed by a 1us delay before
 		   issuing the Tx command. */
-		e100_exec_cmd(nic, cuc_nop, 0);
+		if(e100_exec_cmd(nic, cuc_nop, 0))
+			DPRINTK(TX_ERR, DEBUG, "exec cuc_nop failed\n");
 		udelay(1);
 	}
 
@@ -1751,12 +1780,18 @@ static int e100_alloc_cbs(struct nic *nic)
 	return 0;
 }
 
-static inline void e100_start_receiver(struct nic *nic)
+static inline void e100_start_receiver(struct nic *nic, struct rx *rx)
 {
+	if(!nic->rxs) return;
+	if(RU_SUSPENDED != nic->ru_running) return;
+
+	/* handle init time starts */
+	if(!rx) rx = nic->rxs;
+
 	/* (Re)start RU if suspended or idle and RFA is non-NULL */
-	if(!nic->ru_running && nic->rx_to_clean->skb) {
-		e100_exec_cmd(nic, ruc_start, nic->rx_to_clean->dma_addr);
-		nic->ru_running = 1;
+	if(rx->skb) {
+		e100_exec_cmd(nic, ruc_start, rx->dma_addr);
+		nic->ru_running = RU_RUNNING;
 	}
 }
 
@@ -1772,6 +1807,13 @@ static inline int e100_rx_alloc_skb(struct nic *nic, struct rx *rx)
 	memcpy(rx->skb->data, &nic->blank_rfd, nic->rfd_size);
 	rx->dma_addr = pci_map_single(nic->pdev, rx->skb->data,
 		RFD_BUF_LEN, PCI_DMA_BIDIRECTIONAL);
+
+	if(pci_dma_mapping_error(rx->dma_addr)) {
+		dev_kfree_skb_any(rx->skb);
+		rx->skb = 0;
+		rx->dma_addr = 0;
+		return -ENOMEM;
+	}
 
 	/* Link the RFD to end of RFA by linking previous RFD to
 	 * this one, and clearing EL bit of previous.  */
@@ -1851,7 +1893,7 @@ static inline int e100_rx_indicate(struct nic *nic, struct rx *rx,
 
 	/* If data isn't ready, nothing to indicate */
 	if(unlikely(!(rfd_status & cb_complete)))
-		return -EAGAIN;
+		return -ENODATA;
 
 	/* Get actual data size */
 	actual_size = le16_to_cpu(rfd->actual_size) & 0x3FFF;
@@ -1861,6 +1903,10 @@ static inline int e100_rx_indicate(struct nic *nic, struct rx *rx,
 	/* Get data */
 	pci_unmap_single(nic->pdev, rx->dma_addr,
 		RFD_BUF_LEN, PCI_DMA_FROMDEVICE);
+
+	/* this allows for a fast restart without re-enabling interrupts */
+	if(le16_to_cpu(rfd->command) & cb_el)
+		nic->ru_running = RU_SUSPENDED;
 
 	/* Pull off the RFD and put the actual data (minus eth hdr) */
 	skb_reserve(skb, nic->rfd_size);
@@ -1900,7 +1946,7 @@ static inline int e100_rx_indicate(struct nic *nic, struct rx *rx,
 		nic->net_stats.rx_packets++;
 		nic->net_stats.rx_bytes += actual_size;
 		nic->netdev->last_rx = jiffies;
-                                                                                                      
+
 		if(nic->vlangrp && (rfd_status & cb_vlan_detect)) {
 #ifdef CONFIG_E100_NAPI
 			vlan_hwaccel_receive_skb(skb, nic->vlangrp, be16_to_cpu(rfd->vlan_id));
@@ -1928,13 +1974,32 @@ static inline int e100_rx_clean(struct nic *nic, unsigned int *work_done,
 {
 	struct rx *rx;
 	u32 rfd_cnt = 0;
+	int restart_required = 0;
+	struct rx *rx_to_start = NULL;
+
+	/* are we already rnr? then pay attention!!! this ensures that
+	 * the state machine progression never allows a start with a 
+	 * partially cleaned list, avoiding a race between hardware
+	 * and rx_to_clean when in NAPI mode */
+	if(RU_SUSPENDED == nic->ru_running)
+		restart_required = 1;
 
 	/* Indicate newly arrived packets */
 	for(rx = nic->rx_to_clean; rx->skb; rx = nic->rx_to_clean = rx->next) {
-		if(e100_rx_indicate(nic, rx, work_done, work_to_do))
+		int err = e100_rx_indicate(nic, rx, work_done, work_to_do);
+		if(-EAGAIN == err) {
+			/* hit quota so have more work to do, restart once
+			 * cleanup is complete */
+			restart_required = 0;
+			break;
+		} else if(-ENODATA == err)
 			break; /* No more to clean */
 		rfd_cnt++;
 	}
+
+	/* save our starting point as the place we'll restart the receiver */
+	if(restart_required)
+		rx_to_start = nic->rx_to_clean;
 
 	/* Alloc new skbs to refill list */
 	for(rx = nic->rx_to_use; !rx->skb; rx = nic->rx_to_use = rx->next) {
@@ -1942,7 +2007,13 @@ static inline int e100_rx_clean(struct nic *nic, unsigned int *work_done,
 			break; /* Better luck next time (see watchdog) */
 	}
 
-	e100_start_receiver(nic);
+	if(restart_required) {
+		// ack the rnr?
+		writeb(stat_ack_rnr, &nic->csr->scb.stat_ack);
+		e100_start_receiver(nic, rx_to_start);
+		if(work_done)
+			(*work_done)++;
+	}
 
 	return rfd_cnt;
 }
@@ -1951,6 +2022,8 @@ static void e100_rx_clean_list(struct nic *nic)
 {
 	struct rx *rx;
 	unsigned int i, count = nic->params.rfds.count;
+
+	nic->ru_running = RU_UNINITIALIZED;
 
 	if(nic->rxs) {
 		for(rx = nic->rxs, i = 0; i < count; rx++, i++) {
@@ -1965,7 +2038,6 @@ static void e100_rx_clean_list(struct nic *nic)
 	}
 
 	nic->rx_to_use = nic->rx_to_clean = NULL;
-	nic->ru_running = 0;
 }
 
 static int e100_rx_alloc_list(struct nic *nic)
@@ -1974,6 +2046,7 @@ static int e100_rx_alloc_list(struct nic *nic)
 	unsigned int i, count = nic->params.rfds.count;
 
 	nic->rx_to_use = nic->rx_to_clean = NULL;
+	nic->ru_running = RU_UNINITIALIZED;
 
 	if(!(nic->rxs = kmalloc(sizeof(struct rx) * count, GFP_ATOMIC)))
 		return -ENOMEM;
@@ -1989,6 +2062,7 @@ static int e100_rx_alloc_list(struct nic *nic)
 	}
 
 	nic->rx_to_use = nic->rx_to_clean = nic->rxs;
+	nic->ru_running = RU_SUSPENDED;
 
 	return 0;
 }
@@ -2010,11 +2084,13 @@ static irqreturn_t e100_intr(int irq, void *dev_id, struct pt_regs *regs)
 
 	/* We hit Receive No Resource (RNR); restart RU after cleaning */
 	if(stat_ack & stat_ack_rnr)
-		nic->ru_running = 0;
+		nic->ru_running = RU_SUSPENDED;
 
 #ifdef CONFIG_E100_NAPI
-	e100_disable_irq(nic);
-	netif_rx_schedule(netdev);
+	if(likely(netif_rx_schedule_prep(netdev))) {
+		e100_disable_irq(nic);
+		__netif_rx_schedule(netdev);
+	}
 
 #else /* pre-NAPI (softnet) */
         /* do recv work if any */
@@ -2060,6 +2136,7 @@ static void e100_netpoll(struct net_device *netdev)
 	struct nic *nic = netdev_priv(netdev);
 	e100_disable_irq(nic);
 	e100_intr(nic->pdev->irq, netdev, NULL);
+	e100_tx_clean(nic);
 	e100_enable_irq(nic);
 }
 #endif
@@ -2092,6 +2169,7 @@ static int e100_change_mtu(struct net_device *netdev, int new_mtu)
 	return 0;
 }
 
+#ifdef CONFIG_PM
 static int e100_asf(struct nic *nic)
 {
 	/* ASF can be enabled from eeprom */
@@ -2100,6 +2178,7 @@ static int e100_asf(struct nic *nic)
 	   !(nic->eeprom[eeprom_config_asf] & eeprom_gcl) &&
 	   ((nic->eeprom[eeprom_smbus_addr] & 0xFF) != 0xFE));
 }
+#endif
 
 static int e100_up(struct nic *nic)
 {
@@ -2112,13 +2191,16 @@ static int e100_up(struct nic *nic)
 	if((err = e100_hw_init(nic)))
 		goto err_clean_cbs;
 	e100_set_multicast_list(nic->netdev);
-	e100_start_receiver(nic);
+	e100_start_receiver(nic, 0);
 	mod_timer(&nic->watchdog, jiffies);
 	if((err = request_irq(nic->pdev->irq, e100_intr, SA_SHIRQ,
 		nic->netdev->name, nic->netdev)))
 		goto err_no_irq;
-	e100_enable_irq(nic);
 	netif_wake_queue(nic->netdev);
+	netif_poll_enable(nic->netdev);
+	/* enable ints _after_ enabling poll, preventing a race between
+	 * disable ints+schedule */
+	e100_enable_irq(nic);
 	return 0;
 
 err_no_irq:
@@ -2132,16 +2214,27 @@ err_rx_clean_list:
 
 static void e100_down(struct nic *nic)
 {
+	/* wait here for poll to complete */
+	netif_poll_disable(nic->netdev);
+	netif_stop_queue(nic->netdev);
 	e100_hw_reset(nic);
 	free_irq(nic->pdev->irq, nic->netdev);
 	del_timer_sync(&nic->watchdog);
 	netif_carrier_off(nic->netdev);
-	netif_stop_queue(nic->netdev);
 	e100_clean_cbs(nic);
 	e100_rx_clean_list(nic);
 }
 
 static void e100_tx_timeout(struct net_device *netdev)
+{
+	struct nic *nic = netdev_priv(netdev);
+
+	/* Reset outside of interrupt context, to avoid request_irq 
+	 * in interrupt context */
+	schedule_work(&nic->tx_timeout_task);
+}
+
+static void e100_tx_timeout_task(struct net_device *netdev)
 {
 	struct nic *nic = netdev_priv(netdev);
 
@@ -2178,7 +2271,7 @@ static int e100_loopback_test(struct nic *nic, enum loopback loopback_mode)
 		mdio_write(nic->netdev, nic->mii.phy_id, MII_BMCR,
 			BMCR_LOOPBACK);
 
-	e100_start_receiver(nic);
+	e100_start_receiver(nic, 0);
 
 	if(!(skb = dev_alloc_skb(ETH_DATA_LEN))) {
 		err = -ENOMEM;
@@ -2188,11 +2281,10 @@ static int e100_loopback_test(struct nic *nic, enum loopback loopback_mode)
 	memset(skb->data, 0xFF, ETH_DATA_LEN);
 	e100_xmit_frame(skb, nic->netdev);
 
-	set_current_state(TASK_UNINTERRUPTIBLE);
-	schedule_timeout(HZ / 100 + 1);
+	msleep(10);
 
 	if(memcmp(nic->rx_to_clean->skb->data + nic->rfd_size,
-	   		skb->data, ETH_DATA_LEN))
+	   skb->data, ETH_DATA_LEN))
 		err = -EAGAIN;
 
 err_loopback_none:
@@ -2275,8 +2367,7 @@ static void e100_get_regs(struct net_device *netdev,
 			mdio_read(netdev, nic->mii.phy_id, i);
 	memset(nic->mem->dump_buf, 0, sizeof(nic->mem->dump_buf));
 	e100_exec_cb(nic, NULL, e100_dump);
-	set_current_state(TASK_UNINTERRUPTIBLE);
-	schedule_timeout(HZ / 100 + 1);
+	msleep(10);
 	memcpy(&buff[2 + E100_PHY_REGS], nic->mem->dump_buf,
 		sizeof(nic->mem->dump_buf));
 }
@@ -2300,7 +2391,6 @@ static int e100_set_wol(struct net_device *netdev, struct ethtool_wolinfo *wol)
 	else
 		nic->flags &= ~wol_magic;
 
-	pci_enable_wake(nic->pdev, 0, nic->flags & (wol_magic | e100_asf(nic)));
 	e100_exec_cb(nic, NULL, e100_configure);
 
 	return 0;
@@ -2455,8 +2545,7 @@ static int e100_phys_id(struct net_device *netdev, u32 data)
 	if(!data || data > (u32)(MAX_SCHEDULE_TIMEOUT / HZ))
 		data = (u32)(MAX_SCHEDULE_TIMEOUT / HZ);
 	mod_timer(&nic->blink_timer, jiffies);
-	set_current_state(TASK_INTERRUPTIBLE);
-	schedule_timeout(data * HZ);
+	msleep_interruptible(data * 1000);
 	del_timer_sync(&nic->blink_timer);
 	mdio_write(netdev, nic->mii.phy_id, MII_LED_CONTROL, 0);
 
@@ -2786,7 +2875,7 @@ static int __devinit e100_probe(struct pci_dev *pdev,
 		goto err_out_disable_pdev;
 	}
 
-	if((err = pci_set_dma_mask(pdev, 0xFFFFFFFFULL))) {
+	if((err = pci_set_dma_mask(pdev, DMA_32BIT_MASK))) {
 		DPRINTK(PROBE, ERR, "No usable DMA configuration, aborting.\n");
 		goto err_out_free_res;
 	}
@@ -2808,6 +2897,7 @@ static int __devinit e100_probe(struct pci_dev *pdev,
 
 	e100_get_defaults(nic);
 
+	/* locks must be initialized before calling hw_reset */
 	spin_lock_init(&nic->cb_lock);
 	spin_lock_init(&nic->cmd_lock);
 
@@ -2825,15 +2915,18 @@ static int __devinit e100_probe(struct pci_dev *pdev,
 	nic->blink_timer.function = e100_blink_led;
 	nic->blink_timer.data = (unsigned long)nic;
 
+	INIT_WORK(&nic->tx_timeout_task,
+		(void (*)(void *))e100_tx_timeout_task, netdev);
+
 	if((err = e100_alloc(nic))) {
 		DPRINTK(PROBE, ERR, "Cannot alloc driver memory, aborting.\n");
 		goto err_out_iounmap;
 	}
 
-	e100_phy_init(nic);
-
 	if((err = e100_eeprom_load(nic)))
 		goto err_out_free;
+
+	e100_phy_init(nic);
 
 	memcpy(netdev->dev_addr, nic->eeprom, ETH_ALEN);
 	if(!is_valid_ether_addr(netdev->dev_addr)) {
@@ -2848,7 +2941,8 @@ static int __devinit e100_probe(struct pci_dev *pdev,
 	   (nic->eeprom[eeprom_id] & eeprom_id_wol))
 		nic->flags |= wol_magic;
 
-	pci_enable_wake(pdev, 0, nic->flags & (wol_magic | e100_asf(nic)));
+	/* ack any pending wake events, disable PME */
+	pci_enable_wake(pdev, 0, 0);
 
 	strcpy(netdev->name, "eth%d");
 	if((err = register_netdev(netdev))) {
@@ -2895,7 +2989,7 @@ static void __devexit e100_remove(struct pci_dev *pdev)
 }
 
 #ifdef CONFIG_PM
-static int e100_suspend(struct pci_dev *pdev, u32 state)
+static int e100_suspend(struct pci_dev *pdev, pm_message_t state)
 {
 	struct net_device *netdev = pci_get_drvdata(pdev);
 	struct nic *nic = netdev_priv(netdev);
@@ -2906,9 +3000,9 @@ static int e100_suspend(struct pci_dev *pdev, u32 state)
 	netif_device_detach(netdev);
 
 	pci_save_state(pdev);
-	pci_enable_wake(pdev, state, nic->flags & (wol_magic | e100_asf(nic)));
+	pci_enable_wake(pdev, pci_choose_state(pdev, state), nic->flags & (wol_magic | e100_asf(nic)));
 	pci_disable_device(pdev);
-	pci_set_power_state(pdev, state);
+	pci_set_power_state(pdev, pci_choose_state(pdev, state));
 
 	return 0;
 }
@@ -2918,9 +3012,12 @@ static int e100_resume(struct pci_dev *pdev)
 	struct net_device *netdev = pci_get_drvdata(pdev);
 	struct nic *nic = netdev_priv(netdev);
 
-	pci_set_power_state(pdev, 0);
+	pci_set_power_state(pdev, PCI_D0);
 	pci_restore_state(pdev);
-	e100_hw_init(nic);
+	/* ack any pending wake events, disable PME */
+	pci_enable_wake(pdev, 0, 0);
+	if(e100_hw_init(nic))
+		DPRINTK(HW, ERR, "e100_hw_init failed\n");
 
 	netif_device_attach(netdev);
 	if(netif_running(netdev))
@@ -2929,6 +3026,20 @@ static int e100_resume(struct pci_dev *pdev)
 	return 0;
 }
 #endif
+
+
+static void e100_shutdown(struct pci_dev *pdev)
+{
+	struct net_device *netdev = pci_get_drvdata(pdev);
+	struct nic *nic = netdev_priv(netdev);
+
+#ifdef CONFIG_PM
+	pci_enable_wake(pdev, 0, nic->flags & (wol_magic | e100_asf(nic)));
+#else
+	pci_enable_wake(pdev, 0, nic->flags & (wol_magic));
+#endif
+}
+
 
 static struct pci_driver e100_driver = {
 	.name =         DRV_NAME,
@@ -2939,6 +3050,7 @@ static struct pci_driver e100_driver = {
 	.suspend =      e100_suspend,
 	.resume =       e100_resume,
 #endif
+	.shutdown =	e100_shutdown,
 };
 
 static int __init e100_init_module(void)

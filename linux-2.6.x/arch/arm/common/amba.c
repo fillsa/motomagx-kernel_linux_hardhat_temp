@@ -59,7 +59,7 @@ static int amba_hotplug(struct device *dev, char **envp, int nr_env, char *buf, 
 #define amba_hotplug NULL
 #endif
 
-static int amba_suspend(struct device *dev, u32 state)
+static int amba_suspend(struct device *dev, pm_message_t state)
 {
 	struct amba_driver *drv = to_amba_driver(dev->driver);
 	int ret = 0;
@@ -169,7 +169,7 @@ static void amba_device_release(struct device *dev)
 }
 
 #define amba_attr(name,fmt,arg...)				\
-static ssize_t show_##name(struct device *_dev, char *buf)	\
+static ssize_t show_##name(struct device *_dev, struct device_attribute *attr, char *buf)	\
 {								\
 	struct amba_device *dev = to_amba_device(_dev);		\
 	return sprintf(buf, fmt, arg);				\

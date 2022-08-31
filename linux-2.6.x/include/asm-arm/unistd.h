@@ -15,7 +15,6 @@
 
 #include <linux/linkage.h>
 
-
 #ifdef __ARM_EABI__
 #define __MV_SYS_EABI__
 #endif
@@ -329,7 +328,7 @@
 #define __NR_mq_getsetattr		(__NR_SYSCALL_BASE+279)
 #define __NR_waitid			(__NR_SYSCALL_BASE+280)
 
-#if defined(__MV_SYS_EABI__)  /* reserve these for un-muxing socketcall */
+#if 0 // defined(__MV_SYS_EABI__)  /* reserve these for un-muxing socketcall */
 #define __NR_socket			(__NR_SYSCALL_BASE+281)
 #define __NR_bind			(__NR_SYSCALL_BASE+282)
 #define __NR_connect			(__NR_SYSCALL_BASE+283)
@@ -349,7 +348,7 @@
 #define __NR_recvmsg			(__NR_SYSCALL_BASE+297)
 #endif
 
-#if defined(__MV_SYS_EABI__)  /* reserve these for un-muxing ipc */
+#if 0 // defined(__MV_SYS_EABI__)  /* reserve these for un-muxing ipc */
 #define __NR_semop			(__NR_SYSCALL_BASE+298)
 #define __NR_semget			(__NR_SYSCALL_BASE+299)
 #define __NR_semctl			(__NR_SYSCALL_BASE+300)
@@ -367,7 +366,7 @@
 #define __NR_request_key		(__NR_SYSCALL_BASE+310)
 #define __NR_keyctl			(__NR_SYSCALL_BASE+311)
 
-#if defined(__MV_SYS_EABI__)  /* reserved for un-muxing ipc */
+#if 0 // defined(__MV_SYS_EABI__)  /* reserved for un-muxing ipc */
 #define __NR_semtimedop			(__NR_SYSCALL_BASE+312)
 #endif
 
@@ -381,7 +380,7 @@
 #define __NR_get_mempolicy		(__NR_SYSCALL_BASE+320)
 #define __NR_set_mempolicy		(__NR_SYSCALL_BASE+321)
 
-#define NR_syscalls			328
+#define NR_syscalls 328
 
 /*
  * The following SWIs are ARM private.
@@ -606,6 +605,6 @@ asmlinkage long sys_rt_sigaction(int sig,
  * What we want is __attribute__((weak,alias("sys_ni_syscall"))),
  * but it doesn't work on all toolchains, so we just do it by hand
  */
-#define cond_syscall(x) asm(".weak\t" #x "\n\t.set\t" #x ",sys_ni_syscall");
+#define cond_syscall(x) asm(".weak\t" #x "\n\t.set\t" #x ",sys_ni_syscall")
 
 #endif /* __ASM_ARM_UNISTD_H */

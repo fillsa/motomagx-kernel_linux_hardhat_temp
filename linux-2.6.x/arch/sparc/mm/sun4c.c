@@ -511,7 +511,8 @@ void __init sun4c_probe_memerr_reg(void)
 		node = prom_searchsiblings(prom_root_node, "memory-error");
 		if (!node)
 			return;
-		prom_getproperty(node, "reg", (char *)regs, sizeof(regs));
+		if (prom_getproperty(node, "reg", (char *)regs, sizeof(regs)) <= 0)
+			return;
 		/* hmm I think regs[0].which_io is zero here anyways */
 		sun4c_memerr_reg = ioremap(regs[0].phys_addr, regs[0].reg_size);
 	}
@@ -1745,6 +1746,11 @@ static int sun4c_pte_present(pte_t pte)
 }
 static void sun4c_pte_clear(pte_t *ptep)	{ *ptep = __pte(0); }
 
+static int sun4c_pte_read(pte_t pte)
+{
+	return (pte_val(pte) & _SUN4C_PAGE_READ);
+}
+
 static int sun4c_pmd_bad(pmd_t pmd)
 {
 	return (((pmd_val(pmd) & ~PAGE_MASK) != PGD_TABLE) ||
@@ -2116,7 +2122,6 @@ void __init sun4c_paging_init(void)
 
 		free_area_init_node(0, &contig_page_data, zones_size,
 				    pfn_base, zholes_size);
-		mem_map = contig_page_data.node_mem_map;
 	}
 
 	cnt = 0;
@@ -2199,6 +2204,7 @@ void __init ld_mmu_sun4c(void)
 
 	BTFIXUPSET_CALL(pte_present, sun4c_pte_present, BTFIXUPCALL_NORM);
 	BTFIXUPSET_CALL(pte_clear, sun4c_pte_clear, BTFIXUPCALL_STG0O0);
+	BTFIXUPSET_CALL(pte_read, sun4c_pte_read, BTFIXUPCALL_NORM);
 
 	BTFIXUPSET_CALL(pmd_bad, sun4c_pmd_bad, BTFIXUPCALL_NORM);
 	BTFIXUPSET_CALL(pmd_present, sun4c_pmd_present, BTFIXUPCALL_NORM);

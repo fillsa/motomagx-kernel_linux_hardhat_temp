@@ -19,6 +19,9 @@
  *
  * Jan 28 2004	kaos@sgi.com
  *   Periodically check for outstanding MCA or INIT records.
+ *
+ * Dec  5 2004	kaos@sgi.com
+ *   Standardize which records are cleared automatically.
  */
 
 #include <linux/types.h>
@@ -140,7 +143,8 @@ struct salinfo_data {
 
 static struct salinfo_data salinfo_data[ARRAY_SIZE(salinfo_log_name)];
 
-static spinlock_t data_lock, data_saved_lock;
+static DEFINE_SPINLOCK(data_lock);
+static DEFINE_SPINLOCK(data_saved_lock);
 
 /** salinfo_platform_oemdata - optional callback to decode oemdata from an error
  * record.
@@ -230,8 +234,8 @@ salinfo_log_wakeup(int type, u8 *buffer, u64 size, int irqsafe)
 	}
 }
 
-/* Check for outstanding MCA/INIT records every 5 minutes (arbitrary) */
-#define SALINFO_TIMER_DELAY (5*60*HZ)
+/* Check for outstanding MCA/INIT records every minute (arbitrary) */
+#define SALINFO_TIMER_DELAY (60*HZ)
 static struct timer_list salinfo_timer;
 
 static void
@@ -382,8 +386,11 @@ static void
 salinfo_log_read_cpu(void *context)
 {
 	struct salinfo_data *data = context;
+	sal_log_record_header_t *rh;
 	data->log_size = ia64_sal_get_state_info(data->type, (u64 *) data->log_buffer);
-	if (data->type == SAL_INFO_TYPE_CPE || data->type == SAL_INFO_TYPE_CMC)
+	rh = (sal_log_record_header_t *)(data->log_buffer);
+	/* Clear corrected errors as they are read from SAL */
+	if (rh->severity == sal_log_severity_corrected)
 		ia64_sal_clear_state_info(data->type);
 }
 
@@ -457,6 +464,7 @@ salinfo_log_clear_cpu(void *context)
 static int
 salinfo_log_clear(struct salinfo_data *data, int cpu)
 {
+	sal_log_record_header_t *rh;
 	data->state = STATE_NO_DATA;
 	if (!test_bit(cpu, &data->cpu_event))
 		return 0;
@@ -469,10 +477,9 @@ salinfo_log_clear(struct salinfo_data *data, int cpu)
 		data->saved_num = 0;
 		spin_unlock_irqrestore(&data_saved_lock, flags);
 	}
-	/* ia64_mca_log_sal_error_record or salinfo_log_read_cpu already cleared
-	 * CPE and CMC errors
-	 */
-	if (data->type != SAL_INFO_TYPE_CPE && data->type != SAL_INFO_TYPE_CMC)
+	rh = (sal_log_record_header_t *)(data->log_buffer);
+	/* Corrected errors have already been cleared from SAL */
+	if (rh->severity != sal_log_severity_corrected)
 		call_on_cpu(cpu, salinfo_log_clear_cpu, data);
 	/* clearing a record may make a new record visible */
 	salinfo_log_new_read(cpu, data);

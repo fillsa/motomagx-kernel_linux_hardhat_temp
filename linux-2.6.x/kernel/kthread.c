@@ -20,6 +20,12 @@
  */
 static struct workqueue_struct *helper_wq;
 
+/*
+ * We dont want to execute off keventd since it might
+ * hold a semaphore our callers hold too:
+ */
+static struct workqueue_struct *helper_wq;
+
 struct kthread_create_info
 {
 	/* Information passed to kthread() from keventd. */
@@ -174,7 +180,7 @@ int kthread_stop(struct task_struct *k)
 
 	/* Must init completion *before* thread sees kthread_stop_info.k */
 	init_completion(&kthread_stop_info.done);
-	wmb();
+	smp_wmb();
 
 	/* Now set kthread_should_stop() to true, and wake it up. */
 	kthread_stop_info.k = k;
@@ -189,6 +195,7 @@ int kthread_stop(struct task_struct *k)
 
 	return ret;
 }
+
 EXPORT_SYMBOL(kthread_stop);
 
 static __init int helper_init(void)

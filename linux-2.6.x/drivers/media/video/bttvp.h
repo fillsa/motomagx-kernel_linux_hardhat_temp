@@ -1,5 +1,5 @@
 /*
-    $Id: bttvp.h,v 1.12 2004/10/25 11:26:36 kraxel Exp $
+    $Id: bttvp.h,v 1.21 2005/07/15 21:44:14 mchehab Exp $
 
     bttv - Bt848 frame grabber driver
 
@@ -27,7 +27,7 @@
 #define _BTTVP_H_
 
 #include <linux/version.h>
-#define BTTV_VERSION_CODE KERNEL_VERSION(0,9,15)
+#define BTTV_VERSION_CODE KERNEL_VERSION(0,9,16)
 
 #include <linux/types.h>
 #include <linux/wait.h>
@@ -43,6 +43,7 @@
 #include <media/video-buf.h>
 #include <media/audiochip.h>
 #include <media/tuner.h>
+#include <media/tveeprom.h>
 #include <media/ir-common.h>
 
 #include "bt848.h"
@@ -89,7 +90,6 @@ struct bttv_tvnorm {
 	int   sram;
 };
 extern const struct bttv_tvnorm bttv_tvnorms[];
-extern const unsigned int BTTV_TVNORMS;
 
 struct bttv_format {
 	char *name;
@@ -101,8 +101,6 @@ struct bttv_format {
 	int  flags;
 	int  hshift,vshift;   /* for planar modes   */
 };
-extern const struct bttv_format bttv_formats[];
-extern const unsigned int BTTV_FORMATS;
 
 /* ---------------------------------------------------------- */
 
@@ -173,22 +171,6 @@ int bttv_risc_packed(struct bttv *btv, struct btcx_riscmem *risc,
 		     struct scatterlist *sglist,
 		     unsigned int offset, unsigned int bpl,
 		     unsigned int pitch, unsigned int lines);
-int bttv_risc_planar(struct bttv *btv, struct btcx_riscmem *risc,
-		     struct scatterlist *sglist,
-		     unsigned int yoffset,  unsigned int ybpl,
-		     unsigned int ypadding, unsigned int ylines,
-		     unsigned int uoffset,  unsigned int voffset,
-		     unsigned int hshift,   unsigned int vshift,
-		     unsigned int cpadding);
-int bttv_risc_overlay(struct bttv *btv, struct btcx_riscmem *risc,
-		      const struct bttv_format *fmt,
-		      struct bttv_overlay *ov,
-		      int skip_top, int skip_bottom);
-
-/* calculate / apply geometry settings */
-void bttv_calc_geo(struct bttv *btv, struct bttv_geometry *geo,
-		   int width, int height, int interleaved, int norm);
-void bttv_apply_geo(struct bttv *btv, struct bttv_geometry *geo, int top);
 
 /* control dma register + risc main loop */
 void bttv_set_dma(struct bttv *btv, int override);
@@ -227,7 +209,6 @@ extern struct bus_type bttv_sub_bus_type;
 int bttv_sub_add_device(struct bttv_core *core, char *name);
 int bttv_sub_del_devices(struct bttv_core *core);
 void bttv_gpio_irq(struct bttv_core *core);
-void bttv_i2c_info(struct bttv_core *core, struct i2c_client *client, int attach);
 
 
 /* ---------------------------------------------------------- */
@@ -240,20 +221,10 @@ extern unsigned int bttv_gpio;
 extern void bttv_gpio_tracking(struct bttv *btv, char *comment);
 extern int init_bttv_i2c(struct bttv *btv);
 extern int fini_bttv_i2c(struct bttv *btv);
-extern int pvr_boot(struct bttv *btv);
-
-extern int bttv_common_ioctls(struct bttv *btv, unsigned int cmd, void *arg);
-extern void bttv_reinit_bt848(struct bttv *btv);
-extern void bttv_field_count(struct bttv *btv);
 
 #define vprintk  if (bttv_verbose) printk
 #define dprintk  if (bttv_debug >= 1) printk
 #define d2printk if (bttv_debug >= 2) printk
-
-/* our devices */
-#define BTTV_MAX 16
-extern unsigned int bttv_num;
-extern struct bttv bttvs[BTTV_MAX];
 
 #define BTTV_MAX_FBUF   0x208000
 #define VBIBUF_SIZE     (2048*VBI_MAXLINES*2)
@@ -355,6 +326,9 @@ struct bttv {
 	int opt_vcr_hack;
 	int opt_whitecrush_upper;
 	int opt_whitecrush_lower;
+	int opt_uv_ratio;
+	int opt_full_luma_range;
+	int opt_coring;
 
 	/* radio data/state */
 	int has_radio;
@@ -400,6 +374,11 @@ struct bttv {
 	unsigned int users;
 	struct bttv_fh init;
 };
+
+/* our devices */
+#define BTTV_MAX 16
+extern unsigned int bttv_num;
+extern struct bttv bttvs[BTTV_MAX];
 
 /* private ioctls */
 #define BTTV_VERSION            _IOR('v' , BASE_VIDIOCPRIVATE+6, int)

@@ -328,7 +328,7 @@ sync_sb_inodes(struct super_block *sb, struct writeback_control *wbc)
 		struct backing_dev_info *bdi = mapping->backing_dev_info;
 		long pages_skipped;
 
-		if (bdi->memory_backed) {
+		if (!bdi_cap_writeback_dirty(bdi)) {
 			list_move(&inode->i_list, &sb->s_dirty);
 			if (sb == blockdev_superblock) {
 				/*
@@ -498,34 +498,9 @@ static void set_sb_syncing(int val)
 	spin_unlock(&sb_lock);
 }
 
-/*
- * Find a superblock with inodes that need to be synced
- */
-static struct super_block *get_super_to_sync(void)
-{
-	struct super_block *sb;
-restart:
-	spin_lock(&sb_lock);
-	sb = sb_entry(super_blocks.prev);
-	for (; sb != sb_entry(&super_blocks); sb = sb_entry(sb->s_list.prev)) {
-		if (sb->s_syncing)
-			continue;
-		sb->s_syncing = 1;
-		sb->s_count++;
-		spin_unlock(&sb_lock);
-		down_read(&sb->s_umount);
-		if (!sb->s_root) {
-			drop_super(sb);
-			goto restart;
-		}
-		return sb;
-	}
-	spin_unlock(&sb_lock);
-	return NULL;
-}
-
 /**
- * sync_inodes
+ * sync_inodes - writes all inodes to disk
+ * @wait: wait for completion
  *
  * sync_inodes() goes through each super block's dirty inode list, writes the
  * inodes out, waits on the writeout and puts the inodes back on the normal
@@ -542,23 +517,39 @@ restart:
  * outstanding dirty inodes, the writeback goes block-at-a-time within the
  * filesystem's write_inode().  This is extremely slow.
  */
-void sync_inodes(int wait)
+static void __sync_inodes(int wait)
 {
 	struct super_block *sb;
 
-	set_sb_syncing(0);
-	while ((sb = get_super_to_sync()) != NULL) {
-		sync_inodes_sb(sb, 0);
-		sync_blockdev(sb->s_bdev);
-		drop_super(sb);
+	spin_lock(&sb_lock);
+restart:
+	list_for_each_entry(sb, &super_blocks, s_list) {
+		if (sb->s_syncing)
+			continue;
+		sb->s_syncing = 1;
+		sb->s_count++;
+		spin_unlock(&sb_lock);
+		down_read(&sb->s_umount);
+		if (sb->s_root) {
+			sync_inodes_sb(sb, wait);
+			sync_blockdev(sb->s_bdev);
+		}
+		up_read(&sb->s_umount);
+		spin_lock(&sb_lock);
+		if (__put_super_and_need_restart(sb))
+			goto restart;
 	}
+	spin_unlock(&sb_lock);
+}
+
+void sync_inodes(int wait)
+{
+	set_sb_syncing(0);
+	__sync_inodes(0);
+
 	if (wait) {
 		set_sb_syncing(0);
-		while ((sb = get_super_to_sync()) != NULL) {
-			sync_inodes_sb(sb, 1);
-			sync_blockdev(sb->s_bdev);
-			drop_super(sb);
-		}
+		__sync_inodes(1);
 	}
 }
 
@@ -571,22 +562,24 @@ void sync_inodes(int wait)
  *	dirty. This is primarily needed by knfsd.
  */
  
-void write_inode_now(struct inode *inode, int sync)
+int write_inode_now(struct inode *inode, int sync)
 {
+	int ret;
 	struct writeback_control wbc = {
 		.nr_to_write = LONG_MAX,
 		.sync_mode = WB_SYNC_ALL,
 	};
 
-	if (inode->i_mapping->backing_dev_info->memory_backed)
-		return;
+	if (!mapping_cap_writeback_dirty(inode->i_mapping))
+		return 0;
 
 	might_sleep();
 	spin_lock(&inode_lock);
-	__writeback_single_inode(inode, &wbc);
+	ret = __writeback_single_inode(inode, &wbc);
 	spin_unlock(&inode_lock);
 	if (sync)
 		wait_on_inode(inode);
+	return ret;
 }
 EXPORT_SYMBOL(write_inode_now);
 
@@ -615,6 +608,7 @@ EXPORT_SYMBOL(sync_inode);
 /**
  * generic_osync_inode - flush all dirty data for a given inode to disk
  * @inode: inode to write
+ * @mapping: the address_space that should be flushed
  * @what:  what to write and wait upon
  *
  * This can be called by file_write functions for files which have the
@@ -655,8 +649,11 @@ int generic_osync_inode(struct inode *inode, struct address_space *mapping, int 
 		need_write_inode_now = 1;
 	spin_unlock(&inode_lock);
 
-	if (need_write_inode_now)
-		write_inode_now(inode, 1);
+	if (need_write_inode_now) {
+		err2 = write_inode_now(inode, 1);
+		if (!err)
+			err = err2;
+	}
 	else
 		wait_on_inode(inode);
 

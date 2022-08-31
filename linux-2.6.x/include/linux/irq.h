@@ -58,6 +58,10 @@ struct hw_interrupt_type {
 	void (*ack)(unsigned int irq);
 	void (*end)(unsigned int irq);
 	void (*set_affinity)(unsigned int irq, cpumask_t dest);
+	/* Currently used only by UML, might disappear one day.*/
+#ifdef CONFIG_IRQ_RELEASE_METHOD
+	void (*release)(unsigned int irq, void *dev_id);
+#endif
 };
 
 typedef struct hw_interrupt_type  hw_irq_controller;
@@ -70,9 +74,10 @@ typedef struct hw_interrupt_type  hw_irq_controller;
  * Pad this out to 32 bytes for cache and indexing reasons.
  */
 typedef struct irq_desc {
-	unsigned int status;		/* IRQ status */
 	hw_irq_controller *handler;
+	void *handler_data;
 	struct irqaction *action;	/* IRQ action list */
+	unsigned int status;		/* IRQ status */
 	unsigned int depth;		/* nested irq disables */
 	unsigned int irq_count;		/* For detecting broken interrupts */
 	unsigned int irqs_unhandled;
@@ -94,10 +99,10 @@ extern int no_irq_affinity;
 extern int noirqdebug_setup(char *str);
 
 extern fastcall int handle_IRQ_event(unsigned int irq, struct pt_regs *regs,
-				       struct irqaction *action);
+					struct irqaction *action);
 extern fastcall unsigned int __do_IRQ(unsigned int irq, struct pt_regs *regs);
-extern void note_interrupt(unsigned int irq, irq_desc_t *desc, int action_ret);
-extern void report_bad_irq(unsigned int irq, irq_desc_t *desc, int action_ret);
+extern void note_interrupt(unsigned int irq, irq_desc_t *desc,
+					int action_ret, struct pt_regs *regs);
 extern int can_request_irq(unsigned int irq, unsigned long irqflags);
 
 extern void early_init_hardirqs(void);

@@ -1045,14 +1045,14 @@ static struct fb_ops gbefb_ops = {
  * sysfs
  */
 
-static ssize_t gbefb_show_memsize(struct device *dev, char *buf)
+static ssize_t gbefb_show_memsize(struct device *dev, struct device_attribute *attr, char *buf)
 {
 	return snprintf(buf, PAGE_SIZE, "%d\n", gbe_mem_size);
 }
 
 static DEVICE_ATTR(size, S_IRUGO, gbefb_show_memsize, NULL);
 
-static ssize_t gbefb_show_rev(struct device *device, char *buf)
+static ssize_t gbefb_show_rev(struct device *device, struct device_attribute *attr, char *buf)
 {
 	return snprintf(buf, PAGE_SIZE, "%d\n", gbe_revision);
 }
@@ -1065,7 +1065,7 @@ static void __devexit gbefb_remove_sysfs(struct device *dev)
 	device_remove_file(dev, &dev_attr_revision);
 }
 
-static void gbefb_create_sysfs(struct device *dev) 
+static void gbefb_create_sysfs(struct device *dev)
 {
 	device_create_file(dev, &dev_attr_size);
 	device_create_file(dev, &dev_attr_revision);

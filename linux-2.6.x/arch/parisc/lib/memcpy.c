@@ -111,7 +111,7 @@ DECLARE_PER_CPU(struct exception_data, exception_data);
 	"\t" EXC_WORD "\t" #_e "\n"			\
 	"\t.previous\n"					\
 	: _tt(_t), "+r"(_a)				\
-	: "1"(_a)					\
+	: 						\
 	: "r8")
 
 #define def_store_ai_insn(_insn,_sz,_tt,_s,_a,_t,_e) 	\
@@ -122,7 +122,7 @@ DECLARE_PER_CPU(struct exception_data, exception_data);
 	"\t" EXC_WORD "\t" #_e "\n"			\
 	"\t.previous\n"					\
 	: "+r"(_a) 					\
-	: _tt(_t), "0"(_a)				\
+	: _tt(_t)					\
 	: "r8")
 
 #define ldbma(_s, _a, _t, _e) def_load_ai_insn(ldbs,1,"=r",_s,_a,_t,_e)
@@ -297,7 +297,7 @@ handle_store_error:
 unsigned long pa_memcpy(void *dstp, const void *srcp, unsigned long len)
 {
 	register unsigned long src, dst, t1, t2, t3;
-	register char *pcs, *pcd;
+	register unsigned char *pcs, *pcd;
 	register unsigned int *pws, *pwd;
 	register double *pds, *pdd;
 	unsigned long ret = 0;
@@ -515,16 +515,8 @@ void * memcpy(void * dst,const void *src, size_t count)
 	return dst;
 }
 
-void bcopy(const void * srcp, void * destp, size_t count)
-{
-	mtsp(get_kernel_space(), 1);
-	mtsp(get_kernel_space(), 2);
-	pa_memcpy(destp, srcp, count);
-}
-
 EXPORT_SYMBOL(copy_to_user);
 EXPORT_SYMBOL(copy_from_user);
 EXPORT_SYMBOL(copy_in_user);
 EXPORT_SYMBOL(memcpy);
-EXPORT_SYMBOL(bcopy);
 #endif

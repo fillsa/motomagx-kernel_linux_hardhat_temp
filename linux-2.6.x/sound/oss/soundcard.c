@@ -77,7 +77,7 @@ static char     dma_alloc_map[MAX_DMA_CHANNELS];
 
 
 unsigned long seq_time = 0;	/* Time for /dev/sequencer */
-extern struct class_simple *sound_class;
+extern struct class *sound_class;
 
 /*
  * Table for configurable mixer volume handling
@@ -333,7 +333,7 @@ static int sound_mixer_ioctl(int mixdev, unsigned int cmd, void __user *arg)
 static int sound_ioctl(struct inode *inode, struct file *file,
 		       unsigned int cmd, unsigned long arg)
 {
-	int err, len = 0, dtype;
+	int len = 0, dtype;
 	int dev = iminor(inode);
 	void __user *p = (void __user *)arg;
 
@@ -345,11 +345,11 @@ static int sound_ioctl(struct inode *inode, struct file *file,
 		if (len < 1 || len > 65536 || !p)
 			return -EFAULT;
 		if (_SIOC_DIR(cmd) & _SIOC_WRITE)
-			if ((err = verify_area(VERIFY_READ, p, len)) < 0)
-				return err;
+			if (!access_ok(VERIFY_READ, p, len))
+				return -EFAULT;
 		if (_SIOC_DIR(cmd) & _SIOC_READ)
-			if ((err = verify_area(VERIFY_WRITE, p, len)) < 0)
-				return err;
+			if (!access_ok(VERIFY_WRITE, p, len))
+				return -EFAULT;
 	}
 	DEB(printk("sound_ioctl(dev=%d, cmd=0x%x, arg=0x%x)\n", dev, cmd, arg));
 	if (cmd == OSS_GETVERSION)
@@ -537,11 +537,11 @@ static const struct {
 };
 
 static int dmabuf;
-MODULE_PARM(dmabuf, "i");
+module_param(dmabuf, int, 0444);
 
 #ifdef CONFIG_PCI
 static int dmabug;
-MODULE_PARM(dmabug, "i");
+module_param(dmabug, int, 0444);
 #endif
 
 static int __init oss_init(void)
@@ -573,9 +573,9 @@ static int __init oss_init(void)
 		devfs_mk_cdev(MKDEV(SOUND_MAJOR, dev_list[i].minor),
 				S_IFCHR | dev_list[i].mode,
 				"sound/%s", dev_list[i].name);
-		class_simple_device_add(sound_class, 
-					MKDEV(SOUND_MAJOR, dev_list[i].minor),
-					NULL, "%s", dev_list[i].name);
+		class_device_create(sound_class,
+				    MKDEV(SOUND_MAJOR, dev_list[i].minor),
+				    NULL, "%s", dev_list[i].name);
 
 		if (!dev_list[i].num)
 			continue;
@@ -585,10 +585,9 @@ static int __init oss_init(void)
 						dev_list[i].minor + (j*0x10)),
 					S_IFCHR | dev_list[i].mode,
 					"sound/%s%d", dev_list[i].name, j);
-			class_simple_device_add(sound_class,
-					MKDEV(SOUND_MAJOR, dev_list[i].minor + (j*0x10)),
-					NULL,
-					"%s%d", dev_list[i].name, j);
+			class_device_create(sound_class,
+					    MKDEV(SOUND_MAJOR, dev_list[i].minor + (j*0x10)),
+					    NULL, "%s%d", dev_list[i].name, j);
 		}
 	}
 
@@ -604,12 +603,12 @@ static void __exit oss_cleanup(void)
 
 	for (i = 0; i < sizeof (dev_list) / sizeof *dev_list; i++) {
 		devfs_remove("sound/%s", dev_list[i].name);
-		class_simple_device_remove(MKDEV(SOUND_MAJOR, dev_list[i].minor));
+		class_device_destroy(sound_class, MKDEV(SOUND_MAJOR, dev_list[i].minor));
 		if (!dev_list[i].num)
 			continue;
 		for (j = 1; j < *dev_list[i].num; j++) {
 			devfs_remove("sound/%s%d", dev_list[i].name, j);
-			class_simple_device_remove(MKDEV(SOUND_MAJOR, dev_list[i].minor + (j*0x10)));
+			class_device_destroy(sound_class, MKDEV(SOUND_MAJOR, dev_list[i].minor + (j*0x10)));
 		}
 	}
 	

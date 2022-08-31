@@ -42,7 +42,6 @@ void __init mach_early_init (void)
 	int i;
 	const u32 *src;
 	register u32 *dst asm ("ep");
-	extern int panic_timeout;
 	extern u32 _intv_end, _intv_load_start;
 
 	/* Set bus sizes: CS0 32-bit, CS1 16-bit, CS7 8-bit,
@@ -122,21 +121,15 @@ void machine_halt (void)
 	}
 }
 
-EXPORT_SYMBOL(machine_halt);
-
 void machine_restart (char *__unused)
 {
 	machine_halt ();
 }
 
-EXPORT_SYMBOL(machine_restart);
-
 void machine_power_off (void)
 {
 	machine_halt ();
 }
-
-EXPORT_SYMBOL(machine_power_off);
 
 
 /* Interrupts */

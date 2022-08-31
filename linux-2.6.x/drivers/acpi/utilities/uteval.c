@@ -5,7 +5,7 @@
  *****************************************************************************/
 
 /*
- * Copyright (C) 2000 - 2004, R. Byron Moore
+ * Copyright (C) 2000 - 2005, R. Byron Moore
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -49,6 +49,19 @@
 
 #define _COMPONENT          ACPI_UTILITIES
 	 ACPI_MODULE_NAME    ("uteval")
+
+/* Local prototypes */
+
+static void
+acpi_ut_copy_id_string (
+	char                            *destination,
+	char                            *source,
+	acpi_size                       max_length);
+
+static acpi_status
+acpi_ut_translate_one_cid (
+	union acpi_operand_object       *obj_desc,
+	struct acpi_compatible_id       *one_cid);
 
 
 /*******************************************************************************
@@ -198,6 +211,17 @@ acpi_ut_evaluate_object (
 		break;
 	}
 
+	if ((acpi_gbl_enable_interpreter_slack) &&
+		(!expected_return_btypes)) {
+		/*
+		 * We received a return object, but one was not expected.  This can
+		 * happen frequently if the "implicit return" feature is enabled.
+		 * Just delete the return object and return AE_OK.
+		 */
+		acpi_ut_remove_reference (info.return_object);
+		return_ACPI_STATUS (AE_OK);
+	}
+
 	/* Is the return object one of the expected types? */
 
 	if (!(expected_return_btypes & return_btype)) {
@@ -205,8 +229,9 @@ acpi_ut_evaluate_object (
 			prefix_node, path, AE_TYPE);
 
 		ACPI_DEBUG_PRINT ((ACPI_DB_ERROR,
-			"Type returned from %s was incorrect: %X\n",
-			path, ACPI_GET_OBJECT_TYPE (info.return_object)));
+			"Type returned from %s was incorrect: %s, expected Btypes: %X\n",
+			path, acpi_ut_get_object_type_name (info.return_object),
+			expected_return_btypes));
 
 		/* On error exit, we must delete the return object */
 
@@ -225,9 +250,9 @@ acpi_ut_evaluate_object (
  *
  * FUNCTION:    acpi_ut_evaluate_numeric_object
  *
- * PARAMETERS:  *object_name        - Object name to be evaluated
+ * PARAMETERS:  object_name         - Object name to be evaluated
  *              device_node         - Node for the device
- *              *Address            - Where the value is returned
+ *              Address             - Where the value is returned
  *
  * RETURN:      Status
  *
@@ -291,7 +316,6 @@ acpi_ut_copy_id_string (
 	acpi_size                       max_length)
 {
 
-
 	/*
 	 * Workaround for ID strings that have a leading asterisk. This construct
 	 * is not allowed by the ACPI specification  (ID strings must be
@@ -313,7 +337,7 @@ acpi_ut_copy_id_string (
  * FUNCTION:    acpi_ut_execute_HID
  *
  * PARAMETERS:  device_node         - Node for the device
- *              *Hid                - Where the HID is returned
+ *              Hid                 - Where the HID is returned
  *
  * RETURN:      Status
  *
@@ -417,7 +441,7 @@ acpi_ut_translate_one_cid (
  * FUNCTION:    acpi_ut_execute_CID
  *
  * PARAMETERS:  device_node         - Node for the device
- *              *Cid                - Where the CID is returned
+ *              return_cid_list     - Where the CID list is returned
  *
  * RETURN:      Status
  *
@@ -476,10 +500,10 @@ acpi_ut_execute_CID (
 	cid_list->size = size;
 
 	/*
-	 *  A _CID can return either a single compatible ID or a package of compatible
-	 *  IDs.  Each compatible ID can be one of the following:
-	 *  -- Number (32 bit compressed EISA ID) or
-	 *  -- String (PCI ID format, e.g. "PCI\VEN_vvvv&DEV_dddd&SUBSYS_ssssssss").
+	 *  A _CID can return either a single compatible ID or a package of
+	 *  compatible IDs.  Each compatible ID can be one of the following:
+	 *  1) Integer (32 bit compressed EISA ID) or
+	 *  2) String (PCI ID format, e.g. "PCI\VEN_vvvv&DEV_dddd&SUBSYS_ssssssss")
 	 */
 
 	/* The _CID object can be either a single CID or a package (list) of CIDs */
@@ -522,7 +546,7 @@ acpi_ut_execute_CID (
  * FUNCTION:    acpi_ut_execute_UID
  *
  * PARAMETERS:  device_node         - Node for the device
- *              *Uid                - Where the UID is returned
+ *              Uid                 - Where the UID is returned
  *
  * RETURN:      Status
  *
@@ -575,7 +599,7 @@ acpi_ut_execute_UID (
  * FUNCTION:    acpi_ut_execute_STA
  *
  * PARAMETERS:  device_node         - Node for the device
- *              *Flags              - Where the status flags are returned
+ *              Flags               - Where the status flags are returned
  *
  * RETURN:      Status
  *
@@ -629,7 +653,7 @@ acpi_ut_execute_STA (
  * FUNCTION:    acpi_ut_execute_Sxds
  *
  * PARAMETERS:  device_node         - Node for the device
- *              *Flags              - Where the status flags are returned
+ *              Flags               - Where the status flags are returned
  *
  * RETURN:      Status
  *

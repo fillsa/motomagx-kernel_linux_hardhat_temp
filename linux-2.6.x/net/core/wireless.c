@@ -374,7 +374,7 @@ static const int standard_event_num = (sizeof(standard_event) /
 				       sizeof(struct iw_ioctl_description));
 
 /* Size (in bytes) of the various private data types */
-const char iw_priv_type_size[] = {
+static const char iw_priv_type_size[] = {
 	0,				/* IW_PRIV_TYPE_NONE */
 	1,				/* IW_PRIV_TYPE_BYTE */
 	1,				/* IW_PRIV_TYPE_CHAR */
@@ -1102,6 +1102,7 @@ static inline int rtnetlink_fill_iwinfo(struct sk_buff *	skb,
 	nlh = NLMSG_PUT(skb, 0, 0, type, sizeof(*r));
 	r = NLMSG_DATA(nlh);
 	r->ifi_family = AF_UNSPEC;
+	r->__ifi_pad = 0;
 	r->ifi_type = dev->type;
 	r->ifi_index = dev->ifindex;
 	r->ifi_flags = dev->flags;

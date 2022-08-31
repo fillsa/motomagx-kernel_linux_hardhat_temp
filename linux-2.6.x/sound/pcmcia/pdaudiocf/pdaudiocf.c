@@ -22,7 +22,6 @@
 #include <sound/core.h>
 #include <linux/slab.h>
 #include <linux/moduleparam.h>
-#include <pcmcia/version.h>
 #include <pcmcia/ciscode.h>
 #include <pcmcia/cisreg.h>
 #include "pdaudiocf.h"
@@ -42,8 +41,6 @@ MODULE_SUPPORTED_DEVICE("{{Sound Core," CARD_NAME "}}");
 static int index[SNDRV_CARDS] = SNDRV_DEFAULT_IDX;	/* Index 0-MAX */
 static char *id[SNDRV_CARDS] = SNDRV_DEFAULT_STR;	/* ID for this card */
 static int enable[SNDRV_CARDS] = SNDRV_DEFAULT_ENABLE_PNP;	/* Enable switches */
-static unsigned int irq_mask = 0xffff;
-static int irq_list[4] = { -1 };
 
 module_param_array(index, int, NULL, 0444);
 MODULE_PARM_DESC(index, "Index value for " CARD_NAME " soundcard.");
@@ -51,11 +48,6 @@ module_param_array(id, charp, NULL, 0444);
 MODULE_PARM_DESC(id, "ID string for " CARD_NAME " soundcard.");
 module_param_array(enable, bool, NULL, 0444);
 MODULE_PARM_DESC(enable, "Enable " CARD_NAME " soundcard.");
-module_param(irq_mask, int, 0444);
-MODULE_PARM_DESC(irq_mask, "IRQ bitmask for " CARD_NAME " soundcard.");
-module_param_array(irq_list, int, NULL, 0444);
-MODULE_PARM_DESC(irq_list, "List of Available interrupts for " CARD_NAME " soundcard.");
- 
 
 /*
  */
@@ -164,12 +156,7 @@ static dev_link_t *snd_pdacf_attach(void)
 	link->irq.Attributes = IRQ_TYPE_EXCLUSIVE | IRQ_HANDLE_PRESENT | IRQ_FORCED_PULSE;
 	// link->irq.Attributes = IRQ_TYPE_DYNAMIC_SHARING|IRQ_FIRST_SHARED;
 
-	link->irq.IRQInfo1 = IRQ_INFO2_VALID /* | IRQ_LEVEL_ID */;
-	if (irq_list[0] == -1)
-		link->irq.IRQInfo2 = irq_mask;
-	else
-		for (i = 0; i < 4; i++)
-			link->irq.IRQInfo2 |= 1 << irq_list[i];
+	link->irq.IRQInfo1 = 0 /* | IRQ_LEVEL_ID */;
 	link->irq.Handler = pdacf_interrupt;
 	link->irq.Instance = pdacf;
 	link->conf.Attributes = CONF_ENABLE_IRQ;
@@ -183,15 +170,6 @@ static dev_link_t *snd_pdacf_attach(void)
 
 	/* Register with Card Services */
 	client_reg.dev_info = &dev_info;
-	client_reg.Attributes = INFO_IO_CLIENT | INFO_CARD_SHARE;
-	client_reg.EventMask = 
-		CS_EVENT_CARD_INSERTION | CS_EVENT_CARD_REMOVAL
-#ifdef CONFIG_PM
-		| CS_EVENT_RESET_PHYSICAL | CS_EVENT_CARD_RESET
-		| CS_EVENT_PM_SUSPEND | CS_EVENT_PM_RESUME
-#endif
-		;
-	client_reg.event_handler = &pdacf_event;
 	client_reg.Version = 0x0210;
 	client_reg.event_callback_args.client_data = link;
 
@@ -274,15 +252,6 @@ static void snd_pdacf_detach(dev_link_t *link)
 }
 
 /*
- * snd_pdacf_detach_all - detach all instances linked to the hw
- */
-static void snd_pdacf_detach_all(void)
-{
-	while (dev_list != NULL)
-		snd_pdacf_detach(dev_list);
-}
-
-/*
  * configuration callback
  */
 
@@ -294,12 +263,17 @@ static void pdacf_config(dev_link_t *link)
 	client_handle_t handle = link->handle;
 	pdacf_t *pdacf = link->priv;
 	tuple_t tuple;
-	cisparse_t parse;
+	cisparse_t *parse = NULL;
 	config_info_t conf;
 	u_short buf[32];
 	int last_fn, last_ret;
 
 	snd_printdd(KERN_DEBUG "pdacf_config called\n");
+	parse = kmalloc(sizeof(*parse), GFP_KERNEL);
+	if (! parse) {
+		snd_printk(KERN_ERR "pdacf_config: cannot allocate\n");
+		return;
+	}
 	tuple.DesiredTuple = CISTPL_CFTABLE_ENTRY;
 	tuple.Attributes = 0;
 	tuple.TupleData = (cisdata_t *)buf;
@@ -308,9 +282,10 @@ static void pdacf_config(dev_link_t *link)
 	tuple.DesiredTuple = CISTPL_CONFIG;
 	CS_CHECK(GetFirstTuple, pcmcia_get_first_tuple(handle, &tuple));
 	CS_CHECK(GetTupleData, pcmcia_get_tuple_data(handle, &tuple));
-	CS_CHECK(ParseTuple, pcmcia_parse_tuple(handle, &tuple, &parse));
-	link->conf.ConfigBase = parse.config.base;
+	CS_CHECK(ParseTuple, pcmcia_parse_tuple(handle, &tuple, parse));
+	link->conf.ConfigBase = parse->config.base;
 	link->conf.ConfigIndex = 0x5;
+	kfree(parse);
 
 	CS_CHECK(GetConfigurationInfo, pcmcia_get_configuration_info(handle, &conf));
 	link->conf.Vcc = conf.Vcc;
@@ -364,7 +339,7 @@ static int pdacf_event(event_t event, int priority, event_callback_args_t *args)
 		link->state |= DEV_SUSPEND;
 		if (chip) {
 			snd_printdd(KERN_DEBUG "snd_pdacf_suspend calling\n");
-			snd_pdacf_suspend(chip->card, 0);
+			snd_pdacf_suspend(chip->card, PMSG_SUSPEND);
 		}
 		/* Fall through... */
 	case CS_EVENT_RESET_PHYSICAL:
@@ -383,7 +358,7 @@ static int pdacf_event(event_t event, int priority, event_callback_args_t *args)
 			pcmcia_request_configuration(link->handle, &link->conf);
 			if (chip) {
 				snd_printdd(KERN_DEBUG "calling snd_pdacf_resume\n");
-				snd_pdacf_resume(chip->card, 0);
+				snd_pdacf_resume(chip->card);
 			}
 		}
 		snd_printdd(KERN_DEBUG "resume done!\n");
@@ -396,13 +371,21 @@ static int pdacf_event(event_t event, int priority, event_callback_args_t *args)
 /*
  * Module entry points
  */
+static struct pcmcia_device_id snd_pdacf_ids[] = {
+	PCMCIA_DEVICE_MANF_CARD(0x015d, 0x4c45),
+	PCMCIA_DEVICE_NULL
+};
+MODULE_DEVICE_TABLE(pcmcia, snd_pdacf_ids);
+
 static struct pcmcia_driver pdacf_cs_driver = {
-	.owner          = THIS_MODULE,
-	.drv            = {
-		.name   = "snd-pdaudiocf",
+	.owner		= THIS_MODULE,
+	.drv		= {
+		.name	= "snd-pdaudiocf",
 	},
-	.attach         = snd_pdacf_attach,
-	.detach         = snd_pdacf_detach
+	.attach		= snd_pdacf_attach,
+	.event		= pdacf_event,
+	.detach		= snd_pdacf_detach,
+	.id_table	= snd_pdacf_ids,
 };
 
 static int __init init_pdacf(void)
@@ -413,7 +396,7 @@ static int __init init_pdacf(void)
 static void __exit exit_pdacf(void)
 {
 	pcmcia_unregister_driver(&pdacf_cs_driver);
-	snd_pdacf_detach_all();
+	BUG_ON(dev_list != NULL);
 }
 
 module_init(init_pdacf);

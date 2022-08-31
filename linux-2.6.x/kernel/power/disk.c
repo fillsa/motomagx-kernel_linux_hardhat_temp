@@ -16,7 +16,8 @@
 #include <linux/device.h>
 #include <linux/delay.h>
 #include <linux/fs.h>
-#include <linux/device.h>
+#include <linux/mount.h>
+
 #include "power.h"
 
 
@@ -25,13 +26,16 @@ extern struct pm_ops * pm_ops;
 
 extern int swsusp_suspend(void);
 extern int swsusp_write(void);
+extern int swsusp_check(void);
 extern int swsusp_read(void);
+extern void swsusp_close(void);
 extern int swsusp_resume(void);
 extern int swsusp_free(void);
 
 
 static int noresume = 0;
 char resume_file[256] = CONFIG_PM_STD_PARTITION;
+dev_t swsusp_resume_device;
 
 /**
  *	power_down - Shut machine down for hibernate.
@@ -51,20 +55,17 @@ static void power_down(suspend_disk_method_t mode)
 	local_irq_save(flags);
 	switch(mode) {
 	case PM_DISK_PLATFORM:
-		device_power_down(PM_SUSPEND_DISK);
+ 		device_shutdown();
 		error = pm_ops->enter(PM_SUSPEND_DISK);
 		break;
 	case PM_DISK_SHUTDOWN:
-		printk("Powering off system\n");
-		device_shutdown();
-		machine_power_off();
+		kernel_power_off();
 		break;
 	case PM_DISK_REBOOT:
-		device_shutdown();
-		machine_restart(NULL);
+		kernel_restart(NULL);
 		break;
 	}
-	machine_halt();
+	kernel_halt();
 	/* Valid image is on the disk, if we continue we risk serious data corruption
 	   after resume. */
 	printk(KERN_CRIT "Please power me down manually\n");
@@ -115,55 +116,67 @@ static void finish(void)
 {
 	device_resume();
 	platform_finish();
-	enable_nonboot_cpus();
 	thaw_processes();
+	enable_nonboot_cpus();
 	pm_restore_console();
 }
 
 
-static int prepare(void)
+static int prepare_processes(void)
 {
 	int error;
 
 	pm_prepare_console();
 
 	sys_sync();
+
+	disable_nonboot_cpus();
+
 	if (freeze_processes()) {
 		error = -EBUSY;
-		goto Thaw;
+		goto thaw;
 	}
 
 	if (pm_disk_mode == PM_DISK_PLATFORM) {
 		if (pm_ops && pm_ops->prepare) {
 			if ((error = pm_ops->prepare(PM_SUSPEND_DISK)))
-				goto Thaw;
+				goto thaw;
 		}
 	}
 
 	/* Free memory before shutting down devices. */
 	free_some_memory();
-
-	disable_nonboot_cpus();
-	if ((error = device_suspend(PM_SUSPEND_DISK)))
-		goto Finish;
-
 	return 0;
- Finish:
-	platform_finish();
- Thaw:
-	enable_nonboot_cpus();
+thaw:
 	thaw_processes();
+	enable_nonboot_cpus();
 	pm_restore_console();
 	return error;
 }
 
+static void unprepare_processes(void)
+{
+	platform_finish();
+	thaw_processes();
+	enable_nonboot_cpus();
+	pm_restore_console();
+}
+
+static int prepare_devices(void)
+{
+	int error;
+
+	if ((error = device_suspend(PMSG_FREEZE)))
+		printk("Some devices failed to suspend\n");
+	return error;
+}
 
 /**
  *	pm_suspend_disk - The granpappy of power management.
  *
  *	If we're going through the firmware, then get it over with quickly.
  *
- *	If not, then call swsusp to do it's thing, then figure out how
+ *	If not, then call swsusp to do its thing, then figure out how
  *	to power down the system.
  */
 
@@ -171,8 +184,15 @@ int pm_suspend_disk(void)
 {
 	int error;
 
-	if ((error = prepare()))
+	error = prepare_processes();
+	if (error)
 		return error;
+	error = prepare_devices();
+
+	if (error) {
+		unprepare_processes();
+		return error;
+	}
 
 	pr_debug("PM: Attempting to suspend to disk.\n");
 	if (pm_disk_mode == PM_DISK_FIRMWARE)
@@ -201,7 +221,7 @@ int pm_suspend_disk(void)
  *	software_resume - Resume from a saved image.
  *
  *	Called as a late_initcall (so all devices are discovered and
- *	initialized), we call pmdisk to see if we have a saved image or not.
+ *	initialized), we call swsusp to see if we have a saved image or not.
  *	If so, we quiesce devices, the restore the saved image. We will
  *	return above (in pm_suspend_disk() ) if everything goes well.
  *	Otherwise, we fail gracefully and return to the normally
@@ -213,6 +233,16 @@ static int software_resume(void)
 {
 	int error;
 
+	if (!swsusp_resume_device) {
+		if (!strlen(resume_file))
+			return -ENOENT;
+		swsusp_resume_device = name_to_dev_t(resume_file);
+		pr_debug("swsusp: Resume From Partition %s\n", resume_file);
+	} else {
+		pr_debug("swsusp: Resume From Partition %d:%d\n",
+			 MAJOR(swsusp_resume_device), MINOR(swsusp_resume_device));
+	}
+
 	if (noresume) {
 		/**
 		 * FIXME: If noresume is specified, we need to find the partition
@@ -221,17 +251,28 @@ static int software_resume(void)
 		return 0;
 	}
 
-	pr_debug("PM: Reading pmdisk image.\n");
+	pr_debug("PM: Checking swsusp image.\n");
 
-	if ((error = swsusp_read()))
+	if ((error = swsusp_check()))
 		goto Done;
 
-	pr_debug("PM: Preparing system for restore.\n");
+	pr_debug("PM: Preparing processes for restore.\n");
 
-	if ((error = prepare()))
+	if ((error = prepare_processes())) {
+		swsusp_close();
+		goto Done;
+	}
+
+	pr_debug("PM: Reading swsusp image.\n");
+
+	if ((error = swsusp_read()))
+		goto Cleanup;
+
+	pr_debug("PM: Preparing devices for restore.\n");
+
+	if ((error = prepare_devices()))
 		goto Free;
 
-	barrier();
 	mb();
 
 	pr_debug("PM: Restoring saved image.\n");
@@ -240,6 +281,8 @@ static int software_resume(void)
 	finish();
  Free:
 	swsusp_free();
+ Cleanup:
+	unprepare_processes();
  Done:
 	pr_debug("PM: Resume from disk failed.\n");
 	return 0;
@@ -284,7 +327,7 @@ static char * pm_disk_modes[] = {
 
 static ssize_t disk_show(struct subsystem * subsys, char * buf)
 {
-	return sprintf(buf,"%s\n",pm_disk_modes[pm_disk_mode]);
+	return sprintf(buf, "%s\n", pm_disk_modes[pm_disk_mode]);
 }
 
 
@@ -327,8 +370,41 @@ static ssize_t disk_store(struct subsystem * s, const char * buf, size_t n)
 
 power_attr(disk);
 
+static ssize_t resume_show(struct subsystem * subsys, char *buf)
+{
+	return sprintf(buf,"%d:%d\n", MAJOR(swsusp_resume_device),
+		       MINOR(swsusp_resume_device));
+}
+
+static ssize_t resume_store(struct subsystem * subsys, const char * buf, size_t n)
+{
+	int len;
+	char *p;
+	unsigned int maj, min;
+	int error = -EINVAL;
+	dev_t res;
+
+	p = memchr(buf, '\n', n);
+	len = p ? p - buf : n;
+
+	if (sscanf(buf, "%u:%u", &maj, &min) == 2) {
+		res = MKDEV(maj,min);
+		if (maj == MAJOR(res) && min == MINOR(res)) {
+			swsusp_resume_device = res;
+			printk("Attempting manual resume\n");
+			noresume = 0;
+			software_resume();
+		}
+	}
+
+	return error >= 0 ? n : error;
+}
+
+power_attr(resume);
+
 static struct attribute * g[] = {
 	&disk_attr.attr,
+	&resume_attr.attr,
 	NULL,
 };
 

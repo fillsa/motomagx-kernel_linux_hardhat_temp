@@ -1,6 +1,6 @@
 /* compat.c: 32-bit compatibility syscall for 64-bit systems
  *
- * Copyright (C) 2004 Red Hat, Inc. All Rights Reserved.
+ * Copyright (C) 2004-5 Red Hat, Inc. All Rights Reserved.
  * Written by David Howells (dhowells@redhat.com)
  *
  * This program is free software; you can redistribute it and/or
@@ -24,14 +24,14 @@
  * - if you can, you should call sys_keyctl directly
  */
 asmlinkage long compat_sys_keyctl(u32 option,
-			      u32 arg2, u32 arg3, u32 arg4, u32 arg5)
+				  u32 arg2, u32 arg3, u32 arg4, u32 arg5)
 {
 	switch (option) {
 	case KEYCTL_GET_KEYRING_ID:
 		return keyctl_get_keyring_ID(arg2, arg3);
 
 	case KEYCTL_JOIN_SESSION_KEYRING:
-		return keyctl_join_session_keyring(compat_ptr(arg3));
+		return keyctl_join_session_keyring(compat_ptr(arg2));
 
 	case KEYCTL_UPDATE:
 		return keyctl_update_key(arg2, compat_ptr(arg3), arg4);
@@ -70,6 +70,9 @@ asmlinkage long compat_sys_keyctl(u32 option,
 
 	case KEYCTL_NEGATE:
 		return keyctl_negate_key(arg2, arg3, arg4);
+
+	case KEYCTL_SET_REQKEY_KEYRING:
+		return keyctl_set_reqkey_keyring(arg2);
 
 	default:
 		return -EOPNOTSUPP;

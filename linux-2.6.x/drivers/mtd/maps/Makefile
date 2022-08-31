@@ -1,7 +1,7 @@
 #
 # linux/drivers/maps/Makefile
 #
-# $Id: Makefile.common,v 1.27 2005/03/07 23:15:48 joern Exp $
+# $Id: Makefile.common,v 1.30 2005/07/02 01:53:24 tpoynor Exp $
 
 ifeq ($(CONFIG_MTD_COMPLEX_MAPPINGS),y)
 obj-$(CONFIG_MTD)		+= map_funcs.o
@@ -15,7 +15,6 @@ obj-$(CONFIG_MTD_CFI_FLAGADM)	+= cfi_flagadm.o
 obj-$(CONFIG_MTD_CSTM_MIPS_IXX)	+= cstm_mips_ixx.o
 obj-$(CONFIG_MTD_DC21285)	+= dc21285.o
 obj-$(CONFIG_MTD_DILNETPC)	+= dilnetpc.o
-obj-$(CONFIG_MTD_ELAN_104NC)	+= elan-104nc.o
 obj-$(CONFIG_MTD_EPXA10DB)	+= epxa10db-flash.o
 obj-$(CONFIG_MTD_IQ80310)	+= iq80310.o
 obj-$(CONFIG_MTD_L440GX)	+= l440gx.o

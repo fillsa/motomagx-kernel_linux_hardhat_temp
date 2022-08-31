@@ -108,7 +108,6 @@ int xfrm6_rcv_spi(struct sk_buff **pskb, unsigned int *nhoffp, u32 spi)
 
 		if ((err = xfrm_parse_spi(skb, nexthdr, &spi)) < 0)
 			goto drop;
-
 	} while (!err);
 
 	/* Allocate new secpath or COW existing one. */

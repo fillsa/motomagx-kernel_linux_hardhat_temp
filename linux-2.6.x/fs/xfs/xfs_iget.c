@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2000-2003 Silicon Graphics, Inc.  All Rights Reserved.
+ * Copyright (c) 2000-2005 Silicon Graphics, Inc.  All Rights Reserved.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of version 2 of the GNU General Public License as
@@ -55,22 +55,35 @@
 #include "xfs_inode.h"
 #include "xfs_quota.h"
 #include "xfs_utils.h"
+#include "xfs_bit.h"
 
 /*
  * Initialize the inode hash table for the newly mounted file system.
- *
- * mp -- this is the mount point structure for the file system being
- *       initialized
+ * Choose an initial table size based on user specified value, else
+ * use a simple algorithm using the maximum number of inodes as an
+ * indicator for table size, and clamp it between one and some large
+ * number of pages.
  */
 void
 xfs_ihash_init(xfs_mount_t *mp)
 {
-	int	i;
+	__uint64_t	icount;
+	uint		i, flags = KM_SLEEP | KM_MAYFAIL;
 
-	mp->m_ihsize = XFS_BUCKETS(mp);
-	mp->m_ihash = (xfs_ihash_t *)kmem_zalloc(mp->m_ihsize
-				      * sizeof(xfs_ihash_t), KM_SLEEP);
-	ASSERT(mp->m_ihash != NULL);
+	if (!mp->m_ihsize) {
+		icount = mp->m_maxicount ? mp->m_maxicount :
+			 (mp->m_sb.sb_dblocks << mp->m_sb.sb_inopblog);
+		mp->m_ihsize = 1 << max_t(uint, 8,
+					(xfs_highbit64(icount) + 1) / 2);
+		mp->m_ihsize = min_t(uint, mp->m_ihsize,
+					(64 * NBPP) / sizeof(xfs_ihash_t));
+	}
+
+	while (!(mp->m_ihash = (xfs_ihash_t *)kmem_zalloc(mp->m_ihsize *
+						sizeof(xfs_ihash_t), flags))) {
+		if ((mp->m_ihsize >>= 1) <= NBPP)
+			flags = KM_SLEEP;
+	}
 	for (i = 0; i < mp->m_ihsize; i++) {
 		rwlock_init(&(mp->m_ihash[i].ih_lock));
 	}
@@ -88,29 +101,19 @@ xfs_ihash_free(xfs_mount_t *mp)
 
 /*
  * Initialize the inode cluster hash table for the newly mounted file system.
- *
- * mp -- this is the mount point structure for the file system being
- *       initialized
+ * Its size is derived from the ihash table size.
  */
 void
 xfs_chash_init(xfs_mount_t *mp)
 {
-	int	i;
+	uint	i;
 
-	/*
-	 * m_chash size is based on m_ihash
-	 * with a minimum of 37 entries
-	 */
-	mp->m_chsize = (XFS_BUCKETS(mp)) /
-			 (XFS_INODE_CLUSTER_SIZE(mp) >> mp->m_sb.sb_inodelog);
-	if (mp->m_chsize < 37) {
-		mp->m_chsize = 37;
-	}
+	mp->m_chsize = max_t(uint, 1, mp->m_ihsize /
+			 (XFS_INODE_CLUSTER_SIZE(mp) >> mp->m_sb.sb_inodelog));
+	mp->m_chsize = min_t(uint, mp->m_chsize, mp->m_ihsize);
 	mp->m_chash = (xfs_chash_t *)kmem_zalloc(mp->m_chsize
 						 * sizeof(xfs_chash_t),
 						 KM_SLEEP);
-	ASSERT(mp->m_chash != NULL);
-
 	for (i = 0; i < mp->m_chsize; i++) {
 		spinlock_init(&mp->m_chash[i].ch_lock,"xfshash");
 	}
@@ -130,6 +133,40 @@ xfs_chash_free(xfs_mount_t *mp)
 
 	kmem_free(mp->m_chash, mp->m_chsize*sizeof(xfs_chash_t));
 	mp->m_chash = NULL;
+}
+
+/*
+ * Try to move an inode to the front of its hash list if possible
+ * (and if its not there already).  Called right after obtaining
+ * the list version number and then dropping the read_lock on the
+ * hash list in question (which is done right after looking up the
+ * inode in question...).
+ */
+STATIC void
+xfs_ihash_promote(
+	xfs_ihash_t	*ih,
+	xfs_inode_t	*ip,
+	ulong		version)
+{
+	xfs_inode_t	*iq;
+
+	if ((ip->i_prevp != &ih->ih_next) && write_trylock(&ih->ih_lock)) {
+		if (likely(version == ih->ih_version)) {
+			/* remove from list */
+			if ((iq = ip->i_next)) {
+				iq->i_prevp = ip->i_prevp;
+			}
+			*ip->i_prevp = iq;
+
+			/* insert at list head */
+			iq = ih->ih_next;
+			iq->i_prevp = &ip->i_next;
+			ip->i_next = iq;
+			ip->i_prevp = &ih->ih_next;
+			ih->ih_next = ip;
+		}
+		write_unlock(&ih->ih_lock);
+	}
 }
 
 /*
@@ -226,7 +263,9 @@ again:
 				XFS_STATS_INC(xs_ig_found);
 
 				ip->i_flags &= ~XFS_IRECLAIMABLE;
+				version = ih->ih_version;
 				read_unlock(&ih->ih_lock);
+				xfs_ihash_promote(ih, ip, version);
 
 				XFS_MOUNT_ILOCK(mp);
 				list_del_init(&ip->i_reclaim);
@@ -256,8 +295,15 @@ again:
 						inode_vp, vp);
 			}
 
+			/*
+			 * Inode cache hit: if ip is not at the front of
+			 * its hash chain, move it there now.
+			 * Do this with the lock held for update, but
+			 * do statistics after releasing the lock.
+			 */
+			version = ih->ih_version;
 			read_unlock(&ih->ih_lock);
-
+			xfs_ihash_promote(ih, ip, version);
 			XFS_STATS_INC(xs_ig_found);
 
 finish_inode:
@@ -490,6 +536,11 @@ inode_allocate:
 				goto retry;
 			}
 
+			if (is_bad_inode(inode)) {
+				iput(inode);
+				return EIO;
+			}
+
 			bdp = vn_bhv_lookup(VN_BHV_HEAD(vp), &xfs_vnodeops);
 			if (bdp == NULL) {
 				XFS_STATS_INC(xs_ig_dup);
@@ -539,6 +590,7 @@ xfs_inode_incore(xfs_mount_t	*mp,
 {
 	xfs_ihash_t	*ih;
 	xfs_inode_t	*ip;
+	ulong		version;
 
 	ih = XFS_IHASH(mp, ino);
 	read_lock(&ih->ih_lock);
@@ -546,11 +598,15 @@ xfs_inode_incore(xfs_mount_t	*mp,
 		if (ip->i_ino == ino) {
 			/*
 			 * If we find it and tp matches, return it.
+			 * Also move it to the front of the hash list
+			 * if we find it and it is not already there.
 			 * Otherwise break from the loop and return
 			 * NULL.
 			 */
 			if (ip->i_transp == tp) {
+				version = ih->ih_version;
 				read_unlock(&ih->ih_lock);
+				xfs_ihash_promote(ih, ip, version);
 				return (ip);
 			}
 			break;
@@ -677,6 +733,7 @@ xfs_iextract(
 		iq->i_prevp = ip->i_prevp;
 	}
 	*ip->i_prevp = iq;
+	ih->ih_version++;
 	write_unlock(&ih->ih_lock);
 
 	/*

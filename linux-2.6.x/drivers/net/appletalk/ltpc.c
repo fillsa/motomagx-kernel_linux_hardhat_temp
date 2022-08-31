@@ -1039,7 +1039,7 @@ struct net_device * __init ltpc_probe(void)
 	unsigned long f;
 	unsigned long timeout;
 
-	dev = alloc_netdev(sizeof(struct ltpc_private), "lt%d", ltalk_setup);
+	dev = alloc_ltalkdev(sizeof(struct ltpc_private));
 	if (!dev)
 		goto out;
 
@@ -1109,8 +1109,7 @@ struct net_device * __init ltpc_probe(void)
 	inb_p(io+1);
 	inb_p(io+3);
 
-	set_current_state(TASK_UNINTERRUPTIBLE);
-	schedule_timeout(2*HZ/100);
+	msleep(20);
 
 	inb_p(io+0);
 	inb_p(io+2);
@@ -1120,8 +1119,7 @@ struct net_device * __init ltpc_probe(void)
 	inb_p(io+5); /* enable dma */
 	inb_p(io+6); /* tri-state interrupt line */
 
-	set_current_state(TASK_UNINTERRUPTIBLE);
-	schedule_timeout(HZ);
+	ssleep(1);
 	
 	/* now, figure out which dma channel we're using, unless it's
 	   already been specified */
@@ -1257,10 +1255,10 @@ static struct net_device *dev_ltpc;
 #ifdef MODULE
 
 MODULE_LICENSE("GPL");
-MODULE_PARM(debug, "i");
-MODULE_PARM(io, "i");
-MODULE_PARM(irq, "i");
-MODULE_PARM(dma, "i");
+module_param(debug, int, 0);
+module_param(io, int, 0);
+module_param(irq, int, 0);
+module_param(dma, int, 0);
 
 
 int __init init_module(void)

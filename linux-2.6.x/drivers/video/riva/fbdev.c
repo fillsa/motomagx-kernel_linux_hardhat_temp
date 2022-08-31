@@ -152,6 +152,9 @@ static struct pci_device_id rivafb_pci_tbl[] = {
 	  PCI_ANY_ID, PCI_ANY_ID, 0, 0, 0 },
 	{ PCI_VENDOR_ID_NVIDIA, PCI_DEVICE_ID_NVIDIA_GEFORCE4_MX_440,
 	  PCI_ANY_ID, PCI_ANY_ID, 0, 0, 0 },
+	// NF2/IGP version, GeForce 4 MX, NV18
+	{ PCI_VENDOR_ID_NVIDIA, 0x01f0,
+	  PCI_ANY_ID, PCI_ANY_ID, 0, 0, 0 },
 	{ PCI_VENDOR_ID_NVIDIA, PCI_DEVICE_ID_NVIDIA_GEFORCE4_MX_420,
 	  PCI_ANY_ID, PCI_ANY_ID, 0, 0, 0 },
 	{ PCI_VENDOR_ID_NVIDIA, PCI_DEVICE_ID_NVIDIA_GEFORCE4_440_GO,
@@ -205,23 +208,23 @@ MODULE_DEVICE_TABLE(pci, rivafb_pci_tbl);
  * ------------------------------------------------------------------------- */
 
 /* command line data, set in rivafb_setup() */
-static int flatpanel __initdata = -1; /* Autodetect later */
-static int forceCRTC __initdata = -1;
-static int noaccel   __initdata = 0;
+static int flatpanel __devinitdata = -1; /* Autodetect later */
+static int forceCRTC __devinitdata = -1;
+static int noaccel   __devinitdata = 0;
 #ifdef CONFIG_MTRR
-static int nomtrr __initdata = 0;
+static int nomtrr __devinitdata = 0;
 #endif
 
-static char *mode_option __initdata = NULL;
+static char *mode_option __devinitdata = NULL;
 static int  strictmode       = 0;
 
-static struct fb_fix_screeninfo __initdata rivafb_fix = {
+static struct fb_fix_screeninfo __devinitdata rivafb_fix = {
 	.type		= FB_TYPE_PACKED_PIXELS,
 	.xpanstep	= 1,
 	.ypanstep	= 1,
 };
 
-static struct fb_var_screeninfo __initdata rivafb_default_var = {
+static struct fb_var_screeninfo __devinitdata rivafb_default_var = {
 	.xres		= 640,
 	.yres		= 480,
 	.xres_virtual	= 640,
@@ -903,7 +906,7 @@ riva_set_pattern(struct riva_par *par, int clr0, int clr1, int pat0, int pat1)
 }
 
 /* acceleration routines */
-inline void wait_for_idle(struct riva_par *par)
+static inline void wait_for_idle(struct riva_par *par)
 {
 	while (par->riva.Busy(&par->riva));
 }
@@ -920,7 +923,7 @@ riva_set_rop_solid(struct riva_par *par, int rop)
 
 }
 
-void riva_setup_accel(struct fb_info *info)
+static void riva_setup_accel(struct fb_info *info)
 {
 	struct riva_par *par = (struct riva_par *) info->par;
 
@@ -1579,12 +1582,11 @@ static int rivafb_cursor(struct fb_info *info, struct fb_cursor *cursor)
 {
 	struct riva_par *par = (struct riva_par *) info->par;
 	u8 data[MAX_CURS * MAX_CURS/8];
-	u16 fg, bg;
 	int i, set = cursor->set;
+	u16 fg, bg;
 
-	if (cursor->image.width > MAX_CURS ||
-	    cursor->image.height > MAX_CURS)
-		return soft_cursor(info, cursor);
+	if (cursor->image.width > MAX_CURS || cursor->image.height > MAX_CURS)
+		return -ENXIO;
 
 	par->riva.ShowHideCursor(&par->riva, 0);
 
@@ -1622,21 +1624,18 @@ static int rivafb_cursor(struct fb_info *info, struct fb_cursor *cursor)
 		if (src) {
 			switch (cursor->rop) {
 			case ROP_XOR:
-				for (i = 0; i < s_pitch * cursor->image.height;
-				     i++)
+				for (i = 0; i < s_pitch * cursor->image.height; i++)
 					src[i] = dat[i] ^ msk[i];
 				break;
 			case ROP_COPY:
 			default:
-				for (i = 0; i < s_pitch * cursor->image.height;
-				     i++)
+				for (i = 0; i < s_pitch * cursor->image.height; i++)
 					src[i] = dat[i] & msk[i];
 				break;
 			}
 
-			fb_sysmove_buf_aligned(info, &info->pixmap, data,
-					       d_pitch, src, s_pitch,
-					       cursor->image.height);
+			fb_pad_aligned_buffer(data, d_pitch, src, s_pitch,
+						cursor->image.height);
 
 			bg = ((info->cmap.red[bg_idx] & 0xf8) << 7) |
 				((info->cmap.green[bg_idx] & 0xf8) << 2) |
@@ -1705,8 +1704,7 @@ static int __devinit riva_set_fbinfo(struct fb_info *info)
 		    | FBINFO_HWACCEL_YPAN
 		    | FBINFO_HWACCEL_COPYAREA
 		    | FBINFO_HWACCEL_FILLRECT
-		    | FBINFO_HWACCEL_IMAGEBLIT
-	            | FBINFO_MISC_MODESWITCHLATE;
+	            | FBINFO_HWACCEL_IMAGEBLIT;
 
 	/* Accel seems to not work properly on NV30 yet...*/
 	if ((par->riva.Architecture == NV_ARCH_30) || noaccel) {
@@ -1725,6 +1723,7 @@ static int __devinit riva_set_fbinfo(struct fb_info *info)
 
 	info->pixmap.size = 8 * 1024;
 	info->pixmap.buf_align = 4;
+	info->pixmap.access_align = 32;
 	info->pixmap.flags = FB_PIXMAP_SYSTEM;
 	info->var.yres_virtual = -1;
 	NVTRACE_LEAVE();
@@ -1769,17 +1768,19 @@ static int __devinit riva_get_EDID_OF(struct fb_info *info, struct pci_dev *pd)
 static int __devinit riva_get_EDID_i2c(struct fb_info *info)
 {
 	struct riva_par *par = (struct riva_par *) info->par;
+	struct fb_var_screeninfo var;
 	int i;
 
 	NVTRACE_ENTER();
 	riva_create_i2c_busses(par);
-	for (i = par->bus; i >= 1; i--) {
-		riva_probe_i2c_connector(par, i, &par->EDID);
-		if (par->EDID) {
+	for (i = 0; i < par->bus; i++) {
+		riva_probe_i2c_connector(par, i+1, &par->EDID);
+		if (par->EDID && !fb_parse_edid(par->EDID, &var)) {
 			printk(PFX "Found EDID Block from BUS %i\n", i);
 			break;
 		}
 	}
+
 	NVTRACE_LEAVE();
 	return (par->EDID) ? 1 : 0;
 }
@@ -1825,7 +1826,7 @@ static void __devinit riva_get_EDID(struct fb_info *info, struct pci_dev *pdev)
 #ifdef CONFIG_PPC_OF
 	if (!riva_get_EDID_OF(info, pdev))
 		printk(PFX "could not retrieve EDID from OF\n");
-#elif CONFIG_FB_RIVA_I2C
+#elif defined(CONFIG_FB_RIVA_I2C)
 	if (!riva_get_EDID_i2c(info))
 		printk(PFX "could not retrieve EDID from DDC/I2C\n");
 #endif
@@ -2104,8 +2105,7 @@ static void __exit rivafb_remove(struct pci_dev *pd)
 
 #ifdef CONFIG_FB_RIVA_I2C
 	riva_delete_i2c_busses(par);
-	if (par->EDID)
-		kfree(par->EDID);
+	kfree(par->EDID);
 #endif
 
 	unregister_framebuffer(info);
@@ -2134,7 +2134,7 @@ static void __exit rivafb_remove(struct pci_dev *pd)
  * ------------------------------------------------------------------------- */
 
 #ifndef MODULE
-int __init rivafb_setup(char *options)
+static int __init rivafb_setup(char *options)
 {
 	char *this_opt;
 
@@ -2184,7 +2184,7 @@ static struct pci_driver rivafb_driver = {
  *
  * ------------------------------------------------------------------------- */
 
-int __devinit rivafb_init(void)
+static int __devinit rivafb_init(void)
 {
 #ifndef MODULE
 	char *option = NULL;

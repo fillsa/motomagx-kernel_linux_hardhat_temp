@@ -27,6 +27,7 @@
 #define PCI_ASSIGN_ALL_BUSSES	0x4000
 
 extern unsigned int pci_probe;
+extern unsigned long pirq_table_addr;
 
 /* pci-i386.c */
 
@@ -71,6 +72,5 @@ extern unsigned int pcibios_irq_mask;
 extern int pcibios_scanned;
 extern spinlock_t pci_config_lock;
 
-int pirq_enable_irq(struct pci_dev *dev);
-
 extern int (*pcibios_enable_irq)(struct pci_dev *dev);
+extern void (*pcibios_disable_irq)(struct pci_dev *dev);

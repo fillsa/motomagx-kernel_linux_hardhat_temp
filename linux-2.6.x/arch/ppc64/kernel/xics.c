@@ -24,7 +24,6 @@
 #include <asm/io.h>
 #include <asm/pgtable.h>
 #include <asm/smp.h>
-#include <asm/naca.h>
 #include <asm/rtas.h>
 #include <asm/xics.h>
 #include <asm/hvcall.h>
@@ -92,6 +91,7 @@ static int xics_irq_8259_cascade_real = 0;
 static unsigned int default_server = 0xFF;
 /* also referenced in smp.c... */
 unsigned int default_distrib_server = 0;
+unsigned int interrupt_server_size = 8;
 
 /*
  * XICS only has a single IPI, so encode the messages per CPU
@@ -242,28 +242,24 @@ static unsigned int real_irq_to_virt(unsigned int real_irq)
 static int get_irq_server(unsigned int irq)
 {
 	unsigned int server;
-
-#ifdef CONFIG_IRQ_ALL_CPUS
 	/* For the moment only implement delivery to all cpus or one cpu */
-	if (smp_threads_ready) {
-		cpumask_t cpumask = irq_affinity[irq];
-		cpumask_t tmp = CPU_MASK_NONE;
-		if (cpus_equal(cpumask, CPU_MASK_ALL)) {
-			server = default_distrib_server;
-		} else {
-			cpus_and(tmp, cpu_online_map, cpumask);
+	cpumask_t cpumask = irq_affinity[irq];
+	cpumask_t tmp = CPU_MASK_NONE;
 
-			if (cpus_empty(tmp))
-				server = default_distrib_server;
-			else
-				server = get_hard_smp_processor_id(first_cpu(tmp));
-		}
+	if (!distribute_irqs)
+		return default_server;
+
+	if (cpus_equal(cpumask, CPU_MASK_ALL)) {
+		server = default_distrib_server;
 	} else {
-		server = default_server;
+		cpus_and(tmp, cpu_online_map, cpumask);
+
+		if (cpus_empty(tmp))
+			server = default_distrib_server;
+		else
+			server = get_hard_smp_processor_id(first_cpu(tmp));
 	}
-#else
-	server = default_server;
-#endif
+
 	return server;
 
 }
@@ -436,6 +432,7 @@ void xics_cause_IPI(int cpu)
 {
 	ops->qirr_info(cpu, IPI_PRIORITY);
 }
+#endif /* CONFIG_SMP */
 
 void xics_setup_cpu(void)
 {
@@ -443,9 +440,17 @@ void xics_setup_cpu(void)
 
 	ops->cppr_info(cpu, 0xff);
 	iosync();
-}
 
-#endif /* CONFIG_SMP */
+	/*
+	 * Put the calling processor into the GIQ.  This is really only
+	 * necessary from a secondary thread as the OF start-cpu interface
+	 * performs this function for us on primary threads.
+	 *
+	 * XXX: undo of teardown on kexec needs this too, as may hotplug
+	 */
+	rtas_set_indicator(GLOBAL_INTERRUPT_QUEUE,
+		(1UL << interrupt_server_size) - 1 - default_distrib_server, 1);
+}
 
 void xics_init_IRQ(void)
 {
@@ -512,6 +517,10 @@ nextnode:
 				default_server = ireg[0];
 				default_distrib_server = ireg[i-1]; /* take last element */
 			}
+			ireg = (uint *)get_property(np,
+					"ibm,interrupt-server#-size", NULL);
+			if (ireg)
+				interrupt_server_size = *ireg;
 			break;
 		}
 	}
@@ -563,8 +572,7 @@ nextnode:
 	for (; i < NR_IRQS; ++i)
 		get_irq_desc(i)->handler = &xics_pic;
 
-	ops->cppr_info(boot_cpuid, 0xff);
-	iosync();
+	xics_setup_cpu();
 
 	ppc64_boot_msg(0x21, "XICS Done");
 }
@@ -575,7 +583,7 @@ nextnode:
  */
 static int __init xics_setup_i8259(void)
 {
-	if (naca->interrupt_controller == IC_PPC_XIC &&
+	if (ppc64_interrupt_controller == IC_PPC_XIC &&
 	    xics_irq_8259_cascade != -1) {
 		if (request_irq(irq_offset_up(xics_irq_8259_cascade),
 				no_action, 0, "8259 cascade", NULL))
@@ -639,26 +647,48 @@ static void xics_set_affinity(unsigned int virq, cpumask_t cpumask)
 	}
 }
 
+void xics_teardown_cpu(int secondary)
+{
+	int cpu = smp_processor_id();
+
+	ops->cppr_info(cpu, 0x00);
+	iosync();
+
+	/*
+	 * Some machines need to have at least one cpu in the GIQ,
+	 * so leave the master cpu in the group.
+	 */
+	if (secondary) {
+		/*
+		 * we need to EOI the IPI if we got here from kexec down IPI
+		 *
+		 * probably need to check all the other interrupts too
+		 * should we be flagging idle loop instead?
+		 * or creating some task to be scheduled?
+		 */
+		ops->xirr_info_set(cpu, XICS_IPI);
+		rtas_set_indicator(GLOBAL_INTERRUPT_QUEUE,
+			(1UL << interrupt_server_size) - 1 -
+			default_distrib_server, 0);
+	}
+}
+
 #ifdef CONFIG_HOTPLUG_CPU
 
 /* Interrupts are disabled. */
 void xics_migrate_irqs_away(void)
 {
-	int set_indicator = rtas_token("set-indicator");
-	const unsigned int giqs = 9005UL; /* Global Interrupt Queue Server */
-	int status = 0;
+	int status;
 	unsigned int irq, virq, cpu = smp_processor_id();
-
-	BUG_ON(set_indicator == RTAS_UNKNOWN_SERVICE);
 
 	/* Reject any interrupt that was queued to us... */
 	ops->cppr_info(cpu, 0);
 	iosync();
 
-	/* Refuse any new interrupts... */
-	rtas_call(set_indicator, 3, 1, &status, giqs,
-		  hard_smp_processor_id(), 0);
-	WARN_ON(status != 0);
+	/* remove ourselves from the global interrupt queue */
+	status = rtas_set_indicator(GLOBAL_INTERRUPT_QUEUE,
+		(1UL << interrupt_server_size) - 1 - default_distrib_server, 0);
+	WARN_ON(status < 0);
 
 	/* Allow IPIs again... */
 	ops->cppr_info(cpu, DEFAULT_PRIORITY);
@@ -708,15 +738,8 @@ void xics_migrate_irqs_away(void)
 		       virq, cpu);
 
 		/* Reset affinity to all cpus */
-		xics_status[0] = default_distrib_server;
-
-		status = rtas_call(ibm_set_xive, 3, 1, NULL, irq,
-				xics_status[0], xics_status[1]);
-		if (status)
-			printk(KERN_ERR "migrate_irqs_away: irq=%d "
-					"ibm,set-xive returns %d\n",
-					virq, status);
-
+		desc->handler->set_affinity(virq, CPU_MASK_ALL);
+		irq_affinity[virq] = CPU_MASK_ALL;
 unlock:
 		spin_unlock_irqrestore(&desc->lock, flags);
 	}

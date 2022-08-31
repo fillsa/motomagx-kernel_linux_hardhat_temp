@@ -3,9 +3,10 @@
  *
  * Derived from bios32.c of i386 tree.
  *
- * Copyright (C) 2002 Hewlett-Packard Co
+ * (c) Copyright 2002, 2005 Hewlett-Packard Development Company, L.P.
  *	David Mosberger-Tang <davidm@hpl.hp.com>
- *	Bjorn Helgaas <bjorn_helgaas@hp.com>
+ *	Bjorn Helgaas <bjorn.helgaas@hp.com>
+ * Copyright (C) 2004 Silicon Graphics, Inc.
  *
  * Note: Above list of copyright holders is incomplete...
  */
@@ -26,27 +27,11 @@
 #include <asm/segment.h>
 #include <asm/system.h>
 #include <asm/io.h>
-
 #include <asm/sal.h>
-
-
-#ifdef CONFIG_SMP
-# include <asm/smp.h>
-#endif
+#include <asm/smp.h>
 #include <asm/irq.h>
 #include <asm/hw_irq.h>
 
-
-#undef DEBUG
-#define DEBUG
-
-#ifdef DEBUG
-#define DBG(x...) printk(x)
-#else
-#define DBG(x...)
-#endif
-
-static int pci_routeirq;
 
 /*
  * Low-level SAL-based PCI configuration access functions. Note that SAL
@@ -54,23 +39,22 @@ static int pci_routeirq;
  * synchronization mechanism here.
  */
 
-#define PCI_SAL_ADDRESS(seg, bus, devfn, reg)	\
-	((u64)(seg << 24) | (u64)(bus << 16) |	\
-	 (u64)(devfn << 8) | (u64)(reg))
+#define PCI_SAL_ADDRESS(seg, bus, devfn, reg)		\
+	(((u64) seg << 24) | (bus << 16) | (devfn << 8) | (reg))
 
 /* SAL 3.2 adds support for extended config space. */
 
 #define PCI_SAL_EXT_ADDRESS(seg, bus, devfn, reg)	\
-	((u64)(seg << 28) | (u64)(bus << 20) |		\
-	 (u64)(devfn << 12) | (u64)(reg))
+	(((u64) seg << 28) | (bus << 20) | (devfn << 12) | (reg))
 
 static int
-pci_sal_read (int seg, int bus, int devfn, int reg, int len, u32 *value)
+pci_sal_read (unsigned int seg, unsigned int bus, unsigned int devfn,
+	      int reg, int len, u32 *value)
 {
-	u64 addr, mode, data = 0;
-	int result = 0;
+	u64 addr, data = 0;
+	int mode, result;
 
-	if ((seg > 255) || (bus > 255) || (devfn > 255) || (reg > 4095))
+	if (!value || (seg > 65535) || (bus > 255) || (devfn > 255) || (reg > 4095))
 		return -EINVAL;
 
 	if ((seg | reg) <= 255) {
@@ -81,16 +65,19 @@ pci_sal_read (int seg, int bus, int devfn, int reg, int len, u32 *value)
 		mode = 1;
 	}
 	result = ia64_sal_pci_config_read(addr, mode, len, &data);
+	if (result != 0)
+		return -EINVAL;
 
 	*value = (u32) data;
-
-	return result;
+	return 0;
 }
 
 static int
-pci_sal_write (int seg, int bus, int devfn, int reg, int len, u32 value)
+pci_sal_write (unsigned int seg, unsigned int bus, unsigned int devfn,
+	       int reg, int len, u32 value)
 {
-	u64 addr, mode;
+	u64 addr;
+	int mode, result;
 
 	if ((seg > 65535) || (bus > 255) || (devfn > 255) || (reg > 4095))
 		return -EINVAL;
@@ -102,7 +89,10 @@ pci_sal_write (int seg, int bus, int devfn, int reg, int len, u32 value)
 		addr = PCI_SAL_EXT_ADDRESS(seg, bus, devfn, reg);
 		mode = 1;
 	}
-	return ia64_sal_pci_config_write(addr, mode, len, value);
+	result = ia64_sal_pci_config_write(addr, mode, len, value);
+	if (result != 0)
+		return -EINVAL;
+	return 0;
 }
 
 static struct pci_raw_ops pci_sal_ops = {
@@ -131,40 +121,23 @@ struct pci_ops pci_root_ops = {
 	.write = pci_write,
 };
 
+#ifdef CONFIG_NUMA
+extern acpi_status acpi_map_iosapic(acpi_handle, u32, void *, void **);
+static void acpi_map_iosapics(void)
+{
+	acpi_get_devices(NULL, acpi_map_iosapic, NULL, NULL);
+}
+#else
+static void acpi_map_iosapics(void)
+{
+	return;
+}
+#endif /* CONFIG_NUMA */
+
 static int __init
 pci_acpi_init (void)
 {
-	struct pci_dev *dev = NULL;
-
-	printk(KERN_INFO "PCI: Using ACPI for IRQ routing\n");
-
-#ifdef CONFIG_NUMA
-extern acpi_status acpi_map_iosapic (acpi_handle, u32, void*, void**);
-
-	acpi_get_devices(NULL, acpi_map_iosapic, NULL, NULL);
-#endif
-
-	if (pci_routeirq) {
-		/*
-		 * PCI IRQ routing is set up by pci_enable_device(), but we
-		 * also do it here in case there are still broken drivers that
-		 * don't use pci_enable_device().
-		 */
-		printk(KERN_INFO "** Routing PCI interrupts for all devices because \"pci=routeirq\"\n");
-		printk(KERN_INFO "** was specified.  If this was required to make a driver work,\n");
-		printk(KERN_INFO "** please email the output of \"lspci\" to bjorn.helgaas@hp.com\n");
-		printk(KERN_INFO "** so I can fix the driver.\n");
-		while ((dev = pci_find_device(PCI_ANY_ID, PCI_ANY_ID, dev)) != NULL)
-			acpi_pci_irq_enable(dev);
-	} else {
-		printk(KERN_INFO "** PCI interrupts are no longer routed automatically.  If this\n");
-		printk(KERN_INFO "** causes a device to stop working, it is probably because the\n");
-		printk(KERN_INFO "** driver failed to call pci_enable_device().  As a temporary\n");
-		printk(KERN_INFO "** workaround, the \"pci=routeirq\" argument restores the old\n");
-		printk(KERN_INFO "** behavior.  If this argument makes the device work again,\n");
-		printk(KERN_INFO "** please email the output of \"lspci\" to bjorn.helgaas@hp.com\n");
-		printk(KERN_INFO "** so I can fix the driver.\n");
-	}
+	acpi_map_iosapics();
 
 	return 0;
 }
@@ -184,31 +157,8 @@ alloc_pci_controller (int seg)
 
 	memset(controller, 0, sizeof(*controller));
 	controller->segment = seg;
+	controller->node = -1;
 	return controller;
-}
-
-static int __devinit
-alloc_resource (char *name, struct resource *root, unsigned long start, unsigned long end,
-		unsigned long flags)
-{
-	struct resource *res;
-
-	res = kmalloc(sizeof(*res), GFP_KERNEL);
-	if (!res)
-		return -ENOMEM;
-
-	memset(res, 0, sizeof(*res));
-	res->name = name;
-	res->start = start;
-	res->end = end;
-	res->flags = flags;
-
-	if (insert_resource(root, res))	{
-		kfree(res);
-		return -EBUSY;
-	}
-
-	return 0;
 }
 
 static u64 __devinit
@@ -263,10 +213,9 @@ struct pci_root_info {
 	char *name;
 };
 
-static acpi_status __devinit
-add_window (struct acpi_resource *res, void *data)
+static __devinit acpi_status add_window(struct acpi_resource *res, void *data)
 {
-	struct pci_root_info *info = (struct pci_root_info *) data;
+	struct pci_root_info *info = data;
 	struct pci_window *window;
 	struct acpi_resource_address64 addr;
 	acpi_status status;
@@ -274,46 +223,73 @@ add_window (struct acpi_resource *res, void *data)
 	struct resource *root;
 
 	status = acpi_resource_to_address64(res, &addr);
-	if (ACPI_SUCCESS(status)) {
-		if (!addr.address_length)
+	if (!ACPI_SUCCESS(status))
+		return AE_OK;
+
+	if (!addr.address_length)
+		return AE_OK;
+
+	if (addr.resource_type == ACPI_MEMORY_RANGE) {
+		flags = IORESOURCE_MEM;
+		root = &iomem_resource;
+		offset = addr.address_translation_offset;
+	} else if (addr.resource_type == ACPI_IO_RANGE) {
+		flags = IORESOURCE_IO;
+		root = &ioport_resource;
+		offset = add_io_space(&addr);
+		if (offset == ~0)
 			return AE_OK;
+	} else
+		return AE_OK;
 
-		if (addr.resource_type == ACPI_MEMORY_RANGE) {
-			flags = IORESOURCE_MEM;
-			root = &iomem_resource;
-			offset = addr.address_translation_offset;
-		} else if (addr.resource_type == ACPI_IO_RANGE) {
-			flags = IORESOURCE_IO;
-			root = &ioport_resource;
-			offset = add_io_space(&addr);
-			if (offset == ~0)
-				return AE_OK;
-		} else
-			return AE_OK;
+	window = &info->controller->window[info->controller->windows++];
+	window->resource.name = info->name;
+	window->resource.flags = flags;
+	window->resource.start = addr.min_address_range + offset;
+	window->resource.end = addr.max_address_range + offset;
+	window->resource.child = NULL;
+	window->offset = offset;
 
-		window = &info->controller->window[info->controller->windows++];
-		window->resource.flags	= flags;
-		window->resource.start  = addr.min_address_range;
-		window->resource.end    = addr.max_address_range;
-		window->offset		= offset;
-
-		if (alloc_resource(info->name, root, addr.min_address_range + offset,
-			addr.max_address_range + offset, flags))
-			printk(KERN_ERR "alloc 0x%lx-0x%lx from %s for %s failed\n",
-				addr.min_address_range + offset, addr.max_address_range + offset,
-				root->name, info->name);
+	if (insert_resource(root, &window->resource)) {
+		printk(KERN_ERR "alloc 0x%lx-0x%lx from %s for %s failed\n",
+			window->resource.start, window->resource.end,
+			root->name, info->name);
 	}
 
 	return AE_OK;
 }
 
+static void __devinit
+pcibios_setup_root_windows(struct pci_bus *bus, struct pci_controller *ctrl)
+{
+	int i, j;
+
+	j = 0;
+	for (i = 0; i < ctrl->windows; i++) {
+		struct resource *res = &ctrl->window[i].resource;
+		/* HP's firmware has a hack to work around a Windows bug.
+		 * Ignore these tiny memory ranges */
+		if ((res->flags & IORESOURCE_MEM) &&
+		    (res->end - res->start < 16))
+			continue;
+		if (j >= PCI_BUS_NUM_RESOURCES) {
+			printk("Ignoring range [%lx-%lx] (%lx)\n", res->start,
+					res->end, res->flags);
+			continue;
+		}
+		bus->resource[j++] = res;
+	}
+}
+
 struct pci_bus * __devinit
-pci_acpi_scan_root (struct acpi_device *device, int domain, int bus)
+pci_acpi_scan_root(struct acpi_device *device, int domain, int bus)
 {
 	struct pci_root_info info;
 	struct pci_controller *controller;
 	unsigned int windows = 0;
+	struct pci_bus *pbus;
 	char *name;
+	int pxm;
 
 	controller = alloc_pci_controller(domain);
 	if (!controller)
@@ -321,8 +297,16 @@ pci_acpi_scan_root (struct acpi_device *device, int domain, int bus)
 
 	controller->acpi_handle = device->handle;
 
-	acpi_walk_resources(device->handle, METHOD_NAME__CRS, count_window, &windows);
-	controller->window = kmalloc(sizeof(*controller->window) * windows, GFP_KERNEL);
+	pxm = acpi_get_pxm(controller->acpi_handle);
+#ifdef CONFIG_NUMA
+	if (pxm >= 0)
+		controller->node = pxm_to_nid_map[pxm];
+#endif
+
+	acpi_walk_resources(device->handle, METHOD_NAME__CRS, count_window,
+			&windows);
+	controller->window = kmalloc_node(sizeof(*controller->window) * windows,
+			GFP_KERNEL, controller->node);
 	if (!controller->window)
 		goto out2;
 
@@ -333,9 +317,14 @@ pci_acpi_scan_root (struct acpi_device *device, int domain, int bus)
 	sprintf(name, "PCI Bus %04x:%02x", domain, bus);
 	info.controller = controller;
 	info.name = name;
-	acpi_walk_resources(device->handle, METHOD_NAME__CRS, add_window, &info);
+	acpi_walk_resources(device->handle, METHOD_NAME__CRS, add_window,
+			&info);
 
-	return pci_scan_bus(bus, &pci_root_ops, controller);
+	pbus = pci_scan_bus_parented(NULL, bus, &pci_root_ops, controller);
+	if (pbus)
+		pcibios_setup_root_windows(pbus, controller);
+
+	return pbus;
 
 out3:
 	kfree(controller->window);
@@ -356,9 +345,9 @@ void pcibios_resource_to_bus(struct pci_dev *dev,
 		struct pci_window *window = &controller->window[i];
 		if (!(window->resource.flags & res->flags))
 			continue;
-		if (window->resource.start > res->start - window->offset)
+		if (window->resource.start > res->start)
 			continue;
-		if (window->resource.end < res->end - window->offset)
+		if (window->resource.end < res->end)
 			continue;
 		offset = window->offset;
 		break;
@@ -367,6 +356,7 @@ void pcibios_resource_to_bus(struct pci_dev *dev,
 	region->start = res->start - offset;
 	region->end = res->end - offset;
 }
+EXPORT_SYMBOL(pcibios_resource_to_bus);
 
 void pcibios_bus_to_resource(struct pci_dev *dev,
 		struct resource *res, struct pci_bus_region *region)
@@ -379,9 +369,9 @@ void pcibios_bus_to_resource(struct pci_dev *dev,
 		struct pci_window *window = &controller->window[i];
 		if (!(window->resource.flags & res->flags))
 			continue;
-		if (window->resource.start > region->start)
+		if (window->resource.start - window->offset > region->start)
 			continue;
-		if (window->resource.end < region->end)
+		if (window->resource.end - window->offset < region->end)
 			continue;
 		offset = window->offset;
 		break;
@@ -389,6 +379,26 @@ void pcibios_bus_to_resource(struct pci_dev *dev,
 
 	res->start = region->start + offset;
 	res->end = region->end + offset;
+}
+EXPORT_SYMBOL(pcibios_bus_to_resource);
+
+static int __devinit is_valid_resource(struct pci_dev *dev, int idx)
+{
+	unsigned int i, type_mask = IORESOURCE_IO | IORESOURCE_MEM;
+	struct resource *devr = &dev->resource[idx];
+
+	if (!dev->bus)
+		return 0;
+	for (i=0; i<PCI_BUS_NUM_RESOURCES; i++) {
+		struct resource *busr = dev->bus->resource[i];
+
+		if (!busr || ((busr->flags ^ devr->flags) & type_mask))
+			continue;
+		if ((devr->start) && (devr->start >= busr->start) &&
+				(devr->end <= busr->end))
+			return 1;
+	}
+	return 0;
 }
 
 static void __devinit pcibios_fixup_device_resources(struct pci_dev *dev)
@@ -404,7 +414,8 @@ static void __devinit pcibios_fixup_device_resources(struct pci_dev *dev)
 		region.start = dev->resource[i].start;
 		region.end = dev->resource[i].end;
 		pcibios_bus_to_resource(dev, &dev->resource[i], &region);
-		pci_claim_resource(dev, i);
+		if ((is_valid_resource(dev, i)))
+			pci_claim_resource(dev, i);
 	}
 }
 
@@ -416,6 +427,10 @@ pcibios_fixup_bus (struct pci_bus *b)
 {
 	struct pci_dev *dev;
 
+	if (b->self) {
+		pci_read_bridge_bases(b);
+		pcibios_fixup_device_resources(b->self);
+	}
 	list_for_each_entry(dev, &b->devices, bus_list)
 		pcibios_fixup_device_resources(dev);
 
@@ -436,18 +451,24 @@ pcibios_enable_resources (struct pci_dev *dev, int mask)
 	u16 cmd, old_cmd;
 	int idx;
 	struct resource *r;
+	unsigned long type_mask = IORESOURCE_IO | IORESOURCE_MEM;
 
 	if (!dev)
 		return -EINVAL;
 
 	pci_read_config_word(dev, PCI_COMMAND, &cmd);
 	old_cmd = cmd;
-	for (idx=0; idx<6; idx++) {
+	for (idx=0; idx<PCI_NUM_RESOURCES; idx++) {
 		/* Only set up the desired resources.  */
 		if (!(mask & (1 << idx)))
 			continue;
 
 		r = &dev->resource[idx];
+		if (!(r->flags & type_mask))
+			continue;
+		if ((idx == PCI_ROM_RESOURCE) &&
+				(!(r->flags & IORESOURCE_ROM_ENABLE)))
+			continue;
 		if (!r->start && r->end) {
 			printk(KERN_ERR
 			       "PCI: Device %s not available because of resource collisions\n",
@@ -459,8 +480,6 @@ pcibios_enable_resources (struct pci_dev *dev, int mask)
 		if (r->flags & IORESOURCE_MEM)
 			cmd |= PCI_COMMAND_MEMORY;
 	}
-	if (dev->resource[PCI_ROM_RESOURCE].start)
-		cmd |= PCI_COMMAND_MEMORY;
 	if (cmd != old_cmd) {
 		printk("PCI: Enabling device %s (%04x -> %04x)\n", pci_name(dev), old_cmd, cmd);
 		pci_write_config_word(dev, PCI_COMMAND, cmd);
@@ -480,6 +499,14 @@ pcibios_enable_device (struct pci_dev *dev, int mask)
 	return acpi_pci_irq_enable(dev);
 }
 
+#ifdef CONFIG_ACPI_DEALLOCATE_IRQ
+void
+pcibios_disable_device (struct pci_dev *dev)
+{
+	acpi_pci_irq_disable(dev);
+}
+#endif /* CONFIG_ACPI_DEALLOCATE_IRQ */
+
 void
 pcibios_align_resource (void *data, struct resource *res,
 		        unsigned long size, unsigned long align)
@@ -492,8 +519,6 @@ pcibios_align_resource (void *data, struct resource *res,
 char * __init
 pcibios_setup (char *str)
 {
-	if (!strcmp(str, "routeirq"))
-		pci_routeirq = 1;
 	return NULL;
 }
 
@@ -518,9 +543,10 @@ pci_mmap_page_range (struct pci_dev *dev, struct vm_area_struct *vma,
 	 * Leave vm_pgoff as-is, the PCI space address is the physical
 	 * address on this platform.
 	 */
-	vma->vm_flags |= (VM_SHM | VM_LOCKED | VM_IO);
+	vma->vm_flags |= (VM_SHM | VM_RESERVED | VM_IO);
 
-	if (write_combine)
+	if (write_combine && efi_range_is_wc(vma->vm_start,
+					     vma->vm_end - vma->vm_start))
 		vma->vm_page_prot = pgprot_writecombine(vma->vm_page_prot);
 	else
 		vma->vm_page_prot = pgprot_noncached(vma->vm_page_prot);
@@ -530,6 +556,117 @@ pci_mmap_page_range (struct pci_dev *dev, struct vm_area_struct *vma,
 		return -EAGAIN;
 
 	return 0;
+}
+
+/**
+ * ia64_pci_get_legacy_mem - generic legacy mem routine
+ * @bus: bus to get legacy memory base address for
+ *
+ * Find the base of legacy memory for @bus.  This is typically the first
+ * megabyte of bus address space for @bus or is simply 0 on platforms whose
+ * chipsets support legacy I/O and memory routing.  Returns the base address
+ * or an error pointer if an error occurred.
+ *
+ * This is the ia64 generic version of this routine.  Other platforms
+ * are free to override it with a machine vector.
+ */
+char *ia64_pci_get_legacy_mem(struct pci_bus *bus)
+{
+	return (char *)__IA64_UNCACHED_OFFSET;
+}
+
+/**
+ * pci_mmap_legacy_page_range - map legacy memory space to userland
+ * @bus: bus whose legacy space we're mapping
+ * @vma: vma passed in by mmap
+ *
+ * Map legacy memory space for this device back to userspace using a machine
+ * vector to get the base address.
+ */
+int
+pci_mmap_legacy_page_range(struct pci_bus *bus, struct vm_area_struct *vma)
+{
+	char *addr;
+
+	addr = pci_get_legacy_mem(bus);
+	if (IS_ERR(addr))
+		return PTR_ERR(addr);
+
+	vma->vm_pgoff += (unsigned long)addr >> PAGE_SHIFT;
+	vma->vm_page_prot = pgprot_noncached(vma->vm_page_prot);
+	vma->vm_flags |= (VM_SHM | VM_RESERVED | VM_IO);
+
+	if (remap_pfn_range(vma, vma->vm_start, vma->vm_pgoff,
+			    vma->vm_end - vma->vm_start, vma->vm_page_prot))
+		return -EAGAIN;
+
+	return 0;
+}
+
+/**
+ * ia64_pci_legacy_read - read from legacy I/O space
+ * @bus: bus to read
+ * @port: legacy port value
+ * @val: caller allocated storage for returned value
+ * @size: number of bytes to read
+ *
+ * Simply reads @size bytes from @port and puts the result in @val.
+ *
+ * Again, this (and the write routine) are generic versions that can be
+ * overridden by the platform.  This is necessary on platforms that don't
+ * support legacy I/O routing or that hard fail on legacy I/O timeouts.
+ */
+int ia64_pci_legacy_read(struct pci_bus *bus, u16 port, u32 *val, u8 size)
+{
+	int ret = size;
+
+	switch (size) {
+	case 1:
+		*val = inb(port);
+		break;
+	case 2:
+		*val = inw(port);
+		break;
+	case 4:
+		*val = inl(port);
+		break;
+	default:
+		ret = -EINVAL;
+		break;
+	}
+
+	return ret;
+}
+
+/**
+ * ia64_pci_legacy_write - perform a legacy I/O write
+ * @bus: bus pointer
+ * @port: port to write
+ * @val: value to write
+ * @size: number of bytes to write from @val
+ *
+ * Simply writes @size bytes of @val to @port.
+ */
+int ia64_pci_legacy_write(struct pci_dev *bus, u16 port, u32 val, u8 size)
+{
+	int ret = 0;
+
+	switch (size) {
+	case 1:
+		outb(val, port);
+		break;
+	case 2:
+		outw(val, port);
+		break;
+	case 4:
+		outl(val, port);
+		break;
+	default:
+		ret = -EINVAL;
+		break;
+	}
+
+	return ret;
 }
 
 /**

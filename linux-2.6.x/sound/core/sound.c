@@ -48,7 +48,6 @@ module_param(major, int, 0444);
 MODULE_PARM_DESC(major, "Major # for sound driver.");
 module_param(cards_limit, int, 0444);
 MODULE_PARM_DESC(cards_limit, "Count of auto-loadable soundcards.");
-MODULE_ALIAS_CHARDEV_MAJOR(CONFIG_SND_MAJOR);
 #ifdef CONFIG_DEVFS_FS
 module_param(device_mode, int, 0444);
 MODULE_PARM_DESC(device_mode, "Device file permission mask for devfs.");
@@ -65,7 +64,7 @@ static struct list_head snd_minors_hash[SNDRV_CARDS];
 
 static DECLARE_MUTEX(sound_mutex);
 
-extern struct class_simple *sound_class;
+extern struct class *sound_class;
 
 
 #ifdef CONFIG_KMOD
@@ -159,7 +158,7 @@ static int snd_open(struct inode *inode, struct file *file)
 	return err;
 }
 
-struct file_operations snd_fops =
+static struct file_operations snd_fops =
 {
 	.owner =	THIS_MODULE,
 	.open =		snd_open
@@ -228,12 +227,11 @@ int snd_register_device(int type, snd_card_t * card, int dev, snd_minor_t * reg,
 		return -EBUSY;
 	}
 	list_add_tail(&preg->list, &snd_minors_hash[SNDRV_MINOR_CARD(minor)]);
-	if (strncmp(name, "controlC", 8) || card->number >= cards_limit) {
+	if (strncmp(name, "controlC", 8) || card->number >= cards_limit)
 		devfs_mk_cdev(MKDEV(major, minor), S_IFCHR | device_mode, "snd/%s", name);
-		if (card)
-			device = card->dev;
-		class_simple_device_add(sound_class, MKDEV(major, minor), device, name);
-	}
+	if (card)
+		device = card->dev;
+	class_device_create(sound_class, MKDEV(major, minor), device, "%s", name);
 
 	up(&sound_mutex);
 	return 0;
@@ -263,10 +261,9 @@ int snd_unregister_device(int type, snd_card_t * card, int dev)
 		return -EINVAL;
 	}
 
-	if (strncmp(mptr->name, "controlC", 8) || card->number >= cards_limit) { /* created in sound.c */
+	if (strncmp(mptr->name, "controlC", 8) || card->number >= cards_limit) /* created in sound.c */
 		devfs_remove("snd/%s", mptr->name);
-		class_simple_device_remove(MKDEV(major, minor));
-	}
+	class_device_destroy(sound_class, MKDEV(major, minor));
 
 	list_del(&mptr->list);
 	up(&sound_mutex);
@@ -357,10 +354,8 @@ static int __init alsa_sound_init(void)
 		return -ENOMEM;
 	}
 	snd_info_minor_register();
-	for (controlnum = 0; controlnum < cards_limit; controlnum++) {
+	for (controlnum = 0; controlnum < cards_limit; controlnum++)
 		devfs_mk_cdev(MKDEV(major, controlnum<<5), S_IFCHR | device_mode, "snd/controlC%d", controlnum);
-		class_simple_device_add(sound_class, MKDEV(major, controlnum<<5), NULL, "controlC%d", controlnum);
-	}
 #ifndef MODULE
 	printk(KERN_INFO "Advanced Linux Sound Architecture Driver Version " CONFIG_SND_VERSION CONFIG_SND_DATE ".\n");
 #endif
@@ -371,10 +366,8 @@ static void __exit alsa_sound_exit(void)
 {
 	short controlnum;
 
-	for (controlnum = 0; controlnum < cards_limit; controlnum++) {
+	for (controlnum = 0; controlnum < cards_limit; controlnum++)
 		devfs_remove("snd/controlC%d", controlnum);
-		class_simple_device_remove(MKDEV(major, controlnum<<5));
-	}
 
 	snd_info_minor_unregister();
 	snd_info_done();
@@ -406,12 +399,11 @@ EXPORT_SYMBOL(snd_hidden_kcalloc);
 EXPORT_SYMBOL(snd_hidden_kfree);
 EXPORT_SYMBOL(snd_hidden_vmalloc);
 EXPORT_SYMBOL(snd_hidden_vfree);
+EXPORT_SYMBOL(snd_hidden_kstrdup);
 #endif
-EXPORT_SYMBOL(snd_kmalloc_strdup);
 EXPORT_SYMBOL(copy_to_user_fromio);
 EXPORT_SYMBOL(copy_from_user_toio);
   /* init.c */
-EXPORT_SYMBOL(snd_cards_count);
 EXPORT_SYMBOL(snd_cards);
 #if defined(CONFIG_SND_MIXER_OSS) || defined(CONFIG_SND_MIXER_OSS_MODULE)
 EXPORT_SYMBOL(snd_mixer_oss_notify_callback);
@@ -427,7 +419,9 @@ EXPORT_SYMBOL(snd_card_file_remove);
 #ifdef CONFIG_PM
 EXPORT_SYMBOL(snd_power_wait);
 EXPORT_SYMBOL(snd_card_set_pm_callback);
-EXPORT_SYMBOL(snd_card_set_dev_pm_callback);
+#if defined(CONFIG_PM) && defined(CONFIG_SND_GENERIC_PM)
+EXPORT_SYMBOL(snd_card_set_generic_pm_callback);
+#endif
 #ifdef CONFIG_PCI
 EXPORT_SYMBOL(snd_card_pci_suspend);
 EXPORT_SYMBOL(snd_card_pci_resume);
@@ -437,9 +431,8 @@ EXPORT_SYMBOL(snd_card_pci_resume);
 EXPORT_SYMBOL(snd_device_new);
 EXPORT_SYMBOL(snd_device_register);
 EXPORT_SYMBOL(snd_device_free);
-EXPORT_SYMBOL(snd_device_free_all);
   /* isadma.c */
-#ifdef CONFIG_ISA
+#ifdef CONFIG_ISA_DMA_API
 EXPORT_SYMBOL(snd_dma_program);
 EXPORT_SYMBOL(snd_dma_disable);
 EXPORT_SYMBOL(snd_dma_pointer);
@@ -447,8 +440,6 @@ EXPORT_SYMBOL(snd_dma_pointer);
   /* info.c */
 #ifdef CONFIG_PROC_FS
 EXPORT_SYMBOL(snd_seq_root);
-EXPORT_SYMBOL(snd_create_proc_entry);
-EXPORT_SYMBOL(snd_remove_proc_entry);
 EXPORT_SYMBOL(snd_iprintf);
 EXPORT_SYMBOL(snd_info_get_line);
 EXPORT_SYMBOL(snd_info_get_str);
@@ -476,6 +467,12 @@ EXPORT_SYMBOL(snd_ctl_find_id);
 EXPORT_SYMBOL(snd_ctl_notify);
 EXPORT_SYMBOL(snd_ctl_register_ioctl);
 EXPORT_SYMBOL(snd_ctl_unregister_ioctl);
+#ifdef CONFIG_COMPAT
+EXPORT_SYMBOL(snd_ctl_register_ioctl_compat);
+EXPORT_SYMBOL(snd_ctl_unregister_ioctl_compat);
+#endif
+EXPORT_SYMBOL(snd_ctl_elem_read);
+EXPORT_SYMBOL(snd_ctl_elem_write);
   /* misc.c */
 EXPORT_SYMBOL(snd_task_name);
 #ifdef CONFIG_SND_VERBOSE_PRINTK

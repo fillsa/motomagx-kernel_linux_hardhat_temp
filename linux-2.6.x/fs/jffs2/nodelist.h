@@ -7,7 +7,7 @@
  *
  * For licensing information, see the file 'LICENCE' in this directory.
  *
- * $Id: nodelist.h,v 1.130 2005/04/09 10:46:59 dedekind Exp $
+ * $Id: nodelist.h,v 1.131 2005/07/05 21:03:07 dwmw2 Exp $
  *
  */
 

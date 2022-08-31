@@ -317,7 +317,7 @@ ___trace(enum trace_type type, unsigned long eip, unsigned long parent_eip,
 		unsigned long v1, unsigned long v2,
 			unsigned long v3)
 {
-	int cpu = _smp_processor_id();
+	int cpu = raw_smp_processor_id();
 	struct cpu_trace *tr;
 
 	if (unlikely(trace_enabled <= 0))
@@ -1108,13 +1108,13 @@ check_critical_timing(int cpu, struct cpu_trace *tr, unsigned long parent_eip)
 			"violates %lu 탎 threshold.\n"
 			" => started at timestamp %lu: ",
 				current->comm, current->pid,
-				_smp_processor_id(),
+				raw_smp_processor_id(),
 				latency, cycles_to_usecs(preempt_thresh), t0);
 	else
 		printk("(%16s-%-5d|#%d): new %lu 탎 maximum-latency "
 			"critical section.\n => started at timestamp %lu: ",
 				current->comm, current->pid,
-				_smp_processor_id(),
+				raw_smp_processor_id(),
 				latency, t0);
 
 	print_symbol("<%s>\n", tr->critical_start);
@@ -1138,7 +1138,7 @@ out:
 
 void notrace touch_critical_timing(void)
 {
-	int cpu = _smp_processor_id();
+	int cpu = raw_smp_processor_id();
 	struct cpu_trace *tr = cpu_traces + cpu;
 
 	if (!tr->critical_start || atomic_read(&tr->disabled) ||
@@ -1157,7 +1157,7 @@ EXPORT_SYMBOL(touch_critical_timing);
 
 void notrace stop_critical_timing(void)
 {
-	struct cpu_trace *tr = cpu_traces + _smp_processor_id();
+	struct cpu_trace *tr = cpu_traces + raw_smp_processor_id();
 
 	tr->critical_start = 0;
 }
@@ -1166,7 +1166,7 @@ EXPORT_SYMBOL(stop_critical_timing);
 static inline void notrace
 __start_critical_timing(unsigned long eip, unsigned long parent_eip)
 {
-	int cpu = _smp_processor_id();
+	int cpu = raw_smp_processor_id();
 	struct cpu_trace *tr = cpu_traces + cpu;
 
 	if (tr->critical_start || atomic_read(&tr->disabled) ||
@@ -1188,7 +1188,7 @@ __start_critical_timing(unsigned long eip, unsigned long parent_eip)
 static inline void notrace
 __stop_critical_timing(unsigned long eip, unsigned long parent_eip)
 {
-	int cpu = _smp_processor_id();
+	int cpu = raw_smp_processor_id();
 	struct cpu_trace *tr = cpu_traces + cpu;
 
 	if (!tr->critical_start || atomic_read(&tr->disabled) ||
@@ -1383,12 +1383,12 @@ check_wakeup_timing(struct cpu_trace *tr, unsigned long parent_eip)
 		printk("(%16s-%-5d|#%d): %lu 탎 wakeup latency "
 			"violates %lu 탎 threshold.\n",
 				current->comm, current->pid,
-				_smp_processor_id(), latency,
+				raw_smp_processor_id(), latency,
 				cycles_to_usecs(preempt_thresh));
 	else
 		printk("(%16s-%-5d|#%d): new %lu 탎 maximum-latency "
 			"wakeup.\n", current->comm, current->pid,
-				_smp_processor_id(), latency);
+				raw_smp_processor_id(), latency);
 
 	max_sequence++;
 
@@ -1433,7 +1433,7 @@ void __trace_start_sched_wakeup(struct task_struct *p)
 	tr->critical_sequence = max_sequence;
 	tr->preempt_timestamp = cycles();
 	tr->critical_start = CALLER_ADDR0;
-	_trace_cmdline(_smp_processor_id(), tr);
+	_trace_cmdline(raw_smp_processor_id(), tr);
 	mcount();
 out_unlock:
 	spin_unlock(&sch.trace_lock);
@@ -1524,7 +1524,7 @@ long user_trace_start(void)
 		tr->trace_idx = 0;
 	tr->critical_sequence = max_sequence;
 	tr->preempt_timestamp = cycles();
-	_trace_cmdline(_smp_processor_id(), tr);
+	_trace_cmdline(raw_smp_processor_id(), tr);
 	mcount();
 	preempt_enable();
 
@@ -1580,12 +1580,12 @@ long user_trace_stop(void)
 			printk("(%16s-%-5d|#%d): %lu 탎 user-latency "
 				"violates %lu 탎 threshold.\n",
 					current->comm, current->pid,
-					_smp_processor_id(), latency,
+					raw_smp_processor_id(), latency,
 					cycles_to_usecs(preempt_thresh));
 		else
 			printk("(%16s-%-5d|#%d): new %lu 탎 user-latency.\n",
 				current->comm, current->pid,
-					_smp_processor_id(), latency);
+					raw_smp_processor_id(), latency);
 
 		max_sequence++;
 		up(&max_mutex);

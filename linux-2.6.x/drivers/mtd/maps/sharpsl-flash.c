@@ -4,7 +4,7 @@
  * Copyright (C) 2001 Lineo Japan, Inc.
  * Copyright (C) 2002  SHARP
  *
- * $Id: sharpsl-flash.c,v 1.4 2005/03/21 05:50:04 gleixner Exp $
+ * $Id: sharpsl-flash.c,v 1.5 2005/03/21 08:42:11 rpurdie Exp $
  *
  * based on rpxlite.c,v 1.15 2001/10/02 15:05:14 dwmw2 Exp
  *          Handle mapping of the flash on the RPX Lite and CLLF boards

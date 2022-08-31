@@ -12,13 +12,13 @@
 #define NETLINK_NFLOG		5	/* netfilter/iptables ULOG */
 #define NETLINK_XFRM		6	/* ipsec */
 #define NETLINK_SELINUX		7	/* SELinux event notifications */
-#define NETLINK_ARPD		8
+#define NETLINK_ISCSI		8	/* Open-iSCSI */
 #define NETLINK_AUDIT		9	/* auditing */
-#define NETLINK_ROUTE6		11	/* af_inet6 route comm channel */
+#define NETLINK_FIB_LOOKUP	10	
+#define NETLINK_NETFILTER	12	/* netfilter subsystem */
 #define NETLINK_IP6_FW		13
 #define NETLINK_DNRTMSG		14	/* DECnet routing messages */
 #define NETLINK_KOBJECT_UEVENT	15	/* Kernel messages to userspace */
-#define NETLINK_TAPBASE		16	/* 16 to 31 are ethertap */
 
 #define MAX_LINKS 32		
 
@@ -110,15 +110,13 @@ struct netlink_skb_parms
 	__u32			dst_pid;
 	__u32			dst_groups;
 	kernel_cap_t		eff_cap;
+	__u32			loginuid;	/* Login (audit) uid */
 };
 
 #define NETLINK_CB(skb)		(*(struct netlink_skb_parms*)&((skb)->cb))
 #define NETLINK_CREDS(skb)	(&NETLINK_CB((skb)).creds)
 
 
-extern int netlink_attach(int unit, int (*function)(int,struct sk_buff *skb));
-extern void netlink_detach(int unit);
-extern int netlink_post(int unit, struct sk_buff *skb);
 extern struct sock *netlink_kernel_create(int unit, void (*input)(struct sock *sk, int len));
 extern void netlink_ack(struct sk_buff *in_skb, struct nlmsghdr *nlh, int err);
 extern int netlink_unicast(struct sock *ssk, struct sk_buff *skb, __u32 pid, int nonblock);
@@ -129,7 +127,6 @@ extern int netlink_register_notifier(struct notifier_block *nb);
 extern int netlink_unregister_notifier(struct notifier_block *nb);
 
 /* finegrained unicast helpers: */
-struct sock *netlink_getsockbypid(struct sock *ssk, u32 pid);
 struct sock *netlink_getsockbyfilp(struct file *filp);
 int netlink_attachskb(struct sock *sk, struct sk_buff *skb, int nonblock, long timeo);
 void netlink_detachskb(struct sock *sk, struct sk_buff *skb);
@@ -137,10 +134,9 @@ int netlink_sendskb(struct sock *sk, struct sk_buff *skb, int protocol);
 
 /*
  *	skb should fit one page. This choice is good for headerless malloc.
- *
- *      FIXME: What is the best size for SLAB???? --ANK
  */
-#define NLMSG_GOODSIZE (PAGE_SIZE - ((sizeof(struct sk_buff)+0xF)&~0xF))
+#define NLMSG_GOODORDER 0
+#define NLMSG_GOODSIZE (SKB_MAX_ORDER(0, NLMSG_GOODORDER))
 
 
 struct netlink_callback
@@ -150,7 +146,7 @@ struct netlink_callback
 	int		(*dump)(struct sk_buff * skb, struct netlink_callback *cb);
 	int		(*done)(struct netlink_callback *cb);
 	int		family;
-	long		args[4];
+	long		args[5];
 };
 
 struct netlink_notify
@@ -160,7 +156,7 @@ struct netlink_notify
 };
 
 static __inline__ struct nlmsghdr *
-__nlmsg_put(struct sk_buff *skb, u32 pid, u32 seq, int type, int len)
+__nlmsg_put(struct sk_buff *skb, u32 pid, u32 seq, int type, int len, int flags)
 {
 	struct nlmsghdr *nlh;
 	int size = NLMSG_LENGTH(len);
@@ -168,15 +164,32 @@ __nlmsg_put(struct sk_buff *skb, u32 pid, u32 seq, int type, int len)
 	nlh = (struct nlmsghdr*)skb_put(skb, NLMSG_ALIGN(size));
 	nlh->nlmsg_type = type;
 	nlh->nlmsg_len = size;
-	nlh->nlmsg_flags = 0;
+	nlh->nlmsg_flags = flags;
 	nlh->nlmsg_pid = pid;
 	nlh->nlmsg_seq = seq;
+	memset(NLMSG_DATA(nlh) + len, 0, NLMSG_ALIGN(size) - size);
 	return nlh;
 }
 
+#define NLMSG_NEW(skb, pid, seq, type, len, flags) \
+({	if (skb_tailroom(skb) < (int)NLMSG_SPACE(len)) \
+		goto nlmsg_failure; \
+	__nlmsg_put(skb, pid, seq, type, len, flags); })
+
 #define NLMSG_PUT(skb, pid, seq, type, len) \
-({ if (skb_tailroom(skb) < (int)NLMSG_SPACE(len)) goto nlmsg_failure; \
-   __nlmsg_put(skb, pid, seq, type, len); })
+	NLMSG_NEW(skb, pid, seq, type, len, 0)
+
+#define NLMSG_NEW_ANSWER(skb, cb, type, len, flags) \
+	NLMSG_NEW(skb, NETLINK_CB((cb)->skb).pid, \
+		  (cb)->nlh->nlmsg_seq, type, len, flags)
+
+#define NLMSG_END(skb, nlh) \
+({	(nlh)->nlmsg_len = (skb)->tail - (unsigned char *) (nlh); \
+	(skb)->len; })
+
+#define NLMSG_CANCEL(skb, nlh) \
+({	skb_trim(skb, (unsigned char *) (nlh) - (skb)->data); \
+	-1; })
 
 extern int netlink_dump_start(struct sock *ssk, struct sk_buff *skb,
 			      struct nlmsghdr *nlh,

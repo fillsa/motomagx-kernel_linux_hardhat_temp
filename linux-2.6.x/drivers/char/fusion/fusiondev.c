@@ -70,7 +70,7 @@ static inline unsigned iminor(struct inode *inode)
 #endif
 
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(2, 6, 2)
-static struct class_simple *fusion_class;
+static struct class *fusion_class;
 #endif
 
 /******************************************************************************/
@@ -853,7 +853,7 @@ register_devices(void)
      }
 
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(2, 6, 2)
-     fusion_class = class_simple_create (THIS_MODULE, "fusion");
+     fusion_class = class_create (THIS_MODULE, "fusion");
      if (IS_ERR(fusion_class)) {
           unregister_chrdev (fusion_major, "fusion");
           return PTR_ERR(fusion_class);
@@ -864,7 +864,7 @@ register_devices(void)
 
      for (i=0; i<NUM_MINORS; i++) {
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(2, 6, 2)
-          class_simple_device_add (fusion_class,
+          class_device_create (fusion_class,
                                    MKDEV(fusion_major, i),
                                    NULL, "fusion%d", i);
 #endif
@@ -927,14 +927,14 @@ deregister_devices(void)
 
      for (i=0; i<NUM_MINORS; i++) {
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(2, 6, 2)
-          class_simple_device_remove (MKDEV(fusion_major, i));
+          class_device_destroy (MKDEV(fusion_major, i));
 #endif
 
           devfs_remove ("fusion/%d", i);
      }
 
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(2, 6, 2)
-     class_simple_destroy (fusion_class);
+     class_destroy (fusion_class);
 #endif
 
      devfs_remove ("fusion");

@@ -22,6 +22,8 @@
 #include <asm/byteorder.h>
 #include <asm/bug.h>
 
+extern const char linux_banner[];
+
 #define INT_MAX		((int)(~0U>>1))
 #define INT_MIN		(-INT_MAX - 1)
 #define UINT_MAX	(~0U)
@@ -59,10 +61,26 @@ extern int cond_resched(void);
 # define might_resched() do { } while (0)
 #endif
 
+/**
+ * might_sleep - annotation for functions that can sleep
+ *
+ * this macro will print a stack trace if it is executed in an atomic
+ * context (spinlock, irq-handler, ...).
+ *
+ * This is a useful debugging help to be able to catch problems early and not
+ * be biten later when the calling function happens to sleep when it is not
+ * supposed to.
+ */
+#ifdef CONFIG_PREEMPT_VOLUNTARY
+extern int cond_resched(void);
+# define might_resched() cond_resched()
+#else
+# define might_resched() do { } while (0)
+#endif
+
 #if defined(CONFIG_DEBUG_SPINLOCK_SLEEP) || defined(CONFIG_DEBUG_PREEMPT)
-   void __might_sleep(char *file, int line);
-# define might_sleep() \
-	do { __might_sleep(__FILE__, __LINE__); might_resched(); } while (0)
+  void __might_sleep(char *file, int line);
+# define might_sleep() do { __might_sleep(__FILE__, __LINE__); might_resched(); } while (0)
 #else
 # define might_sleep() do { might_resched(); } while (0)
 #endif
@@ -96,17 +114,21 @@ extern unsigned long long simple_strtoull(const char *,char **,unsigned int);
 extern long long simple_strtoll(const char *,char **,unsigned int);
 extern int sprintf(char * buf, const char * fmt, ...)
 	__attribute__ ((format (printf, 2, 3)));
-extern int vsprintf(char *buf, const char *, va_list);
+extern int vsprintf(char *buf, const char *, va_list)
+	__attribute__ ((format (printf, 2, 0)));
 extern int snprintf(char * buf, size_t size, const char * fmt, ...)
 	__attribute__ ((format (printf, 3, 4)));
-extern int vsnprintf(char *buf, size_t size, const char *fmt, va_list args);
+extern int vsnprintf(char *buf, size_t size, const char *fmt, va_list args)
+	__attribute__ ((format (printf, 3, 0)));
 extern int scnprintf(char * buf, size_t size, const char * fmt, ...)
 	__attribute__ ((format (printf, 3, 4)));
-extern int vscnprintf(char *buf, size_t size, const char *fmt, va_list args);
+extern int vscnprintf(char *buf, size_t size, const char *fmt, va_list args)
+	__attribute__ ((format (printf, 3, 0)));
 
 extern int sscanf(const char *, const char *, ...)
-	__attribute__ ((format (scanf,2,3)));
-extern int vsscanf(const char *, const char *, va_list);
+	__attribute__ ((format (scanf, 2, 3)));
+extern int vsscanf(const char *, const char *, va_list)
+	__attribute__ ((format (scanf, 2, 0)));
 
 extern int get_option(char **str, int *pint);
 extern char *get_options(const char *str, int nints, int *ints);
@@ -116,9 +138,19 @@ extern int __kernel_text_address(unsigned long addr);
 extern int kernel_text_address(unsigned long addr);
 extern int session_of_pgrp(int pgrp);
 
-asmlinkage int vprintk(const char *fmt, va_list args);
+#ifdef CONFIG_PRINTK
+asmlinkage int vprintk(const char *fmt, va_list args)
+	__attribute__ ((format (printf, 1, 0)));
 asmlinkage int printk(const char * fmt, ...)
 	__attribute__ ((format (printf, 1, 2)));
+#else
+static inline int vprintk(const char *s, va_list args)
+	__attribute__ ((format (printf, 1, 0)));
+static inline int vprintk(const char *s, va_list args) { return 0; }
+static inline int printk(const char *s, ...)
+	__attribute__ ((format (printf, 1, 2)));
+static inline int printk(const char *s, ...) { return 0; }
+#endif
 
 #ifdef CONFIG_PREEMPT_RT
 extern void zap_rt_locks(void);
@@ -157,6 +189,7 @@ static inline void console_verbose(void)
 
 extern void bust_spinlocks(int yes);
 extern int oops_in_progress;		/* If set, an oops, panic(), BUG() or die() is in progress */
+extern int panic_timeout;
 extern int panic_on_oops;
 extern int tainted;
 extern const char *print_tainted(void);
@@ -298,6 +331,12 @@ struct sysinfo {
 
 extern void BUILD_BUG(void);
 #define BUILD_BUG_ON(condition) do { if (condition) BUILD_BUG(); } while(0)
+
+#ifdef CONFIG_SYSCTL
+extern int randomize_va_space;
+#else
+#define randomize_va_space 1
+#endif
 
 /* Trap pasters of __FUNCTION__ at compile-time */
 #if __GNUC__ > 2 || __GNUC_MINOR__ >= 95

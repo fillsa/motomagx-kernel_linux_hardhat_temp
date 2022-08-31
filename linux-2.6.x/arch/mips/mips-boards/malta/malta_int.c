@@ -21,7 +21,6 @@
  * The interrupt controller is located in the South Bridge a PIIX4 device
  * with two internal 82C95 interrupt controllers.
  */
-#include <linux/config.h>
 #include <linux/init.h>
 #include <linux/irq.h>
 #include <linux/sched.h>
@@ -41,7 +40,7 @@
 
 extern asmlinkage void mipsIRQ(void);
 
-static raw_spinlock_t mips_irq_lock = RAW_SPIN_LOCK_UNLOCKED;
+static DEFINE_SPINLOCK(mips_irq_lock);
 
 static inline int mips_pcibios_iack(void)
 {

@@ -60,9 +60,9 @@ struct rcu_state {
 	                              /* for current batch to proceed.        */
 };
 
-struct rcu_state rcu_state ____cacheline_maxaligned_in_smp =
+static struct rcu_state rcu_state ____cacheline_maxaligned_in_smp =
 	  {.lock = SPIN_LOCK_UNLOCKED, .cpumask = CPU_MASK_NONE };
-struct rcu_state rcu_bh_state ____cacheline_maxaligned_in_smp =
+static struct rcu_state rcu_bh_state ____cacheline_maxaligned_in_smp =
 	  {.lock = SPIN_LOCK_UNLOCKED, .cpumask = CPU_MASK_NONE };
 
 DEFINE_PER_CPU(struct rcu_data, rcu_data) = { 0L };
@@ -444,15 +444,18 @@ static void wakeme_after_rcu(struct rcu_head  *head)
 }
 
 /**
- * synchronize_kernel - wait until a grace period has elapsed.
+ * synchronize_rcu - wait until a grace period has elapsed.
  *
  * Control will return to the caller some time after a full grace
  * period has elapsed, in other words after all currently executing RCU
  * read-side critical sections have completed.  RCU read-side critical
  * sections are delimited by rcu_read_lock() and rcu_read_unlock(),
  * and may be nested.
+ *
+ * If your read-side code is not protected by rcu_read_lock(), do -not-
+ * use synchronize_rcu().
  */
-void synchronize_kernel(void)
+void synchronize_rcu(void)
 {
 	struct rcu_synchronize rcu;
 
@@ -464,10 +467,19 @@ void synchronize_kernel(void)
 	wait_for_completion(&rcu.completion);
 }
 
+/*
+ * Deprecated, use synchronize_rcu() or synchronize_sched() instead.
+ */
+void synchronize_kernel(void)
+{
+	synchronize_rcu();
+}
+
 module_param(maxbatch, int, 0);
-EXPORT_SYMBOL(call_rcu);
-EXPORT_SYMBOL(call_rcu_bh);
-EXPORT_SYMBOL(synchronize_kernel);
+EXPORT_SYMBOL(call_rcu);  /* WARNING: GPL-only in April 2006. */
+EXPORT_SYMBOL(call_rcu_bh);  /* WARNING: GPL-only in April 2006. */
+EXPORT_SYMBOL_GPL(synchronize_rcu);
+EXPORT_SYMBOL(synchronize_kernel);  /* WARNING: GPL-only in April 2006. */
 
 #ifdef CONFIG_PREEMPT_RCU
 

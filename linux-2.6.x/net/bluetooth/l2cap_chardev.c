@@ -153,7 +153,7 @@ static void __init_dev_status()
 
 static int init_l2cap_class(void)
 {
-     l2cap_class = class_simple_create(THIS_MODULE,"l2cap");
+     l2cap_class = class_create(THIS_MODULE,"l2cap");
      if (IS_ERR(l2cap_class)) {
          return PTR_ERR(l2cap_class);
      }
@@ -242,7 +242,7 @@ static int l2cap_char_dev_release(struct inode *inode, struct file *filp)
     __set_dev_status(devId,L2CAP_CHAR_DEV_AVAIL);
     
      /*remove the class entry  - cannot perform this operation here as /dev/l2cap is being created statically*/
-    //class_simple_device_remove(MKDEV(L2cap_char_dev_major_num,devId));    
+    //class_device_destroy(l2cap_class, MKDEV(L2cap_char_dev_major_num,devId));    
 
     BT_DBG("Release dev ID %d",devId);
 
@@ -431,7 +431,7 @@ static int l2cap_create_dev(struct sock *sk, int *arg)
     /* creates the char device for the given device id as minor number and l2cap device major number */
     dev = MKDEV(L2cap_char_dev_major_num,devId);
     
-    class_simple_device_add(l2cap_class,dev,NULL,"l2cap%d",devId);
+    class_device_create(l2cap_class,dev,NULL,"l2cap%d",devId);
     
     result = cdev_add(&l2capdevice->cdev,dev,1);
     if(result) {
@@ -440,7 +440,7 @@ static int l2cap_create_dev(struct sock *sk, int *arg)
         
         kfree(l2capdevice);
         __set_dev_status(devId,L2CAP_CHAR_DEV_AVAIL);
-        class_simple_device_remove(MKDEV(L2cap_char_dev_major_num,devId));  
+        class_device_destroy(l2cap_class, MKDEV(L2cap_char_dev_major_num,devId));  
     
         return result;
     }
@@ -483,7 +483,7 @@ static int l2cap_release_dev(int *arg)
         kfree(l2capdevice);
         
         /*remove the class entry */
-        class_simple_device_remove(MKDEV(L2cap_char_dev_major_num,devId));    
+        class_device_destroy(l2cap_class, MKDEV(L2cap_char_dev_major_num,devId));    
     
     }
     
@@ -538,7 +538,7 @@ int l2cap_char_dev_init(void)
 void l2cap_char_dev_exit(void)
 {
     /* remove l2cap class entry */
-    class_simple_destroy(l2cap_class);
+    class_destroy(l2cap_class);
 
     /* Free device numbers */
     unregister_chrdev_region(MKDEV(L2cap_char_dev_major_num,L2CAP_CHAR_DEV_FIRST_MINOR),L2CAP_MAX_CHAR_DEV);

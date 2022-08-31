@@ -32,7 +32,7 @@
  *              Linux 1.3.0 changes by
  *                      Alan Cox <Alan.Cox@linux.org>
  *              More debugging, DMA support, currently maintained by
- *                      Philip Blundell <Philip.Blundell@pobox.com>
+ *                      Philip Blundell <philb@gnu.org>
  *              Multicard/soft configurable dma channel/rev 2 hardware support
  *                      by Christopher Collins <ccollins@pcug.org.au>
  *		Ethtool support (jgarzik), 11/17/2001
@@ -228,16 +228,6 @@ static inline void outb_command(unsigned char val, unsigned int base_addr)
 	outb(val, base_addr + PORT_COMMAND);
 }
 
-static inline unsigned int inw_data(unsigned int base_addr)
-{
-	return inw(base_addr + PORT_DATA);
-}
-
-static inline void outw_data(unsigned int val, unsigned int base_addr)
-{
-	outw(val, base_addr + PORT_DATA);
-}
-
 static inline unsigned int backlog_next(unsigned int n)
 {
 	return (n + 1) % BACKLOG_SIZE;
@@ -282,7 +272,7 @@ static inline void set_hsf(struct net_device *dev, int hsf)
 
 static int start_receive(struct net_device *, pcb_struct *);
 
-inline static void adapter_reset(struct net_device *dev)
+static inline void adapter_reset(struct net_device *dev)
 {
 	unsigned long timeout;
 	elp_device *adapter = dev->priv;
@@ -1327,8 +1317,7 @@ static int __init elp_sense(struct net_device *dev)
 	if (orig_HSR & DIR) {
 		/* If HCR.DIR is up, we pull it down. HSR.DIR should follow. */
 		outb(0, dev->base_addr + PORT_CONTROL);
-		set_current_state(TASK_UNINTERRUPTIBLE);
-		schedule_timeout(30*HZ/100);
+		msleep(300);
 		if (inb_status(addr) & DIR) {
 			if (elp_debug > 0)
 				printk(notfound_msg, 2);
@@ -1337,8 +1326,7 @@ static int __init elp_sense(struct net_device *dev)
 	} else {
 		/* If HCR.DIR is down, we pull it up. HSR.DIR should follow. */
 		outb(DIR, dev->base_addr + PORT_CONTROL);
-		set_current_state(TASK_UNINTERRUPTIBLE);
-		schedule_timeout(30*HZ/100);
+		msleep(300);
 		if (!(inb_status(addr) & DIR)) {
 			if (elp_debug > 0)
 				printk(notfound_msg, 3);
@@ -1638,9 +1626,9 @@ static struct net_device *dev_3c505[ELP_MAX_CARDS];
 static int io[ELP_MAX_CARDS];
 static int irq[ELP_MAX_CARDS];
 static int dma[ELP_MAX_CARDS];
-MODULE_PARM(io, "1-" __MODULE_STRING(ELP_MAX_CARDS) "i");
-MODULE_PARM(irq, "1-" __MODULE_STRING(ELP_MAX_CARDS) "i");
-MODULE_PARM(dma, "1-" __MODULE_STRING(ELP_MAX_CARDS) "i");
+module_param_array(io, int, NULL, 0);
+module_param_array(irq, int, NULL, 0);
+module_param_array(dma, int, NULL, 0);
 MODULE_PARM_DESC(io, "EtherLink Plus I/O base address(es)");
 MODULE_PARM_DESC(irq, "EtherLink Plus IRQ number(s) (assigned)");
 MODULE_PARM_DESC(dma, "EtherLink Plus DMA channel(s)");

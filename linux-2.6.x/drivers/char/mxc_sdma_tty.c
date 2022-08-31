@@ -83,7 +83,7 @@ static struct tty_driver *sdma_tty_driver;
  */
 static struct tasklet_struct sdma_tty_tasklet;
 
-static struct class_simple *sdma_tty_class;
+static struct class *sdma_tty_class;
 
 /*!
  * Structure containing sdma tty line status
@@ -691,7 +691,7 @@ static int __init sdma_tty_init(void)
 		return error;
 	}
 
-	sdma_tty_class = class_simple_create(THIS_MODULE, "sdma");
+	sdma_tty_class = class_create(THIS_MODULE, "sdma");
 	if (IS_ERR(sdma_tty_class)) {
 		printk(KERN_ERR "Error creating sdma tty class.\n");
 		return PTR_ERR(sdma_tty_class);
@@ -700,7 +700,7 @@ static int __init sdma_tty_init(void)
 	dev_mode = S_IFCHR | S_IRUGO | S_IWUGO;
 	for (dev_id = 0; dev_id < dev_number; dev_id++) {
 		temp_class =
-		    class_simple_device_add(sdma_tty_class,
+		    class_device_create(sdma_tty_class,
 					    MKDEV(sdma_tty_driver->major,
 						  dev_id), NULL, "sdma%u",
 					    dev_id);
@@ -725,11 +725,11 @@ static int __init sdma_tty_init(void)
       err_out:
 	printk(KERN_ERR "Error creating sdma class or class device.\n");
 	for (dev_id = 0; dev_id < dev_number; dev_id++) {
-		class_simple_device_remove(MKDEV
+		class_device_destroy(sdma_tty_class, MKDEV
 					   (sdma_tty_driver->major, dev_id));
 		devfs_remove("sdma%u", dev_id);
 	}
-	class_simple_destroy(sdma_tty_class);
+	class_destroy(sdma_tty_class);
 	devfs_remove("sdma");
 	return -1;
 }
@@ -746,13 +746,13 @@ static void __exit sdma_tty_exit(void)
 
 	if (!sdma_tty_driver) {
 		for (dev_id = 0; dev_id < dev_number; dev_id++) {
-			class_simple_device_remove(MKDEV
+			class_device_destroy(sdma_tty_class, MKDEV
 						   (sdma_tty_driver->major,
 						    dev_id));
 			devfs_remove("sdma%u", dev_id);
 		}
 		devfs_remove("sdma");
-		class_simple_destroy(sdma_tty_class);
+		class_destroy(sdma_tty_class);
 	}
 
 	tty_unregister_driver(sdma_tty_driver);

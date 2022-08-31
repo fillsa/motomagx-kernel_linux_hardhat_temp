@@ -139,10 +139,24 @@ enum {
 #define AX25_DEF_DS_TIMEOUT	(3 * 60 * HZ)		/* DAMA timeout 3 minutes */
 
 typedef struct ax25_uid_assoc {
-	struct ax25_uid_assoc	*next;
+	struct hlist_node	uid_node;
+	atomic_t		refcount;
 	uid_t			uid;
 	ax25_address		call;
 } ax25_uid_assoc;
+
+#define ax25_uid_for_each(__ax25, node, list) \
+	hlist_for_each_entry(__ax25, node, list, uid_node)
+
+#define ax25_uid_hold(ax25) \
+	atomic_inc(&((ax25)->refcount))
+
+static inline void ax25_uid_put(ax25_uid_assoc *assoc)
+{
+	if (atomic_dec_and_test(&assoc->refcount)) {
+		kfree(assoc);
+	}
+}
 
 typedef struct {
 	ax25_address		calls[AX25_MAX_DIGIS];
@@ -220,6 +234,14 @@ static __inline__ void ax25_cb_put(ax25_cb *ax25)
 	}
 }
 
+static inline __be16 ax25_type_trans(struct sk_buff *skb, struct net_device *dev)
+{
+	skb->dev      = dev;
+	skb->pkt_type = PACKET_HOST;
+	skb->mac.raw  = skb->data;
+	return htons(ETH_P_AX25);
+}
+
 /* af_ax25.c */
 extern struct hlist_head ax25_list;
 extern spinlock_t ax25_list_lock;
@@ -231,7 +253,6 @@ extern void ax25_send_to_raw(ax25_address *, struct sk_buff *, int);
 extern void ax25_destroy_socket(ax25_cb *);
 extern ax25_cb *ax25_create_cb(void);
 extern void ax25_fillin_cb(ax25_cb *, ax25_dev *);
-extern int  ax25_create(struct socket *, int);
 extern struct sock *ax25_make_new(struct sock *, struct ax25_dev *);
 
 /* ax25_addr.c */
@@ -268,7 +289,6 @@ extern int  ax25_ds_frame_in(ax25_cb *, struct sk_buff *, int);
 extern void ax25_ds_nr_error_recovery(ax25_cb *);
 extern void ax25_ds_enquiry_response(ax25_cb *);
 extern void ax25_ds_establish_data_link(ax25_cb *);
-extern void ax25_dev_dama_on(ax25_dev *);
 extern void ax25_dev_dama_off(ax25_dev *);
 extern void ax25_dama_on(ax25_cb *);
 extern void ax25_dama_off(ax25_cb *);
@@ -307,7 +327,7 @@ extern ax25_cb *ax25_send_frame(struct sk_buff *, int, ax25_address *, ax25_addr
 extern void ax25_output(ax25_cb *, int, struct sk_buff *);
 extern void ax25_kick(ax25_cb *);
 extern void ax25_transmit_buffer(ax25_cb *, struct sk_buff *, int);
-extern void ax25_queue_xmit(struct sk_buff *);
+extern void ax25_queue_xmit(struct sk_buff *skb, struct net_device *dev);
 extern int  ax25_check_iframes_acked(ax25_cb *, unsigned short);
 
 /* ax25_route.c */
@@ -370,7 +390,7 @@ extern unsigned long ax25_display_timer(struct timer_list *);
 
 /* ax25_uid.c */
 extern int  ax25_uid_policy;
-extern ax25_address *ax25_findbyuid(uid_t);
+extern ax25_uid_assoc *ax25_findbyuid(uid_t);
 extern int  ax25_uid_ioctl(int, struct sockaddr_ax25 *);
 extern struct file_operations ax25_uid_fops;
 extern void ax25_uid_free(void);

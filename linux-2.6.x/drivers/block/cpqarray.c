@@ -16,7 +16,7 @@
  *    along with this program; if not, write to the Free Software
  *    Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
  *
- *    Questions/Comments/Bugfixes to Cpqarray-discuss@lists.sourceforge.net
+ *    Questions/Comments/Bugfixes to iss_storagedev@hp.com
  *
  */
 #include <linux/config.h>	/* CONFIG_PROC_FS */
@@ -97,7 +97,7 @@ static struct board_type products[] = {
 };
 
 /* define the PCI info for the PCI cards this driver can control */
-const struct pci_device_id cpqarray_pci_device_id[] =
+static const struct pci_device_id cpqarray_pci_device_id[] =
 {
 	{ PCI_VENDOR_ID_DEC, PCI_DEVICE_ID_COMPAQ_42XX,
 		0x0E11, 0x4058, 0, 0, 0},       /* SA431 */
@@ -135,7 +135,6 @@ static struct gendisk *ida_gendisk[MAX_CTLR][NWD];
 /* Debug Extra Paranoid... */
 #define DBGPX(s) do { } while(0)
 
-int cpqarray_init_step2(void);
 static int cpqarray_pci_init(ctlr_info_t *c, struct pci_dev *pdev);
 static void __iomem *remap_pci_mem(ulong base, ulong size);
 static int cpqarray_eisa_detect(void);
@@ -310,15 +309,7 @@ static int ida_proc_get_info(char *buffer, char **start, off_t offset, int lengt
 }
 #endif /* CONFIG_PROC_FS */
 
-MODULE_PARM(eisa, "1-8i");
-
-/* This is a bit of a hack,
- * necessary to support both eisa and pci
- */
-int __init cpqarray_init(void)
-{
-	return (cpqarray_init_step2());
-}
+module_param_array(eisa, int, NULL, 0);
 
 static void release_io_mem(ctlr_info_t *c)
 {
@@ -560,7 +551,7 @@ static struct pci_driver cpqarray_pci_driver = {
  *  This is it.  Find all the controllers and register them.
  *  returns the number of block devices registered.
  */
-int __init cpqarray_init_step2(void)
+static int __init cpqarray_init(void)
 {
 	int num_cntlrs_reg = 0;
 	int i;

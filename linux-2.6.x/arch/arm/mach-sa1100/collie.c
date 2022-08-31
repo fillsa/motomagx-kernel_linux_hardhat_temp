@@ -37,36 +37,35 @@
 #include <asm/mach/map.h>
 #include <asm/mach/serial_sa1100.h>
 
+#include <asm/hardware/scoop.h>
+#include <asm/mach/sharpsl_param.h>
 #include <asm/hardware/locomo.h>
 
 #include "generic.h"
 
-static void __init scoop_init(void)
-{
+static struct resource collie_scoop_resources[] = {
+	[0] = {
+		.start		= 0x40800000,
+		.end		= 0x40800fff,
+		.flags		= IORESOURCE_MEM,
+	},
+};
 
-#define	COLLIE_SCP_INIT_DATA(adr,dat)	(((adr)<<16)|(dat))
-#define	COLLIE_SCP_INIT_DATA_END	((unsigned long)-1)
-	static const unsigned long scp_init[] = {
-		COLLIE_SCP_INIT_DATA(COLLIE_SCP_MCR, 0x0140),	// 00
-		COLLIE_SCP_INIT_DATA(COLLIE_SCP_MCR, 0x0100),
-		COLLIE_SCP_INIT_DATA(COLLIE_SCP_CDR, 0x0000),	// 04
-		COLLIE_SCP_INIT_DATA(COLLIE_SCP_CPR, 0x0000),	// 0C
-		COLLIE_SCP_INIT_DATA(COLLIE_SCP_CCR, 0x0000),	// 10
-		COLLIE_SCP_INIT_DATA(COLLIE_SCP_IMR, 0x0000),	// 18
-		COLLIE_SCP_INIT_DATA(COLLIE_SCP_IRM, 0x00FF),	// 14
-		COLLIE_SCP_INIT_DATA(COLLIE_SCP_ISR, 0x0000),	// 1C
-		COLLIE_SCP_INIT_DATA(COLLIE_SCP_IRM, 0x0000),
-		COLLIE_SCP_INIT_DATA(COLLIE_SCP_GPCR, COLLIE_SCP_IO_DIR),	// 20
-		COLLIE_SCP_INIT_DATA(COLLIE_SCP_GPWR, COLLIE_SCP_IO_OUT),	// 24
-		COLLIE_SCP_INIT_DATA_END
-	};
-	int i;
-	for (i = 0; scp_init[i] != COLLIE_SCP_INIT_DATA_END; i++) {
-		int adr = scp_init[i] >> 16;
-		COLLIE_SCP_REG(adr) = scp_init[i] & 0xFFFF;
-	}
+static struct scoop_config collie_scoop_setup = {
+	.io_dir 	= COLLIE_SCOOP_IO_DIR,
+	.io_out		= COLLIE_SCOOP_IO_OUT,
+};
 
-}
+struct platform_device colliescoop_device = {
+	.name		= "sharp-scoop",
+	.id		= -1,
+	.dev		= {
+ 		.platform_data	= &collie_scoop_setup,
+	},
+	.num_resources	= ARRAY_SIZE(collie_scoop_resources),
+	.resource	= collie_scoop_resources,
+};
+
 
 static struct resource locomo_resources[] = {
 	[0] = {
@@ -90,6 +89,7 @@ static struct platform_device locomo_device = {
 
 static struct platform_device *devices[] __initdata = {
 	&locomo_device,
+	&colliescoop_device,
 };
 
 static struct mtd_partition collie_partitions[] = {
@@ -111,11 +111,11 @@ static struct mtd_partition collie_partitions[] = {
 
 static void collie_set_vpp(int vpp)
 {
-	COLLIE_SCP_REG_GPCR |= COLLIE_SCP_VPEN;
+	write_scoop_reg(SCOOP_GPCR, read_scoop_reg(SCOOP_GPCR) | COLLIE_SCP_VPEN);
 	if (vpp) {
-		COLLIE_SCP_REG_GPWR |= COLLIE_SCP_VPEN;
+		write_scoop_reg(SCOOP_GPWR, read_scoop_reg(SCOOP_GPWR) | COLLIE_SCP_VPEN);
 	} else {
-		COLLIE_SCP_REG_GPWR &= ~COLLIE_SCP_VPEN;
+		write_scoop_reg(SCOOP_GPWR, read_scoop_reg(SCOOP_GPWR) & ~COLLIE_SCP_VPEN);
 	}
 }
 
@@ -160,8 +160,6 @@ static void __init collie_init(void)
 	GPDR |= GPIO_32_768kHz;
 	TUCR  = TUCR_32_768kHz;
 
-	scoop_init();
-
 	ret = platform_add_devices(devices, ARRAY_SIZE(devices));
 	if (ret) {
 		printk(KERN_WARNING "collie: Unable to register LoCoMo device\n");
@@ -169,13 +167,14 @@ static void __init collie_init(void)
 
 	sa11x0_set_flash_data(&collie_flash_data, collie_flash_resources,
 			      ARRAY_SIZE(collie_flash_resources));
+
+	sharpsl_save_param();
 }
 
 static struct map_desc collie_io_desc[] __initdata = {
 	/* virtual     physical    length      type */
 	{0xe8000000, 0x00000000, 0x02000000, MT_DEVICE},	/* 32M main flash (cs0) */
 	{0xea000000, 0x08000000, 0x02000000, MT_DEVICE},	/* 32M boot flash (cs1) */
-	{0xf0000000, 0x40000000, 0x01000000, MT_DEVICE},	/* 16M LOCOMO  & SCOOP (cs4) */
 };
 
 static void __init collie_map_io(void)
@@ -185,9 +184,11 @@ static void __init collie_map_io(void)
 }
 
 MACHINE_START(COLLIE, "Sharp-Collie")
-	BOOT_MEM(0xc0000000, 0x80000000, 0xf8000000)
-	MAPIO(collie_map_io)
-	INITIRQ(sa1100_init_irq)
+	.phys_ram	= 0xc0000000,
+	.phys_io	= 0x80000000,
+	.io_pg_offst	= ((0xf8000000) >> 18) & 0xfffc,
+	.map_io		= collie_map_io,
+	.init_irq	= sa1100_init_irq,
 	.timer		= &sa1100_timer,
 	.init_machine	= collie_init,
 MACHINE_END

@@ -9,7 +9,7 @@
  *	20-Sep-2004  BJD  Initial version
  *	17-Jan-2005  BJD  Add whole device if no partitions found
  *
- * $Id: bast-flash.c,v 1.1 2004/09/21 14:29:04 bjd Exp $
+ * $Id: bast-flash.c,v 1.2 2005/01/18 11:13:47 bjd Exp $
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by

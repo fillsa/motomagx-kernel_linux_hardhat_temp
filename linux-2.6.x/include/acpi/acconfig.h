@@ -5,7 +5,7 @@
  *****************************************************************************/
 
 /*
- * Copyright (C) 2000 - 2004, R. Byron Moore
+ * Copyright (C) 2000 - 2005, R. Byron Moore
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -64,7 +64,7 @@
 
 /* Version string */
 
-#define ACPI_CA_VERSION                 0x20041105
+#define ACPI_CA_VERSION                 0x20050408
 
 /*
  * OS name, used for the _OS object.  The _OS object is essentially obsolete,
@@ -99,7 +99,7 @@
 
 /* Version of ACPI supported */
 
-#define ACPI_CA_SUPPORT_LEVEL           2
+#define ACPI_CA_SUPPORT_LEVEL           3
 
 /* String size constants */
 
@@ -130,9 +130,8 @@
 #define ACPI_MAX_GPE_BLOCKS             2
 #define ACPI_GPE_REGISTER_WIDTH         8
 
-/*
- * Method info (in WALK_STATE), containing local variables and argumetns
- */
+/* Method info (in WALK_STATE), containing local variables and argumetns */
+
 #define ACPI_METHOD_NUM_LOCALS          8
 #define ACPI_METHOD_MAX_LOCAL           7
 
@@ -198,7 +197,7 @@
 
 /* Number of strings associated with the _OSI reserved method */
 
-#define ACPI_NUM_OSI_STRINGS            9
+#define ACPI_NUM_OSI_STRINGS            10
 
 
 /******************************************************************************

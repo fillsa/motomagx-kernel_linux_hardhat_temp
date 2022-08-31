@@ -16,56 +16,64 @@
 #include <asm/proto.h>
 #include <asm/dma.h>
 #include <asm/numa.h>
+#include <asm/acpi.h>
 
 #ifndef Dprintk
 #define Dprintk(x...)
 #endif
 
-struct pglist_data *node_data[MAXNODE];
+struct pglist_data *node_data[MAX_NUMNODES];
 bootmem_data_t plat_node_bdata[MAX_NUMNODES];
 
 int memnode_shift;
 u8  memnodemap[NODEMAPSIZE];
 
-unsigned char cpu_to_node[NR_CPUS];  
-cpumask_t     node_to_cpumask[MAXNODE]; 
+unsigned char cpu_to_node[NR_CPUS] = { [0 ... NR_CPUS-1] = NUMA_NO_NODE };
+cpumask_t     node_to_cpumask[MAX_NUMNODES];
 
-static int numa_off __initdata; 
+int numa_off __initdata;
 
-unsigned long nodes_present; 
-
-int __init compute_hash_shift(struct node *nodes)
+int __init compute_hash_shift(struct node *nodes, int numnodes)
 {
 	int i; 
-	int shift = 24;
-	u64 addr;
+	int shift = 20;
+	unsigned long addr,maxend=0;
 	
-	/* When in doubt use brute force. */
-	while (shift < 48) { 
-		memset(memnodemap,0xff,sizeof(*memnodemap) * NODEMAPSIZE); 
-		for (i = 0; i < numnodes; i++) { 
-			if (nodes[i].start == nodes[i].end) 
-				continue;
-			for (addr = nodes[i].start; 
-			     addr < nodes[i].end; 
-			     addr += (1UL << shift)) {
-				if (memnodemap[addr >> shift] != 0xff && 
-				    memnodemap[addr >> shift] != i) { 
-					printk(KERN_INFO 
-					    "node %d shift %d addr %Lx conflict %d\n", 
-					       i, shift, addr, memnodemap[addr>>shift]);
-					goto next; 
-				} 
-				memnodemap[addr >> shift] = i; 
+	for (i = 0; i < numnodes; i++)
+		if ((nodes[i].start != nodes[i].end) && (nodes[i].end > maxend))
+				maxend = nodes[i].end;
+
+	while ((1UL << shift) <  (maxend / NODEMAPSIZE))
+		shift++;
+
+	printk (KERN_DEBUG"Using %d for the hash shift. Max adder is %lx \n",
+			shift,maxend);
+	memset(memnodemap,0xff,sizeof(*memnodemap) * NODEMAPSIZE);
+	for (i = 0; i < numnodes; i++) {
+		if (nodes[i].start == nodes[i].end)
+			continue;
+		for (addr = nodes[i].start;
+		     addr < nodes[i].end;
+		     addr += (1UL << shift)) {
+			if (memnodemap[addr >> shift] != 0xff) {
+				printk(KERN_INFO
+	"Your memory is not aligned you need to rebuild your kernel "
+	"with a bigger NODEMAPSIZE shift=%d adder=%lu\n",
+					shift,addr);
+				return -1;
 			} 
+			memnodemap[addr >> shift] = i;
 		} 
-		return shift; 
-	next:
-		shift++; 
 	} 
-	memset(memnodemap,0,sizeof(*memnodemap) * NODEMAPSIZE); 
-	return -1; 
+	return shift;
 }
+
+#ifdef CONFIG_SPARSEMEM
+int early_pfn_to_nid(unsigned long pfn)
+{
+	return phys_to_nid(pfn << PAGE_SHIFT);
+}
+#endif
 
 /* Initialize bootmem allocator for a node */
 void __init setup_node_bootmem(int nodeid, unsigned long start, unsigned long end)
@@ -81,6 +89,7 @@ void __init setup_node_bootmem(int nodeid, unsigned long start, unsigned long en
 	start_pfn = start >> PAGE_SHIFT;
 	end_pfn = end >> PAGE_SHIFT;
 
+	memory_present(nodeid, start_pfn, end_pfn);
 	nodedata_phys = find_e820_area(start, end, pgdat_size); 
 	if (nodedata_phys == -1L) 
 		panic("Cannot find memory pgdat in node %d\n", nodeid);
@@ -109,8 +118,6 @@ void __init setup_node_bootmem(int nodeid, unsigned long start, unsigned long en
 
 	reserve_bootmem_node(NODE_DATA(nodeid), nodedata_phys, pgdat_size); 
 	reserve_bootmem_node(NODE_DATA(nodeid), bootmap_start, bootmap_pages<<PAGE_SHIFT);
-	if (nodeid + 1 > numnodes)
-		numnodes = nodeid + 1;
 	node_set_online(nodeid);
 } 
 
@@ -119,9 +126,11 @@ void __init setup_node_zones(int nodeid)
 { 
 	unsigned long start_pfn, end_pfn; 
 	unsigned long zones[MAX_NR_ZONES];
+	unsigned long holes[MAX_NR_ZONES];
 	unsigned long dma_end_pfn;
 
 	memset(zones, 0, sizeof(unsigned long) * MAX_NR_ZONES); 
+	memset(holes, 0, sizeof(unsigned long) * MAX_NR_ZONES);
 
 	start_pfn = node_start_pfn(nodeid);
 	end_pfn = node_end_pfn(nodeid);
@@ -132,13 +141,17 @@ void __init setup_node_zones(int nodeid)
 	dma_end_pfn = __pa(MAX_DMA_ADDRESS) >> PAGE_SHIFT; 
 	if (start_pfn < dma_end_pfn) { 
 		zones[ZONE_DMA] = dma_end_pfn - start_pfn;
+		holes[ZONE_DMA] = e820_hole_size(start_pfn, dma_end_pfn);
 		zones[ZONE_NORMAL] = end_pfn - dma_end_pfn; 
+		holes[ZONE_NORMAL] = e820_hole_size(dma_end_pfn, end_pfn);
+
 	} else { 
 		zones[ZONE_NORMAL] = end_pfn - start_pfn; 
+		holes[ZONE_NORMAL] = e820_hole_size(start_pfn, end_pfn);
 	} 
     
 	free_area_init_node(nodeid, NODE_DATA(nodeid), zones,
-			    start_pfn, NULL); 
+			    start_pfn, holes);
 } 
 
 void __init numa_init_array(void)
@@ -150,13 +163,12 @@ void __init numa_init_array(void)
 	   CPUs, as the number of CPUs is not known yet. 
 	   We round robin the existing nodes. */
 	rr = 0;
-	for (i = 0; i < MAXNODE; i++) {
-		if (node_online(i))
+	for (i = 0; i < NR_CPUS; i++) {
+		if (cpu_to_node[i] != NUMA_NO_NODE)
 			continue;
 		rr = next_node(rr, node_online_map);
 		if (rr == MAX_NUMNODES)
 			rr = first_node(node_online_map);
-		node_data[i] = node_data[rr];
 		cpu_to_node[i] = rr;
 		rr++; 
 	}
@@ -171,7 +183,7 @@ int numa_fake __initdata = 0;
 static int numa_emulation(unsigned long start_pfn, unsigned long end_pfn)
 {
  	int i;
- 	struct node nodes[MAXNODE];
+ 	struct node nodes[MAX_NUMNODES];
  	unsigned long sz = ((end_pfn - start_pfn)<<PAGE_SHIFT) / numa_fake;
 
  	/* Kludge needed for the hash function */
@@ -196,15 +208,15 @@ static int numa_emulation(unsigned long start_pfn, unsigned long end_pfn)
  		       i,
  		       nodes[i].start, nodes[i].end,
  		       (nodes[i].end - nodes[i].start) >> 20);
+		node_set_online(i);
  	}
- 	numnodes = numa_fake;
- 	memnode_shift = compute_hash_shift(nodes);
+ 	memnode_shift = compute_hash_shift(nodes, numa_fake);
  	if (memnode_shift < 0) {
  		memnode_shift = 0;
  		printk(KERN_ERR "No NUMA hash function found. Emulation disabled.\n");
  		return -1;
  	}
- 	for (i = 0; i < numa_fake; i++)
+ 	for_each_online_node(i)
  		setup_node_bootmem(i, nodes[i].start, nodes[i].end);
  	numa_init_array();
  	return 0;
@@ -217,6 +229,12 @@ void __init numa_initmem_init(unsigned long start_pfn, unsigned long end_pfn)
 
 #ifdef CONFIG_NUMA_EMU
 	if (numa_fake && !numa_emulation(start_pfn, end_pfn))
+ 		return;
+#endif
+
+#ifdef CONFIG_ACPI_NUMA
+	if (!numa_off && !acpi_scan_nodes(start_pfn << PAGE_SHIFT,
+					  end_pfn << PAGE_SHIFT))
  		return;
 #endif
 
@@ -233,14 +251,15 @@ void __init numa_initmem_init(unsigned long start_pfn, unsigned long end_pfn)
 		/* setup dummy node covering all memory */ 
 	memnode_shift = 63; 
 	memnodemap[0] = 0;
-	numnodes = 1;
+	nodes_clear(node_online_map);
+	node_set_online(0);
 	for (i = 0; i < NR_CPUS; i++)
 		cpu_to_node[i] = 0;
 	node_to_cpumask[0] = cpumask_of_cpu(0);
-	setup_node_bootmem(0, start_pfn<<PAGE_SHIFT, end_pfn<<PAGE_SHIFT);
+	setup_node_bootmem(0, start_pfn << PAGE_SHIFT, end_pfn << PAGE_SHIFT);
 }
 
-__init void numa_add_cpu(int cpu)
+__cpuinit void numa_add_cpu(int cpu)
 {
 	/* BP is initialized elsewhere */
 	if (cpu) 
@@ -251,7 +270,7 @@ unsigned long __init numa_free_all_bootmem(void)
 { 
 	int i;
 	unsigned long pages = 0;
-	for_all_nodes(i) {
+	for_each_online_node(i) {
 		pages += free_all_bootmem_node(NODE_DATA(i));
 	}
 	return pages;
@@ -260,7 +279,7 @@ unsigned long __init numa_free_all_bootmem(void)
 void __init paging_init(void)
 { 
 	int i;
-	for_all_nodes(i) { 
+	for_each_online_node(i) {
 		setup_node_zones(i); 
 	}
 } 
@@ -268,7 +287,7 @@ void __init paging_init(void)
 /* [numa=off] */
 __init int numa_setup(char *opt) 
 { 
-	if (!strcmp(opt,"off"))
+	if (!strncmp(opt,"off",3))
 		numa_off = 1;
 #ifdef CONFIG_NUMA_EMU
 	if(!strncmp(opt, "fake=", 5)) {
@@ -276,6 +295,10 @@ __init int numa_setup(char *opt)
 		if (numa_fake >= MAX_NUMNODES)
 			numa_fake = MAX_NUMNODES;
 	}
+#endif
+#ifdef CONFIG_ACPI_NUMA
+ 	if (!strncmp(opt,"noacpi",6))
+ 		acpi_numa = -1;
 #endif
 	return 1;
 } 

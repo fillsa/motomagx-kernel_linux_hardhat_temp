@@ -114,7 +114,7 @@ MFG:HEWLETT-PACKARD;MDL:DESKJET 970C;CMD:MLC,PCL,PML;CLASS:PRINTER;DESCRIPTION:H
 #define USBLP_MINORS		16
 #define USBLP_MINOR_BASE	0
 
-#define USBLP_WRITE_TIMEOUT	(5*HZ)			/* 5 seconds */
+#define USBLP_WRITE_TIMEOUT	(5000)			/* 5 seconds */
 
 #define USBLP_FIRST_PROTOCOL	1
 #define USBLP_LAST_PROTOCOL	3
@@ -379,6 +379,8 @@ static int usblp_open(struct inode *inode, struct file *file)
 	usblp->writeurb->transfer_buffer_length = 0;
 	usblp->wcomplete = 1; /* we begin writeable */
 	usblp->rcomplete = 0;
+	usblp->writeurb->status = 0;
+	usblp->readurb->status = 0;
 
 	if (usblp->bidir) {
 		usblp->readcount = 0;
@@ -527,7 +529,7 @@ static int usblp_ioctl(struct inode *inode, struct file *file, unsigned int cmd,
 
 			case IOCNR_HP_SET_CHANNEL:
 				if (_IOC_DIR(cmd) != _IOC_WRITE ||
-				    usblp->dev->descriptor.idVendor != 0x03F0 ||
+				    le16_to_cpu(usblp->dev->descriptor.idVendor) != 0x03F0 ||
 				    usblp->quirks & USBLP_QUIRK_BIDIR) {
 					retval = -EINVAL;
 					goto done;
@@ -574,8 +576,8 @@ static int usblp_ioctl(struct inode *inode, struct file *file, unsigned int cmd,
 					goto done;
 				}
 
-				twoints[0] = usblp->dev->descriptor.idVendor;
-				twoints[1] = usblp->dev->descriptor.idProduct;
+				twoints[0] = le16_to_cpu(usblp->dev->descriptor.idVendor);
+				twoints[1] = le16_to_cpu(usblp->dev->descriptor.idProduct);
 				if (copy_to_user((void __user *)arg,
 						(unsigned char *)twoints,
 						sizeof(twoints))) {
@@ -751,6 +753,7 @@ static ssize_t usblp_read(struct file *file, char __user *buffer, size_t count, 
 				schedule();
 			} else {
 				set_current_state(TASK_RUNNING);
+				down(&usblp->sem);
 				break;
 			}
 			down (&usblp->sem);
@@ -910,15 +913,15 @@ static int usblp_probe(struct usb_interface *intf,
 
 	/* Lookup quirks for this printer. */
 	usblp->quirks = usblp_quirks(
-		dev->descriptor.idVendor,
-		dev->descriptor.idProduct);
+		le16_to_cpu(dev->descriptor.idVendor),
+		le16_to_cpu(dev->descriptor.idProduct));
 
 	/* Analyze and pick initial alternate settings and endpoints. */
 	protocol = usblp_select_alts(usblp);
 	if (protocol < 0) {
 		dbg("incompatible printer-class device 0x%4.4X/0x%4.4X",
-			dev->descriptor.idVendor,
-			dev->descriptor.idProduct);
+			le16_to_cpu(dev->descriptor.idVendor),
+			le16_to_cpu(dev->descriptor.idProduct));
 		goto abort;
 	}
 
@@ -938,8 +941,9 @@ static int usblp_probe(struct usb_interface *intf,
 		usblp->minor, usblp->bidir ? "Bi" : "Uni", dev->devnum,
 		usblp->ifnum,
 		usblp->protocol[usblp->current_protocol].alt_setting,
-		usblp->current_protocol, usblp->dev->descriptor.idVendor,
-		usblp->dev->descriptor.idProduct);
+		usblp->current_protocol,
+		le16_to_cpu(usblp->dev->descriptor.idVendor),
+		le16_to_cpu(usblp->dev->descriptor.idProduct));
 
 	usb_set_intfdata (intf, usblp);
 
@@ -1095,7 +1099,7 @@ static int usblp_set_protocol(struct usblp *usblp, int protocol)
 		usblp->writebuf, 0,
 		usblp_bulk_write, usblp);
 
-	usblp->bidir = (usblp->protocol[protocol].epread != 0);
+	usblp->bidir = (usblp->protocol[protocol].epread != NULL);
 	if (usblp->bidir)
 		usb_fill_bulk_urb(usblp->readurb, usblp->dev,
 			usb_rcvbulkpipe(usblp->dev,

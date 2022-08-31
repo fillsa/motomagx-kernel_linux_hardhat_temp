@@ -10,6 +10,7 @@
 
 #include <linux/config.h>
 #include <linux/sched.h>
+#include <linux/module.h>
 #include <asm/processor.h>
 #include <asm/i387.h>
 #include <asm/math_emu.h>
@@ -24,7 +25,7 @@
 #define HAVE_HWFP 1
 #endif
 
-unsigned long mxcsr_feature_mask = 0xffffffff;
+static unsigned long mxcsr_feature_mask = 0xffffffff;
 
 void mxcsr_feature_mask_init(void)
 {
@@ -60,7 +61,8 @@ void init_fpu(struct task_struct *tsk)
 		tsk->thread.i387.fsave.twd = 0xffffffffu;
 		tsk->thread.i387.fsave.fos = 0xffff0000u;
 	}
-	tsk->used_math = 1;
+	/* only the device not available exception or ptrace can call init_fpu */
+	set_stopped_child_used_math(tsk);
 }
 
 /*
@@ -78,17 +80,7 @@ void kernel_fpu_begin(void)
 	}
 	clts();
 }
-
-void restore_fpu( struct task_struct *tsk )
-{
-	if ( cpu_has_fxsr ) {
-		asm volatile( "fxrstor %0"
-			      : : "m" (tsk->thread.i387.fxsave) );
-	} else {
-		asm volatile( "frstor %0"
-			      : : "m" (tsk->thread.i387.fsave) );
-	}
-}
+EXPORT_SYMBOL_GPL(kernel_fpu_begin);
 
 /*
  * FPU tag word conversions.
@@ -176,6 +168,7 @@ unsigned short get_fpu_swd( struct task_struct *tsk )
 	}
 }
 
+#if 0
 unsigned short get_fpu_twd( struct task_struct *tsk )
 {
 	if ( cpu_has_fxsr ) {
@@ -184,6 +177,7 @@ unsigned short get_fpu_twd( struct task_struct *tsk )
 		return (unsigned short)tsk->thread.i387.fsave.twd;
 	}
 }
+#endif  /*  0  */
 
 unsigned short get_fpu_mxcsr( struct task_struct *tsk )
 {
@@ -193,6 +187,8 @@ unsigned short get_fpu_mxcsr( struct task_struct *tsk )
 		return 0x1f80;
 	}
 }
+
+#if 0
 
 void set_fpu_cwd( struct task_struct *tsk, unsigned short cwd )
 {
@@ -220,6 +216,8 @@ void set_fpu_twd( struct task_struct *tsk, unsigned short twd )
 		tsk->thread.i387.fsave.twd = ((long)twd | 0xffff0000u);
 	}
 }
+
+#endif  /*  0  */
 
 /*
  * FXSR floating point environment conversions.
@@ -331,13 +329,13 @@ static int save_i387_fxsave( struct _fpstate __user *buf )
 
 int save_i387( struct _fpstate __user *buf )
 {
-	if ( !current->used_math )
+	if ( !used_math() )
 		return 0;
 
 	/* This will cause a "finit" to be triggered by the next
 	 * attempted FPU operation by the 'current' process.
 	 */
-	current->used_math = 0;
+	clear_used_math();
 
 	if ( HAVE_HWFP ) {
 		if ( cpu_has_fxsr ) {
@@ -383,7 +381,7 @@ int restore_i387( struct _fpstate __user *buf )
 	} else {
 		err = restore_i387_soft( &current->thread.i387.soft, buf );
 	}
-	current->used_math = 1;
+	set_used_math();
 	return err;
 }
 
@@ -507,7 +505,7 @@ int dump_fpu( struct pt_regs *regs, struct user_i387_struct *fpu )
 	int fpvalid;
 	struct task_struct *tsk = current;
 
-	fpvalid = tsk->used_math;
+	fpvalid = !!used_math();
 	if ( fpvalid ) {
 		unlazy_fpu( tsk );
 		if ( cpu_has_fxsr ) {
@@ -519,10 +517,11 @@ int dump_fpu( struct pt_regs *regs, struct user_i387_struct *fpu )
 
 	return fpvalid;
 }
+EXPORT_SYMBOL(dump_fpu);
 
 int dump_task_fpu(struct task_struct *tsk, struct user_i387_struct *fpu)
 {
-	int fpvalid = tsk->used_math;
+	int fpvalid = !!tsk_used_math(tsk);
 
 	if (fpvalid) {
 		if (tsk == current)
@@ -537,7 +536,7 @@ int dump_task_fpu(struct task_struct *tsk, struct user_i387_struct *fpu)
 
 int dump_task_extended_fpu(struct task_struct *tsk, struct user_fxsr_struct *fpu)
 {
-	int fpvalid = tsk->used_math && cpu_has_fxsr;
+	int fpvalid = tsk_used_math(tsk) && cpu_has_fxsr;
 
 	if (fpvalid) {
 		if (tsk == current)

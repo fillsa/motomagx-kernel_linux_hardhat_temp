@@ -56,10 +56,10 @@ static char* pcbit_devname[MAX_PCBIT_CARDS] = {
  * prototypes
  */
 
-int pcbit_command(isdn_ctrl* ctl);
-int pcbit_stat(u_char __user * buf, int len, int, int);
-int pcbit_xmit(int driver, int chan, int ack, struct sk_buff *skb);
-int pcbit_writecmd(const u_char __user *, int, int, int);
+static int pcbit_command(isdn_ctrl* ctl);
+static int pcbit_stat(u_char __user * buf, int len, int, int);
+static int pcbit_xmit(int driver, int chan, int ack, struct sk_buff *skb);
+static int pcbit_writecmd(const u_char __user *, int, int, int);
 
 static int set_protocol_running(struct pcbit_dev * dev);
 
@@ -96,7 +96,7 @@ int pcbit_init_dev(int board, int mem_base, int irq)
 			dev_pcbit[board] = NULL;
 			return -EACCES;
 		}
-		dev->sh_mem = (unsigned char*)ioremap(dev->ph_mem, 4096);
+		dev->sh_mem = ioremap(dev->ph_mem, 4096);
 	}
 	else 
 	{
@@ -109,7 +109,7 @@ int pcbit_init_dev(int board, int mem_base, int irq)
 	dev->b1 = kmalloc(sizeof(struct pcbit_chan), GFP_KERNEL);
 	if (!dev->b1) {
 		printk("pcbit_init: couldn't malloc pcbit_chan struct\n");
-		iounmap((unsigned char*)dev->sh_mem);
+		iounmap(dev->sh_mem);
 		release_mem_region(dev->ph_mem, 4096);
 		kfree(dev);
 		return -ENOMEM;
@@ -119,7 +119,7 @@ int pcbit_init_dev(int board, int mem_base, int irq)
 	if (!dev->b2) {
 		printk("pcbit_init: couldn't malloc pcbit_chan struct\n");
 		kfree(dev->b1);
-		iounmap((unsigned char*)dev->sh_mem);
+		iounmap(dev->sh_mem);
 		release_mem_region(dev->ph_mem, 4096);
 		kfree(dev);
 		return -ENOMEM;
@@ -139,7 +139,7 @@ int pcbit_init_dev(int board, int mem_base, int irq)
 	{
 		kfree(dev->b1);
 		kfree(dev->b2);
-		iounmap((unsigned char*)dev->sh_mem);
+		iounmap(dev->sh_mem);
 		release_mem_region(dev->ph_mem, 4096);
 		kfree(dev);
 		dev_pcbit[board] = NULL;
@@ -161,7 +161,7 @@ int pcbit_init_dev(int board, int mem_base, int irq)
 		free_irq(irq, dev);
 		kfree(dev->b1);
 		kfree(dev->b2);
-		iounmap((unsigned char*)dev->sh_mem);
+		iounmap(dev->sh_mem);
 		release_mem_region(dev->ph_mem, 4096);
 		kfree(dev);
 		dev_pcbit[board] = NULL;
@@ -193,7 +193,7 @@ int pcbit_init_dev(int board, int mem_base, int irq)
 		free_irq(irq, dev);
 		kfree(dev->b1);
 		kfree(dev->b2);
-		iounmap((unsigned char*)dev->sh_mem);
+		iounmap(dev->sh_mem);
 		release_mem_region(dev->ph_mem, 4096);
 		kfree(dev);
 		dev_pcbit[board] = NULL;
@@ -231,14 +231,14 @@ void pcbit_terminate(int board)
 			del_timer(&dev->b2->fsm_timer);
 		kfree(dev->b1);
 		kfree(dev->b2);
-		iounmap((unsigned char*)dev->sh_mem);
+		iounmap(dev->sh_mem);
 		release_mem_region(dev->ph_mem, 4096);
 		kfree(dev);
 	}
 }
 #endif
 
-int pcbit_command(isdn_ctrl* ctl)
+static int pcbit_command(isdn_ctrl* ctl)
 {
 	struct pcbit_dev  *dev;
 	struct pcbit_chan *chan;
@@ -330,7 +330,7 @@ static void pcbit_block_timer(unsigned long data)
 }
 #endif
 
-int pcbit_xmit(int driver, int chnum, int ack, struct sk_buff *skb)
+static int pcbit_xmit(int driver, int chnum, int ack, struct sk_buff *skb)
 {
 	ushort hdrlen;
 	int refnum, len;
@@ -389,7 +389,7 @@ int pcbit_xmit(int driver, int chnum, int ack, struct sk_buff *skb)
 	return len;
 }
 
-int pcbit_writecmd(const u_char __user *buf, int len, int driver, int channel)
+static int pcbit_writecmd(const u_char __user *buf, int len, int driver, int channel)
 {
 	struct pcbit_dev * dev;
 	int i, j;
@@ -713,7 +713,7 @@ static char statbuf[STATBUF_LEN];
 static int stat_st = 0;
 static int stat_end = 0;
 
-int pcbit_stat(u_char __user *buf, int len, int driver, int channel)
+static int pcbit_stat(u_char __user *buf, int len, int driver, int channel)
 {
 	int stat_count;
 	stat_count = stat_end - stat_st;

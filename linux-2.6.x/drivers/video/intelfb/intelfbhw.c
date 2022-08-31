@@ -98,6 +98,11 @@ intelfbhw_get_chipset(struct pci_dev *pdev, const char **name, int *chipset,
 		*chipset = INTEL_865G;
 		*mobile = 0;
 		return 0;
+	case PCI_DEVICE_ID_INTEL_915G:
+		*name = "Intel(R) 915G";
+		*chipset = INTEL_915G;
+		*mobile = 0;
+		return 0;
 	default:
 		return 1;
 	}
@@ -168,6 +173,12 @@ intelfbhw_get_memory(struct pci_dev *pdev, int *aperture_size,
 			return 0;
 		case INTEL_855_GMCH_GMS_STOLEN_32M:
 			*stolen_size = MB(32) - KB(132);
+			return 0;
+		case INTEL_915G_GMCH_GMS_STOLEN_48M:
+			*stolen_size = MB(48) - KB(132);
+			return 0;
+		case INTEL_915G_GMCH_GMS_STOLEN_64M:
+			*stolen_size = MB(64) - KB(132);
 			return 0;
 		case INTEL_855_GMCH_GMS_DISABLED:
 			ERR_MSG("video memory is disabled\n");
@@ -1207,6 +1218,22 @@ intelfbhw_program_mode(struct intelfb_info *dinfo,
 	OUTREG(ADPA, tmp);
 
 	/* setup display plane */
+	if (dinfo->pdev->device == PCI_DEVICE_ID_INTEL_830M) {
+		/*
+		 *      i830M errata: the display plane must be enabled
+		 *      to allow writes to the other bits in the plane
+		 *      control register.
+		 */
+		tmp = INREG(DSPACNTR);
+		if ((tmp & DISPPLANE_PLANE_ENABLE) != DISPPLANE_PLANE_ENABLE) {
+			tmp |= DISPPLANE_PLANE_ENABLE;
+			OUTREG(DSPACNTR, tmp);
+			OUTREG(DSPACNTR,
+			       hw->disp_a_ctrl|DISPPLANE_PLANE_ENABLE);
+			mdelay(1);
+              }
+	}
+
 	OUTREG(DSPACNTR, hw->disp_a_ctrl & ~DISPPLANE_PLANE_ENABLE);
 	OUTREG(DSPASTRIDE, hw->disp_a_stride);
 	OUTREG(DSPABASE, hw->disp_a_base);

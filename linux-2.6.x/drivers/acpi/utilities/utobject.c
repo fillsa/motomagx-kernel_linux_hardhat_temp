@@ -5,7 +5,7 @@
  *****************************************************************************/
 
 /*
- * Copyright (C) 2000 - 2004, R. Byron Moore
+ * Copyright (C) 2000 - 2005, R. Byron Moore
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -50,6 +50,25 @@
 #define _COMPONENT          ACPI_UTILITIES
 	 ACPI_MODULE_NAME    ("utobject")
 
+/* Local prototypes */
+
+static acpi_status
+acpi_ut_get_simple_object_size (
+	union acpi_operand_object       *obj,
+	acpi_size                       *obj_length);
+
+static acpi_status
+acpi_ut_get_package_object_size (
+	union acpi_operand_object       *obj,
+	acpi_size                       *obj_length);
+
+static acpi_status
+acpi_ut_get_element_length (
+	u8                              object_type,
+	union acpi_operand_object       *source_object,
+	union acpi_generic_state        *state,
+	void                            *context);
+
 
 /*******************************************************************************
  *
@@ -60,7 +79,7 @@
  *              component_id        - Component type of caller
  *              Type                - ACPI Type of the new object
  *
- * RETURN:      Object              - The new object.  Null on failure
+ * RETURN:      A new internal object, null on failure
  *
  * DESCRIPTION: Create and initialize a new internal object.
  *
@@ -83,7 +102,8 @@ acpi_ut_create_internal_object_dbg (
 	union acpi_operand_object       *second_object;
 
 
-	ACPI_FUNCTION_TRACE_STR ("ut_create_internal_object_dbg", acpi_ut_get_type_name (type));
+	ACPI_FUNCTION_TRACE_STR ("ut_create_internal_object_dbg",
+		acpi_ut_get_type_name (type));
 
 
 	/* Allocate the raw object descriptor */
@@ -99,7 +119,8 @@ acpi_ut_create_internal_object_dbg (
 
 		/* These types require a secondary object */
 
-		second_object = acpi_ut_allocate_object_desc_dbg (module_name, line_number, component_id);
+		second_object = acpi_ut_allocate_object_desc_dbg (module_name,
+				   line_number, component_id);
 		if (!second_object) {
 			acpi_ut_delete_object_desc (object);
 			return_PTR (NULL);
@@ -138,7 +159,7 @@ acpi_ut_create_internal_object_dbg (
  *
  * PARAMETERS:  buffer_size            - Size of buffer to be created
  *
- * RETURN:      Pointer to a new Buffer object
+ * RETURN:      Pointer to a new Buffer object, null on failure
  *
  * DESCRIPTION: Create a fully initialized buffer object
  *
@@ -192,9 +213,9 @@ acpi_ut_create_buffer_object (
  *
  * FUNCTION:    acpi_ut_create_string_object
  *
- * PARAMETERS:  string_size            - Size of string to be created.  Does not
- *                                       include NULL terminator, this is added
- *                                       automatically.
+ * PARAMETERS:  string_size         - Size of string to be created. Does not
+ *                                    include NULL terminator, this is added
+ *                                    automatically.
  *
  * RETURN:      Pointer to a new String object
  *
@@ -249,7 +270,9 @@ acpi_ut_create_string_object (
  *
  * PARAMETERS:  Object              - Object to be validated
  *
- * RETURN:      Validate a pointer to be an union acpi_operand_object
+ * RETURN:      TRUE if object is valid, FALSE otherwise
+ *
+ * DESCRIPTION: Validate a pointer to be an union acpi_operand_object
  *
  ******************************************************************************/
 
@@ -368,6 +391,7 @@ acpi_ut_delete_object_desc (
 }
 
 
+#ifdef ACPI_ENABLE_OBJECT_CACHE
 /*******************************************************************************
  *
  * FUNCTION:    acpi_ut_delete_object_cache
@@ -391,14 +415,15 @@ acpi_ut_delete_object_cache (
 	acpi_ut_delete_generic_cache (ACPI_MEM_LIST_OPERAND);
 	return_VOID;
 }
+#endif
 
 
 /*******************************************************************************
  *
  * FUNCTION:    acpi_ut_get_simple_object_size
  *
- * PARAMETERS:  *internal_object    - Pointer to the object we are examining
- *              *obj_length         - Where the length is returned
+ * PARAMETERS:  internal_object    - An ACPI operand object
+ *              obj_length         - Where the length is returned
  *
  * RETURN:      Status
  *
@@ -410,7 +435,7 @@ acpi_ut_delete_object_cache (
  *
  ******************************************************************************/
 
-acpi_status
+static acpi_status
 acpi_ut_get_simple_object_size (
 	union acpi_operand_object       *internal_object,
 	acpi_size                       *obj_length)
@@ -422,8 +447,10 @@ acpi_ut_get_simple_object_size (
 	ACPI_FUNCTION_TRACE_PTR ("ut_get_simple_object_size", internal_object);
 
 
-	/* Handle a null object (Could be a uninitialized package element -- which is legal) */
-
+	/*
+	 * Handle a null object (Could be a uninitialized package
+	 * element -- which is legal)
+	 */
 	if (!internal_object) {
 		*obj_length = 0;
 		return_ACPI_STATUS (AE_OK);
@@ -478,7 +505,8 @@ acpi_ut_get_simple_object_size (
 			 * Get the actual length of the full pathname to this object.
 			 * The reference will be converted to the pathname to the object
 			 */
-			length += ACPI_ROUND_UP_TO_NATIVE_WORD (acpi_ns_get_pathname_length (internal_object->reference.node));
+			length += ACPI_ROUND_UP_TO_NATIVE_WORD (
+					 acpi_ns_get_pathname_length (internal_object->reference.node));
 			break;
 
 		default:
@@ -528,7 +556,7 @@ acpi_ut_get_simple_object_size (
  *
  ******************************************************************************/
 
-acpi_status
+static acpi_status
 acpi_ut_get_element_length (
 	u8                              object_type,
 	union acpi_operand_object       *source_object,
@@ -580,8 +608,8 @@ acpi_ut_get_element_length (
  *
  * FUNCTION:    acpi_ut_get_package_object_size
  *
- * PARAMETERS:  *internal_object    - Pointer to the object we are examining
- *              *obj_length         - Where the length is returned
+ * PARAMETERS:  internal_object     - An ACPI internal object
+ *              obj_length          - Where the length is returned
  *
  * RETURN:      Status
  *
@@ -593,7 +621,7 @@ acpi_ut_get_element_length (
  *
  ******************************************************************************/
 
-acpi_status
+static acpi_status
 acpi_ut_get_package_object_size (
 	union acpi_operand_object       *internal_object,
 	acpi_size                       *obj_length)
@@ -634,8 +662,8 @@ acpi_ut_get_package_object_size (
  *
  * FUNCTION:    acpi_ut_get_object_size
  *
- * PARAMETERS:  *internal_object    - Pointer to the object we are examining
- *              *obj_length         - Where the length will be returned
+ * PARAMETERS:  internal_object     - An ACPI internal object
+ *              obj_length          - Where the length will be returned
  *
  * RETURN:      Status
  *
@@ -645,7 +673,7 @@ acpi_ut_get_package_object_size (
  ******************************************************************************/
 
 acpi_status
-acpi_ut_get_object_size(
+acpi_ut_get_object_size (
 	union acpi_operand_object       *internal_object,
 	acpi_size                       *obj_length)
 {

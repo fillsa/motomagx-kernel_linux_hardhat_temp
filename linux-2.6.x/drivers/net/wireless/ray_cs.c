@@ -46,7 +46,6 @@
 #include <linux/skbuff.h>
 #include <linux/ethtool.h>
 
-#include <pcmcia/version.h>
 #include <pcmcia/cs_types.h>
 #include <pcmcia/cs.h>
 #include <pcmcia/cistpl.h>
@@ -84,7 +83,7 @@ typedef u_char	mac_addr[ETH_ALEN];	/* Hardware address */
 #ifdef PCMCIA_DEBUG
 static int ray_debug;
 static int pc_debug = PCMCIA_DEBUG;
-MODULE_PARM(pc_debug, "i");
+module_param(pc_debug, int, 0);
 /* #define DEBUG(n, args...) if (pc_debug>(n)) printk(KERN_DEBUG args); */
 #define DEBUG(n, args...) if (pc_debug>(n)) printk(args);
 #else
@@ -155,15 +154,8 @@ static void join_net(u_long local);
 static void start_net(u_long local);
 /* void start_net(ray_dev_t *local); */
 
-/* Create symbol table for registering with kernel in init_module */
-EXPORT_SYMBOL(ray_dev_ioctl);
-EXPORT_SYMBOL(ray_rx);
-
 /*===========================================================================*/
 /* Parameters that can be set with 'insmod' */
-/* Bit map of interrupts to choose from */
-/* This means pick from 15, 14, 12, 11, 10, 9, 7, 5, 4, and 3 */
-static u_long irq_mask = 0xdeb8;
 
 /* ADHOC=0, Infrastructure=1 */
 static int net_type = ADHOC;
@@ -226,18 +218,17 @@ MODULE_AUTHOR("Corey Thomas <corey@world.std.com>");
 MODULE_DESCRIPTION("Raylink/WebGear wireless LAN driver");
 MODULE_LICENSE("GPL");
 
-MODULE_PARM(irq_mask,"i");
-MODULE_PARM(net_type,"i");
-MODULE_PARM(hop_dwell,"i");
-MODULE_PARM(beacon_period,"i");
-MODULE_PARM(psm,"i");
-MODULE_PARM(essid,"s");
-MODULE_PARM(translate,"i");
-MODULE_PARM(country,"i");
-MODULE_PARM(sniffer,"i");
-MODULE_PARM(bc,"i");
-MODULE_PARM(phy_addr,"s");
-MODULE_PARM(ray_mem_speed, "i");
+module_param(net_type, int, 0);
+module_param(hop_dwell, int, 0);
+module_param(beacon_period, int, 0);
+module_param(psm, int, 0);
+module_param(essid, charp, 0);
+module_param(translate, int, 0);
+module_param(country, int, 0);
+module_param(sniffer, int, 0);
+module_param(bc, int, 0);
+module_param(phy_addr, charp, 0);
+module_param(ray_mem_speed, int, 0);
 
 static UCHAR b5_default_startup_parms[] = {
     0,   0,                         /* Adhoc station */
@@ -358,8 +349,7 @@ static dev_link_t *ray_attach(void)
 
     /* Interrupt setup. For PCMCIA, driver takes what's given */
     link->irq.Attributes = IRQ_TYPE_EXCLUSIVE | IRQ_HANDLE_PRESENT;
-    link->irq.IRQInfo1 = IRQ_INFO2_VALID | IRQ_LEVEL_ID;
-    link->irq.IRQInfo2 = irq_mask;
+    link->irq.IRQInfo1 = IRQ_LEVEL_ID;
     link->irq.Handler = &ray_interrupt;
 
     /* General socket configuration */
@@ -402,12 +392,6 @@ static dev_link_t *ray_attach(void)
     link->next = dev_list;
     dev_list = link;
     client_reg.dev_info = &dev_info;
-    client_reg.Attributes = INFO_IO_CLIENT | INFO_CARD_SHARE;
-    client_reg.EventMask =
-        CS_EVENT_CARD_INSERTION | CS_EVENT_CARD_REMOVAL |
-        CS_EVENT_RESET_PHYSICAL | CS_EVENT_CARD_RESET |
-        CS_EVENT_PM_SUSPEND | CS_EVENT_PM_RESUME;
-    client_reg.event_handler = &ray_event;
     client_reg.Version = 0x0210;
     client_reg.event_callback_args.client_data = link;
 
@@ -568,6 +552,7 @@ static void ray_config(dev_link_t *link)
         return;
     }
 
+    SET_NETDEV_DEV(dev, &handle_to_dev(handle));
     i = register_netdev(dev);
     if (i != 0) {
         printk("ray_config register_netdev() failed\n");
@@ -1224,6 +1209,9 @@ static int ray_dev_ioctl(struct net_device *dev, struct ifreq *ifr, int cmd)
 #if WIRELESS_EXT > 7
     struct iwreq *wrq = (struct iwreq *) ifr;
 #endif	/* WIRELESS_EXT > 7 */
+#ifdef WIRELESS_SPY
+    struct sockaddr	address[IW_MAX_SPY];
+#endif	/* WIRELESS_SPY */
 
     if (!(link->state & DEV_PRESENT)) {
         DEBUG(2,"ray_dev_ioctl - device not present\n");
@@ -1520,7 +1508,6 @@ static int ray_dev_ioctl(struct net_device *dev, struct ifreq *ifr, int cmd)
       /* If there is some addresses to copy */
       if(local->spy_number > 0)
 	{
-	  struct sockaddr	address[IW_MAX_SPY];
 	  int			i;
 
 	  /* Copy addresses to the driver */
@@ -1560,7 +1547,6 @@ static int ray_dev_ioctl(struct net_device *dev, struct ifreq *ifr, int cmd)
       /* If the user want to have the addresses back... */
       if((local->spy_number > 0) && (wrq->u.data.pointer != (caddr_t) 0))
 	{
-	  struct sockaddr	address[IW_MAX_SPY];
 	  int			i;
 
 	  /* Copy addresses from the lp structure */
@@ -2912,13 +2898,21 @@ static int write_int(struct file *file, const char __user *buffer, unsigned long
 }
 #endif
 
+static struct pcmcia_device_id ray_ids[] = {
+	PCMCIA_DEVICE_MANF_CARD(0x01a6, 0x0000),
+	PCMCIA_DEVICE_NULL,
+};
+MODULE_DEVICE_TABLE(pcmcia, ray_ids);
+
 static struct pcmcia_driver ray_driver = {
 	.owner		= THIS_MODULE,
 	.drv		= {
 		.name	= "ray_cs",
 	},
 	.attach		= ray_attach,
+	.event		= ray_event,
 	.detach		= ray_detach,
+	.id_table       = ray_ids,
 };
 
 static int __init init_ray_cs(void)
@@ -2956,8 +2950,7 @@ static void __exit exit_ray_cs(void)
 #endif
 
     pcmcia_unregister_driver(&ray_driver);
-    while (dev_list != NULL)
-        ray_detach(dev_list);
+    BUG_ON(dev_list != NULL);
 } /* exit_ray_cs */
 
 module_init(init_ray_cs);

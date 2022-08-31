@@ -43,7 +43,6 @@
 #include <asm/hd64465/hd64465.h>
 #include <asm/hd64465/io.h>
 
-#include <pcmcia/version.h>
 #include <pcmcia/cs_types.h>
 #include <pcmcia/cs.h>
 #include <pcmcia/cistpl.h>
@@ -353,20 +352,6 @@ static int hs_init(struct pcmcia_socket *s)
 
 /*============================================================*/
 
-static int hs_suspend(struct pcmcia_socket *s)
-{
-#ifdef HD64465_DEBUG
-    	hs_socket_t *sp = container_of(s, struct hs_socket_t, socket);
-    	DPRINTK("hs_suspend(%d)\n", sp->number);
-#endif
-
-    	/* TODO */
-	
-	return 0;
-}
-
-/*============================================================*/
-
 
 static int hs_get_status(struct pcmcia_socket *s, u_int *value)
 {
@@ -566,7 +551,7 @@ static int hs_set_io_map(struct pcmcia_socket *s, struct pccard_io_map *io)
 	struct pccard_io_map *sio;
 	pgprot_t prot;
 
-    	DPRINTK("hs_set_io_map(sock=%d, map=%d, flags=0x%x, speed=%dns, start=0x%04x, stop=0x%04x)\n",
+    	DPRINTK("hs_set_io_map(sock=%d, map=%d, flags=0x%x, speed=%dns, start=%#lx, stop=%#lx)\n",
 	    sock, map, io->flags, io->speed, io->start, io->stop);
 	if (map >= MAX_IO_WIN)
 	    return -EINVAL;
@@ -763,7 +748,6 @@ static irqreturn_t hs_interrupt(int irq, void *dev, struct pt_regs *regs)
 
 static struct pccard_operations hs_operations = {
 	.init			= hs_init,
-	.suspend		= hs_suspend,
 	.get_status		= hs_get_status,
 	.get_socket		= hs_get_socket,
 	.set_socket		= hs_set_socket,
@@ -860,7 +844,7 @@ static void hs_exit_socket(hs_socket_t *sp)
 	local_irq_restore(flags);
 }
 
-static int hd64465_suspend(struct device *dev, u32 state, u32 level)
+static int hd64465_suspend(struct device *dev, pm_message_t state, u32 level)
 {
 	int ret = 0;
 	if (level == SUSPEND_SAVE_STATE)
@@ -922,6 +906,7 @@ static int __init init_hs(void)
 		hs_set_voltages(&hs_sockets[i], 0, 0);
 
 		hs_sockets[i].socket.features |=  SS_CAP_PCCARD | SS_CAP_STATIC_MAP;      /* mappings are fixed in host memory */
+		hs_sockets[i].socket.resource_ops = &pccard_static_ops;
 		hs_sockets[i].socket.irq_mask =  0xffde;/*0xffff*/	    /* IRQs mapped in s/w so can do any, really */
 		hs_sockets[i].socket.map_size = HD64465_PCC_WINDOW;     /* 16MB fixed window size */
 

@@ -195,6 +195,13 @@ static int uart_startup(struct uart_state *state, int init_hw)
 				uart_set_mctrl(port, TIOCM_RTS | TIOCM_DTR);
 		}
 
+		if (info->flags & UIF_CTS_FLOW) {
+			spin_lock_irq(&port->lock);
+			if (!(port->ops->get_mctrl(port) & TIOCM_CTS))
+				info->tty->hw_stopped = 1;
+			spin_unlock_irq(&port->lock);
+		}
+
 		info->flags |= UIF_INITIALIZED;
 
 		clear_bit(TTY_IO_ERROR, &info->tty->flags);
@@ -841,7 +848,10 @@ static int uart_tiocmget(struct tty_struct *tty, struct file *file)
 	if ((!file || !tty_hung_up_p(file)) &&
 	    !(tty->flags & (1 << TTY_IO_ERROR))) {
 		result = port->mctrl;
+
+		spin_lock_irq(&port->lock);
 		result |= port->ops->get_mctrl(port);
+		spin_unlock_irq(&port->lock);
 	}
 	up(&state->sem);
 
@@ -1131,10 +1141,7 @@ uart_ioctl(struct tty_struct *tty, struct file *filp, unsigned int cmd,
 	case TIOCGICOUNT:
 		ret = uart_get_count(state, uarg);
 		break;
-	
 	}
-	
-
 
 	if (ret != -ENOIOCTLCMD)
 		goto out;
@@ -1214,6 +1221,16 @@ static void uart_set_termios(struct tty_struct *tty, struct termios *old_termios
 		spin_lock_irqsave(&state->port->lock, flags);
 		tty->hw_stopped = 0;
 		__uart_start(tty);
+		spin_unlock_irqrestore(&state->port->lock, flags);
+	}
+
+	/* Handle turning on CRTSCTS */
+	if (!(old_termios->c_cflag & CRTSCTS) && (cflag & CRTSCTS)) {
+		spin_lock_irqsave(&state->port->lock, flags);
+		if (!(state->port->ops->get_mctrl(state->port) & TIOCM_CTS)) {
+			tty->hw_stopped = 1;
+			state->port->ops->stop_tx(state->port, 0);
+		}
 		spin_unlock_irqrestore(&state->port->lock, flags);
 	}
 
@@ -1465,6 +1482,7 @@ uart_block_til_ready(struct file *filp, struct uart_state *state)
 	DECLARE_WAITQUEUE(wait, current);
 	struct uart_info *info = state->info;
 	struct uart_port *port = state->port;
+	unsigned int mctrl;
 
 	info->blocked_open++;
 	state->count--;
@@ -1512,7 +1530,10 @@ uart_block_til_ready(struct file *filp, struct uart_state *state)
 		 * and wait for the carrier to indicate that the
 		 * modem is ready for us.
 		 */
-		if (port->ops->get_mctrl(port) & TIOCM_CAR)
+		spin_lock_irq(&port->lock);
+		mctrl = port->ops->get_mctrl(port);
+		spin_unlock_irq(&port->lock);
+		if (mctrl & TIOCM_CAR)
 			break;
 
 		up(&state->sem);
@@ -1714,7 +1735,9 @@ static int uart_line_info(char *buf, struct uart_driver *drv, int i)
 
 	if(capable(CAP_SYS_ADMIN))
 	{
+		spin_lock_irq(&port->lock);
 		status = port->ops->get_mctrl(port);
+		spin_unlock_irq(&port->lock);
 
 		ret += sprintf(buf + ret, " tx:%d rx:%d",
 				port->icount.tx, port->icount.rx);
@@ -1878,6 +1901,12 @@ uart_set_options(struct uart_port *port, struct console *co,
 	struct termios termios;
 	int i;
 
+	/*
+	 * Ensure that the serial console lock is initialised
+	 * early.
+	 */
+	spin_lock_init(&port->lock);
+
 	memset(&termios, 0, sizeof(struct termios));
 
 	termios.c_cflag = CREAD | HUPCL | CLOCAL;
@@ -1971,12 +2000,12 @@ int uart_suspend_port(struct uart_driver *drv, struct uart_port *port)
 
 		ops->shutdown(port);
 	}
+
 	/*
 	 * Disable the console device before suspending.
 	 */
 	if (uart_console(port))
 		console_stop(port->cons);
-
 #endif
 
 	uart_change_pm(state, 3);
@@ -1998,14 +2027,14 @@ int uart_resume_port(struct uart_driver *drv, struct uart_port *port)
 	if (state->info && state->info->flags & UIF_INITIALIZED) {
 		struct uart_ops *ops = port->ops;
 
-                ops->startup(port);
-                /*
-                 * Re-enable the console device after suspending.
-                 */
-                if (uart_console(port)) {
+	 ops->startup(port);
+	 /*
+	 * Re-enable the console device after suspending.
+	 */
+	if (uart_console(port)) {
                         uart_change_speed(state, NULL);
                         console_start(port->cons);
-                }
+	}
                 ops->set_mctrl(port, 0);
                 uart_change_speed(state, NULL);
                 spin_lock_irq(&port->lock);
@@ -2016,21 +2045,37 @@ int uart_resume_port(struct uart_driver *drv, struct uart_port *port)
 #else
 	/*
 	 * Re-enable the console device after suspending.
- 	 */
-        if (uart_console(port)) {
-                uart_change_speed(state, NULL);
-                console_start(port->cons);
-        }
-        if (state->info && state->info->flags & UIF_INITIALIZED) {
-                struct uart_ops *ops = port->ops;
-                ops->set_mctrl(port, 0);
-                ops->startup(port);
-                uart_change_speed(state, NULL);
-                spin_lock_irq(&port->lock);
-                ops->set_mctrl(port, port->mctrl);
-                ops->start_tx(port, 0);
-                spin_unlock_irq(&port->lock);
-       }
+	 */
+	if (uart_console(port)) {
+		struct termios termios;
+
+		/*
+		 * First try to use the console cflag setting.
+		 */
+		memset(&termios, 0, sizeof(struct termios));
+		termios.c_cflag = port->cons->cflag;
+
+		/*
+		 * If that's unset, use the tty termios setting.
+		 */
+		if (state->info && state->info->tty && termios.c_cflag == 0)
+			termios = *state->info->tty->termios;
+
+		port->ops->set_termios(port, &termios, NULL);
+		console_start(port->cons);
+	}
+
+	if (state->info && state->info->flags & UIF_INITIALIZED) {
+		struct uart_ops *ops = port->ops;
+
+		ops->set_mctrl(port, 0);
+		ops->startup(port);
+		uart_change_speed(state, NULL);
+		spin_lock_irq(&port->lock);
+		ops->set_mctrl(port, port->mctrl);
+		ops->start_tx(port, 0);
+		spin_unlock_irq(&port->lock);
+	}
 #endif
 	up(&state->sem);
 
@@ -2295,9 +2340,15 @@ int uart_add_one_port(struct uart_driver *drv, struct uart_port *port)
 
 	state->port = port;
 
-	spin_lock_init(&port->lock);
 	port->cons = drv->cons;
 	port->info = state->info;
+
+	/*
+	 * If this port is a console, then the spinlock is already
+	 * initialised.
+	 */
+	if (!uart_console(port))
+		spin_lock_init(&port->lock);
 
 	uart_configure_port(drv, state, port);
 
@@ -2358,7 +2409,7 @@ int uart_remove_one_port(struct uart_driver *drv, struct uart_port *port)
 /*
  *	Are the two ports equivalent?
  */
-static int uart_match_port(struct uart_port *port1, struct uart_port *port2)
+int uart_match_port(struct uart_port *port1, struct uart_port *port2)
 {
 	if (port1->iotype != port2->iotype)
 		return 0;
@@ -2374,6 +2425,7 @@ static int uart_match_port(struct uart_port *port1, struct uart_port *port2)
 	}
 	return 0;
 }
+EXPORT_SYMBOL(uart_match_port);
 
 /*
  *	Try to find an unused uart_state slot for a port.
@@ -2517,5 +2569,6 @@ EXPORT_SYMBOL(uart_remove_one_port);
 #ifdef CONFIG_MOT_FEAT_SERIAL 
 EXPORT_SYMBOL(uart_pm_functions);
 #endif
+
 MODULE_DESCRIPTION("Serial driver core");
 MODULE_LICENSE("GPL");

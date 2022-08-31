@@ -84,7 +84,8 @@ extern struct movsl_mask {
 #define access_ok(type,addr,size) (likely(__range_ok(addr,size) == 0))
 
 /**
- * verify_area: - Obsolete, use access_ok()
+ * verify_area: - Obsolete/deprecated and will go away soon,
+ * use access_ok() instead.
  * @type: Type of access: %VERIFY_READ or %VERIFY_WRITE
  * @addr: User space pointer to start of block to check
  * @size: Size of block to check
@@ -100,7 +101,7 @@ extern struct movsl_mask {
  *
  * See access_ok() for more details.
  */
-static inline int verify_area(int type, const void __user * addr, unsigned long size)
+static inline int __deprecated verify_area(int type, const void __user * addr, unsigned long size)
 {
 	return access_ok(type,addr,size) ? 0 : -EFAULT;
 }
@@ -170,7 +171,8 @@ extern void __get_user_4(void);
  * On error, the variable @x is set to zero.
  */
 #define get_user(x,ptr)							\
-({	int __ret_gu,__val_gu;						\
+({	int __ret_gu;							\
+	unsigned long __val_gu;						\
 	__chk_user_ptr(ptr);						\
 	switch(sizeof (*(ptr))) {					\
 	case 1:  __get_user_x(1,__ret_gu,__val_gu,ptr); break;		\
@@ -183,6 +185,21 @@ extern void __get_user_4(void);
 })
 
 extern void __put_user_bad(void);
+
+/*
+ * Strange magic calling convention: pointer in %ecx,
+ * value in %eax(:%edx), return value in %eax, no clobbers.
+ */
+extern void __put_user_1(void);
+extern void __put_user_2(void);
+extern void __put_user_4(void);
+extern void __put_user_8(void);
+
+#define __put_user_1(x, ptr) __asm__ __volatile__("call __put_user_1":"=a" (__ret_pu):"0" ((typeof(*(ptr)))(x)), "c" (ptr))
+#define __put_user_2(x, ptr) __asm__ __volatile__("call __put_user_2":"=a" (__ret_pu):"0" ((typeof(*(ptr)))(x)), "c" (ptr))
+#define __put_user_4(x, ptr) __asm__ __volatile__("call __put_user_4":"=a" (__ret_pu):"0" ((typeof(*(ptr)))(x)), "c" (ptr))
+#define __put_user_8(x, ptr) __asm__ __volatile__("call __put_user_8":"=a" (__ret_pu):"A" ((typeof(*(ptr)))(x)), "c" (ptr))
+#define __put_user_X(x, ptr) __asm__ __volatile__("call __put_user_X":"=a" (__ret_pu):"c" (ptr))
 
 /**
  * put_user: - Write a simple value into user space.
@@ -200,9 +217,35 @@ extern void __put_user_bad(void);
  *
  * Returns zero on success, or -EFAULT on error.
  */
-#define put_user(x,ptr)							\
-  __put_user_check((__typeof__(*(ptr)))(x),(ptr),sizeof(*(ptr)))
+#ifdef CONFIG_X86_WP_WORKS_OK
 
+#define put_user(x,ptr)						\
+({	int __ret_pu;						\
+	__chk_user_ptr(ptr);					\
+	switch(sizeof(*(ptr))) {				\
+	case 1: __put_user_1(x, ptr); break;			\
+	case 2: __put_user_2(x, ptr); break;			\
+	case 4: __put_user_4(x, ptr); break;			\
+	case 8: __put_user_8(x, ptr); break;			\
+	default:__put_user_X(x, ptr); break;			\
+	}							\
+	__ret_pu;						\
+})
+
+#else
+#define put_user(x,ptr)						\
+({								\
+ 	int __ret_pu;						\
+	__typeof__(*(ptr)) __pus_tmp = x;			\
+	__ret_pu=0;						\
+	if(unlikely(__copy_to_user_ll(ptr, &__pus_tmp,		\
+				sizeof(*(ptr))) != 0))		\
+ 		__ret_pu=-EFAULT;				\
+ 	__ret_pu;						\
+ })
+
+
+#endif
 
 /**
  * __get_user: - Get a simple variable from user space, with less checking.
@@ -258,16 +301,6 @@ extern void __put_user_bad(void);
 })
 
 
-#define __put_user_check(x,ptr,size)					\
-({									\
-	long __pu_err = -EFAULT;					\
-	__typeof__(*(ptr)) __user *__pu_addr = (ptr);			\
-	might_sleep();						\
-	if (access_ok(VERIFY_WRITE,__pu_addr,size))			\
-		__put_user_size((x),__pu_addr,(size),__pu_err,-EFAULT);	\
-	__pu_err;							\
-})							
-
 #define __put_user_u64(x, addr, err)				\
 	__asm__ __volatile__(					\
 		"1:	movl %%eax,0(%2)\n"			\
@@ -313,7 +346,7 @@ do {									\
 
 #endif
 struct __large_struct { unsigned long buf[100]; };
-#define __m(x) (*(struct __large_struct *)(x))
+#define __m(x) (*(struct __large_struct __user *)(x))
 
 /*
  * Tell gcc we read from memory instead of writing: this is because
@@ -338,7 +371,8 @@ struct __large_struct { unsigned long buf[100]; };
 
 #define __get_user_nocheck(x,ptr,size)				\
 ({								\
-	long __gu_err, __gu_val;				\
+	long __gu_err;						\
+	unsigned long __gu_val;					\
 	__get_user_size(__gu_val,(ptr),(size),__gu_err,-EFAULT);\
 	(x) = (__typeof__(*(ptr)))__gu_val;			\
 	__gu_err;						\

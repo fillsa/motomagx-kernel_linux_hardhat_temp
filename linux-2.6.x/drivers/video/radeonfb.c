@@ -80,7 +80,7 @@
 #include <video/radeon.h>
 #include <linux/radeonfb.h>
 
-#define DEBUG	1
+#define DEBUG  0
 
 #if DEBUG
 #define RTRACE		printk
@@ -621,30 +621,6 @@ static void _radeon_engine_reset(struct radeonfb_info *rinfo)
 #define radeon_engine_reset()		_radeon_engine_reset(rinfo)
 
 
-static __inline__ u8 radeon_get_post_div_bitval(int post_div)
-{
-        switch (post_div) {
-                case 1:
-                        return 0x00;
-                case 2: 
-                        return 0x01;
-                case 3: 
-                        return 0x04;
-                case 4:
-                        return 0x02;
-                case 6:
-                        return 0x06;
-                case 8:
-                        return 0x03;
-                case 12:
-                        return 0x07;
-                default:
-                        return 0x02;
-        }
-}
-
-
-
 static __inline__ int round_div(int num, int den)
 {
         return (num + (den / 2)) / den;
@@ -681,14 +657,17 @@ static __inline__ int _max(int val1, int val2)
 /*
  * globals
  */
-        
-static char *mode_option __initdata;
+
+#ifndef MODULE
+static char *mode_option;
+#endif
+
 static char noaccel = 0;
 static char mirror = 0;
-static int panel_yres __initdata = 0;
-static char force_dfp __initdata = 0;
+static int panel_yres = 0;
+static char force_dfp = 0;
 static struct radeonfb_info *board_list = NULL;
-static char nomtrr __initdata = 0;
+static char nomtrr = 0;
 
 /*
  * prototypes
@@ -838,7 +817,7 @@ static void radeon_get_pllinfo(struct radeonfb_info *rinfo, void __iomem *bios_s
 		if (radeon_read_OF(rinfo)) {
 			unsigned int tmp, Nx, M, ref_div, xclk;
 
-			tmp = INPLL(X_MPLL_REF_FB_DIV);
+			tmp = INPLL(M_SPLL_REF_FB_DIV);
 			ref_div = INPLL(PPLL_REF_DIV) & 0x3ff;
 
 			Nx = (tmp & 0xff00) >> 8;
@@ -2128,7 +2107,7 @@ static void radeon_write_mode (struct radeonfb_info *rinfo,
 
 
 	if (rinfo->arch == RADEON_M6) {
-		for (i=0; i<8; i++)
+		for (i=0; i<7; i++)
 			OUTREG(common_regs_m6[i].reg, common_regs_m6[i].val);
 	} else {
 		for (i=0; i<9; i++)
@@ -3133,28 +3112,8 @@ static struct pci_driver radeonfb_driver = {
 	.remove		= __devexit_p(radeonfb_pci_unregister),
 };
 
-int __init radeonfb_old_setup (char *options);
-
-int __init radeonfb_old_init (void)
-{
 #ifndef MODULE
-	char *option = NULL;
-
-	if (fb_get_options("radeonfb_old", &option))
-		return -ENODEV;
-	radeonfb_old_setup(option);
-#endif
-	return pci_module_init (&radeonfb_driver);
-}
-
-
-void __exit radeonfb_old_exit (void)
-{
-	pci_unregister_driver (&radeonfb_driver);
-}
-
-
-int __init radeonfb_old_setup (char *options)
+static int __init radeonfb_old_setup (char *options)
 {
         char *this_opt;
 
@@ -3180,12 +3139,28 @@ int __init radeonfb_old_setup (char *options)
 
 	return 0;
 }
+#endif  /*  MODULE  */
+
+static int __init radeonfb_old_init (void)
+{
+#ifndef MODULE
+	char *option = NULL;
+
+	if (fb_get_options("radeonfb_old", &option))
+		return -ENODEV;
+	radeonfb_old_setup(option);
+#endif
+	return pci_register_driver (&radeonfb_driver);
+}
+
+
+static void __exit radeonfb_old_exit (void)
+{
+	pci_unregister_driver (&radeonfb_driver);
+}
 
 module_init(radeonfb_old_init);
-
-#ifdef MODULE
 module_exit(radeonfb_old_exit);
-#endif
 
 
 MODULE_AUTHOR("Ani Joshi");

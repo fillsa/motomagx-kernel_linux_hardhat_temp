@@ -125,13 +125,14 @@ void __init init_IRQ(void)
 		irq_desc[i].action  = NULL;
 		irq_desc[i].depth   = 1;
 		irq_desc[i].handler = &no_irq_type;
-		irq_desc[i].lock = RAW_SPIN_LOCK_UNLOCKED;
+		spin_lock_init(&irq_desc[i].lock);
 #ifdef CONFIG_PREEMPT_HARDIRQS
 		irq_desc[i].thread = NULL;
 #endif
 	}
 
 	arch_init_irq();
+
 #ifdef CONFIG_KGDB
 	/*
 	 * We have been called before kgdb_arch_init(). Hence,

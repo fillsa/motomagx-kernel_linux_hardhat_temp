@@ -65,7 +65,6 @@ static int mmc_queue_thread(void *d)
 {
 	struct mmc_queue *mq = d;
 	struct request_queue *q = mq->queue;
-
 	DECLARE_WAITQUEUE(wait, current);
 
 	/*
@@ -82,7 +81,7 @@ static int mmc_queue_thread(void *d)
 	add_wait_queue(&mq->thread_wq, &wait);
 	do {
 		struct request *req = NULL;
-		
+
 		mq->req = NULL;
 		spin_lock_irq(q->queue_lock);
 		set_current_state(TASK_INTERRUPTIBLE);
@@ -96,7 +95,6 @@ static int mmc_queue_thread(void *d)
 			up(&mq->thread_sem);
 			schedule();
 			down(&mq->thread_sem);
-
 			continue;
 		}
 		set_current_state(TASK_RUNNING);

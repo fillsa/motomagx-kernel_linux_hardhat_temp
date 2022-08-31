@@ -35,7 +35,7 @@
 #define DRM_MEMORYBARRIER()		mb()
 /** DRM device local declaration */
 #define DRM_DEVICE	drm_file_t	*priv	= filp->private_data; \
-			drm_device_t	*dev	= priv->dev
+			drm_device_t	*dev	= priv->head->dev
 
 /** IRQ handler arguments and return type and values */
 #define DRM_IRQ_ARGS		int irq, void *arg, struct pt_regs *regs
@@ -89,21 +89,13 @@ static __inline__ int mtrr_del (int reg, unsigned long base,
 	copy_to_user(arg1, arg2, arg3)
 /* Macros for copyfrom user, but checking readability only once */
 #define DRM_VERIFYAREA_READ( uaddr, size ) 		\
-	verify_area( VERIFY_READ, uaddr, size )
+	(access_ok( VERIFY_READ, uaddr, size ) ? 0 : -EFAULT)
 #define DRM_COPY_FROM_USER_UNCHECKED(arg1, arg2, arg3) 	\
 	__copy_from_user(arg1, arg2, arg3)
 #define DRM_COPY_TO_USER_UNCHECKED(arg1, arg2, arg3)	\
 	__copy_to_user(arg1, arg2, arg3)
 #define DRM_GET_USER_UNCHECKED(val, uaddr)		\
 	__get_user(val, uaddr)
-#define DRM_PUT_USER_UNCHECKED(uaddr, val)		\
-	__put_user(val, uaddr)
-
-
-/** 'malloc' without the overhead of DRM(alloc)() */
-#define DRM_MALLOC(x) kmalloc(x, GFP_KERNEL)
-/** 'free' without the overhead of DRM(free)() */
-#define DRM_FREE(x,size) kfree(x)
 
 #define DRM_GET_PRIV_WITH_RETURN(_priv, _filp) _priv = _filp->private_data
 

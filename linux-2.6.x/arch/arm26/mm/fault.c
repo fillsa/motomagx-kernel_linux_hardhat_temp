@@ -1,5 +1,5 @@
 /*
- *  linux/arch/arm/mm/fault-common.c
+ *  linux/arch/arm26/mm/fault.c
  *
  *  Copyright (C) 1995  Linus Torvalds
  *  Modifications for ARM processor (c) 1995-2001 Russell King
@@ -176,12 +176,12 @@ survive:
 	 * Handle the "normal" cases first - successful and sigbus
 	 */
 	switch (fault) {
-	case 2:
+	case VM_FAULT_MAJOR:
 		tsk->maj_flt++;
 		return fault;
-	case 1:
+	case VM_FAULT_MINOR:
 		tsk->min_flt++;
-	case 0:
+	case VM_FAULT_SIGBUS:
 		return fault;
 	}
 
@@ -212,7 +212,6 @@ int do_page_fault(unsigned long addr, unsigned int fsr, struct pt_regs *regs)
 	tsk = current;
 	mm  = tsk->mm;
 
-	printk("do_page_fault: pid: %d      %08x\n", tsk->pid, addr);
 	/*
 	 * If we're in an interrupt or have no user
 	 * context, we must not take the fault..
@@ -227,14 +226,11 @@ int do_page_fault(unsigned long addr, unsigned int fsr, struct pt_regs *regs)
 	/*
 	 * Handle the "normal" case first
 	 */
-	if (fault > 0)
+	switch (fault) {
+	case VM_FAULT_MINOR:
+	case VM_FAULT_MAJOR:
 		return 0;
-
-	/*
-	 * We had some memory, but were unable to
-	 * successfully fix up this page fault.
-	 */
-	if (fault == 0){
+	case VM_FAULT_SIGBUS:
 		goto do_sigbus;
 	}
 

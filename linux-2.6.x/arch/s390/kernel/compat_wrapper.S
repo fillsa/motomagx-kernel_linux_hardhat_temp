@@ -64,7 +64,7 @@ sys32_chdir_wrapper:
 	.globl  sys32_time_wrapper 
 sys32_time_wrapper:
 	llgtr	%r2,%r2			# int *
-	jg	sys_time		# branch to system call
+	jg	compat_sys_time		# branch to system call
 
 	.globl  sys32_mknod_wrapper 
 sys32_mknod_wrapper:
@@ -391,7 +391,7 @@ old32_readdir_wrapper:
 	llgfr	%r2,%r2			# unsigned int
 	llgtr	%r3,%r3			# void *
 	llgfr	%r4,%r4			# unsigned int
-	jg	old32_readdir		# branch to system call
+	jg	compat_sys_old_readdir	# branch to system call
 
 	.globl  old32_mmap_wrapper 
 old32_mmap_wrapper:
@@ -639,7 +639,7 @@ sys32_getdents_wrapper:
 	llgfr	%r2,%r2			# unsigned int
 	llgtr	%r3,%r3			# void *
 	llgfr	%r4,%r4			# unsigned int
-	jg	sys32_getdents		# branch to system call
+	jg	compat_sys_getdents	# branch to system call
 
 	.globl  compat_sys_select_wrapper
 compat_sys_select_wrapper:
@@ -840,13 +840,13 @@ sys32_rt_sigpending_wrapper:
 	llgfr	%r3,%r3			# size_t
 	jg	sys32_rt_sigpending	# branch to system call
 
-	.globl  sys32_rt_sigtimedwait_wrapper 
-sys32_rt_sigtimedwait_wrapper:
+	.globl  compat_sys_rt_sigtimedwait_wrapper
+compat_sys_rt_sigtimedwait_wrapper:
 	llgtr	%r2,%r2			# const sigset_emu31_t *
 	llgtr	%r3,%r3			# siginfo_emu31_t *
 	llgtr	%r4,%r4			# const struct compat_timespec *
 	llgfr	%r5,%r5			# size_t
-	jg	sys32_rt_sigtimedwait	# branch to system call
+	jg	compat_sys_rt_sigtimedwait	# branch to system call
 
 	.globl  sys32_rt_sigqueueinfo_wrapper 
 sys32_rt_sigqueueinfo_wrapper:
@@ -1076,8 +1076,8 @@ sys32_lstat64_wrapper:
 
 	.globl	sys32_stime_wrapper
 sys32_stime_wrapper:
-	llgtr	%r2,%r2			# int *
-	jg	sys_stime		# branch to system call
+	llgtr	%r2,%r2			# long *
+	jg	compat_sys_stime	# branch to system call
 
 	.globl  sys32_sysctl_wrapper
 sys32_sysctl_wrapper:
@@ -1251,12 +1251,12 @@ sys32_fadvise64_wrapper:
 	or	%r3,%r4			# get low word of 64bit loff_t
 	llgfr	%r4,%r5			# size_t (unsigned long)
 	lgfr	%r5,%r6			# int
-	jg	sys_fadvise64
+	jg	sys32_fadvise64
 
 	.globl	sys32_fadvise64_64_wrapper
 sys32_fadvise64_64_wrapper:
 	llgtr	%r2,%r2			# struct fadvise64_64_args *
-	jg	s390_fadvise64_64
+	jg	sys32_fadvise64_64
 
 	.globl	sys32_clock_settime_wrapper
 sys32_clock_settime_wrapper:
@@ -1406,3 +1406,72 @@ compat_sys_mq_getsetattr_wrapper:
 	llgtr	%r3,%r3			# struct compat_mq_attr *
 	llgtr	%r4,%r4			# struct compat_mq_attr *
 	jg	compat_sys_mq_getsetattr
+
+	.globl	compat_sys_add_key_wrapper
+compat_sys_add_key_wrapper:
+	llgtr	%r2,%r2			# const char *
+	llgtr	%r3,%r3			# const char *
+	llgtr	%r4,%r4			# const void *
+	llgfr	%r5,%r5			# size_t
+	llgfr	%r6,%r6			# (key_serial_t) u32
+	jg	sys_add_key
+
+	.globl	compat_sys_request_key_wrapper
+compat_sys_request_key_wrapper:
+	llgtr	%r2,%r2			# const char *
+	llgtr	%r3,%r3			# const char *
+	llgtr	%r4,%r4			# const void *
+	llgfr	%r5,%r5			# (key_serial_t) u32
+	jg	sys_request_key
+
+	.globl	sys32_remap_file_pages_wrapper
+sys32_remap_file_pages_wrapper:
+	llgfr	%r2,%r2			# unsigned long
+	llgfr	%r3,%r3			# unsigned long
+	llgfr	%r4,%r4			# unsigned long
+	llgfr	%r5,%r5			# unsigned long
+	llgfr	%r6,%r6			# unsigned long
+	jg	sys_remap_file_pages
+
+	.globl	compat_sys_waitid_wrapper
+compat_sys_waitid_wrapper:
+	lgfr	%r2,%r2			# int
+	lgfr	%r3,%r3			# pid_t
+	llgtr	%r4,%r4			# siginfo_emu31_t *
+	lgfr	%r5,%r5			# int
+	llgtr	%r6,%r6			# struct rusage_emu31 *
+	jg	compat_sys_waitid
+
+	.globl	compat_sys_kexec_load_wrapper
+compat_sys_kexec_load_wrapper:
+	llgfr	%r2,%r2			# unsigned long
+	llgfr	%r3,%r3			# unsigned long
+	llgtr	%r4,%r4			# struct kexec_segment *
+	llgfr	%r5,%r5			# unsigned long
+	jg	compat_sys_kexec_load
+
+	.globl	sys_ioprio_set_wrapper
+sys_ioprio_set_wrapper:
+	lgfr	%r2,%r2			# int
+	lgfr	%r3,%r3			# int
+	lgfr	%r4,%r4			# int
+	jg	sys_ioprio_set
+
+	.globl	sys_ioprio_get_wrapper
+sys_ioprio_get_wrapper:
+	lgfr	%r2,%r2			# int
+	lgfr	%r3,%r3			# int
+	jg	sys_ioprio_get
+
+	.globl	sys_inotify_add_watch_wrapper
+sys_inotify_add_watch_wrapper:
+	lgfr	%r2,%r2			# int
+	llgtr	%r3,%r3			# const char *
+	llgfr	%r4,%r4			# u32
+	jg	sys_inotify_add_watch
+
+	.globl	sys_inotify_rm_watch_wrapper
+sys_inotify_rm_watch_wrapper:
+	lgfr	%r2,%r2			# int
+	llgfr	%r3,%r3			# u32
+	jg	sys_inotify_rm_watch

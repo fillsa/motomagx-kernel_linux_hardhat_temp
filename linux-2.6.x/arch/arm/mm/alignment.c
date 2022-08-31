@@ -366,6 +366,7 @@ do_alignment_ldrdstrd(unsigned long addr, unsigned long instr,
 	return TYPE_LDST;
  bad:
 	return TYPE_ERROR;
+
  fault:
 	return TYPE_FAULT;
 }

@@ -8,7 +8,7 @@
 struct thread_info {
 	struct task_struct	*task;		/* main task structure */
 	struct exec_domain	*exec_domain;	/* execution domain */
-	__s32			preempt_count; /* 0 => preemptable, <0 => BUG */
+	int			preempt_count;	/* 0 => preemptable, <0 => BUG */
 	__u32 cpu; /* should always be 0 on m68k */
 	struct restart_block    restart_block;
 
@@ -48,6 +48,7 @@ struct thread_info {
 #define TIF_NOTIFY_RESUME	2	/* resumption notification requested */
 #define TIF_SIGPENDING		3	/* signal pending */
 #define TIF_NEED_RESCHED	4	/* rescheduling necessary */
+#define TIF_MEMDIE		5
 
 extern int thread_flag_fixme(void);
 
@@ -67,6 +68,9 @@ extern int thread_flag_fixme(void);
 	case TIF_SYSCALL_TRACE:				\
 		tsk->thread.work.syscall_trace = val;	\
 		break;					\
+	case TIF_MEMDIE:				\
+		tsk->thread.work.memdie = val;		\
+		break;					\
 	default:					\
 		thread_flag_fixme();			\
 	}						\
@@ -83,6 +87,9 @@ extern int thread_flag_fixme(void);
 		break;					\
 	case TIF_SYSCALL_TRACE:				\
 		___res = tsk->thread.work.syscall_trace;\
+		break;					\
+	case TIF_MEMDIE:				\
+		___res = tsk->thread.work.memdie;\
 		break;					\
 	default:					\
 		___res = thread_flag_fixme();		\

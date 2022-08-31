@@ -118,7 +118,7 @@ static inline void set_silent_tlb(trident_t *trident, int page)
 #endif /* PAGE_SIZE */
 
 /* calculate buffer pointer from offset address */
-inline static void *offset_ptr(trident_t *trident, int offset)
+static inline void *offset_ptr(trident_t *trident, int offset)
 {
 	char *ptr;
 	ptr = page_to_ptr(trident, get_aligned_page(offset));
@@ -446,29 +446,6 @@ static int synth_free_pages(trident_t *trident, snd_util_memblk_t *blk)
 	for (page = first_page; page <= last_page; page++)
 		clear_tlb(trident, page);
 
-	return 0;
-}
-
-/*
- * bzero(blk + offset, size)
- */
-int snd_trident_synth_bzero(trident_t *trident, snd_util_memblk_t *blk, int offset, int size)
-{
-	int page, nextofs, end_offset, temp, temp1;
-
-	offset += blk->offset;
-	end_offset = offset + size;
-	page = get_aligned_page(offset) + 1;
-	do {
-		nextofs = aligned_page_offset(page);
-		temp = nextofs - offset;
-		temp1 = end_offset - offset;
-		if (temp1 < temp)
-			temp = temp1;
-		memset(offset_ptr(trident, offset), 0, temp);
-		offset = nextofs;
-		page++;
-	} while (offset < end_offset);
 	return 0;
 }
 

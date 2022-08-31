@@ -346,7 +346,7 @@ typedef struct sc1200_saved_state_s {
 } sc1200_saved_state_t;
 
 
-static int sc1200_suspend (struct pci_dev *dev, u32 state)
+static int sc1200_suspend (struct pci_dev *dev, pm_message_t state)
 {
 	ide_hwif_t		*hwif = NULL;
 
@@ -459,7 +459,7 @@ printk("%s: SC1200: resume\n", hwif->name);
  * This gets invoked by the IDE driver once for each channel,
  * and performs channel-specific pre-initialization before drive probing.
  */
-static void __init init_hwif_sc1200 (ide_hwif_t *hwif)
+static void __devinit init_hwif_sc1200 (ide_hwif_t *hwif)
 {
 	if (hwif->mate)
 		hwif->serialized = hwif->mate->serialized = 1;
@@ -489,8 +489,7 @@ static ide_pci_device_t sc1200_chipset __devinitdata = {
 
 static int __devinit sc1200_init_one(struct pci_dev *dev, const struct pci_device_id *id)
 {
-	ide_setup_pci_device(dev, &sc1200_chipset);
-	return 0;
+	return ide_setup_pci_device(dev, &sc1200_chipset);
 }
 
 static struct pci_device_id sc1200_pci_tbl[] = {

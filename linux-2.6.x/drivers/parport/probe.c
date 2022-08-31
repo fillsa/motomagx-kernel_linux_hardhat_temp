@@ -2,7 +2,7 @@
  * Parallel port device probing code
  *
  * Authors:    Carsten Gross, carsten@sol.wohnheim.uni-ulm.de
- *             Philip Blundell <Philip.Blundell@pobox.com>
+ *             Philip Blundell <philb@gnu.org>
  */
 
 #include <linux/module.h>
@@ -48,14 +48,6 @@ static void pretty_print(struct parport *port, int device)
 	printk("\n");
 }
 
-static char *strdup(char *str)
-{
-	int n = strlen(str)+1;
-	char *s = kmalloc(n, GFP_KERNEL);
-	if (!s) return NULL;
-	return strcpy(s, str);
-}
-
 static void parse_data(struct parport *port, int device, char *str)
 {
 	char *txt = kmalloc(strlen(str)+1, GFP_KERNEL);
@@ -88,16 +80,16 @@ static void parse_data(struct parport *port, int device, char *str)
 			if (!strcmp(p, "MFG") || !strcmp(p, "MANUFACTURER")) {
 				if (info->mfr)
 					kfree (info->mfr);
-				info->mfr = strdup(sep);
+				info->mfr = kstrdup(sep, GFP_KERNEL);
 			} else if (!strcmp(p, "MDL") || !strcmp(p, "MODEL")) {
 				if (info->model)
 					kfree (info->model);
-				info->model = strdup(sep);
+				info->model = kstrdup(sep, GFP_KERNEL);
 			} else if (!strcmp(p, "CLS") || !strcmp(p, "CLASS")) {
 				int i;
 				if (info->class_name)
 					kfree (info->class_name);
-				info->class_name = strdup(sep);
+				info->class_name = kstrdup(sep, GFP_KERNEL);
 				for (u = sep; *u; u++)
 					*u = toupper(*u);
 				for (i = 0; classes[i].token; i++) {
@@ -112,7 +104,7 @@ static void parse_data(struct parport *port, int device, char *str)
 				   !strcmp(p, "COMMAND SET")) {
 				if (info->cmdset)
 					kfree (info->cmdset);
-				info->cmdset = strdup(sep);
+				info->cmdset = kstrdup(sep, GFP_KERNEL);
 				/* if it speaks printer language, it's
 				   probably a printer */
 				if (strstr(sep, "PJL") || strstr(sep, "PCL"))
@@ -120,7 +112,7 @@ static void parse_data(struct parport *port, int device, char *str)
 			} else if (!strcmp(p, "DES") || !strcmp(p, "DESCRIPTION")) {
 				if (info->description)
 					kfree (info->description);
-				info->description = strdup(sep);
+				info->description = kstrdup(sep, GFP_KERNEL);
 			}
 		}
 	rock_on:
@@ -164,8 +156,16 @@ ssize_t parport_device_id (int devnum, char *buffer, size_t len)
 		if (retval != 2) goto end_id;
 
 		idlen = (length[0] << 8) + length[1] - 2;
-		if (idlen < len)
+		/*
+		 * Check if the caller-allocated buffer is large enough
+		 * otherwise bail out or there will be an at least off by one.
+		 */
+		if (idlen + 1 < len)
 			len = idlen;
+		else {
+			retval = -EINVAL;
+			goto out;
+		}
 		retval = parport_read (dev->port, buffer, len);
 
 		if (retval != len)
@@ -205,11 +205,12 @@ ssize_t parport_device_id (int devnum, char *buffer, size_t len)
 		buffer[len] = '\0';
 		parport_negotiate (dev->port, IEEE1284_MODE_COMPAT);
 	}
-	parport_release (dev);
 
 	if (retval > 2)
 		parse_data (dev->port, dev->daisy, buffer);
 
+out:
+	parport_release (dev);
 	parport_close (dev);
 	return retval;
 }

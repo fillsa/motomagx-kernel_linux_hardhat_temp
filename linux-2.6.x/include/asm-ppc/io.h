@@ -30,6 +30,8 @@
 #include <asm/mpc8xx.h>
 #elif defined(CONFIG_8260)
 #include <asm/mpc8260.h>
+#elif defined(CONFIG_83xx)
+#include <asm/mpc83xx.h>
 #elif defined(CONFIG_85xx)
 #include <asm/mpc85xx.h>
 #elif defined(CONFIG_APUS)
@@ -193,15 +195,15 @@ static inline void writel(__u32 b, volatile void __iomem *addr)
 #define readw_relaxed(addr) readw(addr)
 #define readl_relaxed(addr) readl(addr)
 
-static inline __u8 __raw_readb(volatile void __iomem *addr)
+static inline __u8 __raw_readb(const volatile void __iomem *addr)
 {
 	return *(__force volatile __u8 *)(addr);
 }
-static inline __u16 __raw_readw(volatile void __iomem *addr)
+static inline __u16 __raw_readw(const volatile void __iomem *addr)
 {
 	return *(__force volatile __u16 *)(addr);
 }
-static inline __u32 __raw_readl(volatile void __iomem *addr)
+static inline __u32 __raw_readl(const volatile void __iomem *addr)
 {
 	return *(__force volatile __u32 *)(addr);
 }
@@ -352,7 +354,7 @@ static inline void memset_io(volatile void __iomem *addr, unsigned char val, int
 {
 	memset((void __force *)addr, val, count);
 }
-static inline void memcpy_fromio(void *dst, volatile void __iomem *src, int count)
+static inline void memcpy_fromio(void *dst,const volatile void __iomem *src, int count)
 {
 	memcpy(dst, (void __force *) src, count);
 }
@@ -361,6 +363,8 @@ static inline void memcpy_toio(volatile void __iomem *dst, const void *src, int 
 	memcpy((void __force *) dst, src, count);
 }
 #endif
+
+#define eth_io_copy_and_sum(a,b,c,d)		eth_copy_and_sum((a),(void __force *)(void __iomem *)(b),(c),(d))
 
 /*
  * Map in an area of physical address space, for accessing
@@ -505,32 +509,32 @@ static inline void iowrite32(u32 val, void __iomem *addr)
 
 static inline void ioread8_rep(void __iomem *addr, void *dst, unsigned long count)
 {
-	_insb((u8 __force *) addr, dst, count);
+	_insb(addr, dst, count);
 }
 
 static inline void ioread16_rep(void __iomem *addr, void *dst, unsigned long count)
 {
-	_insw_ns((u16 __force *) addr, dst, count);
+	_insw_ns(addr, dst, count);
 }
 
 static inline void ioread32_rep(void __iomem *addr, void *dst, unsigned long count)
 {
-	_insl_ns((u32 __force *) addr, dst, count);
+	_insl_ns(addr, dst, count);
 }
 
 static inline void iowrite8_rep(void __iomem *addr, const void *src, unsigned long count)
 {
-	_outsb((u8 __force *) addr, src, count);
+	_outsb(addr, src, count);
 }
 
 static inline void iowrite16_rep(void __iomem *addr, const void *src, unsigned long count)
 {
-	_outsw_ns((u16 __force *) addr, src, count);
+	_outsw_ns(addr, src, count);
 }
 
 static inline void iowrite32_rep(void __iomem *addr, const void *src, unsigned long count)
 {
-	_outsl_ns((u32 __force *) addr, src, count);
+	_outsl_ns(addr, src, count);
 }
 
 /* Create a virtual mapping cookie for an IO port range */
@@ -547,5 +551,16 @@ extern void pci_iounmap(struct pci_dev *dev, void __iomem *);
 #ifdef CONFIG_8260_PCI9
 #include <asm/mpc8260_pci9.h>
 #endif
+
+/*
+ * Convert a physical pointer to a virtual kernel pointer for /dev/mem
+ * access
+ */
+#define xlate_dev_mem_ptr(p)	__va(p)
+
+/*
+ * Convert a virtual cached pointer to an uncached pointer
+ */
+#define xlate_dev_kmem_ptr(p)	p
 
 #endif /* __KERNEL__ */

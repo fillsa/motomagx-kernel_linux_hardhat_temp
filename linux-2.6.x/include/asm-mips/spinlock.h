@@ -24,9 +24,8 @@
 #define RAW_SPIN_LOCK_UNLOCKED (raw_spinlock_t) __RAW_SPIN_LOCK_UNLOCKED
 #define __raw_spin_lock_init(x)        do { *(x) = RAW_SPIN_LOCK_UNLOCKED; } while(0)
 
-#define __raw_spin_is_locked(x)        ((x)->lock != 0)
-#define __raw_spin_unlock_wait(x) \
-	do { barrier(); } while (__raw_spin_is_locked(x))
+#define __raw_spin_is_locked(x)	((x)->lock != 0)
+#define __raw_spin_unlock_wait(x)	do { barrier(); } while (__raw_spin_is_locked(x))
 #define __raw_spin_lock_flags(lock, flags) __raw_spin_lock(lock)
 
 /*
@@ -122,7 +121,7 @@ static inline unsigned int __raw_spin_trylock(raw_spinlock_t *lock)
 #define RAW_RW_LOCK_UNLOCKED (raw_rwlock_t) __RAW_RW_LOCK_UNLOCKED
  
 #define __raw_rwlock_init(x) do { *(x) = RAW_RW_LOCK_UNLOCKED; } while(0)
-#define __raw_rwlock_is_locked(x)      ((x)->lock)
+//del 2.6.11	#define __raw_rwlock_is_locked(x)      ((x)->lock)
 
 #define __raw_read_can_lock(rw)		((rw)->lock >= 0)
 #define __raw_write_can_lock(rw)	(!(rw)->lock)
@@ -238,8 +237,10 @@ static inline void __raw_write_unlock(raw_rwlock_t *rw)
 	: "memory");
 }
 
+//2.6	#define _raw_read_trylock(lock) generic_raw_read_trylock(lock)
 #define __raw_read_trylock(lock) generic_raw_read_trylock(lock)
 
+//2.6	static inline int _raw_write_trylock(rwlock_t *rw)
 static inline int __raw_write_trylock(raw_rwlock_t *rw)
 {
 	unsigned int tmp;

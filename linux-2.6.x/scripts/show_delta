@@ -54,7 +54,7 @@ def get_time(line):
 
 
 # average line looks like:
-# [    0.084282] VFS: Mounted root (romfs filesystem) readonly 
+# [    0.084282] VFS: Mounted root (romfs filesystem) readonly
 # time data is expressed in seconds.useconds,
 # convert_line adds a delta for each line
 last_time = 0.0

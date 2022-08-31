@@ -34,7 +34,6 @@
 #include <asm/mach/flash.h>
 #include <asm/mach/map.h>
 
-#include <asm/arch/clocks.h>
 #include <asm/arch/gpio.h>
 #include <asm/arch/tc.h>
 #include <asm/arch/usb.h>
@@ -139,9 +138,20 @@ static void __init h2_init_smc91x(void)
 	omap_set_gpio_edge_ctrl(0, OMAP_GPIO_FALLING_EDGE);
 }
 
+static void __init h2_init_smc91x(void)
+{
+	if ((omap_request_gpio(0)) < 0) {
+		printk("Error requesting gpio 0 for smc91x irq\n");
+		return;
+	}
+	omap_set_gpio_edge_ctrl(0, OMAP_GPIO_FALLING_EDGE);
+}
+
 void h2_init_irq(void)
 {
 	omap_init_irq();
+	omap_gpio_init();
+	h2_init_smc91x();
 	omap_gpio_init();
 	h2_init_smc91x();
 }

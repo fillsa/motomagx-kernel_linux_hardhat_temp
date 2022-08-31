@@ -8,6 +8,7 @@
 #include "linux/kernel.h"
 #include "linux/sched.h"
 #include "linux/interrupt.h"
+#include "linux/string.h"
 #include "linux/mm.h"
 #include "linux/slab.h"
 #include "linux/utsname.h"
@@ -21,6 +22,7 @@
 #include "linux/spinlock.h"
 #include "linux/proc_fs.h"
 #include "linux/ptrace.h"
+#include "linux/random.h"
 #include "asm/unistd.h"
 #include "asm/mman.h"
 #include "asm/segment.h"
@@ -42,7 +44,6 @@
 #include "tlb.h"
 #include "frame_kern.h"
 #include "sigcontext.h"
-#include "2_5compat.h"
 #include "os.h"
 #include "mode.h"
 #include "mode_kern.h"
@@ -53,18 +54,6 @@
  * entry.
  */
 struct cpu_task cpu_tasks[NR_CPUS] = { [0 ... NR_CPUS - 1] = { -1, NULL } };
-
-struct task_struct *get_task(int pid, int require)
-{
-        struct task_struct *ret;
-
-        read_lock(&tasklist_lock);
-	ret = find_task_by_pid(pid);
-        read_unlock(&tasklist_lock);
-
-        if(require && (ret == NULL)) panic("get_task couldn't find a task\n");
-        return(ret);
-}
 
 int external_pid(void *t)
 {
@@ -107,21 +96,11 @@ int kernel_thread(int (*fn)(void *), void * arg, unsigned long flags)
 
 	current->thread.request.u.thread.proc = fn;
 	current->thread.request.u.thread.arg = arg;
-	pid = do_fork(CLONE_VM | CLONE_UNTRACED | flags, 0, NULL, 0, NULL,
-		      NULL);
+	pid = do_fork(CLONE_VM | CLONE_UNTRACED | flags, 0,
+		      &current->thread.regs, 0, NULL, NULL);
 	if(pid < 0)
 		panic("do_fork failed in kernel_thread, errno = %d", pid);
 	return(pid);
-}
-
-void switch_mm(struct mm_struct *prev, struct mm_struct *next, 
-	       struct task_struct *tsk)
-{
-	int cpu = smp_processor_id();
-
-	if (prev != next) 
-		cpu_clear(cpu, prev->cpu_vm_mask);
-	cpu_set(cpu, next->cpu_vm_mask);
 }
 
 void set_current(void *t)
@@ -151,17 +130,12 @@ void release_thread(struct task_struct *task)
  
 void exit_thread(void)
 {
-	CHOOSE_MODE(exit_thread_tt(), exit_thread_skas());
 	unprotect_stack((unsigned long) current_thread);
 }
  
 void *get_current(void)
 {
 	return(current);
-}
-
-void prepare_to_copy(struct task_struct *tsk)
-{
 }
 
 int copy_thread(int nr, unsigned long clone_flags, unsigned long sp,
@@ -195,7 +169,7 @@ int current_pid(void)
 
 void default_idle(void)
 {
-	uml_idle_timer();
+	CHOOSE_MODE(uml_idle_timer(), (void) 0);
 
 	atomic_inc(&init_mm.mm_count);
 	current->mm = &init_mm;
@@ -203,7 +177,6 @@ void default_idle(void)
 
 	while(1){
 		/* endless idle loop with no priority at all */
-		SET_PRI(current);
 
 		/*
 		 * although we are an idle CPU, we do not want to
@@ -226,27 +199,32 @@ int page_size(void)
 	return(PAGE_SIZE);
 }
 
-unsigned long page_mask(void)
-{
-	return(PAGE_MASK);
-}
-
 void *um_virt_to_phys(struct task_struct *task, unsigned long addr, 
 		      pte_t *pte_out)
 {
 	pgd_t *pgd;
+	pud_t *pud;
 	pmd_t *pmd;
 	pte_t *pte;
 
 	if(task->mm == NULL) 
 		return(ERR_PTR(-EINVAL));
 	pgd = pgd_offset(task->mm, addr);
-	pmd = pmd_offset(pgd, addr);
+	if(!pgd_present(*pgd))
+		return(ERR_PTR(-EINVAL));
+
+	pud = pud_offset(pgd, addr);
+	if(!pud_present(*pud))
+		return(ERR_PTR(-EINVAL));
+
+	pmd = pmd_offset(pud, addr);
 	if(!pmd_present(*pmd)) 
 		return(ERR_PTR(-EINVAL));
+
 	pte = pte_offset_kernel(pmd, addr);
 	if(!pte_present(*pte)) 
 		return(ERR_PTR(-EINVAL));
+
 	if(pte_out != NULL)
 		*pte_out = *pte;
 	return((void *) (pte_val(*pte) & PAGE_MASK) + (addr & ~PAGE_MASK));
@@ -290,8 +268,6 @@ void disable_hlt(void)
 }
 
 EXPORT_SYMBOL(disable_hlt);
-
-extern int signal_frame_size;
 
 void *um_kmalloc(int size)
 {
@@ -347,35 +323,25 @@ void do_uml_exitcalls(void)
 
 char *uml_strdup(char *string)
 {
-	char *new;
-
-	new = kmalloc(strlen(string) + 1, GFP_KERNEL);
-	if(new == NULL) return(NULL);
-	strcpy(new, string);
-	return(new);
+	return kstrdup(string, GFP_KERNEL);
 }
 
-void *get_init_task(void)
-{
-	return(&init_thread_union.thread_info.task);
-}
-
-int copy_to_user_proc(void *to, void *from, int size)
+int copy_to_user_proc(void __user *to, void *from, int size)
 {
 	return(copy_to_user(to, from, size));
 }
 
-int copy_from_user_proc(void *to, void *from, int size)
+int copy_from_user_proc(void *to, void __user *from, int size)
 {
 	return(copy_from_user(to, from, size));
 }
 
-int clear_user_proc(void *buf, int size)
+int clear_user_proc(void __user *buf, int size)
 {
 	return(clear_user(buf, size));
 }
 
-int strlen_user_proc(char *str)
+int strlen_user_proc(char __user *str)
 {
 	return(strlen_user(str));
 }
@@ -406,7 +372,9 @@ int sysemu_supported;
 
 void set_using_sysemu(int value)
 {
-	atomic_set(&using_sysemu, sysemu_supported && value);
+	if (value > sysemu_supported)
+		return;
+	atomic_set(&using_sysemu, value);
 }
 
 int get_using_sysemu(void)
@@ -429,7 +397,7 @@ static int proc_write_sysemu(struct file *file,const char *buf, unsigned long co
 	if (copy_from_user(tmp, buf, 1))
 		return -EFAULT;
 
-	if (tmp[0] == '0' || tmp[0] == '1')
+	if (tmp[0] >= '0' && tmp[0] <= '2')
 		set_using_sysemu(tmp[0] - '0');
 	return count; /*We use the first char, but pretend to write everything*/
 }
@@ -444,7 +412,7 @@ int __init make_proc_sysemu(void)
 
 	if (ent == NULL)
 	{
-		printk("Failed to register /proc/sysemu\n");
+		printk(KERN_WARNING "Failed to register /proc/sysemu\n");
 		return(0);
 	}
 
@@ -464,18 +432,23 @@ int singlestepping(void * t)
 		return(0);
 
 	if (task->thread.singlestep_syscall)
-		return(0);
+		return(1);
 
-	return 1;
+	return 2;
 }
 
 /*
- * Overrides for Emacs so that we follow Linus's tabbing style.
- * Emacs will notice this stuff at the end of the file and automatically
- * adjust the settings for this buffer only.  This must remain at the end
- * of the file.
- * ---------------------------------------------------------------------------
- * Local variables:
- * c-file-style: "linux"
- * End:
+ * Only x86 and x86_64 have an arch_align_stack().
+ * All other arches have "#define arch_align_stack(x) (x)"
+ * in their asm/system.h
+ * As this is included in UML from asm-um/system-generic.h,
+ * we can use it to behave as the subarch does.
  */
+#ifndef arch_align_stack
+unsigned long arch_align_stack(unsigned long sp)
+{
+	if (randomize_va_space)
+		sp -= get_random_int() % 8192;
+	return sp & ~0xf;
+}
+#endif

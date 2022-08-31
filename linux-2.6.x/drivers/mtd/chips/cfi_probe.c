@@ -1,7 +1,7 @@
 /* 
    Common Flash Interface probe code.
    (C) 2000 Red Hat. GPL'd.
-   $Id: cfi_probe.c,v 1.82 2004/11/16 17:26:01 rmk Exp $
+   $Id: cfi_probe.c,v 1.83 2004/11/16 18:19:02 nico Exp $
 */
 
 #include <linux/config.h>
@@ -62,9 +62,9 @@ do { \
 
 #else
 
-#define xip_disable()				do { } while (0)
-#define xip_allowed(base, map)			do { } while (0)
-#define xip_enable(base, map, cfi)		do { } while (0)
+#define xip_disable()			do { } while (0)
+#define xip_allowed(base, map)		do { } while (0)
+#define xip_enable(base, map, cfi)	do { } while (0)
 #define xip_disable_qry(base, map, cfi, amd555) do { } while (0)
 
 #endif
@@ -358,12 +358,12 @@ static void print_cfi_ident(struct cfi_ident *cfip)
 	else
 		printk("No Vpp line\n");
 	
-	printk("Typical byte/word write timeout: %d 탎\n", 1<<cfip->WordWriteTimeoutTyp);
-	printk("Maximum byte/word write timeout: %d 탎\n", (1<<cfip->WordWriteTimeoutMax) * (1<<cfip->WordWriteTimeoutTyp));
+	printk("Typical byte/word write timeout: %d \B5s\n", 1<<cfip->WordWriteTimeoutTyp);
+	printk("Maximum byte/word write timeout: %d \B5s\n", (1<<cfip->WordWriteTimeoutMax) * (1<<cfip->WordWriteTimeoutTyp));
 	
 	if (cfip->BufWriteTimeoutTyp || cfip->BufWriteTimeoutMax) {
-		printk("Typical full buffer write timeout: %d 탎\n", 1<<cfip->BufWriteTimeoutTyp);
-		printk("Maximum full buffer write timeout: %d 탎\n", (1<<cfip->BufWriteTimeoutMax) * (1<<cfip->BufWriteTimeoutTyp));
+		printk("Typical full buffer write timeout: %d \B5s\n", 1<<cfip->BufWriteTimeoutTyp);
+		printk("Maximum full buffer write timeout: %d \B5s\n", (1<<cfip->BufWriteTimeoutMax) * (1<<cfip->BufWriteTimeoutTyp));
 	}
 	else
 		printk("Full buffer write not supported\n");

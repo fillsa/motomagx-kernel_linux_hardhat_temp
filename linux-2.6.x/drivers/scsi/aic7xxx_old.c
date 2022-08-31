@@ -224,7 +224,6 @@
 #include <asm/io.h>
 #include <asm/irq.h>
 #include <asm/byteorder.h>
-#include <linux/version.h>
 #include <linux/string.h>
 #include <linux/errno.h>
 #include <linux/kernel.h>
@@ -1838,7 +1837,7 @@ aic7xxx_print_sequencer(struct aic7xxx_host *p, int downloaded)
  * Description:
  *   Return a string describing the driver.
  *-F*************************************************************************/
-const char *
+static const char *
 aic7xxx_info(struct Scsi_Host *dooh)
 {
   static char buffer[256];
@@ -2701,12 +2700,12 @@ aic7xxx_done(struct aic7xxx_host *p, struct aic7xxx_scb *scb)
     struct scatterlist *sg;
 
     sg = (struct scatterlist *)cmd->request_buffer;
-    pci_unmap_sg(p->pdev, sg, cmd->use_sg, scsi_to_pci_dma_dir(cmd->sc_data_direction));
+    pci_unmap_sg(p->pdev, sg, cmd->use_sg, cmd->sc_data_direction);
   }
   else if (cmd->request_bufflen)
     pci_unmap_single(p->pdev, aic7xxx_mapping(cmd),
 		     cmd->request_bufflen,
-                     scsi_to_pci_dma_dir(cmd->sc_data_direction));
+                     cmd->sc_data_direction);
   if (scb->flags & SCB_SENSE)
   {
     pci_unmap_single(p->pdev,
@@ -8449,7 +8448,6 @@ aic7xxx_alloc(Scsi_Host_Template *sht, struct aic7xxx_host *temp)
     }
     p->host_no = host->host_no;
   }
-  scsi_set_device(host, &p->pdev->dev);
   return (p);
 }
 
@@ -10229,7 +10227,7 @@ aic7xxx_buildscb(struct aic7xxx_host *p, Scsi_Cmnd *cmd,
 
     sg = (struct scatterlist *)cmd->request_buffer;
     scb->sg_length = 0;
-    use_sg = pci_map_sg(p->pdev, sg, cmd->use_sg, scsi_to_pci_dma_dir(cmd->sc_data_direction));
+    use_sg = pci_map_sg(p->pdev, sg, cmd->use_sg, cmd->sc_data_direction);
     /*
      * Copy the segments into the SG array.  NOTE!!! - We used to
      * have the first entry both in the data_pointer area and the first
@@ -10257,7 +10255,7 @@ aic7xxx_buildscb(struct aic7xxx_host *p, Scsi_Cmnd *cmd,
     {
       unsigned int address = pci_map_single(p->pdev, cmd->request_buffer,
 					    cmd->request_bufflen,
-                                            scsi_to_pci_dma_dir(cmd->sc_data_direction));
+                                            cmd->sc_data_direction);
       aic7xxx_mapping(cmd) = address;
       scb->sg_list[0].address = cpu_to_le32(address);
       scb->sg_list[0].length = cpu_to_le32(cmd->request_bufflen);
@@ -10359,7 +10357,7 @@ aic7xxx_queue(Scsi_Cmnd *cmd, void (*fn)(Scsi_Cmnd *))
  *   Returns an enumerated type that indicates the status of the operation.
  *-F*************************************************************************/
 static int
-aic7xxx_bus_device_reset(Scsi_Cmnd *cmd)
+__aic7xxx_bus_device_reset(Scsi_Cmnd *cmd)
 {
   struct aic7xxx_host  *p;
   struct aic7xxx_scb   *scb;
@@ -10552,6 +10550,18 @@ aic7xxx_bus_device_reset(Scsi_Cmnd *cmd)
     return SUCCESS;
 }
 
+static int
+aic7xxx_bus_device_reset(Scsi_Cmnd *cmd)
+{
+      int rc;
+
+      spin_lock_irq(cmd->device->host->host_lock);
+      rc = __aic7xxx_bus_device_reset(cmd);
+      spin_unlock_irq(cmd->device->host->host_lock);
+
+      return rc;
+}
+
 
 /*+F*************************************************************************
  * Function:
@@ -10564,8 +10574,7 @@ static void
 aic7xxx_panic_abort(struct aic7xxx_host *p, Scsi_Cmnd *cmd)
 {
 
-  printk("aic7xxx driver version %s/%s\n", AIC7XXX_C_VERSION,
-         UTS_RELEASE);
+  printk("aic7xxx driver version %s\n", AIC7XXX_C_VERSION);
   printk("Controller type:\n    %s\n", board_names[p->board_name_index]);
   printk("p->flags=0x%lx, p->chip=0x%x, p->features=0x%x, "
          "sequencer %s paused\n",
@@ -10587,7 +10596,7 @@ aic7xxx_panic_abort(struct aic7xxx_host *p, Scsi_Cmnd *cmd)
  *   Abort the current SCSI command(s).
  *-F*************************************************************************/
 static int
-aic7xxx_abort(Scsi_Cmnd *cmd)
+__aic7xxx_abort(Scsi_Cmnd *cmd)
 {
   struct aic7xxx_scb  *scb = NULL;
   struct aic7xxx_host *p;
@@ -10804,6 +10813,19 @@ success:
   return SUCCESS;
 }
 
+static int
+aic7xxx_abort(Scsi_Cmnd *cmd)
+{
+	int rc;
+
+	spin_lock_irq(cmd->device->host->host_lock);
+	rc = __aic7xxx_abort(cmd);
+	spin_unlock_irq(cmd->device->host->host_lock);
+
+	return rc;
+}
+
+
 /*+F*************************************************************************
  * Function:
  *   aic7xxx_reset
@@ -10822,6 +10844,8 @@ aic7xxx_reset(Scsi_Cmnd *cmd)
   struct aic_dev_data *aic_dev;
 
   p = (struct aic7xxx_host *) cmd->device->host->hostdata;
+  spin_lock_irq(p->host->host_lock);
+
   aic_dev = AIC_DEV(cmd);
   if(aic7xxx_position(cmd) < p->scb_data->numscbs)
   {
@@ -10861,6 +10885,7 @@ aic7xxx_reset(Scsi_Cmnd *cmd)
      * longer have it.
      */
     unpause_sequencer(p, FALSE);
+    spin_unlock_irq(p->host->host_lock);
     return SUCCESS;
   }
     
@@ -10884,7 +10909,6 @@ aic7xxx_reset(Scsi_Cmnd *cmd)
   unpause_sequencer(p, FALSE);
   spin_unlock_irq(p->host->host_lock);
   ssleep(2);
-  spin_lock_irq(p->host->host_lock);
   return SUCCESS;
 }
 

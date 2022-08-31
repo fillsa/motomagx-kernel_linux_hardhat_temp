@@ -1,5 +1,5 @@
 /**
- * $Id: phram.c,v 1.13 2005/03/07 20:53:25 joern Exp $
+ * $Id: phram.c,v 1.14 2005/03/07 21:43:38 joern Exp $
  *
  * Copyright (c) ????		Jochen Schäuble <psionic@psionic.de>
  * Copyright (c) 2003-2004	Jörn Engel <joern@wh.fh-wedel.de>

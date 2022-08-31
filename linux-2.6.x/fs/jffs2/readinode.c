@@ -7,7 +7,7 @@
  *
  * For licensing information, see the file 'LICENCE' in this directory.
  *
- * $Id: readinode.c,v 1.123 2005/07/07 13:46:04 dedekind Exp $
+ * $Id: readinode.c,v 1.125 2005/07/10 13:13:55 dedekind Exp $
  *
  */
 
@@ -58,7 +58,7 @@ void jffs2_print_frag_list(struct jffs2_inode_info *f)
 }
 #endif
 
-#if CONFIG_JFFS2_FS_DEBUG >= 1
+#if CONFIG_JFFS2_FS_DEBUG >= 2
 static int jffs2_sanitycheck_fragtree(struct jffs2_inode_info *f)
 {
 	struct jffs2_node_frag *frag;
@@ -94,7 +94,9 @@ static int jffs2_sanitycheck_fragtree(struct jffs2_inode_info *f)
 			}
 		}
 	}
+#endif
 	
+#if CONFIG_JFFS2_FS_DEBUG >= 1
 	if (bitched) {
 		struct jffs2_node_frag *thisfrag;
 

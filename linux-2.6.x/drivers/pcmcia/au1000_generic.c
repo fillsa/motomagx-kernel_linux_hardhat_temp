@@ -7,8 +7,8 @@
  *         	ppopov@embeddedalley.com or source@mvista.com
  *
  * Copyright 2004 Pete Popov, Embedded Alley Solutions, Inc.
- * Updated the driver to 2.6. Followed the sa11xx API and largely 
- * copied many of the hardware independent functions. 
+ * Updated the driver to 2.6. Followed the sa11xx API and largely
+ * copied many of the hardware independent functions.
  *
  * ########################################################################
  *
@@ -78,7 +78,7 @@ static int (*au1x00_pcmcia_hw_init[])(struct device *dev) = {
 	au1x_board_init,
 };
 
-static int 
+static int
 au1x00_pcmcia_skt_state(struct au1000_pcmcia_socket *skt)
 {
 	struct pcmcia_state state;
@@ -156,18 +156,16 @@ static int au1x00_pcmcia_sock_init(struct pcmcia_socket *sock)
 static int au1x00_pcmcia_suspend(struct pcmcia_socket *sock)
 {
 	struct au1000_pcmcia_socket *skt = to_au1000_socket(sock);
-	int ret;
 
 	debug("suspending socket %u\n", skt->nr);
 
-	ret = au1x00_pcmcia_config_skt(skt, &dead_socket);
-	if (ret == 0)
-		skt->ops->socket_suspend(skt);
+	skt->ops->socket_suspend(skt);
 
-	return ret;
+	return 0;
 }
 
 static DEFINE_SPINLOCK(status_lock);
+
 /*
  * au1x00_check_status()
  */
@@ -245,7 +243,7 @@ au1x00_pcmcia_get_status(struct pcmcia_socket *sock, unsigned int *status)
 
 /* au1x00_pcmcia_get_socket()
  * Implements the get_socket() operation for the in-kernel PCMCIA
- * service (formerly SS_GetSocket in Card Services). Not a very 
+ * service (formerly SS_GetSocket in Card Services). Not a very
  * exciting routine.
  *
  * Returns: 0
@@ -344,7 +342,7 @@ au1x00_pcmcia_set_mem_map(struct pcmcia_socket *sock, struct pccard_mem_map *map
 		map->static_start = skt->phys_mem + map->card_start;
 	}
 
-	debug("set_mem_map %d start %08lx card_start %08x\n", 
+	debug("set_mem_map %d start %08lx card_start %08x\n",
 			map->map, map->static_start, map->card_start);
 	return 0;
 
@@ -390,6 +388,7 @@ int au1x00_pcmcia_socket_probe(struct device *dev, struct pcmcia_low_level *ops,
 		struct au1000_pcmcia_socket *skt = PCMCIA_SOCKET(i);
 		memset(skt, 0, sizeof(*skt));
 
+		skt->socket.resource_ops = &pccard_static_ops;
 		skt->socket.ops = &au1x00_pcmcia_operations;
 		skt->socket.owner = ops->owner;
 		skt->socket.dev.dev = dev;
@@ -411,11 +410,11 @@ int au1x00_pcmcia_socket_probe(struct device *dev, struct pcmcia_low_level *ops,
 		skt->res_mem.flags	= IORESOURCE_MEM;
 		skt->res_attr.name	= "attribute";
 		skt->res_attr.flags	= IORESOURCE_MEM;
-		
+
 		/*
 		 * PCMCIA client drivers use the inb/outb macros to access the
-		 * IO registers. Since mips_io_port_base is added to the 
-		 * access address of the mips implementation of inb/outb, 
+		 * IO registers. Since mips_io_port_base is added to the
+		 * access address of the mips implementation of inb/outb,
 		 * we need to subtract it here because we want to access the
 		 * I/O or MEM address directly, without going through this
 		 * "mips_io_port_base" mechanism.
@@ -461,7 +460,7 @@ int au1x00_pcmcia_socket_probe(struct device *dev, struct pcmcia_low_level *ops,
 
 	do {
 		struct au1000_pcmcia_socket *skt = PCMCIA_SOCKET(i);
-		
+
 		del_timer_sync(&skt->poll_timer);
 		pcmcia_unregister_socket(&skt->socket);
 out_err:
@@ -520,7 +519,7 @@ static int au1x00_drv_pcmcia_probe(struct device *dev)
 }
 
 
-static int au1x00_drv_pcmcia_suspend(struct device *dev, u32 state, u32 level)
+static int au1x00_drv_pcmcia_suspend(struct device *dev, pm_message_t state, u32 level)
 {
 	int ret = 0;
 	if (level == SUSPEND_SAVE_STATE)

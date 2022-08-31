@@ -28,6 +28,10 @@ config RWSEM_XCHGADD_ALGORITHM
 	bool
 	default y
 
+config GENERIC_CALIBRATE_DELAY
+	bool
+	default y
+
 config GENERIC_ISA_DMA
 	bool
 	default y
@@ -276,6 +280,10 @@ config ISA
 	  (MCA) or VESA.  ISA is an older system, now being displaced by PCI;
 	  newer boards don't support it.  If you have ISA, say Y, otherwise N.
 
+config ISA_DMA_API
+	bool
+	default y
+
 config PCI
 	bool
 	depends on !ALPHA_JENSEN
@@ -485,7 +493,7 @@ config SMP
 	  singleprocessor machines. On a singleprocessor machine, the kernel
 	  will run faster if you say N here.
 
-	  See also the <file:Documentation/smp.tex>, and the SMP-HOWTO
+	  See also the <file:Documentation/smp.txt>, and the SMP-HOWTO
 	  available at <http://www.tldp.org/docs.html#howto>.
 
 	  If you don't know what to do here, say N.
@@ -501,7 +509,7 @@ config NR_CPUS
 	depends on SMP
 	default "64"
 
-config DISCONTIGMEM
+config ARCH_DISCONTIGMEM_ENABLE
 	bool "Discontiguous Memory Support (EXPERIMENTAL)"
 	depends on EXPERIMENTAL
 	help
@@ -510,9 +518,11 @@ config DISCONTIGMEM
 	  or have huge holes in the physical address space for other reasons.
 	  See <file:Documentation/vm/numa> for more.
 
+source "mm/Kconfig"
+
 config NUMA
 	bool "NUMA Support (EXPERIMENTAL)"
-	depends on DISCONTIGMEM
+	depends on DISCONTIGMEM && BROKEN
 	help
 	  Say Y to compile the kernel to support NUMA (Non-Uniform Memory
 	  Access).  This option is for configuring high-end multiprocessor
@@ -585,6 +595,8 @@ config SRM_ENV
 source "fs/Kconfig.binfmt"
 
 endmenu
+
+source "net/Kconfig"
 
 source "drivers/Kconfig"
 

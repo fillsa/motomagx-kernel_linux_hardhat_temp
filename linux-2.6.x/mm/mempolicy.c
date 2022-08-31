@@ -66,10 +66,8 @@
 
    handle mremap for shared memory (currently ignored for the policy)
    grows down?
-
    make bind policy root only? It can trigger oom much faster and the
    kernel is not always grateful with that.
-
    could replace all the switch()es with a mempolicy_ops structure.
 */
 
@@ -82,6 +80,7 @@
 #include <linux/mm.h>
 #include <linux/pagemap.h>
 #include <linux/nodemask.h>
+#include <linux/cpuset.h>
 #include <linux/gfp.h>
 #include <linux/slab.h>
 #include <linux/string.h>
@@ -195,6 +194,10 @@ static int get_nodes(unsigned long *nodes, unsigned long __user *nmask,
 	if (copy_from_user(nodes, nmask, nlongs*sizeof(unsigned long)))
 		return -EFAULT;
 	nodes[nlongs-1] &= endmask;
+	/* Update current mems_allowed */
+	cpuset_update_current_mems_allowed();
+	/* Ignore nodes not set in current->mems_allowed */
+	cpuset_restrict_to_mems_allowed(nodes);
 	return mpol_check_policy(mode, nodes);
 }
 
@@ -402,8 +405,8 @@ copy_mapped_page(struct page * page, struct mempolicy *pol,
 }
 
 /* Ensure all existing pages in a VMA follow the policy. */
-static int
-move_verify_pages(struct vm_area_struct *vma, unsigned long flags)
+static int move_verify_pages(struct vm_area_struct *vma, unsigned long flags)
+//del 2.6.13
 {
 	struct mm_struct *mm = vma->vm_mm;
 	unsigned long addr;
@@ -431,11 +434,13 @@ move_verify_pages(struct vm_area_struct *vma, unsigned long flags)
 		spin_lock(&mm->page_table_lock);
 
 		pgd = pgd_offset(mm, addr);
-		if (pgd_none(*pgd))
+		if (pgd_none(*pgd)) {
 			goto check_pagecache;
+		}
 		pmd = pmd_offset(pgd, addr);
-		if (pmd_none(*pmd))
+		if (pmd_none(*pmd)) {
 			goto check_pagecache;
+		}
 		p = NULL;
 		pte = pte_offset_map(pmd, addr);
 		if (pte_present(*pte))
@@ -572,9 +577,7 @@ asmlinkage long sys_mbind(unsigned long start, unsigned long len,
 	DECLARE_BITMAP(nodes, MAX_NUMNODES);
 	int err;
 
-	if ((flags & ~(unsigned long)
-	     (MPOL_MF_STRICT | MPOL_MF_MOVE | MPOL_MF_NOREPLACE)) ||
-	    mode > MPOL_MAX)
+	if ((flags & ~(unsigned long)(MPOL_MF_STRICT | MPOL_MF_MOVE | MPOL_MF_NOREPLACE)) || mode > MPOL_MAX)
 		return -EINVAL;
 	if (start & ~PAGE_MASK)
 		return -EINVAL;
@@ -616,7 +619,7 @@ asmlinkage long sys_set_mempolicy(int mode, unsigned long __user *nmask,
 	struct mempolicy *new;
 	DECLARE_BITMAP(nodes, MAX_NUMNODES);
 
-	if (mode > MPOL_MAX)
+	if (mode < 0 || mode > MPOL_MAX)
 		return -EINVAL;
 	err = get_nodes(nodes, nmask, maxnode, mode);
 	if (err)
@@ -855,7 +858,7 @@ get_vma_policy(struct vm_area_struct *vma, unsigned long addr)
 }
 
 /* Return a zonelist representing a mempolicy */
-static struct zonelist *zonelist_policy(unsigned gfp, struct mempolicy *policy)
+static struct zonelist *zonelist_policy(unsigned int __nocast gfp, struct mempolicy *policy)
 {
 	int nd;
 
@@ -867,8 +870,10 @@ static struct zonelist *zonelist_policy(unsigned gfp, struct mempolicy *policy)
 		break;
 	case MPOL_BIND:
 		/* Lower zones don't get a policy applied */
-		if (gfp >= policy_zone)
-			return policy->v.zonelist;
+		/* Careful: current->mems_allowed might have moved */
+		if ((gfp & GFP_ZONEMASK) >= policy_zone)
+			if (cpuset_zonelist_valid_mems_allowed(policy->v.zonelist))
+				return policy->v.zonelist;
 		/*FALL THROUGH*/
 	case MPOL_INTERLEAVE: /* should not happen */
 	case MPOL_DEFAULT:
@@ -917,7 +922,7 @@ static unsigned offset_il_node(struct mempolicy *pol,
 
 /* Allocate a page in interleaved policy.
    Own path because it needs to do special accounting. */
-static struct page *alloc_page_interleave(unsigned gfp, unsigned order, unsigned nid)
+static struct page *alloc_page_interleave(unsigned int __nocast gfp, unsigned order, unsigned nid)
 {
 	struct zonelist *zl;
 	struct page *page;
@@ -926,12 +931,11 @@ static struct page *alloc_page_interleave(unsigned gfp, unsigned order, unsigned
 	zl = NODE_DATA(nid)->node_zonelists + (gfp & GFP_ZONEMASK);
 	page = __alloc_pages(gfp, order, zl);
 	if (page && page_zone(page) == zl->zones[0]) {
-		zl->zones[0]->pageset[get_cpu()].interleave_hit++;
+		zone_pcp(zl->zones[0],get_cpu())->interleave_hit++;
 		put_cpu();
 	}
 	return page;
 }
-
 
 /**
  * 	alloc_page_vma	- Allocate a page for a VMA.
@@ -956,9 +960,11 @@ static struct page *alloc_page_interleave(unsigned gfp, unsigned order, unsigned
  *	Should be called with the mm_sem of the vma hold.
  */
 struct page *
-alloc_page_vma(unsigned gfp, struct vm_area_struct *vma, unsigned long addr)
+alloc_page_vma(unsigned int __nocast gfp, struct vm_area_struct *vma, unsigned long addr)
 {
 	struct mempolicy *pol = get_vma_policy(vma, addr);
+
+	cpuset_update_current_mems_allowed();
 
 	if (unlikely(pol->policy == MPOL_INTERLEAVE)) {
 		unsigned nid;
@@ -992,11 +998,17 @@ alloc_page_vma(unsigned gfp, struct vm_area_struct *vma, unsigned long addr)
  *	Allocate a page from the kernel page pool.  When not in
  *	interrupt context and apply the current process NUMA policy.
  *	Returns NULL when no page can be allocated.
+ *
+ *	Don't call cpuset_update_current_mems_allowed() unless
+ *	1) it's ok to take cpuset_sem (can WAIT), and
+ *	2) allocating for current task (not interrupt).
  */
-struct page *alloc_pages_current(unsigned gfp, unsigned order)
+struct page *alloc_pages_current(unsigned int __nocast gfp, unsigned order)
 {
 	struct mempolicy *pol = current->mempolicy;
 
+	if ((gfp & __GFP_WAIT) && !in_interrupt())
+		cpuset_update_current_mems_allowed();
 	if (!pol || in_interrupt())
 		pol = &default_policy;
 	if (pol->policy == MPOL_INTERLEAVE)
@@ -1133,6 +1145,7 @@ sp_lookup(struct shared_policy *sp, unsigned long start, unsigned long end)
 
 	while (n) {
 		struct sp_node *p = rb_entry(n, struct sp_node, nd);
+
 		if (start >= p->end)
 			n = n->rb_right;
 		else if (end <= p->start)
@@ -1338,8 +1351,7 @@ static void dump_sp(struct rb_node * node)
 #endif
 
 int mpol_set_shared_policy(struct shared_policy *info,
-			   struct vm_area_struct *vma,
-			   struct mempolicy *npol,
+			struct vm_area_struct *vma, struct mempolicy *npol,
 			   unsigned long flags)
 {
 	int err;
@@ -1364,8 +1376,7 @@ int mpol_set_shared_policy(struct shared_policy *info,
 	dump_sp(info->root.rb_node);
 #endif
 	
-	err = shared_policy_insert(info, vma->vm_pgoff, vma->vm_pgoff+sz,
-				   new, flags);
+	err = shared_policy_insert(info, vma->vm_pgoff, vma->vm_pgoff+sz, new, flags);
 
 #ifdef DEBUG_SHARED_POLICY
 	printk(KERN_DEBUG "%s: AFTER:\n", vma->vm_file->f_dentry->d_name.name);

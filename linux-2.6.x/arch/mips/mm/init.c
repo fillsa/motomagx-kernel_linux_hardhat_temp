@@ -61,7 +61,7 @@ unsigned long setup_zero_pages(void)
 	else
 		order = 0;
 
-	empty_zero_page = __get_free_pages(GFP_KERNEL, order);
+	empty_zero_page = __get_free_pages(GFP_KERNEL | __GFP_ZERO, order);
 	if (!empty_zero_page)
 		panic("Oh boy, that early out of memory?");
 
@@ -74,7 +74,6 @@ unsigned long setup_zero_pages(void)
 
 	size = PAGE_SIZE << order;
 	zero_page_mask = (size - 1) & PAGE_MASK;
-	memset((void *)empty_zero_page, 0, size);
 
 	return 1UL << order;
 }
@@ -82,9 +81,6 @@ unsigned long setup_zero_pages(void)
 #ifdef CONFIG_HIGHMEM
 pte_t *kmap_pte;
 pgprot_t kmap_prot;
-
-EXPORT_SYMBOL(kmap_prot);
-EXPORT_SYMBOL(kmap_pte);
 
 #define kmap_get_fixmap_pte(vaddr)					\
 	pte_offset_kernel(pmd_offset(pgd_offset_k(vaddr), (vaddr)), (vaddr))
@@ -132,7 +128,7 @@ static void __init fixrange_init(unsigned long start, unsigned long end,
 #endif /* CONFIG_MIPS64 */
 #endif /* CONFIG_HIGHMEM */
 
-#ifndef CONFIG_DISCONTIGMEM
+#ifndef CONFIG_NEED_MULTIPLE_NODES
 extern void pagetable_init(void);
 
 void __init paging_init(void)
@@ -204,7 +200,6 @@ void __init mem_init(void)
 	unsigned long tmp, ram;
 
 #ifdef CONFIG_HIGHMEM
-	highmem_start_page = mem_map + highstart_pfn;
 #ifdef CONFIG_DISCONTIGMEM
 #error "CONFIG_HIGHMEM and CONFIG_DISCONTIGMEM dont work together yet"
 #endif
@@ -237,7 +232,6 @@ void __init mem_init(void)
 #ifdef CONFIG_LIMITED_DMA
 		set_page_address(page, lowmem_page_address(page));
 #endif
-		set_bit(PG_highmem, &page->flags);
 		set_page_count(page, 1);
 		__free_page(page);
 		totalhigh_pages++;
@@ -259,7 +253,7 @@ void __init mem_init(void)
 	       initsize >> 10,
 	       (unsigned long) (totalhigh_pages << (PAGE_SHIFT-10)));
 }
-#endif /* !CONFIG_DISCONTIGMEM */
+#endif /* !CONFIG_NEED_MULTIPLE_NODES */
 
 #ifdef CONFIG_BLK_DEV_INITRD
 void free_initrd_mem(unsigned long start, unsigned long end)

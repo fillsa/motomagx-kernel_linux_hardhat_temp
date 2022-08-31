@@ -1,7 +1,7 @@
 #
 # Automatically generated make config: don't edit
-# Linux kernel version: 2.6.10
-# Mon Dec 27 19:11:00 2004
+# Linux kernel version: 2.6.11-rc2
+# Wed Jan 26 02:49:08 2005
 #
 CONFIG_MIPS=y
 # CONFIG_MIPS64 is not set
@@ -79,6 +79,7 @@ CONFIG_MOMENCO_OCELOT=y
 # CONFIG_SNI_RM200_PCI is not set
 # CONFIG_TOSHIBA_RBTX4927 is not set
 CONFIG_RWSEM_GENERIC_SPINLOCK=y
+CONFIG_GENERIC_CALIBRATE_DELAY=y
 CONFIG_HAVE_DEC_LOCK=y
 CONFIG_DMA_NONCOHERENT=y
 # CONFIG_CPU_LITTLE_ENDIAN is not set
@@ -167,9 +168,11 @@ CONFIG_PREVENT_FIRMWARE_BUILD=y
 # Block devices
 #
 # CONFIG_BLK_DEV_FD is not set
+# CONFIG_BLK_DEV_COW_COMMON is not set
 # CONFIG_BLK_DEV_LOOP is not set
 # CONFIG_BLK_DEV_NBD is not set
 # CONFIG_BLK_DEV_RAM is not set
+CONFIG_BLK_DEV_RAM_COUNT=16
 CONFIG_BLK_DEV_RAM_COUNT=16
 CONFIG_INITRAMFS_SOURCE=""
 # CONFIG_LBD is not set
@@ -443,6 +446,7 @@ CONFIG_LEGACY_PTY_COUNT=256
 #
 # CONFIG_VGA_CONSOLE is not set
 CONFIG_DUMMY_CONSOLE=y
+# CONFIG_BACKLIGHT_LCD_SUPPORT is not set
 
 #
 # Sound
@@ -460,9 +464,23 @@ CONFIG_DUMMY_CONSOLE=y
 #
 
 #
+# NOTE: USB_STORAGE enables SCSI, and 'SCSI disk support' may also be needed; see USB_STORAGE Help for more information
+#
+
+#
 # USB Gadget Support
 #
 # CONFIG_USB_GADGET is not set
+
+#
+# MMC/SD Card support
+#
+# CONFIG_MMC is not set
+
+#
+# InfiniBand support
+#
+# CONFIG_INFINIBAND is not set
 
 #
 # MMC/SD Card support
@@ -480,6 +498,19 @@ CONFIG_EXT2_FS=y
 # CONFIG_JFS_FS is not set
 # CONFIG_XFS_FS is not set
 # CONFIG_MINIX_FS is not set
+# PCCARD (PCMCIA/CardBus) support
+#
+# CONFIG_PCCARD is not set
+
+#
+# PC-card bridges
+#
+
+#
+# PCI Hotplug Support
+#
+
+#
 # CONFIG_ROMFS_FS is not set
 # CONFIG_QUOTA is not set
 CONFIG_DNOTIFY=y
@@ -495,6 +526,7 @@ CONFIG_DNOTIFY=y
 #
 # DOS/FAT/NT Filesystems
 #
+# CONFIG_FW_LOADER is not set
 # CONFIG_MSDOS_FS is not set
 # CONFIG_VFAT_FS is not set
 # CONFIG_NTFS_FS is not set
@@ -530,6 +562,7 @@ CONFIG_RAMFS=y
 # CONFIG_UFS_FS is not set
 
 #
+CONFIG_ATA_OVER_ETH=y
 # Network File Systems
 #
 CONFIG_NFS_FS=y
@@ -587,6 +620,10 @@ CONFIG_KEYS_DEBUG_PROC_KEYS=y
 # CONFIG_CRYPTO is not set
 
 #
+# Hardware crypto devices
+#
+
+#
 # Library routines
 #
 # CONFIG_CRC_CCITT is not set
@@ -594,3 +631,4 @@ CONFIG_KEYS_DEBUG_PROC_KEYS=y
 # CONFIG_LIBCRC32C is not set
 CONFIG_GENERIC_HARDIRQS=y
 CONFIG_GENERIC_IRQ_PROBE=y
+# CONFIG_SERIO_LIBPS2 is not set

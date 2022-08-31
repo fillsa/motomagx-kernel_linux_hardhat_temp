@@ -61,12 +61,10 @@ extern physid_mask_t phys_cpu_present_map;
  * Some lowlevel functions might want to know about
  * the real CPU ID <-> CPU # mapping.
  */
-extern volatile int physid_2_cpu[NR_CPUS];
 extern volatile int cpu_2_physid[NR_CPUS];
-#define physid_to_cpu(physid)	physid_2_cpu[physid]
 #define cpu_to_physid(cpu_id)	cpu_2_physid[cpu_id]
 
-#define smp_processor_id()	(current_thread_info()->cpu)
+#define raw_smp_processor_id()	(current_thread_info()->cpu)
 
 extern cpumask_t cpu_callout_map;
 #define cpu_possible_map cpu_callout_map
@@ -92,7 +90,6 @@ static __inline__ unsigned int num_booting_cpus(void)
 }
 
 extern void smp_send_timer(void);
-extern void calibrate_delay(void);
 extern unsigned long send_IPI_mask_phys(cpumask_t, int, int);
 
 #endif	/* not __ASSEMBLY__ */

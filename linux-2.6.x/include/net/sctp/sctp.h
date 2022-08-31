@@ -125,7 +125,8 @@
  */
 extern struct sock *sctp_get_ctl_sock(void);
 extern int sctp_copy_local_addr_list(struct sctp_bind_addr *,
-				     sctp_scope_t, int gfp, int flags);
+				     sctp_scope_t, unsigned int __nocast gfp,
+				     int flags);
 extern struct sctp_pf *sctp_get_pf_specific(sa_family_t family);
 extern int sctp_register_pf(struct sctp_pf *, sa_family_t);
 
@@ -162,25 +163,18 @@ __u32 sctp_update_copy_cksum(__u8 *, __u8 *, __u16 count, __u32 cksum);
 int sctp_rcv(struct sk_buff *skb);
 void sctp_v4_err(struct sk_buff *skb, u32 info);
 void sctp_hash_established(struct sctp_association *);
-void __sctp_hash_established(struct sctp_association *);
 void sctp_unhash_established(struct sctp_association *);
-void __sctp_unhash_established(struct sctp_association *);
 void sctp_hash_endpoint(struct sctp_endpoint *);
-void __sctp_hash_endpoint(struct sctp_endpoint *);
 void sctp_unhash_endpoint(struct sctp_endpoint *);
-void __sctp_unhash_endpoint(struct sctp_endpoint *);
-struct sctp_association *__sctp_lookup_association(
-	const union sctp_addr *,
-	const union sctp_addr *,
-	struct sctp_transport **);
 struct sock *sctp_err_lookup(int family, struct sk_buff *,
-			     struct sctphdr *, struct sctp_endpoint **,
-			     struct sctp_association **,
+			     struct sctphdr *, struct sctp_association **,
 			     struct sctp_transport **);
-void sctp_err_finish(struct sock *, struct sctp_endpoint *,
-			    struct sctp_association *);
+void sctp_err_finish(struct sock *, struct sctp_association *);
 void sctp_icmp_frag_needed(struct sock *, struct sctp_association *,
 			   struct sctp_transport *t, __u32 pmtu);
+void sctp_icmp_proto_unreachable(struct sock *sk,
+				 struct sctp_association *asoc,
+				 struct sctp_transport *t);
 
 /*
  *  Section:  Macros, externs, and inlines
@@ -227,6 +221,22 @@ DECLARE_SNMP_STAT(struct sctp_mib, sctp_statistics);
 extern int sctp_debug_flag;
 #define SCTP_DEBUG_PRINTK(whatever...) \
 	((void) (sctp_debug_flag && printk(KERN_DEBUG whatever)))
+#define SCTP_DEBUG_PRINTK_IPADDR(lead, trail, leadparm, saddr, otherparms...) \
+	if (sctp_debug_flag) { \
+		if (saddr->sa.sa_family == AF_INET6) { \
+			printk(KERN_DEBUG \
+			       lead "%04x:%04x:%04x:%04x:%04x:%04x:%04x:%04x" trail, \
+			       leadparm, \
+			       NIP6(saddr->v6.sin6_addr), \
+			       otherparms); \
+		} else { \
+			printk(KERN_DEBUG \
+			       lead "%u.%u.%u.%u" trail, \
+			       leadparm, \
+			       NIPQUAD(saddr->v4.sin_addr.s_addr), \
+			       otherparms); \
+		} \
+	}
 #define SCTP_ENABLE_DEBUG { sctp_debug_flag = 1; }
 #define SCTP_DISABLE_DEBUG { sctp_debug_flag = 0; }
 
@@ -240,6 +250,7 @@ extern int sctp_debug_flag;
 #else	/* SCTP_DEBUG */
 
 #define SCTP_DEBUG_PRINTK(whatever...)
+#define SCTP_DEBUG_PRINTK_IPADDR(whatever...)
 #define SCTP_ENABLE_DEBUG
 #define SCTP_DISABLE_DEBUG
 #define SCTP_ASSERT(expr, str, func)
@@ -310,8 +321,6 @@ static inline int sctp_sysctl_jiffies_ms(ctl_table *table, int __user *name, int
 
 int sctp_v6_init(void);
 void sctp_v6_exit(void);
-void sctp_v6_err(struct sk_buff *skb, struct inet6_skb_parm *opt,
-			int type, int code, int offset, __u32 info);
 
 #else /* #ifdef defined(CONFIG_IPV6) */
 
@@ -429,7 +438,7 @@ static inline __s32 sctp_jitter(__u32 rto)
 }
 
 /* Break down data chunks at this point.  */
-static inline int sctp_frag_point(const struct sctp_opt *sp, int pmtu)
+static inline int sctp_frag_point(const struct sctp_sock *sp, int pmtu)
 {
 	int frag = pmtu;
 
@@ -455,7 +464,8 @@ _sctp_walk_params((pos), (chunk), WORD_ROUND(ntohs((chunk)->chunk_hdr.length)), 
 #define _sctp_walk_params(pos, chunk, end, member)\
 for (pos.v = chunk->member;\
      pos.v <= (void *)chunk + end - sizeof(sctp_paramhdr_t) &&\
-     pos.v <= (void *)chunk + end - WORD_ROUND(ntohs(pos.p->length)); \
+     pos.v <= (void *)chunk + end - WORD_ROUND(ntohs(pos.p->length)) &&\
+     ntohs(pos.p->length) >= sizeof(sctp_paramhdr_t);\
      pos.v += WORD_ROUND(ntohs(pos.p->length)))
 
 #define sctp_walk_errors(err, chunk_hdr)\
@@ -465,10 +475,9 @@ _sctp_walk_errors((err), (chunk_hdr), ntohs((chunk_hdr)->length))
 for (err = (sctp_errhdr_t *)((void *)chunk_hdr + \
 	    sizeof(sctp_chunkhdr_t));\
      (void *)err <= (void *)chunk_hdr + end - sizeof(sctp_errhdr_t) &&\
-     (void *)err <= (void *)chunk_hdr + end - \
-		    WORD_ROUND(ntohs(err->length));\
-     err = (sctp_errhdr_t *)((void *)err + \
-	    WORD_ROUND(ntohs(err->length))))
+     (void *)err <= (void *)chunk_hdr + end - WORD_ROUND(ntohs(err->length)) &&\
+     ntohs(err->length) >= sizeof(sctp_errhdr_t); \
+     err = (sctp_errhdr_t *)((void *)err + WORD_ROUND(ntohs(err->length))))
 
 #define sctp_walk_fwdtsn(pos, chunk)\
 _sctp_walk_fwdtsn((pos), (chunk), ntohs((chunk)->chunk_hdr->length) - sizeof(struct sctp_fwdtsn_chunk))
@@ -581,29 +590,6 @@ static inline int sctp_vtag_hashfn(__u16 lport, __u16 rport, __u32 vtag)
 	h ^= vtag;
 	return (h & (sctp_assoc_hashsize-1));
 }
-
-/* WARNING: Do not change the layout of the members in sctp_sock! */
-struct sctp_sock {
-	struct sock	  sk;
-#if defined(CONFIG_IPV6) || defined(CONFIG_IPV6_MODULE)
-	struct ipv6_pinfo *pinet6;
-#endif /* CONFIG_IPV6 */
-	struct inet_opt	  inet;
-	struct sctp_opt	  sctp;
-};
-
-#if defined(CONFIG_IPV6) || defined(CONFIG_IPV6_MODULE)
-struct sctp6_sock {
-	struct sock	  sk;
-	struct ipv6_pinfo *pinet6;
-	struct inet_opt	  inet;
-	struct sctp_opt	  sctp;
-	struct ipv6_pinfo inet6;
-};
-#endif /* CONFIG_IPV6 */
-
-#define sctp_sk(__sk) (&((struct sctp_sock *)__sk)->sctp)
-#define sctp_opt2sk(__sp) &container_of(__sp, struct sctp_sock, sctp)->sk
 
 /* Is a socket of this style? */
 #define sctp_style(sk, style) __sctp_style((sk), (SCTP_SOCKET_##style))

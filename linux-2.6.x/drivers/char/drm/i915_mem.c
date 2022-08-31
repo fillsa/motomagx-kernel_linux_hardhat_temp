@@ -1,13 +1,32 @@
 /* i915_mem.c -- Simple agp/fb memory manager for i915 -*- linux-c -*-
  */
 /**************************************************************************
- * 
+ *
  * Copyright 2003 Tungsten Graphics, Inc., Cedar Park, Texas.
  * All Rights Reserved.
- * 
+ *
+ * Permission is hereby granted, free of charge, to any person obtaining a
+ * copy of this software and associated documentation files (the
+ * "Software"), to deal in the Software without restriction, including
+ * without limitation the rights to use, copy, modify, merge, publish,
+ * distribute, sub license, and/or sell copies of the Software, and to
+ * permit persons to whom the Software is furnished to do so, subject to
+ * the following conditions:
+ *
+ * The above copyright notice and this permission notice (including the
+ * next paragraph) shall be included in all copies or substantial portions
+ * of the Software.
+ *
+ * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS
+ * OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
+ * MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NON-INFRINGEMENT.
+ * IN NO EVENT SHALL TUNGSTEN GRAPHICS AND/OR ITS SUPPLIERS BE LIABLE FOR
+ * ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT,
+ * TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE
+ * SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+ *
  **************************************************************************/
 
-#include "i915.h"
 #include "drmP.h"
 #include "drm.h"
 #include "i915_drm.h"
@@ -75,7 +94,7 @@ static struct mem_block *split_block(struct mem_block *p, int start, int size,
 {
 	/* Maybe cut off the start of an existing block */
 	if (start > p->start) {
-		struct mem_block *newblock = DRM_MALLOC(sizeof(*newblock));
+		struct mem_block *newblock = drm_alloc(sizeof(*newblock), DRM_MEM_BUFLISTS);
 		if (!newblock)
 			goto out;
 		newblock->start = start;
@@ -91,7 +110,7 @@ static struct mem_block *split_block(struct mem_block *p, int start, int size,
 
 	/* Maybe cut off the end of an existing block */
 	if (size < p->size) {
-		struct mem_block *newblock = DRM_MALLOC(sizeof(*newblock));
+		struct mem_block *newblock = drm_alloc(sizeof(*newblock), DRM_MEM_BUFLISTS);
 		if (!newblock)
 			goto out;
 		newblock->start = start + size;
@@ -148,7 +167,7 @@ static void free_block(struct mem_block *p)
 		p->size += q->size;
 		p->next = q->next;
 		p->next->prev = p;
-		DRM_FREE(q, sizeof(*q));
+		drm_free(q, sizeof(*q), DRM_MEM_BUFLISTS);
 	}
 
 	if (p->prev->filp == NULL) {
@@ -156,7 +175,7 @@ static void free_block(struct mem_block *p)
 		q->size += p->size;
 		q->next = p->next;
 		q->next->prev = q;
-		DRM_FREE(p, sizeof(*q));
+		drm_free(p, sizeof(*q), DRM_MEM_BUFLISTS);
 	}
 }
 
@@ -164,14 +183,14 @@ static void free_block(struct mem_block *p)
  */
 static int init_heap(struct mem_block **heap, int start, int size)
 {
-	struct mem_block *blocks = DRM_MALLOC(sizeof(*blocks));
+	struct mem_block *blocks = drm_alloc(sizeof(*blocks), DRM_MEM_BUFLISTS);
 
 	if (!blocks)
 		return -ENOMEM;
 
-	*heap = DRM_MALLOC(sizeof(**heap));
+	*heap = drm_alloc(sizeof(**heap), DRM_MEM_BUFLISTS);
 	if (!*heap) {
-		DRM_FREE(blocks, sizeof(*blocks));
+		drm_free(blocks, sizeof(*blocks), DRM_MEM_BUFLISTS);
 		return -ENOMEM;
 	}
 
@@ -211,7 +230,7 @@ void i915_mem_release(drm_device_t * dev, DRMFILE filp, struct mem_block *heap)
 			p->size += q->size;
 			p->next = q->next;
 			p->next->prev = p;
-			DRM_FREE(q, sizeof(*q));
+			drm_free(q, sizeof(*q), DRM_MEM_BUFLISTS);
 		}
 	}
 }
@@ -228,10 +247,10 @@ void i915_mem_takedown(struct mem_block **heap)
 	for (p = (*heap)->next; p != *heap;) {
 		struct mem_block *q = p;
 		p = p->next;
-		DRM_FREE(q, sizeof(*q));
+		drm_free(q, sizeof(*q), DRM_MEM_BUFLISTS);
 	}
 
-	DRM_FREE(*heap, sizeof(**heap));
+	drm_free(*heap, sizeof(**heap), DRM_MEM_BUFLISTS);
 	*heap = NULL;
 }
 

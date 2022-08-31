@@ -38,7 +38,8 @@
 "	blmi	" #fail				\
 	:					\
 	: "r" (ptr), "I" (1)			\
-	: "ip", "lr", "cc", "memory");		\
+	: "ip", "lr", "cc");			\
+	smp_mb();				\
 	})
 
 #define __compat_down_op_ret(ptr,fail)		\
@@ -58,7 +59,8 @@
 "	mov	%0, ip"				\
 	: "=&r" (ret)				\
 	: "r" (ptr), "I" (1)			\
-	: "ip", "lr", "cc", "memory");		\
+	: "ip", "lr", "cc");			\
+	smp_mb();				\
 	ret;					\
 	})
 
@@ -85,7 +87,8 @@
 "2:	mov	%0, ip"				\
 	: "=&r" (ret)				\
 	: "r" (ptr), "r" (tmo), "I" (1)		\
-	: "ip", "lr", "cc", "memory");		\
+	: "ip", "lr", "cc");			\
+	smp_mb();				\
 	ret;					\
 	})
 #endif
@@ -93,6 +96,7 @@
 #ifdef CONFIG_MOT_WFN495
 #define __compat_up_op(ptr,wake)		\
 	({					\
+	smp_mb();				\
 	__asm__ __volatile__(			\
 	"@ compat_up_op\n"			\
 "1:	ldrex	lr, [%0]\n"			\
@@ -110,6 +114,7 @@
 #else
 #define __compat_up_op(ptr,wake)                \
 	({                                      \
+	smp_mb();				\
 	__asm__ __volatile__(                   \
 	"@ compat_up_op\n"                      \
 "1:	ldrex   lr, [%0]\n"                     \
@@ -117,16 +122,14 @@
 "	strex   ip, lr, [%0]\n"                 \
 "	teq     ip, #0\n"                       \
 "	bne     1b\n"                           \
-"	teq     lr, #0\n"                       \
+"	cmp	lr, #0\n"			\
 "	movle   ip, %0\n"                       \
 "	blle    " #wake                         \
 	:                                       \
 	: "r" (ptr), "I" (1)                    \
-	: "ip", "lr", "cc", "memory");          \
+	: "ip", "lr", "cc");			\
 	})
 #endif /* CONFIG_MOT_WFN495 */
-
-
 
 /*
  * The value 0x01000000 supports up to 128 processors and
@@ -151,7 +154,8 @@
 "	blne	" #fail				\
 	:					\
 	: "r" (ptr), "I" (RW_LOCK_BIAS)		\
-	: "ip", "lr", "cc", "memory");		\
+	: "ip", "lr", "cc");			\
+	smp_mb();				\\
 	})
 
 #ifdef CONFIG_MOT_WFN495
@@ -193,6 +197,7 @@
 
 #define __compat_up_op_read(ptr,wake)		\
 	({					\
+	smp_mb();				\
 	__asm__ __volatile__(			\
 	"@ compat_up_op_read\n"			\
 "1:	ldrex	lr, [%0]\n"			\
@@ -205,7 +210,7 @@
 "	bleq	" #wake				\
 	:					\
 	: "r" (ptr), "I" (1)			\
-	: "ip", "lr", "cc", "memory");		\
+	: "ip", "lr", "cc");			\
 	})
 
 #else
@@ -225,7 +230,8 @@
 "	blmi	" #fail				\
 	:					\
 	: "r" (ptr), "I" (1)			\
-	: "ip", "lr", "cc", "memory");		\
+	: "ip", "lr", "cc");			\
+	smp_mb();				\
 	})
 
 #define __compat_down_op_ret(ptr,fail)		\
@@ -246,12 +252,14 @@
 "	mov	%0, ip"				\
 	: "=&r" (ret)				\
 	: "r" (ptr), "I" (1)			\
-	: "ip", "lr", "cc", "memory");		\
+	: "ip", "lr", "cc");			\
+	smp_mb();				\
 	ret;					\
 	})
 
 #define __compat_up_op(ptr,wake)		\
 	({					\
+	smp_mb();				\
 	__asm__ __volatile__(			\
 	"@ compat_compat_up_op\n"		\
 "	mrs	ip, cpsr\n"			\
@@ -265,7 +273,7 @@
 "	blle	" #wake				\
 	:					\
 	: "r" (ptr), "I" (1)			\
-	: "ip", "lr", "cc", "memory");		\
+	: "ip", "lr", "cc");			\
 	})
 
 /*
@@ -292,7 +300,8 @@
 "	blne	" #fail				\
 	:					\
 	: "r" (ptr), "I" (RW_LOCK_BIAS)		\
-	: "ip", "lr", "cc", "memory");		\
+	: "ip", "lr", "cc");			\
+	smp_mb();				\
 	})
 
 #define __compat_up_op_write(ptr,wake)		\
@@ -310,7 +319,8 @@
 "	blcs	" #wake				\
 	:					\
 	: "r" (ptr), "I" (RW_LOCK_BIAS)		\
-	: "ip", "lr", "cc", "memory");		\
+	: "ip", "lr", "cc");			\
+	smp_mb();				\
 	})
 
 #define __compat_down_op_read(ptr,fail)		\
@@ -318,6 +328,7 @@
 
 #define __compat_up_op_read(ptr,wake)			\
 	({					\
+	smp_mb();				\
 	__asm__ __volatile__(			\
 	"@ compat_up_op_read\n"			\
 "	mrs	ip, cpsr\n"			\
@@ -331,9 +342,9 @@
 "	bleq	" #wake				\
 	:					\
 	: "r" (ptr), "I" (1)			\
-	: "ip", "lr", "cc", "memory");		\
+	: "ip", "lr", "cc");			\
 	})
 
-
 #endif
+
 #endif

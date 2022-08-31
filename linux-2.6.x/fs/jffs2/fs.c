@@ -39,7 +39,7 @@
  * http://sources.redhat.com/jffs2/jffs2-licence.html
  *
  *
- * $Id: fs.c,v 1.55 2005/03/18 10:17:18 gleixner Exp $
+ * $Id: fs.c,v 1.56 2005/07/06 12:13:09 dwmw2 Exp $
  *
  */
 
@@ -612,7 +612,6 @@ int jffs2_do_fill_super(struct super_block *sb, void *data, int silent)
 	sb->s_magic = JFFS2_SUPER_MAGIC;
 	if (!(sb->s_flags & MS_RDONLY))
 		jffs2_start_garbage_collect_thread(c);
-
 	return 0;
 
  out_root_i:
@@ -714,10 +713,8 @@ unsigned char *jffs2_gc_fetch_page(struct jffs2_sb_info *c,
 	 * get -EBUSY, then avoid a deadlock between
 	 * cache page locks and f->sem.
 	 */
-	pg = read_cache_page_async_trylock(inode->i_mapping,
-					   offset >> PAGE_CACHE_SHIFT,
-					   (void *)jffs2_do_readpage_unlock,
-					   inode);
+	pg = read_cache_page_async_trylock(inode->i_mapping, offset >> PAGE_CACHE_SHIFT,
+			     (void *)jffs2_do_readpage_unlock, inode);
 	if (IS_ERR(pg))
 		return (void *)pg;
 	

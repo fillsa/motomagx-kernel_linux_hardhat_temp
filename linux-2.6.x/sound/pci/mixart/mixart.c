@@ -445,9 +445,9 @@ static int snd_mixart_trigger(snd_pcm_substream_t *subs, int cmd)
 
 static int mixart_sync_nonblock_events(mixart_mgr_t *mgr)
 {
-	int timeout = HZ;
+	unsigned long timeout = jiffies + HZ;
 	while (atomic_read(&mgr->msg_processed) > 0) {
-		if (! timeout--) {
+		if (time_after(jiffies, timeout)) {
 			snd_printk(KERN_ERR "mixart: cannot process nonblock events!\n");
 			return -EBUSY;
 		}
@@ -526,11 +526,11 @@ static int mixart_set_format(mixart_stream_t *stream, snd_pcm_format_t format)
 		stream_param.sample_type = ST_INTEGER_24BE;
 		stream_param.sample_size = 24;
 		break;
-	case SNDRV_PCM_FMTBIT_FLOAT_LE:
+	case SNDRV_PCM_FORMAT_FLOAT_LE:
 		stream_param.sample_type = ST_FLOATING_POINT_32LE;
 		stream_param.sample_size = 32;
 		break;
-	case  SNDRV_PCM_FMTBIT_FLOAT_BE:
+	case  SNDRV_PCM_FORMAT_FLOAT_BE:
 		stream_param.sample_type = ST_FLOATING_POINT_32BE;
 		stream_param.sample_size = 32;
 		break;
@@ -1019,13 +1019,6 @@ static int __devinit snd_mixart_create(mixart_mgr_t *mgr, snd_card_t *card, int 
 		return err;
 	}
 
-	if (idx == 0) {
-		/* create a DSP loader only on first cardX*/
-		err = snd_mixart_hwdep_new(mgr);
-		if (err < 0)
-			return err;
-	}
-
 	snd_card_set_dev(card, &mgr->pci->dev);
 
 	return 0;
@@ -1069,7 +1062,7 @@ static int snd_mixart_free(mixart_mgr_t *mgr)
 		free_irq(mgr->irq, (void *)mgr);
 
 	/* reset board if some firmware was loaded */
-	if(mgr->hwdep->dsp_loaded) {
+	if(mgr->dsp_loaded) {
 		snd_mixart_reset_board(mgr);
 		snd_printdd("reset miXart !\n");
 	}
@@ -1210,7 +1203,7 @@ static void snd_mixart_proc_read(snd_info_entry_t *entry,
 	snd_iprintf(buffer, "Digigram miXart (alsa card %d)\n\n", chip->chip_idx);
 
 	/* stats available when embedded OS is running */
-	if (chip->mgr->hwdep->dsp_loaded & ( 1 << MIXART_MOTHERBOARD_ELF_INDEX)) {
+	if (chip->mgr->dsp_loaded & ( 1 << MIXART_MOTHERBOARD_ELF_INDEX)) {
 		snd_iprintf(buffer, "- hardware -\n");
 		switch (chip->mgr->board_type ) {
 		case MIXART_DAUGHTER_TYPE_NONE     : snd_iprintf(buffer, "\tmiXart8 (no daughter board)\n\n"); break;
@@ -1359,7 +1352,7 @@ static int __devinit snd_mixart_probe(struct pci_dev *pci,
 			idx = index[dev];
 		else
 			idx = index[dev] + i;
-		snprintf(tmpid, sizeof(tmpid), "%s-%d", id[dev], i);
+		snprintf(tmpid, sizeof(tmpid), "%s-%d", id[dev] ? id[dev] : "MIXART", i);
 		card = snd_card_new(idx, tmpid, THIS_MODULE, 0);
 
 		if (! card) {
@@ -1388,7 +1381,7 @@ static int __devinit snd_mixart_probe(struct pci_dev *pci,
 		}
 	}
 
-	/* init firmware status (mgr->hwdep->dsp_loaded reset in hwdep_new) */
+	/* init firmware status (mgr->dsp_loaded reset in hwdep_new) */
 	mgr->board_type = MIXART_DAUGHTER_TYPE_NONE;
 
 	/* create array of streaminfo */
@@ -1411,6 +1404,13 @@ static int __devinit snd_mixart_probe(struct pci_dev *pci,
 	/* init bufferinfo_array */
 	memset(mgr->bufferinfo.area, 0, size);
 
+	/* set up firmware */
+	err = snd_mixart_setup_firmware(mgr);
+	if (err < 0) {
+		snd_mixart_free(mgr);
+		return err;
+	}
+
 	pci_set_drvdata(pci, mgr);
 	dev++;
 	return 0;
@@ -1431,7 +1431,7 @@ static struct pci_driver driver = {
 
 static int __init alsa_card_mixart_init(void)
 {
-	return pci_module_init(&driver);
+	return pci_register_driver(&driver);
 }
 
 static void __exit alsa_card_mixart_exit(void)

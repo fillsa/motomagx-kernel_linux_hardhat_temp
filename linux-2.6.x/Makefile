@@ -1,6 +1,6 @@
 VERSION = 2
 PATCHLEVEL = 6
-SUBLEVEL = 10
+SUBLEVEL = 13
 EXTRAVERSION =
 NAME=Woozy Numbat
 
@@ -24,7 +24,7 @@ MAKEFLAGS += --no-print-directory
 #
 # Most importantly: sub-Makefiles should only ever modify files in
 # their own directory. If in some directory we have a dependency on
-# a file in another dir (which doesn't happen often, but it's of
+# a file in another dir (which doesn't happen often, but it's often
 # unavoidable when linking the built-in.o targets which finally
 # turn into vmlinux), we will call a sub make in that other dir, and
 # after that we are sure that everything which is in that other dir
@@ -73,7 +73,7 @@ endif
 
 
 # kbuild supports saving output files in a separate directory.
-# To locate output files in a separate directory two syntax'es are supported.
+# To locate output files in a separate directory two syntaxes are supported.
 # In both cases the working directory must be the root of the kernel src.
 # 1) O=
 # Use "make O=dir/to/store/output/files/"
@@ -84,10 +84,12 @@ endif
 # export KBUILD_OUTPUT=dir/to/store/output/files/
 # make
 #
-# The O= assigment takes precedence over the KBUILD_OUTPUT environment variable.
+# The O= assignment takes precedence over the KBUILD_OUTPUT environment
+# variable.
 ifeq ($(TEST_COVERAGE), 1)
 GCOV_FLAGS	= -fprofile-arcs -ftest-coverage
 endif
+
 
 # KBUILD_SRC is set on invocation of make in OBJ directory
 # KBUILD_SRC is not intended to be used by the regular user (for now)
@@ -157,14 +159,13 @@ space      := $(nullstring) # end of line
 # careful not to include files twice if building in the source
 # directory. LOCALVERSION from the command line override all of this
 
-ifeq ($(objtree),$(srctree))
-localversion-files := $(wildcard $(srctree)/localversion*)
-else
-localversion-files := $(wildcard $(objtree)/localversion* $(srctree)/localversion*)
-endif
+localver := $(objtree)/localversion* $(srctree)/localversion*
+localver := $(sort $(wildcard $(localver)))
+# skip backup files (containing '~')
+localver := $(foreach f, $(localver), $(if $(findstring ~, $(f)),,$(f)))
 
 LOCALVERSION = $(subst $(space),, \
-	       $(shell cat /dev/null $(localversion-files:%~=)) \
+	       $(shell cat /dev/null $(localver)) \
 	       $(patsubst "%",%,$(CONFIG_LOCALVERSION)))
 
 KERNELRELEASE=$(VERSION).$(PATCHLEVEL).$(SUBLEVEL)$(EXTRAVERSION)$(LOCALVERSION)
@@ -198,12 +199,12 @@ SUBARCH := $(shell uname -m | sed -e s/i.86/i386/ -e s/sun4u/sparc64/ \
 # Default value for CROSS_COMPILE is not to prefix executables
 # Note: Some architectures assign CROSS_COMPILE in their arch/*/Makefile
 
-ARCH := $(shell if [ -f .mvl_target_cpu ]; then \
+ARCH		:= $(shell if [ -f .mvl_target_cpu ]; then \
 			cat .mvl_target_cpu; \
 		else \
 			echo $(SUBARCH); \
 		fi)
-CROSS_COMPILE   = $(shell if [ -f .mvl_cross_compile ]; then \
+CROSS_COMPILE	= $(shell if [ -f .mvl_cross_compile ]; then \
 			          cat .mvl_cross_compile; \
 			  fi)
 
@@ -305,7 +306,7 @@ export quiet Q KBUILD_VERBOSE
 # See documentation in Documentation/kbuild/makefiles.txt
 
 # cc-option
-# Usage: cflags-y += $(call gcc-option, -march=winchip-c6, -march=i586)
+# Usage: cflags-y += $(call cc-option, -march=winchip-c6, -march=i586)
 
 cc-option = $(shell if $(CC) $(CFLAGS) $(1) -S -o /dev/null -xc /dev/null \
              > /dev/null 2>&1; then echo "$(1)"; else echo "$(2)"; fi ;)
@@ -315,7 +316,7 @@ check_gcc = $(warning check_gcc is deprecated - use cc-option) \
             $(call cc-option, $(1),$(2))
 
 # cc-option-yn
-# Usage: flag := $(call gcc-option-yn, -march=winchip-c6)
+# Usage: flag := $(call cc-option-yn, -march=winchip-c6)
 cc-option-yn = $(shell if $(CC) $(CFLAGS) $(1) -S -o /dev/null -xc /dev/null \
                 > /dev/null 2>&1; then echo "y"; else echo "n"; fi;)
 
@@ -355,6 +356,7 @@ DEPMOD		= $(TOOLDIR)depmod
 KALLSYMS	= scripts/kallsyms
 PERL		= perl
 CHECK		= sparse
+
 CHECKFLAGS     := -D__linux__ -Dlinux -D__STDC__ -Dunix -D__unix__
 MODFLAGS	= -DMODULE
 CFLAGS_MODULE   = $(MODFLAGS)
@@ -363,7 +365,6 @@ LDFLAGS_MODULE  = -r
 CFLAGS_KERNEL	=
 AFLAGS_KERNEL	=
 
-NOSTDINC_FLAGS  = -nostdinc -iwithprefix include
 
 # Use LINUXINCLUDE when you must reference the include/ directory.
 # Needed to be compatible with the O= option
@@ -374,11 +375,12 @@ else
 LINUXINCLUDE    := -Iinclude \
                    $(if $(KBUILD_SRC),-Iinclude2 -I$(srctree)/include)
 endif
+
 CPPFLAGS        := -D__KERNEL__ $(LINUXINCLUDE)
 
-
 CFLAGS 		:= -Wall -Wstrict-prototypes -Wno-trigraphs \
-	  	   -fno-strict-aliasing -fno-common
+	  	   -fno-strict-aliasing -fno-common \
+		   -ffreestanding
 AFLAGS		:= -D__ASSEMBLY__
 
 export	VERSION PATCHLEVEL SUBLEVEL EXTRAVERSION LOCALVERSION KERNELRELEASE \
@@ -410,7 +412,7 @@ QUILT_PATCHES := $(shell [ -r "$$HOME/.quiltrc" ] && . "$$HOME/.quiltrc" ; echo 
 
 RCS_FIND_IGNORE := \( -name SCCS -o -name BitKeeper -o -name .svn -o -name CVS -o -name "$(QUILT_PATCHES)" -o -name "$(QUILT_PC)" \) -prune -o
 RCS_TAR_IGNORE := --exclude SCCS --exclude BitKeeper --exclude .svn --exclude CVS --exclude "$(QUILT_PATCHES)" --exclude "$(QUILT_PC)"
- 
+
 # ===========================================================================
 # Rules shared between *config targets and build targets
 
@@ -424,7 +426,7 @@ scripts_basic:
 # using a seperate output directory. This allows convinient use
 # of make in output directory
 outputmakefile:
-	$(Q)if /usr/bin/env test ! $(srctree) -ef $(objtree); then \
+	$(Q)if test ! $(srctree) -ef $(objtree); then \
 	$(CONFIG_SHELL) $(srctree)/scripts/mkmakefile              \
 	    $(srctree) $(objtree) $(VERSION) $(PATCHLEVEL)         \
 	    > $(objtree)/Makefile;                                 \
@@ -555,7 +557,7 @@ ifdef CONFIG_MCOUNT
 CFLAGS		+= -pg -fno-omit-frame-pointer
 else
  ifdef CONFIG_FRAME_POINTER
- CFLAGS		+= -fno-omit-frame-pointer
+ CFLAGS		+= -fno-omit-frame-pointer $(call cc-option,-fno-optimize-sibling-calls,)
  else
  CFLAGS		+= -fomit-frame-pointer
  endif
@@ -571,22 +573,27 @@ endif
 
 include $(srctree)/arch/$(ARCH)/Makefile
 
+# arch Makefile may override CC so keep this after arch Makefile is included
+NOSTDINC_FLAGS += -nostdinc -isystem $(shell $(CC) -print-file-name=include)
+CHECKFLAGS     += $(NOSTDINC_FLAGS)
+
 # warn about C99 declaration after statement
 CFLAGS += $(call cc-option,-Wdeclaration-after-statement,)
+
+# disable pointer signedness warnings in gcc 4.0
+CFLAGS += $(call cc-option,-Wno-pointer-sign,)
 
 # Default kernel image to build when no specific target is given.
 # KBUILD_IMAGE may be overruled on the commandline or
 # set in the environment
-# Also any assingments in arch/$(ARCH)/Makefiel take precedence over
+# Also any assignments in arch/$(ARCH)/Makefile take precedence over
 # this default value
 export KBUILD_IMAGE ?= vmlinux
 
 #
 # INSTALL_PATH specifies where to place the updated kernel and system map
-# images.  Uncomment if you want to place them anywhere other than root.
-#
-
-#export	INSTALL_PATH=/boot
+# images. Default is /boot, but you can set it to other values
+export	INSTALL_PATH ?= /boot
 
 #
 # INSTALL_MOD_PATH specifies a prefix to MODLIB for module directory
@@ -835,6 +842,9 @@ export CPPFLAGS_vmlinux.lds += -P -C -U$(ARCH)
 	$(Q)$(MAKE) $(build)=$(@D) $@
 %.o: %.c scripts FORCE
 	$(Q)$(MAKE) $(build)=$(@D) $@
+%.ko: scripts FORCE
+	$(Q)$(MAKE) KBUILD_MODULES=$(if $(CONFIG_MODULES),1) $(build)=$(@D) $(@:.ko=.o)
+	$(Q)$(MAKE) -rR -f $(srctree)/scripts/Makefile.modpost
 %/:      scripts prepare FORCE
 	$(Q)$(MAKE) KBUILD_MODULES=$(if $(CONFIG_MODULES),1) $(build)=$(@D)
 %.lst: %.c scripts FORCE
@@ -923,12 +933,12 @@ modules_install: _modinst_ _modinst_post
 .PHONY: _modinst_
 _modinst_:
 	@if [ -z "$(CROSS_COMPILE)" -a \
-			-z "`$(DEPMOD) -V | grep module-init-tools`" ]; then \
+	-z "`$(DEPMOD) -V | grep module-init-tools`" ]; then \
 		echo "Warning: you may need to install module-init-tools"; \
 		echo "See http://www.codemonkey.org.uk/docs/post-halloween-2.6.txt";\
 		sleep 1; \
 	fi
-	-@rm -rf $(MODLIB)/kernel
+	@rm -rf $(MODLIB)/kernel
 	@rm -f $(MODLIB)/source
 	@mkdir -p $(MODLIB)/kernel
 	@ln -s $(srctree) $(MODLIB)/source
@@ -951,8 +961,8 @@ endif
 .PHONY: _modinst_post
 _modinst_post: _modinst_
 	if [ "$(CROSS_COMPILE)" = "" ]; then \
-		if [ -r System.map ]; then \
-			$(DEPMOD) -ae -F System.map $(depmod_opts) $(KERNELRELEASE);fi;fi
+		if [ -r System.map -a -x $(DEPMOD) ]; then $(DEPMOD) -ae -F System.map $(depmod_opts) $(KERNELRELEASE); fi; \
+	fi
 
 else # CONFIG_MODULES
 
@@ -1088,6 +1098,7 @@ help:
 	@echo  '  modules_install - Install all modules'
 	@echo  '  dir/            - Build all files in dir and below'
 	@echo  '  dir/file.[ois]  - Build specified target only'
+	@echo  '  dir/file.ko     - Build module including final link'
 	@echo  '  rpm		  - Build a kernel as an RPM package'
 	@echo  '  tags/TAGS	  - Generate tags file for editors'
 	@echo  '  cscope	  - Generate cscope index'
@@ -1152,9 +1163,17 @@ KBUILD_MODULES := 1
 crmodverdir:
 	$(Q)mkdir -p $(MODVERDIR)
 
+.PHONY: $(objtree)/Module.symvers
+$(objtree)/Module.symvers:
+	@test -e $(objtree)/Module.symvers || ( \
+	echo; \
+	echo "  WARNING: Symbol version dump $(objtree)/Module.symvers"; \
+	echo "           is missing; modules will have no dependencies and modversions."; \
+	echo )
+
 module-dirs := $(addprefix _module_,$(KBUILD_EXTMOD))
 .PHONY: $(module-dirs) modules
-$(module-dirs): crmodverdir
+$(module-dirs): crmodverdir $(objtree)/Module.symvers
 	$(Q)$(MAKE) $(build)=$(patsubst _module_%,%,$@)
 
 modules: $(module-dirs)
@@ -1192,20 +1211,30 @@ endif # KBUILD_EXTMOD
 # Generate tags for editors
 # ---------------------------------------------------------------------------
 
+#We want __srctree to totally vanish out when KBUILD_OUTPUT is not set
+#(which is the most common case IMHO) to avoid unneeded clutter in the big tags file.
+#Adding $(srctree) adds about 20M on i386 to the size of the output file!
+
+ifeq ($(src),$(obj))
+__srctree =
+else
+__srctree = $(srctree)/
+endif
+
 define all-sources
-	( find $(srctree) $(RCS_FIND_IGNORE) \
+	( find $(__srctree) $(RCS_FIND_IGNORE) \
 	       \( -name include -o -name arch \) -prune -o \
 	       -name '*.[chS]' -print; \
-	  find $(srctree)/arch/$(ARCH) $(RCS_FIND_IGNORE) \
+	  find $(__srctree)arch/$(ARCH) $(RCS_FIND_IGNORE) \
 	       -name '*.[chS]' -print; \
-	  find $(srctree)/security/selinux/include $(RCS_FIND_IGNORE) \
+	  find $(__srctree)security/selinux/include $(RCS_FIND_IGNORE) \
 	       -name '*.[chS]' -print; \
-	  find $(srctree)/include $(RCS_FIND_IGNORE) \
+	  find $(__srctree)include $(RCS_FIND_IGNORE) \
 	       \( -name config -o -name 'asm-*' \) -prune \
 	       -o -name '*.[chS]' -print; \
-	  find $(srctree)/include/asm-$(ARCH) $(RCS_FIND_IGNORE) \
+	  find $(__srctree)include/asm-$(ARCH) $(RCS_FIND_IGNORE) \
 	       -name '*.[chS]' -print; \
-	  find $(srctree)/include/asm-generic $(RCS_FIND_IGNORE) \
+	  find $(__srctree)include/asm-generic $(RCS_FIND_IGNORE) \
 	       -name '*.[chS]' -print )
 endef
 
@@ -1227,7 +1256,7 @@ cmd_TAGS = $(all-sources) | etags -
 quiet_cmd_tags = MAKE   $@
 define cmd_tags
 	rm -f $@; \
-	CTAGSF=`ctags --version | grep -i exuberant >/dev/null && echo "-I __initdata,__exitdata,EXPORT_SYMBOL,EXPORT_SYMBOL_NOVERS"`; \
+	CTAGSF=`ctags --version | grep -i exuberant >/dev/null && echo "-I __initdata,__exitdata,EXPORT_SYMBOL,EXPORT_SYMBOL_GPL --extra=+f"`; \
 	$(all-sources) | xargs ctags $$CTAGSF -a
 endef
 

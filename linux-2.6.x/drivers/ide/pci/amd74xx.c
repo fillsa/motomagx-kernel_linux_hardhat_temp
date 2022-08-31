@@ -72,6 +72,8 @@ static struct amd_ide_chip {
 	{ PCI_DEVICE_ID_NVIDIA_NFORCE3S_SATA2,	0x50, AMD_UDMA_133 },
 	{ PCI_DEVICE_ID_NVIDIA_NFORCE_CK804_IDE,	0x50, AMD_UDMA_133 },
 	{ PCI_DEVICE_ID_NVIDIA_NFORCE_MCP04_IDE,	0x50, AMD_UDMA_133 },
+	{ PCI_DEVICE_ID_NVIDIA_NFORCE_MCP51_IDE,	0x50, AMD_UDMA_133 },
+	{ PCI_DEVICE_ID_NVIDIA_NFORCE_MCP55_IDE,	0x50, AMD_UDMA_133 },
 	{ 0 }
 };
 
@@ -308,7 +310,7 @@ static int amd74xx_ide_dma_check(ide_drive_t *drive)
  * and initialize its drive independent registers.
  */
 
-static unsigned int __init init_chipset_amd74xx(struct pci_dev *dev, const char *name)
+static unsigned int __devinit init_chipset_amd74xx(struct pci_dev *dev, const char *name)
 {
 	unsigned char t;
 	unsigned int u;
@@ -412,7 +414,7 @@ static unsigned int __init init_chipset_amd74xx(struct pci_dev *dev, const char 
 	return dev->irq;
 }
 
-static void __init init_hwif_amd74xx(ide_hwif_t *hwif)
+static void __devinit init_hwif_amd74xx(ide_hwif_t *hwif)
 {
 	int i;
 
@@ -487,15 +489,20 @@ static ide_pci_device_t amd74xx_chipsets[] __devinitdata = {
 	/* 12 */ DECLARE_NV_DEV("NFORCE3-250-SATA2"),
 	/* 13 */ DECLARE_NV_DEV("NFORCE-CK804"),
 	/* 14 */ DECLARE_NV_DEV("NFORCE-MCP04"),
+	/* 15 */ DECLARE_NV_DEV("NFORCE-MCP51"),
+	/* 16 */ DECLARE_NV_DEV("NFORCE-MCP55"),
 };
 
 static int __devinit amd74xx_probe(struct pci_dev *dev, const struct pci_device_id *id)
 {
 	amd_chipset = amd74xx_chipsets + id->driver_data;
 	amd_config = amd_ide_chips + id->driver_data;
-	if (dev->device != amd_config->id) BUG();
-	ide_setup_pci_device(dev, amd_chipset);
-	return 0;
+	if (dev->device != amd_config->id) {
+		printk(KERN_ERR "%s: assertion 0x%02x == 0x%02x failed !\n",
+		       pci_name(dev), dev->device, amd_config->id);
+		return -ENODEV;
+	}
+	return ide_setup_pci_device(dev, amd_chipset);
 }
 
 static struct pci_device_id amd74xx_pci_tbl[] = {
@@ -518,6 +525,8 @@ static struct pci_device_id amd74xx_pci_tbl[] = {
 #endif
 	{ PCI_VENDOR_ID_NVIDIA, PCI_DEVICE_ID_NVIDIA_NFORCE_CK804_IDE,	PCI_ANY_ID, PCI_ANY_ID, 0, 0, 13 },
 	{ PCI_VENDOR_ID_NVIDIA, PCI_DEVICE_ID_NVIDIA_NFORCE_MCP04_IDE,	PCI_ANY_ID, PCI_ANY_ID, 0, 0, 14 },
+	{ PCI_VENDOR_ID_NVIDIA, PCI_DEVICE_ID_NVIDIA_NFORCE_MCP51_IDE,	PCI_ANY_ID, PCI_ANY_ID, 0, 0, 15 },
+	{ PCI_VENDOR_ID_NVIDIA, PCI_DEVICE_ID_NVIDIA_NFORCE_MCP55_IDE,	PCI_ANY_ID, PCI_ANY_ID, 0, 0, 16 },
 	{ 0, },
 };
 MODULE_DEVICE_TABLE(pci, amd74xx_pci_tbl);

@@ -20,15 +20,13 @@ CFLAGS		+=-fno-omit-frame-pointer -mapcs -mno-sched-prolog
 endif
 
 ifeq ($(CONFIG_CPU_BIG_ENDIAN),y)
-CFLAGS		+= -mbig-endian
+CPPFLAGS	+= -mbig-endian
 AS		+= -EB
 LD		+= -EB
-AFLAGS		+= -mbig-endian
 else
-CFLAGS		+= -mlittle-endian
+CPPFLAGS	+= -mlittle-endian
 AS		+= -EL
 LD		+= -EL
-AFLAGS		+= -mlittle-endian
 endif
 
 comma = ,
@@ -103,12 +101,14 @@ textaddr-$(CONFIG_ARCH_FORTUNET)   := 0xc0008000
  machine-$(CONFIG_ARCH_IOP3XX)	   := iop3xx
  machine-$(CONFIG_ARCH_IXP4XX)	   := ixp4xx
  machine-$(CONFIG_ARCH_IXP2000)    := ixp2000
- machine-$(CONFIG_ARCH_OMAP)	   := omap
+ machine-$(CONFIG_ARCH_OMAP1)	   := omap1
+  incdir-$(CONFIG_ARCH_OMAP)	   := omap
  machine-$(CONFIG_ARCH_S3C2410)	   := s3c2410
  machine-$(CONFIG_ARCH_LH7A40X)	   := lh7a40x
  machine-$(CONFIG_ARCH_VERSATILE)  := versatile
  machine-$(CONFIG_ARCH_IMX)	   := imx
  machine-$(CONFIG_ARCH_H720X)	   := h720x
+ machine-$(CONFIG_ARCH_AAEC2000)   := aaec2000
  incdir-$(CONFIG_ARCH_MXC)	   := mxc
  machine-$(CONFIG_ARCH_MX3)	   := mx3
  machine-$(CONFIG_ARCH_MXC91331)   := mxc91321
@@ -154,8 +154,8 @@ FASTFPE_OBJ	:=$(FASTFPE)/
 endif
 
 # If we have a machine-specific directory, then include it in the build.
-core-y				+= arch/arm/kernel/ arch/arm/mm/ \
-				arch/arm/common/ arch/arm/ktools/
+core-y				+= arch/arm/kernel/ arch/arm/mm/ arch/arm/common/ \
+				arch/arm/ktools/
 core-y				+= $(MACHINE)
 core-$(CONFIG_FPE_NWFPE)	+= arch/arm/nwfpe/
 core-$(CONFIG_FPE_FASTFPE)	+= $(FASTFPE_OBJ)
@@ -163,6 +163,9 @@ core-$(CONFIG_VFP)		+= arch/arm/vfp/
 
 # If we have a common platform directory, then include it in the build.
 core-$(CONFIG_ARCH_MXC)	+= arch/arm/plat-mxc/
+
+# If we have a common platform directory, then include it in the build.
+core-$(CONFIG_ARCH_OMAP)	+= arch/arm/plat-omap/
 
 drivers-$(CONFIG_OPROFILE)      += arch/arm/oprofile/
 drivers-$(CONFIG_ARCH_CLPS7500)	+= drivers/acorn/char/

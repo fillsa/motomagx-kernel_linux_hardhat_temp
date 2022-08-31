@@ -34,15 +34,12 @@
  * but is designed to be usable regardless if there's an MMU
  * present or not.
  */
-int smp_threads_ready = 0;
 struct sh_cpuinfo cpu_data[NR_CPUS];
 
-extern int cpu_idle(void *unused);
 extern void per_cpu_trap_init(void);
 
 cpumask_t cpu_possible_map;
 cpumask_t cpu_online_map;
-unsigned long cache_decay_ticks = HZ / 100;
 static atomic_t cpus_booted = ATOMIC_INIT(0);
 
 /* These are defined by the board-specific code. */
@@ -124,12 +121,12 @@ int start_secondary(void *unused)
 	
 	atomic_inc(&cpus_booted);
 
-	return cpu_idle(0);
+	cpu_idle();
+	return 0;
 }
 
 void __init smp_cpus_done(unsigned int max_cpus)
 {
-	smp_threads_ready = 1;
 	smp_mb();
 }
 

@@ -67,6 +67,19 @@
 
 extern kmem_cache_t *sctp_chunk_cachep;
 
+SCTP_STATIC
+struct sctp_chunk *sctp_make_chunk(const struct sctp_association *asoc,
+				   __u8 type, __u8 flags, int paylen);
+static sctp_cookie_param_t *sctp_pack_cookie(const struct sctp_endpoint *ep,
+					const struct sctp_association *asoc,
+					const struct sctp_chunk *init_chunk,
+					int *cookie_len,
+					const __u8 *raw_addrs, int addrs_len);
+static int sctp_process_param(struct sctp_association *asoc,
+			      union sctp_params param,
+			      const union sctp_addr *peer_addr,
+			      unsigned int __nocast gfp);
+
 /* What was the inbound interface for this chunk? */
 int sctp_chunk_iif(const struct sctp_chunk *chunk)
 {
@@ -161,14 +174,14 @@ void  sctp_init_cause(struct sctp_chunk *chunk, __u16 cause_code,
  */
 struct sctp_chunk *sctp_make_init(const struct sctp_association *asoc,
 			     const struct sctp_bind_addr *bp,
-			     int gfp, int vparam_len)
+			     unsigned int __nocast gfp, int vparam_len)
 {
 	sctp_inithdr_t init;
 	union sctp_params addrs;
 	size_t chunksize;
 	struct sctp_chunk *retval = NULL;
 	int num_types, addrs_len = 0;
-	struct sctp_opt *sp;
+	struct sctp_sock *sp;
 	sctp_supported_addrs_param_t sat;
 	__u16 types[2];
 	sctp_adaption_ind_param_t aiparam;
@@ -248,7 +261,7 @@ nodata:
 
 struct sctp_chunk *sctp_make_init_ack(const struct sctp_association *asoc,
 				 const struct sctp_chunk *chunk,
-				 int gfp, int unkparam_len)
+				 unsigned int __nocast gfp, int unkparam_len)
 {
 	sctp_inithdr_t initack;
 	struct sctp_chunk *retval;
@@ -559,52 +572,6 @@ nodata:
 	return retval;
 }
 
-/* Make a DATA chunk for the given association.  Populate the data
- * payload.
- */
-struct sctp_chunk *sctp_make_datafrag(struct sctp_association *asoc,
-				 const struct sctp_sndrcvinfo *sinfo,
-				 int data_len, const __u8 *data,
-				 __u8 flags, __u16 ssn)
-{
-	struct sctp_chunk *retval;
-
-	retval = sctp_make_datafrag_empty(asoc, sinfo, data_len, flags, ssn);
-	if (retval)
-		sctp_addto_chunk(retval, data_len, data);
-
-	return retval;
-}
-
-/* Make a DATA chunk for the given association to ride on stream id
- * 'stream', with a payload id of 'payload', and a body of 'data'.
- */
-struct sctp_chunk *sctp_make_data(struct sctp_association *asoc,
-			     const struct sctp_sndrcvinfo *sinfo,
-			     int data_len, const __u8 *data)
-{
-	struct sctp_chunk *retval = NULL;
-
-	retval = sctp_make_data_empty(asoc, sinfo, data_len);
-	if (retval)
-		sctp_addto_chunk(retval, data_len, data);
-        return retval;
-}
-
-/* Make a DATA chunk for the given association to ride on stream id
- * 'stream', with a payload id of 'payload', and a body big enough to
- * hold 'data_len' octets of data.  We use this version when we need
- * to build the message AFTER allocating memory.
- */
-struct sctp_chunk *sctp_make_data_empty(struct sctp_association *asoc,
-				   const struct sctp_sndrcvinfo *sinfo,
-				   int data_len)
-{
-	__u8 flags = SCTP_DATA_NOT_FRAG;
-
-	return sctp_make_datafrag_empty(asoc, sinfo, data_len, flags, 0);
-}
-
 /* Create a selective ackowledgement (SACK) for the given
  * association.  This reports on which TSN's we've seen to date,
  * including duplicates and gaps.
@@ -743,7 +710,9 @@ struct sctp_chunk *sctp_make_shutdown_complete(
 	struct sctp_chunk *retval;
 	__u8 flags = 0;
 
-	/* Maybe set the T-bit if we have no association. */
+	/* Set the T-bit if we have no association (vtag will be
+	 * reflected)
+	 */
 	flags |= asoc ? 0 : SCTP_CHUNK_FLAG_T;
 
 	retval = sctp_make_chunk(asoc, SCTP_CID_SHUTDOWN_COMPLETE, flags, 0);
@@ -765,7 +734,7 @@ struct sctp_chunk *sctp_make_shutdown_complete(
 }
 
 /* Create an ABORT.  Note that we set the T bit if we have no
- * association.
+ * association, except when responding to an INIT (sctpimpguide 2.41).
  */
 struct sctp_chunk *sctp_make_abort(const struct sctp_association *asoc,
 			      const struct sctp_chunk *chunk,
@@ -774,8 +743,16 @@ struct sctp_chunk *sctp_make_abort(const struct sctp_association *asoc,
 	struct sctp_chunk *retval;
 	__u8 flags = 0;
 
-	/* Maybe set the T-bit if we have no association.  */
-	flags |= asoc ? 0 : SCTP_CHUNK_FLAG_T;
+	/* Set the T-bit if we have no association and 'chunk' is not
+	 * an INIT (vtag will be reflected).
+	 */
+	if (!asoc) {
+		if (chunk && chunk->chunk_hdr &&
+		    chunk->chunk_hdr->type == SCTP_CID_INIT)
+			flags = 0;
+		else
+			flags = SCTP_CHUNK_FLAG_T;
+	}
 
 	retval = sctp_make_chunk(asoc, SCTP_CID_ABORT, flags, hint);
 
@@ -881,6 +858,31 @@ err_chunk:
 	return retval;
 }
 
+/* Make an ABORT chunk with a PROTOCOL VIOLATION cause code. */ 
+struct sctp_chunk *sctp_make_abort_violation(
+	const struct sctp_association *asoc,
+	const struct sctp_chunk *chunk,
+	const __u8   *payload,
+	const size_t paylen)
+{
+	struct sctp_chunk  *retval;
+	struct sctp_paramhdr phdr;
+
+	retval = sctp_make_abort(asoc, chunk, sizeof(sctp_errhdr_t) + paylen
+					+ sizeof(sctp_chunkhdr_t));
+	if (!retval)
+		goto end;
+
+	sctp_init_cause(retval, SCTP_ERROR_PROTO_VIOLATION, payload, paylen);
+
+	phdr.type = htons(chunk->chunk_hdr->type);
+	phdr.length = chunk->chunk_hdr->length;
+	sctp_addto_chunk(retval, sizeof(sctp_paramhdr_t), &phdr);
+
+end:
+	return retval;
+}
+
 /* Make a HEARTBEAT chunk.  */
 struct sctp_chunk *sctp_make_heartbeat(const struct sctp_association *asoc,
 				  const struct sctp_transport *transport,
@@ -933,7 +935,7 @@ nodata:
 /* Create an Operation Error chunk with the specified space reserved.
  * This routine can be used for containing multiple causes in the chunk.
  */
-struct sctp_chunk *sctp_make_op_error_space(
+static struct sctp_chunk *sctp_make_op_error_space(
 	const struct sctp_association *asoc,
 	const struct sctp_chunk *chunk,
 	size_t size)
@@ -1001,6 +1003,7 @@ struct sctp_chunk *sctp_chunkify(struct sk_buff *skb,
 		SCTP_DEBUG_PRINTK("chunkifying skb %p w/o an sk\n", skb);
 	}
 
+	INIT_LIST_HEAD(&retval->list);
 	retval->skb		= skb;
 	retval->asoc		= (struct sctp_association *)asoc;
 	retval->resent  	= 0;
@@ -1034,7 +1037,6 @@ struct sctp_chunk *sctp_chunkify(struct sk_buff *skb,
 	SCTP_DBG_OBJCNT_INC(chunk);
 	atomic_set(&retval->refcnt, 1);
 
-
 nodata:
 	return retval;
 }
@@ -1062,6 +1064,7 @@ const union sctp_addr *sctp_source(const struct sctp_chunk *chunk)
 /* Create a new chunk, setting the type and flags headers from the
  * arguments, reserving enough space for a 'paylen' byte payload.
  */
+SCTP_STATIC
 struct sctp_chunk *sctp_make_chunk(const struct sctp_association *asoc,
 				   __u8 type, __u8 flags, int paylen)
 {
@@ -1114,8 +1117,7 @@ static void sctp_chunk_destroy(struct sctp_chunk *chunk)
 /* Possibly, free the chunk.  */
 void sctp_chunk_free(struct sctp_chunk *chunk)
 {
-	/* Make sure that we are not on any list.  */
-	skb_unlink((struct sk_buff *) chunk);
+	BUG_ON(!list_empty(&chunk->list));
 	list_del_init(&chunk->transmitted_list);
 
 	/* Release our reference on the message tracker. */
@@ -1231,7 +1233,8 @@ void sctp_chunk_assign_tsn(struct sctp_chunk *chunk)
 
 /* Create a CLOSED association to use with an incoming packet.  */
 struct sctp_association *sctp_make_temp_asoc(const struct sctp_endpoint *ep,
-					struct sctp_chunk *chunk, int gfp)
+					struct sctp_chunk *chunk,
+					unsigned int __nocast gfp)
 {
 	struct sctp_association *asoc;
 	struct sk_buff *skb;
@@ -1261,7 +1264,7 @@ fail:
 /* Build a cookie representing asoc.
  * This INCLUDES the param header needed to put the cookie in the INIT ACK.
  */
-sctp_cookie_param_t *sctp_pack_cookie(const struct sctp_endpoint *ep,
+static sctp_cookie_param_t *sctp_pack_cookie(const struct sctp_endpoint *ep,
 				      const struct sctp_association *asoc,
 				      const struct sctp_chunk *init_chunk,
 				      int *cookie_len,
@@ -1346,7 +1349,7 @@ nodata:
 struct sctp_association *sctp_unpack_cookie(
 	const struct sctp_endpoint *ep,
 	const struct sctp_association *asoc,
-	struct sctp_chunk *chunk, int gfp,
+	struct sctp_chunk *chunk, unsigned int __nocast gfp,
 	int *error, struct sctp_chunk **errp)
 {
 	struct sctp_association *retval = NULL;
@@ -1409,6 +1412,24 @@ struct sctp_association *sctp_unpack_cookie(
 	}
 
 no_hmac:
+	/* IG Section 2.35.2:
+	 *  3) Compare the port numbers and the verification tag contained
+	 *     within the COOKIE ECHO chunk to the actual port numbers and the
+	 *     verification tag within the SCTP common header of the received
+	 *     packet. If these values do not match the packet MUST be silently
+	 *     discarded,
+	 */
+	if (ntohl(chunk->sctp_hdr->vtag) != bear_cookie->my_vtag) {
+		*error = -SCTP_IERROR_BAD_TAG;
+		goto fail;
+	}
+
+	if (ntohs(chunk->sctp_hdr->source) != bear_cookie->peer_addr.v4.sin_port ||
+	    ntohs(chunk->sctp_hdr->dest) != bear_cookie->my_port) {
+		*error = -SCTP_IERROR_BAD_PORTS;
+		goto fail;
+	}
+
 	/* Check to see if the cookie is stale.  If there is already
 	 * an association, there is no need to check cookie's expiration
 	 * for init collision case of lost COOKIE ACK.
@@ -1546,6 +1567,30 @@ static int sctp_process_inv_mandatory(const struct sctp_association *asoc,
 	/* Stop processing this chunk. */
 	return 0;
 }
+
+static int sctp_process_inv_paramlength(const struct sctp_association *asoc,
+					struct sctp_paramhdr *param,
+					const struct sctp_chunk *chunk,
+					struct sctp_chunk **errp)
+{
+	char		error[] = "The following parameter had invalid length:";
+	size_t		payload_len = WORD_ROUND(sizeof(error)) + 
+						sizeof(sctp_paramhdr_t);
+
+
+	/* Create an error chunk and fill it in with our payload. */
+	if (!*errp)
+		*errp = sctp_make_op_error_space(asoc, chunk, payload_len);
+
+	if (*errp) {
+		sctp_init_cause(*errp, SCTP_ERROR_PROTO_VIOLATION, error,
+				sizeof(error));
+		sctp_addto_chunk(*errp, sizeof(sctp_paramhdr_t), param);
+	}
+
+	return 0;
+}
+
 
 /* Do not attempt to handle the HOST_NAME parm.  However, do
  * send back an indicator to the peer.
@@ -1725,6 +1770,18 @@ int sctp_verify_init(const struct sctp_association *asoc,
 
 	} /* for (loop through all parameters) */
 
+	/* There is a possibility that a parameter length was bad and
+	 * in that case we would have stoped walking the parameters.
+	 * The current param.p would point at the bad one.
+	 * Current consensus on the mailing list is to generate a PROTOCOL
+	 * VIOLATION error.  We build the ERROR chunk here and let the normal
+	 * error handling code build and send the packet.
+	 */
+	if (param.v < (void*)chunk->chunk_end - sizeof(sctp_paramhdr_t)) {
+		sctp_process_inv_paramlength(asoc, param.p, chunk, errp);
+		return 0;
+	}
+
 	/* The only missing mandatory param possible today is
 	 * the state cookie for an INIT-ACK chunk.
 	 */
@@ -1756,7 +1813,7 @@ int sctp_verify_init(const struct sctp_association *asoc,
  */
 int sctp_process_init(struct sctp_association *asoc, sctp_cid_t cid,
 		      const union sctp_addr *peer_addr,
-		      sctp_init_chunk_t *peer_init, int gfp)
+		      sctp_init_chunk_t *peer_init, unsigned int __nocast gfp)
 {
 	union sctp_params param;
 	struct sctp_transport *transport;
@@ -1774,7 +1831,7 @@ int sctp_process_init(struct sctp_association *asoc, sctp_cid_t cid,
 	 * be a a better choice than any of the embedded addresses.
 	 */
 	if (peer_addr)
-		if(!sctp_assoc_add_peer(asoc, peer_addr, gfp))
+		if(!sctp_assoc_add_peer(asoc, peer_addr, gfp, SCTP_ACTIVE))
 			goto nomem;
 
 	/* Process the initialization parameters.  */
@@ -1783,6 +1840,14 @@ int sctp_process_init(struct sctp_association *asoc, sctp_cid_t cid,
 
 		if (!sctp_process_param(asoc, param, peer_addr, gfp))
                         goto clean_up;
+	}
+
+	/* Walk list of transports, removing transports in the UNKNOWN state. */
+	list_for_each_safe(pos, temp, &asoc->peer.transport_addr_list) {
+		transport = list_entry(pos, struct sctp_transport, transports);
+		if (transport->state == SCTP_UNKNOWN) {
+			sctp_assoc_rm_peer(asoc, transport);
+		}
 	}
 
 	/* The fixed INIT headers are always in network byte
@@ -1850,7 +1915,8 @@ int sctp_process_init(struct sctp_association *asoc, sctp_cid_t cid,
 	 * stream sequence number shall be set to 0.
 	 */
 
-	/* Allocate storage for the negotiated streams if it is not a temporary 	 * association.
+	/* Allocate storage for the negotiated streams if it is not a temporary
+ 	 * association.
 	 */
 	if (!asoc->temp) {
 		int assoc_id;
@@ -1896,6 +1962,9 @@ clean_up:
 		list_del_init(pos);
 		sctp_transport_free(transport);
 	}
+
+	asoc->peer.transport_count = 0;
+
 nomem:
 	return 0;
 }
@@ -1912,8 +1981,10 @@ nomem:
  * work we do.  In particular, we should not build transport
  * structures for the addresses.
  */
-int sctp_process_param(struct sctp_association *asoc, union sctp_params param,
-		       const union sctp_addr *peer_addr, int gfp)
+static int sctp_process_param(struct sctp_association *asoc,
+			      union sctp_params param,
+			      const union sctp_addr *peer_addr,
+			      unsigned int __nocast gfp)
 {
 	union sctp_addr addr;
 	int i;
@@ -1937,7 +2008,7 @@ int sctp_process_param(struct sctp_association *asoc, union sctp_params param,
 		af->from_addr_param(&addr, param.addr, asoc->peer.port, 0);
 		scope = sctp_scope(peer_addr);
 		if (sctp_in_scope(&addr, scope))
-			if (!sctp_assoc_add_peer(asoc, &addr, gfp))
+			if (!sctp_assoc_add_peer(asoc, &addr, gfp, SCTP_ACTIVE))
 				return 0;
 		break;
 
@@ -2078,8 +2149,9 @@ __u32 sctp_generate_tsn(const struct sctp_endpoint *ep)
  *
  * Address Parameter and other parameter will not be wrapped in this function 
  */
-struct sctp_chunk *sctp_make_asconf(struct sctp_association *asoc,
-				    union sctp_addr *addr, int vparam_len)
+static struct sctp_chunk *sctp_make_asconf(struct sctp_association *asoc,
+					   union sctp_addr *addr,
+					   int vparam_len)
 {
 	sctp_addiphdr_t asconf;
 	struct sctp_chunk *retval;
@@ -2248,8 +2320,8 @@ struct sctp_chunk *sctp_make_asconf_set_prim(struct sctp_association *asoc,
  *
  * Create an ASCONF_ACK chunk with enough space for the parameter responses. 
  */
-struct sctp_chunk *sctp_make_asconf_ack(const struct sctp_association *asoc,
-					__u32 serial, int vparam_len)
+static struct sctp_chunk *sctp_make_asconf_ack(const struct sctp_association *asoc,
+					       __u32 serial, int vparam_len)
 {
 	sctp_addiphdr_t		asconf;
 	struct sctp_chunk	*retval;
@@ -2337,7 +2409,7 @@ static __u16 sctp_process_asconf_param(struct sctp_association *asoc,
 	 	 * Due to Resource Shortage'.
 	 	 */
 
-		peer = sctp_assoc_add_peer(asoc, &addr, GFP_ATOMIC);
+		peer = sctp_assoc_add_peer(asoc, &addr, GFP_ATOMIC, SCTP_ACTIVE);
 		if (!peer)
 			return SCTP_ERROR_RSRC_LOW;
 
@@ -2668,8 +2740,12 @@ int sctp_process_asconf_ack(struct sctp_association *asoc,
 	asoc->addip_last_asconf = NULL;
 
 	/* Send the next asconf chunk from the addip chunk queue. */
-	asconf = (struct sctp_chunk *)__skb_dequeue(&asoc->addip_chunks);
-	if (asconf) {
+	if (!list_empty(&asoc->addip_chunk_list)) {
+		struct list_head *entry = asoc->addip_chunk_list.next;
+		asconf = list_entry(entry, struct sctp_chunk, list);
+
+		list_del_init(entry);
+
 		/* Hold the chunk until an ASCONF_ACK is received. */
 		sctp_chunk_hold(asconf);
 		if (sctp_primitive_ASCONF(asoc, asconf))
@@ -2695,7 +2771,6 @@ struct sctp_chunk *sctp_make_fwdtsn(const struct sctp_association *asoc,
 
 	hint = (nstreams + 1) * sizeof(__u32);
 
-	/* Maybe set the T-bit if we have no association.  */
 	retval = sctp_make_chunk(asoc, SCTP_CID_FWD_TSN, 0, hint);
 
 	if (!retval)

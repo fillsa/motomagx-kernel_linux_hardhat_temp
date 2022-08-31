@@ -33,7 +33,6 @@
 #include <linux/timer.h>
 #include <linux/netdevice.h>
 
-#include <pcmcia/version.h>
 #include <pcmcia/cs_types.h>
 #include <pcmcia/cs.h>
 #include <pcmcia/cistpl.h>
@@ -52,7 +51,7 @@
 */
 #ifdef PCMCIA_DEBUG
 static int pc_debug = PCMCIA_DEBUG;
-MODULE_PARM(pc_debug, "i");
+module_param(pc_debug, int, 0);
 static char *version = "$Revision: 1.2 $";
 #define DEBUG(n, args...) if (pc_debug>(n)) printk(KERN_DEBUG args);
 #else
@@ -61,22 +60,12 @@ static char *version = "$Revision: 1.2 $";
 
 /*====================================================================*/
 
-/* Parameters that can be set with 'insmod' */
-
-/* The old way: bit map of interrupts to choose from */
-/* This means pick from 15, 14, 12, 11, 10, 9, 7, 5, 4, and 3 */
-static u_int irq_mask = 0xdeb8;
-/* Newer, simpler way of listing specific interrupts */
-static int irq_list[4] = { -1 };
-
 MODULE_AUTHOR("Benjamin Reed");
 MODULE_DESCRIPTION("Support for Cisco/Aironet 802.11 wireless ethernet \
                    cards.  This is the module that links the PCMCIA card \
 		   with the airo module.");
 MODULE_LICENSE("Dual BSD/GPL");
 MODULE_SUPPORTED_DEVICE("Aironet 4500, 4800 and Cisco 340 PCMCIA cards");
-MODULE_PARM(irq_mask, "i");
-MODULE_PARM(irq_list, "1-4i");
 
 /*====================================================================*/
 
@@ -89,7 +78,7 @@ MODULE_PARM(irq_list, "1-4i");
    event handler. 
 */
 
-struct net_device *init_airo_card( int, int, int );
+struct net_device *init_airo_card( int, int, int, struct device * );
 void stop_airo_card( struct net_device *, int );
 int reset_airo_card( struct net_device * );
 
@@ -178,7 +167,7 @@ static dev_link_t *airo_attach(void)
 	client_reg_t client_reg;
 	dev_link_t *link;
 	local_info_t *local;
-	int ret, i;
+	int ret;
 	
 	DEBUG(0, "airo_attach()\n");
 
@@ -192,12 +181,7 @@ static dev_link_t *airo_attach(void)
 	
 	/* Interrupt setup */
 	link->irq.Attributes = IRQ_TYPE_EXCLUSIVE;
-	link->irq.IRQInfo1 = IRQ_INFO2_VALID|IRQ_LEVEL_ID;
-	if (irq_list[0] == -1)
-		link->irq.IRQInfo2 = irq_mask;
-	else
-		for (i = 0; i < 4; i++)
-			link->irq.IRQInfo2 |= 1 << irq_list[i];
+	link->irq.IRQInfo1 = IRQ_LEVEL_ID;
 	link->irq.Handler = NULL;
 	
 	/*
@@ -225,12 +209,6 @@ static dev_link_t *airo_attach(void)
 	link->next = dev_list;
 	dev_list = link;
 	client_reg.dev_info = &dev_info;
-	client_reg.Attributes = INFO_IO_CLIENT | INFO_CARD_SHARE;
-	client_reg.EventMask =
-		CS_EVENT_CARD_INSERTION | CS_EVENT_CARD_REMOVAL |
-		CS_EVENT_RESET_PHYSICAL | CS_EVENT_CARD_RESET |
-		CS_EVENT_PM_SUSPEND | CS_EVENT_PM_RESUME;
-	client_reg.event_handler = &airo_event;
 	client_reg.Version = 0x0210;
 	client_reg.event_callback_args.client_data = link;
 	ret = pcmcia_register_client(&link->handle, &client_reg);
@@ -450,7 +428,7 @@ static void airo_config(dev_link_t *link)
 	CS_CHECK(RequestConfiguration, pcmcia_request_configuration(link->handle, &link->conf));
 	((local_info_t*)link->priv)->eth_dev = 
 		init_airo_card( link->irq.AssignedIRQ,
-				link->io.BasePort1, 1 );
+				link->io.BasePort1, 1, &handle_to_dev(handle) );
 	if (!((local_info_t*)link->priv)->eth_dev) goto cs_failed;
 	
 	/*
@@ -575,13 +553,24 @@ static int airo_event(event_t event, int priority,
 	return 0;
 } /* airo_event */
 
+static struct pcmcia_device_id airo_ids[] = {
+	PCMCIA_DEVICE_MANF_CARD(0x015f, 0x000a),
+	PCMCIA_DEVICE_MANF_CARD(0x015f, 0x0005),
+	PCMCIA_DEVICE_MANF_CARD(0x015f, 0x0007),
+	PCMCIA_DEVICE_MANF_CARD(0x0105, 0x0007),
+	PCMCIA_DEVICE_NULL,
+};
+MODULE_DEVICE_TABLE(pcmcia, airo_ids);
+
 static struct pcmcia_driver airo_driver = {
 	.owner		= THIS_MODULE,
 	.drv		= {
 		.name	= "airo_cs",
 	},
 	.attach		= airo_attach,
+	.event		= airo_event,
 	.detach		= airo_detach,
+	.id_table       = airo_ids,
 };
 
 static int airo_cs_init(void)
@@ -592,13 +581,7 @@ static int airo_cs_init(void)
 static void airo_cs_cleanup(void)
 {
 	pcmcia_unregister_driver(&airo_driver);
-
-	/* XXX: this really needs to move into generic code.. */
-	while (dev_list != NULL) {
-		if (dev_list->state & DEV_CONFIG)
-			airo_release(dev_list);
-		airo_detach(dev_list);
-	}
+	BUG_ON(dev_list != NULL);
 }
 
 /*

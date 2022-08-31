@@ -16,8 +16,8 @@
 #include <asm/ebus.h>
 #include <asm/auxio.h>
 
-/* This cannot be static, as it is referenced in entry.S */
-void __iomem *auxio_register = 0UL;
+/* This cannot be static, as it is referenced in irq.c */
+void __iomem *auxio_register = NULL;
 
 enum auxio_type {
 	AUXIO_TYPE_NODEV,
@@ -26,7 +26,7 @@ enum auxio_type {
 };
 
 static enum auxio_type auxio_devtype = AUXIO_TYPE_NODEV;
-static spinlock_t auxio_lock = SPIN_LOCK_UNLOCKED;
+static DEFINE_SPINLOCK(auxio_lock);
 
 static void __auxio_sbus_set(u8 bits_on, u8 bits_off)
 {

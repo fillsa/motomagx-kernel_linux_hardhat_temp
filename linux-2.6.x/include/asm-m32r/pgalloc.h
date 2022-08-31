@@ -7,7 +7,6 @@
 #include <linux/mm.h>
 
 #include <asm/io.h>
-#include <asm/pgtable.h>
 
 #define pmd_populate_kernel(mm, pmd, pte)	\
 	set_pmd(pmd, __pmd(_PAGE_TABLE + __pa(pte)))
@@ -23,10 +22,7 @@ static __inline__ void pmd_populate(struct mm_struct *mm, pmd_t *pmd,
  */
 static __inline__ pgd_t *pgd_alloc(struct mm_struct *mm)
 {
-	pgd_t *pgd = (pgd_t *)__get_free_page(GFP_KERNEL);
-
-	if (pgd)
-		clear_page(pgd);
+	pgd_t *pgd = (pgd_t *)__get_free_page(GFP_KERNEL|__GFP_ZERO);
 
 	return pgd;
 }
@@ -39,10 +35,7 @@ static __inline__ void pgd_free(pgd_t *pgd)
 static __inline__ pte_t *pte_alloc_one_kernel(struct mm_struct *mm,
 	unsigned long address)
 {
-	pte_t *pte = (pte_t *)__get_free_page(GFP_KERNEL);
-
-	if (pte)
-		clear_page(pte);
+	pte_t *pte = (pte_t *)__get_free_page(GFP_KERNEL|__GFP_ZERO);
 
 	return pte;
 }
@@ -50,10 +43,8 @@ static __inline__ pte_t *pte_alloc_one_kernel(struct mm_struct *mm,
 static __inline__ struct page *pte_alloc_one(struct mm_struct *mm,
 	unsigned long address)
 {
-	struct page *pte = alloc_page(GFP_KERNEL);
+	struct page *pte = alloc_page(GFP_KERNEL|__GFP_ZERO);
 
-	if (pte)
-		clear_page(page_address(pte));
 
 	return pte;
 }

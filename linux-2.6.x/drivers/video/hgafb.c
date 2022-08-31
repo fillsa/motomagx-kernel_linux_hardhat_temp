@@ -412,7 +412,8 @@ static int hgafb_setcolreg(u_int regno, u_int red, u_int green, u_int blue,
  *	A zero is returned on success and %-EINVAL for failure.
  */
 
-int hgafb_pan_display(struct fb_var_screeninfo *var, struct fb_info *info)
+static int hgafb_pan_display(struct fb_var_screeninfo *var,
+			     struct fb_info *info)
 {
 	if (var->vmode & FB_VMODE_YWRAP) {
 		if (var->yoffset < 0 || 
@@ -548,7 +549,7 @@ static struct fb_ops hgafb_ops = {
 	 *  Initialization
 	 */
 
-int __init hgafb_init(void)
+static int __init hgafb_init(void)
 {
 	if (fb_get_options("hgafb", NULL))
 		return -ENODEV;
@@ -587,15 +588,6 @@ int __init hgafb_init(void)
 	return 0;
 }
 
-	/*
-	 *  Setup
-	 */
-
-int __init hgafb_setup(char *options)
-{
-	return 0;
-}
-
 #ifdef MODULE
 static void __exit hgafb_exit(void)
 {
@@ -618,7 +610,7 @@ MODULE_AUTHOR("Ferenc Bakonyi (fero@drama.obuda.kando.hu)");
 MODULE_DESCRIPTION("FBDev driver for Hercules Graphics Adaptor");
 MODULE_LICENSE("GPL");
 
-MODULE_PARM(nologo, "i");
+module_param(nologo, bool, 0);
 MODULE_PARM_DESC(nologo, "Disables startup logo if != 0 (default=0)");
 module_init(hgafb_init);
 

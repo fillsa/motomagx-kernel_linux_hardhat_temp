@@ -7,7 +7,7 @@
  * Support for 8-bit mode by Zoltan Szilagyi <zoltans@cs.arizona.edu>
  *
  * Many modifications, and currently maintained, by
- *  Philip Blundell <Philip.Blundell@pobox.com>
+ *  Philip Blundell <philb@gnu.org>
  * Added the Compaq LTE  Alan Cox <alan@redhat.com>
  * Added MCA support Adam Fritzler <mid@auk.cx>
  *
@@ -436,11 +436,8 @@ struct net_device * __init express_probe(int unit)
 	netdev_boot_setup_check(dev);
 
 	err = do_express_probe(dev);
-	if (!err) {
-		err = register_netdev(dev);
-		if (!err)
-			return dev;
-	}
+	if (!err)
+		return dev;
 	free_netdev(dev);
 	return ERR_PTR(err);
 }
@@ -1205,7 +1202,8 @@ static int __init eexp_hw_probe(struct net_device *dev, unsigned short ioaddr)
 	dev->set_multicast_list = &eexp_set_multicast;
 	dev->tx_timeout = eexp_timeout;
 	dev->watchdog_timeo = 2*HZ;
-	return 0;
+
+	return register_netdev(dev);
 }
 
 /*
@@ -1691,8 +1689,8 @@ static struct net_device *dev_eexp[EEXP_MAX_CARDS];
 static int irq[EEXP_MAX_CARDS];
 static int io[EEXP_MAX_CARDS];
 
-MODULE_PARM(io, "1-" __MODULE_STRING(EEXP_MAX_CARDS) "i");
-MODULE_PARM(irq, "1-" __MODULE_STRING(EEXP_MAX_CARDS) "i");
+module_param_array(io, int, NULL, 0);
+module_param_array(irq, int, NULL, 0);
 MODULE_PARM_DESC(io, "EtherExpress 16 I/O base address(es)");
 MODULE_PARM_DESC(irq, "EtherExpress 16 IRQ number(s)");
 MODULE_LICENSE("GPL");
@@ -1716,7 +1714,7 @@ int init_module(void)
 				break;
 			printk(KERN_NOTICE "eexpress.c: Module autoprobe not recommended, give io=xx.\n");
 		}
-		if (do_express_probe(dev) == 0 && register_netdev(dev) == 0) {
+		if (do_express_probe(dev) == 0) {
 			dev_eexp[this_dev] = dev;
 			found++;
 			continue;

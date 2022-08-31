@@ -7,6 +7,13 @@
  * it under the terms of the GNU General Public License version 2 as
  * published by the Free Software Foundation.
  */
+
+/* This declaration for the size of the NUMA (CONFIG_DISCONTIGMEM)
+ * memory node table is the default.
+ *
+ * A good place to override this value is include/asm/arch/memory.h.
+ */
+
 #ifndef __ASM_ARM_NUMNODES_H
 #define __ASM_ARM_NUMNODES_H
 

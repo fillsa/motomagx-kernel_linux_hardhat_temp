@@ -91,7 +91,7 @@ static int r_show(struct seq_file *m, void *v)
 	return 0;
 }
 
-struct seq_operations resource_op = {
+static struct seq_operations resource_op = {
 	.start	= r_start,
 	.next	= r_next,
 	.stop	= r_stop,
@@ -263,10 +263,10 @@ static int find_resource(struct resource *root, struct resource *new,
 			new->start = min;
 		if (new->end > max)
 			new->end = max;
-		new->start = (new->start + align - 1) & ~(align - 1);
+		new->start = ALIGN(new->start, align);
 		if (alignf)
 			alignf(alignf_data, new, size, align);
-		if (new->start < new->end && new->end - new->start + 1 >= size) {
+		if (new->start < new->end && new->end - new->start >= size - 1) {
 			new->end = new->start + size - 1;
 			return 0;
 		}
@@ -430,6 +430,7 @@ EXPORT_SYMBOL(adjust_resource);
  */
 struct resource * __request_region(struct resource *parent, unsigned long start, unsigned long n, const char *name)
 {
+//2.6	struct resource *res = kmalloc(sizeof(*res), GFP_KERNEL);
 	struct resource *res = kzalloc(sizeof(*res), GFP_KERNEL);
 
 	if (res) {

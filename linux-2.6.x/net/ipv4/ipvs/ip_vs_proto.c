@@ -45,7 +45,7 @@ static struct ip_vs_protocol *ip_vs_proto_table[IP_VS_PROTO_TAB_SIZE];
 /*
  *	register an ipvs protocol
  */
-int register_ip_vs_protocol(struct ip_vs_protocol *pp)
+static int register_ip_vs_protocol(struct ip_vs_protocol *pp)
 {
 	unsigned hash = IP_VS_PROTO_HASH(pp->protocol);
 
@@ -62,7 +62,7 @@ int register_ip_vs_protocol(struct ip_vs_protocol *pp)
 /*
  *	unregister an ipvs protocol
  */
-int unregister_ip_vs_protocol(struct ip_vs_protocol *pp)
+static int unregister_ip_vs_protocol(struct ip_vs_protocol *pp)
 {
 	struct ip_vs_protocol **pp_p;
 	unsigned hash = IP_VS_PROTO_HASH(pp->protocol);
@@ -215,9 +215,6 @@ int ip_vs_protocol_init(void)
 #endif
 #ifdef CONFIG_IP_VS_PROTO_UDP
 	REGISTER_PROTOCOL(&ip_vs_protocol_udp);
-#endif
-#ifdef CONFIG_IP_VS_PROTO_ICMP
-	REGISTER_PROTOCOL(&ip_vs_protocol_icmp);
 #endif
 #ifdef CONFIG_IP_VS_PROTO_AH
 	REGISTER_PROTOCOL(&ip_vs_protocol_ah);

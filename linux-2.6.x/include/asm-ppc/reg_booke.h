@@ -51,6 +51,59 @@ do {						\
 #define mtpmr(rn, v)	asm volatile("mtpmr " __stringify(rn) ",%0" : : "r" (v))
 #endif /* __ASSEMBLY__ */
 
+/* Freescale Book E Performance Monitor APU Registers */
+#define PMRN_PMC0	0x010	/* Performance Monitor Counter 0 */
+#define PMRN_PMC1	0x011	/* Performance Monitor Counter 1 */
+#define PMRN_PMC2	0x012	/* Performance Monitor Counter 1 */
+#define PMRN_PMC3	0x013	/* Performance Monitor Counter 1 */
+#define PMRN_PMLCA0	0x090	/* PM Local Control A0 */
+#define PMRN_PMLCA1	0x091	/* PM Local Control A1 */
+#define PMRN_PMLCA2	0x092	/* PM Local Control A2 */
+#define PMRN_PMLCA3	0x093	/* PM Local Control A3 */
+
+#define PMLCA_FC	0x80000000	/* Freeze Counter */
+#define PMLCA_FCS	0x40000000	/* Freeze in Supervisor */
+#define PMLCA_FCU	0x20000000	/* Freeze in User */
+#define PMLCA_FCM1	0x10000000	/* Freeze when PMM==1 */
+#define PMLCA_FCM0	0x08000000	/* Freeze when PMM==0 */
+#define PMLCA_CE	0x04000000	/* Condition Enable */
+
+#define PMLCA_EVENT_MASK 0x007f0000	/* Event field */
+#define PMLCA_EVENT_SHIFT	16
+
+#define PMRN_PMLCB0	0x110	/* PM Local Control B0 */
+#define PMRN_PMLCB1	0x111	/* PM Local Control B1 */
+#define PMRN_PMLCB2	0x112	/* PM Local Control B2 */
+#define PMRN_PMLCB3	0x113	/* PM Local Control B3 */
+
+#define PMLCB_THRESHMUL_MASK	0x0700	/* Threshhold Multiple Field */
+#define PMLCB_THRESHMUL_SHIFT	8
+
+#define PMLCB_THRESHOLD_MASK	0x003f	/* Threshold Field */
+#define PMLCB_THRESHOLD_SHIFT	0
+
+#define PMRN_PMGC0	0x190	/* PM Global Control 0 */
+
+#define PMGC0_FAC	0x80000000	/* Freeze all Counters */
+#define PMGC0_PMIE	0x40000000	/* Interrupt Enable */
+#define PMGC0_FCECE	0x20000000	/* Freeze countes on
+					   Enabled Condition or
+					   Event */
+
+#define PMRN_UPMC0	0x000	/* User Performance Monitor Counter 0 */
+#define PMRN_UPMC1	0x001	/* User Performance Monitor Counter 1 */
+#define PMRN_UPMC2	0x002	/* User Performance Monitor Counter 1 */
+#define PMRN_UPMC3	0x003	/* User Performance Monitor Counter 1 */
+#define PMRN_UPMLCA0	0x080	/* User PM Local Control A0 */
+#define PMRN_UPMLCA1	0x081	/* User PM Local Control A1 */
+#define PMRN_UPMLCA2	0x082	/* User PM Local Control A2 */
+#define PMRN_UPMLCA3	0x083	/* User PM Local Control A3 */
+#define PMRN_UPMLCB0	0x100	/* User PM Local Control B0 */
+#define PMRN_UPMLCB1	0x101	/* User PM Local Control B1 */
+#define PMRN_UPMLCB2	0x102	/* User PM Local Control B2 */
+#define PMRN_UPMLCB3	0x103	/* User PM Local Control B3 */
+#define PMRN_UPMGC0	0x180	/* User PM Global Control 0 */
+
 
 /* Machine State Register (MSR) Fields */
 #define MSR_UCLE	(1<<26)	/* User-mode cache lock enable */
@@ -112,6 +165,8 @@ do {						\
 #define SPRN_MCSRR1	0x23B	/* Machine Check Save and Restore Register 1 */
 #define SPRN_MCSR	0x23C	/* Machine Check Status Register */
 #define SPRN_MCAR	0x23D	/* Machine Check Address Register */
+#define SPRN_DSRR0	0x23E	/* Debug Save and Restore Register 0 */
+#define SPRN_DSRR1	0x23F	/* Debug Save and Restore Register 1 */
 #define SPRN_MAS0	0x270	/* MMU Assist Register 0 */
 #define SPRN_MAS1	0x271	/* MMU Assist Register 1 */
 #define SPRN_MAS2	0x272	/* MMU Assist Register 2 */
@@ -119,6 +174,7 @@ do {						\
 #define SPRN_MAS4	0x274	/* MMU Assist Register 4 */
 #define SPRN_MAS5	0x275	/* MMU Assist Register 5 */
 #define SPRN_MAS6	0x276	/* MMU Assist Register 6 */
+#define SPRN_MAS7	0x3b0	/* MMU Assist Register 7 */
 #define SPRN_PID1	0x279	/* Process ID Register 1 */
 #define SPRN_PID2	0x27A	/* Process ID Register 2 */
 #define SPRN_TLB0CFG	0x2B0	/* TLB 0 Config Register */
@@ -210,6 +266,17 @@ do {						\
 #define MCSR_BUS_IPERR 	0x00000002UL /* Instruction parity Error */
 #define MCSR_BUS_RPERR 	0x00000001UL /* Read parity Error */
 #endif
+#ifdef CONFIG_E200
+#define MCSR_MCP 	0x80000000UL /* Machine Check Input Pin */
+#define MCSR_CP_PERR 	0x20000000UL /* Cache Push Parity Error */
+#define MCSR_CPERR 	0x10000000UL /* Cache Parity Error */
+#define MCSR_EXCP_ERR 	0x08000000UL /* ISI, ITLB, or Bus Error on 1st insn
+					fetch for an exception handler */
+#define MCSR_BUS_IRERR 	0x00000010UL /* Read Bus Error on instruction fetch*/
+#define MCSR_BUS_DRERR 	0x00000008UL /* Read Bus Error on data load */
+#define MCSR_BUS_WRERR 	0x00000004UL /* Write Bus Error on buffered
+					store or cache line push */
+#endif
 
 /* Bit definitions for the DBSR. */
 /*
@@ -251,11 +318,13 @@ do {						\
 #define ESR_PIL		0x08000000	/* Program Exception - Illegal */
 #define ESR_PPR		0x04000000	/* Program Exception - Priveleged */
 #define ESR_PTR		0x02000000	/* Program Exception - Trap */
+#define ESR_FP		0x01000000	/* Floating Point Operation */
 #define ESR_DST		0x00800000	/* Storage Exception - Data miss */
 #define ESR_DIZ		0x00400000	/* Storage Exception - Zone fault */
 #define ESR_ST		0x00800000	/* Store Operation */
 #define ESR_DLK		0x00200000	/* Data Cache Locking */
 #define ESR_ILK		0x00100000	/* Instr. Cache Locking */
+#define ESR_PUO		0x00040000	/* Unimplemented Operation exception */
 #define ESR_BO		0x00020000	/* Byte Ordering */
 
 /* Bit definitions related to the DBCR0. */
@@ -332,10 +401,12 @@ do {						\
 #define ICCR_CACHE	1		/* Cacheable */
 
 /* Bit definitions for L1CSR0. */
+#define L1CSR0_CLFC	0x00000100	/* Cache Lock Bits Flash Clear */
 #define L1CSR0_DCFI	0x00000002	/* Data Cache Flash Invalidate */
+#define L1CSR0_CFI	0x00000002	/* Cache Flash Invalidate */
 #define L1CSR0_DCE	0x00000001	/* Data Cache Enable */
 
-/* Bit definitions for L1CSR0. */
+/* Bit definitions for L1CSR1. */
 #define L1CSR1_ICLFR	0x00000100	/* Instr Cache Lock Bits Flash Reset */
 #define L1CSR1_ICFI	0x00000002	/* Instr Cache Flash Invalidate */
 #define L1CSR1_ICE	0x00000001	/* Instr Cache Enable */
@@ -373,26 +444,6 @@ do {						\
 #define SPEFSCR_FUNFE	0x00000008	/* Embedded FP underflow enable */
 #define SPEFSCR_FOVFE	0x00000004	/* Embedded FP overflow enable */
 #define SPEFSCR_FRMC 	0x00000003	/* Embedded FP rounding mode control */
-
-/* Short-hand for various SPRs. */
-#ifdef CONFIG_BOOKE
-#define CSRR0	SPRN_CSRR0	/* Critical Save and Restore Register 0 */
-#define CSRR1	SPRN_CSRR1	/* Critical Save and Restore Register 1 */
-#else
-#define CSRR0	SPRN_SRR2	/* Logically and functionally equivalent. */
-#define CSRR1	SPRN_SRR3	/* Logically and functionally equivalent. */
-#endif
-#define MCSRR0	SPRN_MCSRR0	/* Machine Check Save and Restore Register 0 */
-#define MCSRR1	SPRN_MCSRR1	/* Machine Check Save and Restore Register 1 */
-#define DCMP	SPRN_DCMP	/* Data TLB Compare Register */
-#define SPRG4R	SPRN_SPRG4R	/* Supervisor Private Registers */
-#define SPRG5R	SPRN_SPRG5R
-#define SPRG6R	SPRN_SPRG6R
-#define SPRG7R	SPRN_SPRG7R
-#define SPRG4W	SPRN_SPRG4W
-#define SPRG5W	SPRN_SPRG5W
-#define SPRG6W	SPRN_SPRG6W
-#define SPRG7W	SPRN_SPRG7W
 
 /*
  * The IBM-403 is an even more odd special case, as it is much

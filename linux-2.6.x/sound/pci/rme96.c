@@ -2285,35 +2285,35 @@ static snd_kcontrol_new_t snd_rme96_controls[] = {
 			IEC958_AES0_PRO_EMPHASIS
 },
 {
-        .iface =        SNDRV_CTL_ELEM_IFACE_PCM,
+        .iface =        SNDRV_CTL_ELEM_IFACE_MIXER,
 	.name =         "Input Connector",
 	.info =         snd_rme96_info_inputtype_control, 
 	.get =          snd_rme96_get_inputtype_control,
 	.put =          snd_rme96_put_inputtype_control 
 },
 {
-        .iface =        SNDRV_CTL_ELEM_IFACE_PCM,
+        .iface =        SNDRV_CTL_ELEM_IFACE_MIXER,
 	.name =         "Loopback Input",
 	.info =         snd_rme96_info_loopback_control,
 	.get =          snd_rme96_get_loopback_control,
 	.put =          snd_rme96_put_loopback_control
 },
 {
-        .iface =        SNDRV_CTL_ELEM_IFACE_PCM,
+        .iface =        SNDRV_CTL_ELEM_IFACE_MIXER,
 	.name =         "Sample Clock Source",
 	.info =         snd_rme96_info_clockmode_control, 
 	.get =          snd_rme96_get_clockmode_control,
 	.put =          snd_rme96_put_clockmode_control
 },
 {
-        .iface =        SNDRV_CTL_ELEM_IFACE_PCM,
+        .iface =        SNDRV_CTL_ELEM_IFACE_MIXER,
 	.name =         "Monitor Tracks",
 	.info =         snd_rme96_info_montracks_control, 
 	.get =          snd_rme96_get_montracks_control,
 	.put =          snd_rme96_put_montracks_control
 },
 {
-        .iface =        SNDRV_CTL_ELEM_IFACE_PCM,
+        .iface =        SNDRV_CTL_ELEM_IFACE_MIXER,
 	.name =         "Attenuation",
 	.info =         snd_rme96_info_attenuation_control, 
 	.get =          snd_rme96_get_attenuation_control,
@@ -2437,7 +2437,7 @@ static struct pci_driver driver = {
 
 static int __init alsa_card_rme96_init(void)
 {
-	return pci_module_init(&driver);
+	return pci_register_driver(&driver);
 }
 
 static void __exit alsa_card_rme96_exit(void)

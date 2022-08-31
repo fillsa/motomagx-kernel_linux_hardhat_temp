@@ -16,9 +16,7 @@
 #include <linux/module.h>
 #include <linux/i2o.h>
 #include <linux/delay.h>
-
-/* Exec OSM functions */
-extern struct bus_type i2o_bus_type;
+#include "core.h"
 
 /**
  *	i2o_device_issue_claim - claim or release a device
@@ -66,10 +64,11 @@ int i2o_device_claim(struct i2o_device *dev)
 
 	rc = i2o_device_issue_claim(dev, I2O_CMD_UTIL_CLAIM, I2O_CLAIM_PRIMARY);
 	if (!rc)
-		pr_debug("claim of device %d succeded\n", dev->lct_data.tid);
+		pr_debug("i2o: claim of device %d succeded\n",
+			 dev->lct_data.tid);
 	else
-		pr_debug("claim of device %d failed %d\n", dev->lct_data.tid,
-			 rc);
+		pr_debug("i2o: claim of device %d failed %d\n",
+			 dev->lct_data.tid, rc);
 
 	up(&dev->lock);
 
@@ -111,10 +110,10 @@ int i2o_device_claim_release(struct i2o_device *dev)
 	}
 
 	if (!rc)
-		pr_debug("claim release of device %d succeded\n",
+		pr_debug("i2o: claim release of device %d succeded\n",
 			 dev->lct_data.tid);
 	else
-		pr_debug("claim release of device %d failed %d\n",
+		pr_debug("i2o: claim release of device %d failed %d\n",
 			 dev->lct_data.tid, rc);
 
 	up(&dev->lock);
@@ -133,7 +132,7 @@ static void i2o_device_release(struct device *dev)
 {
 	struct i2o_device *i2o_dev = to_i2o_device(dev);
 
-	pr_debug("Release I2O device %s\n", dev->bus_id);
+	pr_debug("i2o: device %s released\n", dev->bus_id);
 
 	kfree(i2o_dev);
 };
@@ -241,7 +240,7 @@ static struct i2o_device *i2o_device_add(struct i2o_controller *c,
 
 	i2o_driver_notify_device_add_all(dev);
 
-	pr_debug("I2O device %s added\n", dev->device.bus_id);
+	pr_debug("i2o: device %s added\n", dev->device.bus_id);
 
 	return dev;
 };
@@ -281,8 +280,7 @@ int i2o_device_parse_lct(struct i2o_controller *c)
 
 	down(&c->lct_lock);
 
-	if (c->lct)
-		kfree(c->lct);
+	kfree(c->lct);
 
 	lct = c->dlct.virt;
 
@@ -293,18 +291,19 @@ int i2o_device_parse_lct(struct i2o_controller *c)
 	}
 
 	if (lct->table_size * 4 > c->dlct.len) {
-		memcpy_fromio(c->lct, c->dlct.virt, c->dlct.len);
+		memcpy(c->lct, c->dlct.virt, c->dlct.len);
 		up(&c->lct_lock);
 		return -EAGAIN;
 	}
 
-	memcpy_fromio(c->lct, c->dlct.virt, lct->table_size * 4);
+	memcpy(c->lct, c->dlct.virt, lct->table_size * 4);
 
 	lct = c->lct;
 
 	max = (lct->table_size - 3) / 9;
 
-	pr_debug("LCT has %d entries (LCT size: %d)\n", max, lct->table_size);
+	pr_debug("%s: LCT has %d entries (LCT size: %d)\n", c->name, max,
+		 lct->table_size);
 
 	/* remove devices, which are not in the LCT anymore */
 	list_for_each_entry_safe(dev, tmp, &c->devices, list) {
@@ -352,7 +351,7 @@ static ssize_t i2o_device_class_show_class_id(struct class_device *cd,
 {
 	struct i2o_device *dev = to_i2o_device(cd->dev);
 
-	sprintf(buf, "%03x\n", dev->lct_data.class_id);
+	sprintf(buf, "0x%03x\n", dev->lct_data.class_id);
 	return strlen(buf) + 1;
 };
 
@@ -367,7 +366,7 @@ static ssize_t i2o_device_class_show_tid(struct class_device *cd, char *buf)
 {
 	struct i2o_device *dev = to_i2o_device(cd->dev);
 
-	sprintf(buf, "%03x\n", dev->lct_data.tid);
+	sprintf(buf, "0x%03x\n", dev->lct_data.tid);
 	return strlen(buf) + 1;
 };
 
@@ -399,25 +398,27 @@ static int i2o_device_class_add(struct class_device *cd)
 
 	/* create user entries for this device */
 	tmp = i2o_iop_find_device(i2o_dev->iop, i2o_dev->lct_data.user_tid);
-	if (tmp)
+	if (tmp && (tmp != i2o_dev))
 		sysfs_create_link(&i2o_dev->device.kobj, &tmp->device.kobj,
 				  "user");
 
 	/* create user entries refering to this device */
 	list_for_each_entry(tmp, &c->devices, list)
-	    if (tmp->lct_data.user_tid == i2o_dev->lct_data.tid)
+	    if ((tmp->lct_data.user_tid == i2o_dev->lct_data.tid)
+		&& (tmp != i2o_dev))
 		sysfs_create_link(&tmp->device.kobj,
 				  &i2o_dev->device.kobj, "user");
 
 	/* create parent entries for this device */
 	tmp = i2o_iop_find_device(i2o_dev->iop, i2o_dev->lct_data.parent_tid);
-	if (tmp)
+	if (tmp && (tmp != i2o_dev))
 		sysfs_create_link(&i2o_dev->device.kobj, &tmp->device.kobj,
 				  "parent");
 
 	/* create parent entries refering to this device */
 	list_for_each_entry(tmp, &c->devices, list)
-	    if (tmp->lct_data.parent_tid == i2o_dev->lct_data.tid)
+	    if ((tmp->lct_data.parent_tid == i2o_dev->lct_data.tid)
+		&& (tmp != i2o_dev))
 		sysfs_create_link(&tmp->device.kobj,
 				  &i2o_dev->device.kobj, "parent");
 
@@ -442,9 +443,8 @@ static struct class_interface i2o_device_class_interface = {
  *	Note that the minimum sized reslist is 8 bytes and contains
  *	ResultCount, ErrorInfoSize, BlockStatus and BlockSize.
  */
-
 int i2o_parm_issue(struct i2o_device *i2o_dev, int cmd, void *oplist,
-		   int oplen, void *reslist, int reslen)
+			  int oplen, void *reslist, int reslen)
 {
 	struct i2o_message __iomem *msg;
 	u32 m;
@@ -487,7 +487,7 @@ int i2o_parm_issue(struct i2o_device *i2o_dev, int cmd, void *oplist,
 	if (rc == -ETIMEDOUT)
 		return rc;
 
-	memcpy_fromio(reslist, res.virt, res.len);
+	memcpy(reslist, res.virt, res.len);
 	i2o_dma_free(dev, &res);
 
 	/* Query failed */
@@ -529,16 +529,22 @@ int i2o_parm_field_get(struct i2o_device *i2o_dev, int group, int field,
 		       void *buf, int buflen)
 {
 	u16 opblk[] = { 1, 0, I2O_PARAMS_FIELD_GET, group, 1, field };
-	u8 resblk[8 + buflen];	/* 8 bytes for header */
+	u8 *resblk;		/* 8 bytes for header */
 	int size;
 
 	if (field == -1)	/* whole group */
 		opblk[4] = -1;
 
+	resblk = kmalloc(buflen + 8, GFP_KERNEL | GFP_ATOMIC);
+	if (!resblk)
+		return -ENOMEM;
+
 	size = i2o_parm_issue(i2o_dev, I2O_CMD_UTIL_PARAMS_GET, opblk,
-			      sizeof(opblk), resblk, sizeof(resblk));
+			      sizeof(opblk), resblk, buflen + 8);
 
 	memcpy(buf, resblk + 8, buflen);	/* cut off header */
+
+	kfree(resblk);
 
 	if (size > buflen)
 		return buflen;

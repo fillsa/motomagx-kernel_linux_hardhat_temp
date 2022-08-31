@@ -4,7 +4,7 @@
  *  Copyright (C) 2006 Motorola, Inc.
  *  Copyright (C) 2002 Thomas Gleixner (tglx@linutronix.de)
  *
- * $Id: nand_ids.c,v 1.13 2005/05/27 08:31:34 gleixner Exp $
+ * $Id: nand_ids.c,v 1.14 2005/06/23 09:38:50 gleixner Exp $
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 as

@@ -35,7 +35,8 @@
 #include <linux/ptrace.h>
 #include <linux/kallsyms.h>
 #include <linux/interrupt.h>
-#include <linux/version.h>
+#include <linux/utsname.h>
+#include <linux/kprobes.h>
 
 #include <asm/pgtable.h>
 #include <asm/uaccess.h>
@@ -51,19 +52,12 @@
 #include <asm/cputable.h>
 #include <asm/sections.h>
 #include <asm/tlbflush.h>
+#include <asm/time.h>
 
 #ifndef CONFIG_SMP
 struct task_struct *last_task_used_math = NULL;
 struct task_struct *last_task_used_altivec = NULL;
 #endif
-
-struct mm_struct ioremap_mm = {
-	.pgd		= ioremap_dir,
-	.mm_users	= ATOMIC_INIT(2),
-	.mm_count	= ATOMIC_INIT(1),
-	.cpu_vm_mask	= CPU_MASK_ALL,
-	.page_table_lock = SPIN_LOCK_UNLOCKED,
-};
 
 /*
  * Make sure the floating-point register state in the
@@ -168,6 +162,8 @@ int dump_task_altivec(struct pt_regs *regs, elf_vrregset_t *vrregs)
 
 #endif /* CONFIG_ALTIVEC */
 
+DEFINE_PER_CPU(struct cpu_usage, cpu_usage_array);
+
 struct task_struct *__switch_to(struct task_struct *prev,
 				struct task_struct *new)
 {
@@ -206,6 +202,21 @@ struct task_struct *__switch_to(struct task_struct *prev,
 	new_thread = &new->thread;
 	old_thread = &current->thread;
 
+/* Collect purr utilization data per process and per processor wise */
+/* purr is nothing but processor time base                          */
+
+#if defined(CONFIG_PPC_PSERIES)
+	if (cur_cpu_spec->firmware_features & FW_FEATURE_SPLPAR) {
+		struct cpu_usage *cu = &__get_cpu_var(cpu_usage_array);
+		long unsigned start_tb, current_tb;
+		start_tb = old_thread->start_tb;
+		cu->current_tb = current_tb = mfspr(SPRN_PURR);
+		old_thread->accum_tb += (current_tb - start_tb);
+		new_thread->start_tb = current_tb;
+	}
+#endif
+
+
 	local_irq_save(flags);
 	last = _switch(old_thread, new_thread);
 
@@ -214,23 +225,57 @@ struct task_struct *__switch_to(struct task_struct *prev,
 	return last;
 }
 
+static int instructions_to_print = 16;
+
+static void show_instructions(struct pt_regs *regs)
+{
+	int i;
+	unsigned long pc = regs->nip - (instructions_to_print * 3 / 4 *
+			sizeof(int));
+
+	printk("Instruction dump:");
+
+	for (i = 0; i < instructions_to_print; i++) {
+		int instr;
+
+		if (!(i % 8))
+			printk("\n");
+
+		if (((REGION_ID(pc) != KERNEL_REGION_ID) &&
+		     (REGION_ID(pc) != VMALLOC_REGION_ID)) ||
+		     __get_user(instr, (unsigned int *)pc)) {
+			printk("XXXXXXXX ");
+		} else {
+			if (regs->nip == pc)
+				printk("<%08x> ", instr);
+			else
+				printk("%08x ", instr);
+		}
+
+		pc += sizeof(int);
+	}
+
+	printk("\n");
+}
+
 void show_regs(struct pt_regs * regs)
 {
 	int i;
 	unsigned long trap;
 
-	printk("NIP: %016lX XER: %016lX LR: %016lX\n",
-	       regs->nip, regs->xer, regs->link);
+	printk("NIP: %016lX XER: %08X LR: %016lX CTR: %016lX\n",
+	       regs->nip, (unsigned int)regs->xer, regs->link, regs->ctr);
 	printk("REGS: %p TRAP: %04lx   %s  (%s)\n",
-	       regs, regs->trap, print_tainted(), UTS_RELEASE);
-	printk("MSR: %016lx EE: %01x PR: %01x FP: %01x ME: %01x IR/DR: %01x%01x\n",
+	       regs, regs->trap, print_tainted(), system_utsname.release);
+	printk("MSR: %016lx EE: %01x PR: %01x FP: %01x ME: %01x "
+	       "IR/DR: %01x%01x CR: %08X\n",
 	       regs->msr, regs->msr&MSR_EE ? 1 : 0, regs->msr&MSR_PR ? 1 : 0,
 	       regs->msr & MSR_FP ? 1 : 0,regs->msr&MSR_ME ? 1 : 0,
 	       regs->msr&MSR_IR ? 1 : 0,
-	       regs->msr&MSR_DR ? 1 : 0);
+	       regs->msr&MSR_DR ? 1 : 0,
+	       (unsigned int)regs->ccr);
 	trap = TRAP(regs);
-	if (trap == 0x300 || trap == 0x380 || trap == 0x600)
-		printk("DAR: %016lx, DSISR: %016lx\n", regs->dar, regs->dsisr);
+	printk("DAR: %016lx DSISR: %016lx\n", regs->dar, regs->dsisr);
 	printk("TASK: %p[%d] '%s' THREAD: %p",
 	       current, current->pid, current->comm, current->thread_info);
 
@@ -257,10 +302,14 @@ void show_regs(struct pt_regs * regs)
 	printk("LR [%016lx] ", regs->link);
 	print_symbol("%s\n", regs->link);
 	show_stack(current, (unsigned long *)regs->gpr[1]);
+	if (!user_mode(regs))
+		show_instructions(regs);
 }
 
 void exit_thread(void)
 {
+	kprobe_flush_task(current);
+
 #ifndef CONFIG_SMP
 	if (last_task_used_math == current)
 		last_task_used_math = NULL;
@@ -275,6 +324,7 @@ void flush_thread(void)
 {
 	struct thread_info *t = current_thread_info();
 
+	kprobe_flush_task(current);
 	if (t->flags & _TIF_ABI_PENDING)
 		t->flags ^= (_TIF_ABI_PENDING | _TIF_32BIT);
 
@@ -324,9 +374,6 @@ copy_thread(int nr, unsigned long clone_flags, unsigned long usp,
 		childregs->gpr[1] = sp + sizeof(struct pt_regs);
 		p->thread.regs = NULL;	/* no user register state */
 		clear_ti_thread_flag(p->thread_info, TIF_32BIT);
-#ifdef CONFIG_PPC_ISERIES
-		set_ti_thread_flag(p->thread_info, TIF_RUN_LIGHT);
-#endif
 	} else {
 		childregs->gpr[1] = usp;
 		p->thread.regs = childregs;
@@ -352,12 +399,12 @@ copy_thread(int nr, unsigned long clone_flags, unsigned long usp,
 	kregs = (struct pt_regs *) sp;
 	sp -= STACK_FRAME_OVERHEAD;
 	p->thread.ksp = sp;
-	if (cur_cpu_spec->cpu_features & CPU_FTR_SLB) {
+	if (cpu_has_feature(CPU_FTR_SLB)) {
 		unsigned long sp_vsid = get_kernel_vsid(sp);
 
 		sp_vsid <<= SLB_VSID_SHIFT;
 		sp_vsid |= SLB_VSID_KERNEL;
-		if (cur_cpu_spec->cpu_features & CPU_FTR_16M_PAGE)
+		if (cpu_has_feature(CPU_FTR_16M_PAGE))
 			sp_vsid |= SLB_VSID_L;
 
 		p->thread.ksp_vsid = sp_vsid;
@@ -433,6 +480,7 @@ void start_thread(struct pt_regs *regs, unsigned long fdptr, unsigned long sp)
 	current->thread.used_vr = 0;
 #endif /* CONFIG_ALTIVEC */
 }
+EXPORT_SYMBOL(start_thread);
 
 int set_fpexc_mode(struct task_struct *tsk, unsigned int val)
 {
@@ -571,6 +619,7 @@ unsigned long get_wchan(struct task_struct *p)
 	} while (count++ < 16);
 	return 0;
 }
+EXPORT_SYMBOL(get_wchan);
 
 void show_stack(struct task_struct *p, unsigned long *_sp)
 {

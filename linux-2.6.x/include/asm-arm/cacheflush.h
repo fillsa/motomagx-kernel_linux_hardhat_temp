@@ -256,6 +256,7 @@ extern void dmac_flush_range(unsigned long, unsigned long);
  * Convert calls to our calling convention.
  */
 #define flush_cache_all()		__cpuc_flush_kern_all()
+
 #ifndef CONFIG_CPU_CACHE_VIPT
 static inline void flush_cache_mm(struct mm_struct *mm)
 {
@@ -320,9 +321,9 @@ extern void flush_cache_page(struct vm_area_struct *vma, unsigned long user_addr
 extern void flush_dcache_page(struct page *);
 
 #define flush_dcache_mmap_lock(mapping) \
-	spin_lock_irq(&(mapping)->tree_lock)
+	write_lock_irq(&(mapping)->tree_lock)
 #define flush_dcache_mmap_unlock(mapping) \
-	spin_unlock_irq(&(mapping)->tree_lock)
+	write_unlock_irq(&(mapping)->tree_lock)
 
 #define flush_icache_user_range(vma,page,addr,len) \
 	flush_dcache_page(page)

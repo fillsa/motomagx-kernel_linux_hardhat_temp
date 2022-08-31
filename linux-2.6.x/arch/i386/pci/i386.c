@@ -106,11 +106,16 @@ static void __init pcibios_allocate_bus_resources(struct list_head *bus_list)
 		if ((dev = bus->self)) {
 			for (idx = PCI_BRIDGE_RESOURCES; idx < PCI_NUM_RESOURCES; idx++) {
 				r = &dev->resource[idx];
-				if (!r->start)
+				if (!r->flags)
 					continue;
 				pr = pci_find_parent_resource(dev, r);
-				if (!pr || request_resource(pr, r) < 0)
+				if (!r->start || !pr || request_resource(pr, r) < 0) {
 					printk(KERN_ERR "PCI: Cannot allocate resource region %d of bridge %s\n", idx, pci_name(dev));
+					/* Something is wrong with the region.
+					   Invalidate the resource to prevent child
+					   resource allocations in this range. */
+					r->flags = 0;
+				}
 			}
 		}
 		pcibios_allocate_bus_resources(&bus->children);
@@ -124,7 +129,7 @@ static void __init pcibios_allocate_resources(int pass)
 	u16 command;
 	struct resource *r, *pr;
 
-	while ((dev = pci_get_device(PCI_ANY_ID, PCI_ANY_ID, dev)) != NULL) {
+	for_each_pci_dev(dev) {
 		pci_read_config_word(dev, PCI_COMMAND, &command);
 		for(idx = 0; idx < 6; idx++) {
 			r = &dev->resource[idx];
@@ -150,11 +155,11 @@ static void __init pcibios_allocate_resources(int pass)
 		}
 		if (!pass) {
 			r = &dev->resource[PCI_ROM_RESOURCE];
-			if (r->flags & PCI_ROM_ADDRESS_ENABLE) {
+			if (r->flags & IORESOURCE_ROM_ENABLE) {
 				/* Turn the ROM off, leave the resource region, but keep it unregistered. */
 				u32 reg;
 				DBG("PCI: Switching off ROM of %s\n", pci_name(dev));
-				r->flags &= ~PCI_ROM_ADDRESS_ENABLE;
+				r->flags &= ~IORESOURCE_ROM_ENABLE;
 				pci_read_config_dword(dev, dev->rom_base_reg, &reg);
 				pci_write_config_dword(dev, dev->rom_base_reg, reg & ~PCI_ROM_ADDRESS_ENABLE);
 			}
@@ -168,7 +173,7 @@ static int __init pcibios_assign_resources(void)
 	int idx;
 	struct resource *r;
 
-	while ((dev = pci_get_device(PCI_ANY_ID, PCI_ANY_ID, dev)) != NULL) {
+	for_each_pci_dev(dev) {
 		int class = dev->class >> 8;
 
 		/* Don't touch classless devices and host bridges */
@@ -227,7 +232,7 @@ int pcibios_enable_resources(struct pci_dev *dev, int mask)
 
 	pci_read_config_word(dev, PCI_COMMAND, &cmd);
 	old_cmd = cmd;
-	for(idx=0; idx<6; idx++) {
+	for(idx = 0; idx < PCI_NUM_RESOURCES; idx++) {
 		/* Only set up the requested stuff */
 		if (!(mask & (1<<idx)))
 			continue;

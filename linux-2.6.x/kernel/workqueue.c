@@ -100,7 +100,7 @@ static void __queue_work(struct cpu_workqueue_struct *cwq,
  */
 int fastcall queue_work(struct workqueue_struct *wq, struct work_struct *work)
 {
-	int ret = 0, cpu = _smp_processor_id();
+	int ret = 0, cpu = raw_smp_processor_id();
 
 	if (!test_and_set_bit(0, &work->pending)) {
 		if (unlikely(is_single_threaded(wq)))
@@ -316,8 +316,6 @@ struct workqueue_struct *__create_workqueue(const char *name,
 	struct workqueue_struct *wq;
 	struct task_struct *p;
 
-	BUG_ON(strlen(name) > 10);
-
 	wq = kzalloc(sizeof(*wq), GFP_KERNEL);
 	if (!wq)
 		return NULL;
@@ -462,6 +460,31 @@ void flush_scheduled_work(void)
 {
 	flush_workqueue(keventd_wq);
 }
+
+/**
+ * cancel_rearming_delayed_workqueue - reliably kill off a delayed
+ *			work whose handler rearms the delayed work.
+ * @wq:   the controlling workqueue structure
+ * @work: the delayed work struct
+ */
+void cancel_rearming_delayed_workqueue(struct workqueue_struct *wq,
+				       struct work_struct *work)
+{
+	while (!cancel_delayed_work(work))
+		flush_workqueue(wq);
+}
+EXPORT_SYMBOL(cancel_rearming_delayed_workqueue);
+
+/**
+ * cancel_rearming_delayed_work - reliably kill off a delayed keventd
+ *			work whose handler rearms the delayed work.
+ * @work: the delayed work struct
+ */
+void cancel_rearming_delayed_work(struct work_struct *work)
+{
+	cancel_rearming_delayed_workqueue(keventd_wq, work);
+}
+EXPORT_SYMBOL(cancel_rearming_delayed_work);
 
 int keventd_up(void)
 {

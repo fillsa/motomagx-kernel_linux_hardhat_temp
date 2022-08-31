@@ -199,7 +199,7 @@ static int verify_command(struct file *file, unsigned char *cmd)
 			return 0;
 	}
 
-	if (!(type & CMD_WARNED)) {
+	if (!type) {
 		cmd_type[cmd[0]] = CMD_WARNED;
 		printk(KERN_WARNING "scsi: unknown opcode 0x%02x\n", cmd[0]);
 	}
@@ -328,11 +328,6 @@ static int sg_io(struct file *file, request_queue_t *q,
 	return 0;
 }
 
-#define FORMAT_UNIT_TIMEOUT		(2 * 60 * 60 * HZ)
-#define START_STOP_TIMEOUT		(60 * HZ)
-#define MOVE_MEDIUM_TIMEOUT		(5 * 60 * HZ)
-#define READ_ELEMENT_STATUS_TIMEOUT	(5 * 60 * HZ)
-#define READ_DEFECT_DATA_TIMEOUT	(60 * HZ )
 #define OMAX_SB_LEN 16          /* For backward compatibility */
 
 static int sg_scsi_ioctl(struct file *file, request_queue_t *q,
@@ -357,7 +352,7 @@ static int sg_scsi_ioctl(struct file *file, request_queue_t *q,
 
 	bytes = max(in_len, out_len);
 	if (bytes) {
-		buffer = kmalloc(bytes, q->bounce_gfp | GFP_USER);
+		buffer = kmalloc(bytes, q->bounce_gfp | GFP_USER| __GFP_NOWARN);
 		if (!buffer)
 			return -ENOMEM;
 

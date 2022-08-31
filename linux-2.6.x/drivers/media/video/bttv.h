@@ -1,5 +1,5 @@
 /*
- * $Id: bttv.h,v 1.10 2004/10/13 10:39:00 kraxel Exp $
+ * $Id: bttv.h,v 1.22 2005/07/28 18:41:21 mchehab Exp $
  *
  *  bttv - Bt848 frame grabber driver
  *
@@ -133,6 +133,11 @@
 #define BTTV_MATRIX_VISIONSLC 0x7e
 #define BTTV_APAC_VIEWCOMP  0x7f
 #define BTTV_DVICO_DVBT_LITE  0x80
+#define BTTV_TIBET_CS16  0x83
+#define BTTV_KODICOM_4400R  0x84
+#define BTTV_ADLINK_RTV24   0x86
+#define BTTV_DVICO_FUSIONHDTV_5_LITE 0x87
+#define BTTV_ACORP_Y878F   0x88
 
 /* i2c address list */
 #define I2C_TSA5522        0xc2
@@ -149,7 +154,7 @@
 #define I2C_VHX            0xc0
 #define I2C_MSP3400        0x80
 #define I2C_MSP3400_ALT    0x88
-#define I2C_TEA6300        0x80
+#define I2C_TEA6300        0x80 /* also used by 6320 */
 #define I2C_DPL3518	   0x84
 #define I2C_TDA9887	   0x86
 
@@ -219,7 +224,6 @@ struct tvcard
 };
 
 extern struct tvcard bttv_tvcards[];
-extern const unsigned int bttv_num_tvcards;
 
 /* identification / initialization of the card */
 extern void bttv_idcard(struct bttv *btv);
@@ -302,8 +306,6 @@ struct bttv_sub_driver {
 	struct device_driver   drv;
 	char                   wanted[BUS_ID_SIZE];
 	void                   (*gpio_irq)(struct bttv_sub_device *sub);
-	void                   (*i2c_info)(struct bttv_sub_device *sub,
-					   struct i2c_client *client, int attach);
 };
 #define to_bttv_sub_drv(x) container_of((x), struct bttv_sub_driver, drv)
 
@@ -325,8 +327,6 @@ void bttv_gpio_bits(struct bttv_core *core, u32 mask, u32 bits);
 /* ---------------------------------------------------------- */
 /* i2c                                                        */
 
-extern void bttv_bit_setscl(void *data, int state);
-extern void bttv_bit_setsda(void *data, int state);
 extern void bttv_call_i2c_clients(struct bttv *btv, unsigned int cmd, void *arg);
 extern int bttv_I2CRead(struct bttv *btv, unsigned char addr, char *probe_for);
 extern int bttv_I2CWrite(struct bttv *btv, unsigned char addr, unsigned char b1,

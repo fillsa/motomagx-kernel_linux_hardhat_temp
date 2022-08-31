@@ -18,7 +18,7 @@
 #define __RAW_SPIN_LOCK_UNLOCKED { 1 SPINLOCK_MAGIC_INIT }
 #define RAW_SPIN_LOCK_UNLOCKED (raw_spinlock_t) { 1 SPINLOCK_MAGIC_INIT }
 
-#define __raw_spin_lock_init(x) do { *(x) = RAW_SPIN_LOCK_UNLOCKED; } while(0)
+#define __raw_spin_lock_init(x)	do { *(x) = RAW_SPIN_LOCK_UNLOCKED; } while(0)
 
 /*
  * Simple spin lock operations.  There are two variants, one clears IRQ's
@@ -27,7 +27,7 @@
  * We make no fairness assumptions. They have a cost.
  */
 
-#define __raw_spin_is_locked(x) (*(volatile signed char *)(&(x)->lock) <= 0)
+#define __raw_spin_is_locked(x)	(*(volatile signed char *)(&(x)->lock) <= 0)
 #define __raw_spin_unlock_wait(x) \
 		do { barrier(); } while (__raw_spin_is_locked(x))
 #define __raw_spin_lock_flags(lock, flags) _raw_spin_lock(lock)
@@ -78,7 +78,7 @@ static inline void __raw_spin_unlock(raw_spinlock_t *lock)
 {
 #ifdef CONFIG_DEBUG_SPINLOCK
 	BUG_ON(lock->magic != SPINLOCK_MAGIC);
-	BUG_ON(!__raw_spin_is_locked(lock));
+	assert_spin_locked(lock); //mvl >2.6.11	BUG_ON(!__raw_spin_is_locked(lock));
 #endif
 	__asm__ __volatile__(
 		spin_unlock_string
@@ -97,7 +97,7 @@ static inline void __raw_spin_unlock(raw_spinlock_t *lock)
 	char oldval = 1;
 #ifdef CONFIG_DEBUG_SPINLOCK
 	BUG_ON(lock->magic != SPINLOCK_MAGIC);
-	BUG_ON(!__raw_spin_is_locked(lock));
+	assert_spin_locked(lock); //mvl >2.6.11	BUG_ON(!__raw_spin_is_locked(lock));
 #endif
 	__asm__ __volatile__(
 		spin_unlock_string
@@ -155,12 +155,15 @@ here:
 #define __RAW_RW_LOCK_UNLOCKED { RW_LOCK_BIAS RWLOCK_MAGIC_INIT }
 #define RAW_RW_LOCK_UNLOCKED (raw_rwlock_t) { RW_LOCK_BIAS RWLOCK_MAGIC_INIT }
 #define __raw_rwlock_init(x)  do { *(x) = RAW_RW_LOCK_UNLOCKED; } while(0)
-#define __raw_rwlock_is_locked(x) ((x)->lock != RW_LOCK_BIAS)
-  
+
+//del 2.6.12	#define __raw_rwlock_is_locked(x) ((x)->lock != RW_LOCK_BIAS)
+
+//2.6.12	+#define read_can_lock(x)	((int)(x)->lock > 0)
 #define __raw_read_can_lock(x)	((int)(x)->lock > 0)
+//2.6.12	+#define write_can_lock(x)	((x)->lock == RW_LOCK_BIAS)
 #define __raw_write_can_lock(x)	((x)->lock == RW_LOCK_BIAS)
 
- /*
+/*
  * On x86, we implement read-write locks as a 32-bit counter
  * with the high bit (sign) being the "contended" bit.
  *

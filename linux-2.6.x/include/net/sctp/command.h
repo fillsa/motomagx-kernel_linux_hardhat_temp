@@ -65,9 +65,11 @@ typedef enum {
 	SCTP_CMD_TIMER_START,	/* Start a timer.  */
 	SCTP_CMD_TIMER_RESTART,	/* Restart a timer. */
 	SCTP_CMD_TIMER_STOP,	/* Stop a timer. */
-	SCTP_CMD_COUNTER_RESET, /* Reset a counter. */
-	SCTP_CMD_COUNTER_INC,   /* Increment a counter. */
+	SCTP_CMD_INIT_CHOOSE_TRANSPORT, /* Choose transport for an INIT. */
+	SCTP_CMD_INIT_COUNTER_RESET, /* Reset init counter. */
+	SCTP_CMD_INIT_COUNTER_INC,   /* Increment init counter. */
 	SCTP_CMD_INIT_RESTART,  /* High level, do init timer work. */
+	SCTP_CMD_COOKIEECHO_RESTART,  /* High level, do cookie-echo timer work. */
 	SCTP_CMD_INIT_FAILED,   /* High level, do init failure work. */
 	SCTP_CMD_REPORT_DUP,	/* Report a duplicate TSN.  */
 	SCTP_CMD_STRIKE,	/* Mark a strike against a transport.  */
@@ -118,7 +120,6 @@ typedef union {
 	int error;
 	sctp_state_t state;
 	sctp_event_timeout_t to;
-	sctp_counter_t counter;
 	void *ptr;
 	struct sctp_chunk *chunk;
 	struct sctp_association *asoc;
@@ -165,7 +166,6 @@ SCTP_ARG_CONSTRUCTOR(U16,	__u16, u16)
 SCTP_ARG_CONSTRUCTOR(U8,	__u8, u8)
 SCTP_ARG_CONSTRUCTOR(ERROR,     int, error)
 SCTP_ARG_CONSTRUCTOR(STATE,	sctp_state_t, state)
-SCTP_ARG_CONSTRUCTOR(COUNTER,	sctp_counter_t, counter)
 SCTP_ARG_CONSTRUCTOR(TO,	sctp_event_timeout_t, to)
 SCTP_ARG_CONSTRUCTOR(PTR,	void *, ptr)
 SCTP_ARG_CONSTRUCTOR(CHUNK,	struct sctp_chunk *, chunk)
@@ -189,11 +189,6 @@ typedef struct {
 } sctp_cmd_seq_t;
 
 
-/* Create a new sctp_command_sequence.
- * Return NULL if creating a new sequence fails.
- */
-sctp_cmd_seq_t *sctp_new_cmd_seq(int gfp);
-
 /* Initialize a block of memory as a command sequence.
  * Return 0 if the initialization fails.
  */
@@ -207,18 +202,10 @@ int sctp_init_cmd_seq(sctp_cmd_seq_t *seq);
  */
 int sctp_add_cmd(sctp_cmd_seq_t *seq, sctp_verb_t verb, sctp_arg_t obj);
 
-/* Rewind an sctp_cmd_seq_t to iterate from the start.
- * Return 0 if the rewind fails.
- */
-int sctp_rewind_sequence(sctp_cmd_seq_t *seq);
-
 /* Return the next command structure in an sctp_cmd_seq.
  * Return NULL at the end of the sequence.
  */
 sctp_cmd_t *sctp_next_cmd(sctp_cmd_seq_t *seq);
-
-/* Dispose of a command sequence.  */
-void sctp_free_cmd_seq(sctp_cmd_seq_t *seq);
 
 #endif /* __net_sctp_command_h__ */
 

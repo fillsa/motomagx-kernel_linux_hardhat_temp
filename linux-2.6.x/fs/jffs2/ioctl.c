@@ -7,7 +7,7 @@
  *
  * For licensing information, see the file 'LICENCE' in this directory.
  *
- * $Id: ioctl.c,v 1.8 2003/10/28 16:16:28 dwmw2 Exp $
+ * $Id: ioctl.c,v 1.9 2004/11/16 20:36:11 dwmw2 Exp $
  *
  */
 

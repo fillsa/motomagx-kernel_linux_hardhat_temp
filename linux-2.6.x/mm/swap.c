@@ -141,7 +141,7 @@ static DEFINE_PER_CPU_LOCKED(struct pagevec, lru_add_active_pvecs) = { 0, };
 
 void fastcall lru_cache_add(struct page *page)
 {
-	int cpu = _smp_processor_id();
+	int cpu = raw_smp_processor_id();
 	struct pagevec *pvec = &get_cpu_var_locked(lru_add_pvecs, cpu);
 
 	page_cache_get(page);
@@ -152,7 +152,7 @@ void fastcall lru_cache_add(struct page *page)
 
 void fastcall lru_cache_add_active(struct page *page)
 {
-	int cpu = _smp_processor_id();
+	int cpu = raw_smp_processor_id();
 	struct pagevec *pvec = &get_cpu_var_locked(lru_add_active_pvecs, cpu);
 
 	page_cache_get(page);
@@ -163,7 +163,7 @@ void fastcall lru_cache_add_active(struct page *page)
 
 void lru_add_drain(void)
 {
-	int cpu = _smp_processor_id();
+	int cpu = raw_smp_processor_id();
 	struct pagevec *pvec;
 
 	pvec = &get_cpu_var_locked(lru_add_pvecs, cpu);

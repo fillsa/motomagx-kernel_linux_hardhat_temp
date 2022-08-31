@@ -39,7 +39,7 @@ MODULE_DESCRIPTION("ATI IXP MC97 controller");
 MODULE_LICENSE("GPL");
 MODULE_SUPPORTED_DEVICE("{{ATI,IXP150/200/250}}");
 
-static int index[SNDRV_CARDS] = SNDRV_DEFAULT_IDX;	/* Index 0-MAX */
+static int index[SNDRV_CARDS] = {[0 ... (SNDRV_CARDS - 1)] = -2}; /* Exclude the first card */
 static char *id[SNDRV_CARDS] = SNDRV_DEFAULT_STR;	/* ID for this card */
 static int enable[SNDRV_CARDS] = SNDRV_DEFAULT_ENABLE_PNP;	/* Enable this card */
 static int ac97_clock[SNDRV_CARDS] = {[0 ... (SNDRV_CARDS - 1)] = 48000};
@@ -247,7 +247,6 @@ struct snd_atiixp {
 	ac97_t *ac97[NUM_ATI_CODECS];
 
 	spinlock_t reg_lock;
-	spinlock_t ac97_lock;
 
 	atiixp_dma_t dmas[NUM_ATI_DMAS];
 	struct ac97_pcm *pcms[NUM_ATI_PCMS];
@@ -266,6 +265,7 @@ struct snd_atiixp {
  */
 static struct pci_device_id snd_atiixp_ids[] = {
 	{ 0x1002, 0x434d, PCI_ANY_ID, PCI_ANY_ID, 0, 0, 0 }, /* SB200 */
+	{ 0x1002, 0x4378, PCI_ANY_ID, PCI_ANY_ID, 0, 0, 0 }, /* SB400 */
 	{ 0, }
 };
 
@@ -457,20 +457,19 @@ static void snd_atiixp_codec_write(atiixp_t *chip, unsigned short codec, unsigne
 static unsigned short snd_atiixp_ac97_read(ac97_t *ac97, unsigned short reg)
 {
 	atiixp_t *chip = ac97->private_data;
-	unsigned short data;
-	spin_lock(&chip->ac97_lock);
-	data = snd_atiixp_codec_read(chip, ac97->num, reg);
-	spin_unlock(&chip->ac97_lock);
-	return data;
+	return snd_atiixp_codec_read(chip, ac97->num, reg);
     
 }
 
 static void snd_atiixp_ac97_write(ac97_t *ac97, unsigned short reg, unsigned short val)
 {
 	atiixp_t *chip = ac97->private_data;
-	spin_lock(&chip->ac97_lock);
+	if (reg == AC97_GPIO_STATUS) {
+		atiixp_write(chip, MODEM_OUT_GPIO,
+			(val << ATI_REG_MODEM_OUT_GPIO_DATA_SHIFT) | ATI_REG_MODEM_OUT_GPIO_EN);
+		return;
+	}
 	snd_atiixp_codec_write(chip, ac97->num, reg, val);
-	spin_unlock(&chip->ac97_lock);
 }
 
 /*
@@ -613,21 +612,20 @@ static snd_pcm_uframes_t snd_atiixp_pcm_pointer(snd_pcm_substream_t *substream)
 	snd_pcm_runtime_t *runtime = substream->runtime;
 	atiixp_dma_t *dma = (atiixp_dma_t *)runtime->private_data;
 	unsigned int curptr;
+	int timeout = 1000;
 
-	spin_lock(&chip->reg_lock);
-	curptr = readl(chip->remap_addr + dma->ops->dt_cur);
-	if (curptr < dma->buf_addr) {
-		snd_printdd("curptr = %x, base = %x\n", curptr, dma->buf_addr);
-		curptr = 0;
-	} else {
+	while (timeout--) {
+		curptr = readl(chip->remap_addr + dma->ops->dt_cur);
+		if (curptr < dma->buf_addr)
+			continue;
 		curptr -= dma->buf_addr;
-		if (curptr >= dma->buf_bytes) {
-			snd_printdd("curptr = %x, size = %x\n", curptr, dma->buf_bytes);
-			curptr = 0;
-		}
+		if (curptr >= dma->buf_bytes)
+			continue;
+		return bytes_to_frames(runtime, curptr);
 	}
-	spin_unlock(&chip->reg_lock);
-	return bytes_to_frames(runtime, curptr);
+	snd_printd("atiixp-modem: invalid DMA pointer read 0x%x (buf=%x)\n",
+		   readl(chip->remap_addr + dma->ops->dt_cur), dma->buf_addr);
+	return 0;
 }
 
 /*
@@ -671,44 +669,33 @@ static int snd_atiixp_pcm_trigger(snd_pcm_substream_t *substream, int cmd)
 {
 	atiixp_t *chip = snd_pcm_substream_chip(substream);
 	atiixp_dma_t *dma = (atiixp_dma_t *)substream->runtime->private_data;
-	unsigned int reg = 0;
-	int i;
+	int err = 0;
 
 	snd_assert(dma->ops->enable_transfer && dma->ops->flush_dma, return -EINVAL);
 
-	if (cmd != SNDRV_PCM_TRIGGER_START && cmd != SNDRV_PCM_TRIGGER_STOP)
-		return -EINVAL;
-
 	spin_lock(&chip->reg_lock);
-
-	/* hook off/on: via GPIO_OUT */
-	for (i = 0; i < NUM_ATI_CODECS; i++) {
-		if (chip->ac97[i]) {
-			reg = snd_ac97_read(chip->ac97[i], AC97_GPIO_STATUS);
-			break;
-	}
-	}
-	if(cmd == SNDRV_PCM_TRIGGER_START)
-		reg |= AC97_GPIO_LINE1_OH;
-	else
-		reg &= ~AC97_GPIO_LINE1_OH;
-	reg = (reg << ATI_REG_MODEM_OUT_GPIO_DATA_SHIFT) | ATI_REG_MODEM_OUT_GPIO_EN ;
-	atiixp_write(chip, MODEM_OUT_GPIO, reg);
-
-	if (cmd == SNDRV_PCM_TRIGGER_START) {
+	switch(cmd) {
+	case SNDRV_PCM_TRIGGER_START:
 		dma->ops->enable_transfer(chip, 1);
 		dma->running = 1;
-	} else {
+		break;
+	case SNDRV_PCM_TRIGGER_STOP:
 		dma->ops->enable_transfer(chip, 0);
 		dma->running = 0;
+		break;
+	default:
+		err = -EINVAL;
+		break;
 	}
+	if (! err) {
 	snd_atiixp_check_bus_busy(chip);
 	if (cmd == SNDRV_PCM_TRIGGER_STOP) {
 		dma->ops->flush_dma(chip);
 		snd_atiixp_check_bus_busy(chip);
 	}
+	}
 	spin_unlock(&chip->reg_lock);
-	return 0;
+	return err;
 }
 
 
@@ -1115,7 +1102,7 @@ static int __devinit snd_atiixp_mixer_new(atiixp_t *chip, int clock)
 /*
  * power management
  */
-static int snd_atiixp_suspend(snd_card_t *card, unsigned int state)
+static int snd_atiixp_suspend(snd_card_t *card, pm_message_t state)
 {
 	atiixp_t *chip = card->pm_private_data;
 	int i;
@@ -1129,19 +1116,18 @@ static int snd_atiixp_suspend(snd_card_t *card, unsigned int state)
 	snd_atiixp_aclink_down(chip);
 	snd_atiixp_chip_stop(chip);
 
-	pci_set_power_state(chip->pci, 3);
+	pci_set_power_state(chip->pci, PCI_D3hot);
 	pci_disable_device(chip->pci);
-	snd_power_change_state(card, SNDRV_CTL_POWER_D3hot);
 	return 0;
 }
 
-static int snd_atiixp_resume(snd_card_t *card, unsigned int state)
+static int snd_atiixp_resume(snd_card_t *card)
 {
 	atiixp_t *chip = card->pm_private_data;
 	int i;
 
 	pci_enable_device(chip->pci);
-	pci_set_power_state(chip->pci, 0);
+	pci_set_power_state(chip->pci, PCI_D0);
 	pci_set_master(chip->pci);
 
 	snd_atiixp_aclink_reset(chip);
@@ -1151,7 +1137,6 @@ static int snd_atiixp_resume(snd_card_t *card, unsigned int state)
 		if (chip->ac97[i])
 			snd_ac97_resume(chip->ac97[i]);
 
-	snd_power_change_state(card, SNDRV_CTL_POWER_D0);
 	return 0;
 }
 #endif /* CONFIG_PM */
@@ -1230,7 +1215,6 @@ static int __devinit snd_atiixp_create(snd_card_t *card,
 	}
 
 	spin_lock_init(&chip->reg_lock);
-	spin_lock_init(&chip->ac97_lock);
 	init_MUTEX(&chip->open_mutex);
 	chip->card = card;
 	chip->pci = pci;
@@ -1343,7 +1327,7 @@ static struct pci_driver driver = {
 
 static int __init alsa_card_atiixp_init(void)
 {
-	return pci_module_init(&driver);
+	return pci_register_driver(&driver);
 }
 
 static void __exit alsa_card_atiixp_exit(void)

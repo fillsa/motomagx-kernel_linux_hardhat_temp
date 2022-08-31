@@ -27,6 +27,15 @@
 #include <sound/hwdep.h>
 #include <linux/interrupt.h>
 
+#if defined(CONFIG_FW_LOADER) || defined(CONFIG_FW_LOADER_MODULE)
+#if !defined(CONFIG_USE_VXLOADER) && !defined(CONFIG_SND_VX_LIB) /* built-in kernel */
+#define SND_VX_FW_LOADER	/* use the standard firmware loader */
+#endif
+#endif
+
+struct firmware;
+struct device;
+
 typedef struct snd_vx_core vx_core_t;
 typedef struct vx_pipe vx_pipe_t;
 
@@ -100,7 +109,7 @@ struct snd_vx_ops {
 	void (*change_audio_source)(vx_core_t *chip, int src);
 	void (*set_clock_source)(vx_core_t *chp, int src);
 	/* chip init */
-	int (*load_dsp)(vx_core_t *chip, const snd_hwdep_dsp_image_t *dsp);
+	int (*load_dsp)(vx_core_t *chip, int idx, const struct firmware *fw);
 	void (*reset_dsp)(vx_core_t *chip);
 	void (*reset_board)(vx_core_t *chip, int cold_reset);
 	int (*add_controls)(vx_core_t *chip);
@@ -169,6 +178,7 @@ struct snd_vx_core {
 	unsigned int chip_status;
 	unsigned int pcm_running;
 
+	struct device *dev;
 	snd_hwdep_t *hwdep;
 
 	struct vx_rmh irq_rmh;	/* RMH used in interrupts */
@@ -198,6 +208,8 @@ struct snd_vx_core {
 	unsigned char audio_monitor_active[4];	/* playback hw-monitor mute/unmute */
 
 	struct semaphore mixer_mutex;
+
+	const struct firmware *firmware[4]; /* loaded firmware data */
 };
 
 
@@ -206,10 +218,12 @@ struct snd_vx_core {
  */
 vx_core_t *snd_vx_create(snd_card_t *card, struct snd_vx_hardware *hw,
 			 struct snd_vx_ops *ops, int extra_size);
-int snd_vx_hwdep_new(vx_core_t *chip);
-int snd_vx_load_boot_image(vx_core_t *chip, const snd_hwdep_dsp_image_t *boot);
-int snd_vx_dsp_boot(vx_core_t *chip, const snd_hwdep_dsp_image_t *boot);
-int snd_vx_dsp_load(vx_core_t *chip, const snd_hwdep_dsp_image_t *dsp);
+int snd_vx_setup_firmware(vx_core_t *chip);
+int snd_vx_load_boot_image(vx_core_t *chip, const struct firmware *dsp);
+int snd_vx_dsp_boot(vx_core_t *chip, const struct firmware *dsp);
+int snd_vx_dsp_load(vx_core_t *chip, const struct firmware *dsp);
+
+void snd_vx_free_firmware(vx_core_t *chip);
 
 /*
  * interrupt handler; exported for pcmcia
@@ -217,48 +231,39 @@ int snd_vx_dsp_load(vx_core_t *chip, const snd_hwdep_dsp_image_t *dsp);
 irqreturn_t snd_vx_irq_handler(int irq, void *dev, struct pt_regs *regs);
 
 /*
- * power-management routines
- */
-#ifdef CONFIG_PM
-void snd_vx_suspend(vx_core_t *chip);
-void snd_vx_resume(vx_core_t *chip);
-#endif
-
-
-/*
  * lowlevel functions
  */
-inline static int vx_test_and_ack(vx_core_t *chip)
+static inline int vx_test_and_ack(vx_core_t *chip)
 {
 	snd_assert(chip->ops->test_and_ack, return -ENXIO);
 	return chip->ops->test_and_ack(chip);
 }
 
-inline static void vx_validate_irq(vx_core_t *chip, int enable)
+static inline void vx_validate_irq(vx_core_t *chip, int enable)
 {
 	snd_assert(chip->ops->validate_irq, return);
 	chip->ops->validate_irq(chip, enable);
 }
 
-inline static unsigned char snd_vx_inb(vx_core_t *chip, int reg)
+static inline unsigned char snd_vx_inb(vx_core_t *chip, int reg)
 {
 	snd_assert(chip->ops->in8, return 0);
 	return chip->ops->in8(chip, reg);
 }
 
-inline static unsigned int snd_vx_inl(vx_core_t *chip, int reg)
+static inline unsigned int snd_vx_inl(vx_core_t *chip, int reg)
 {
 	snd_assert(chip->ops->in32, return 0);
 	return chip->ops->in32(chip, reg);
 }
 
-inline static void snd_vx_outb(vx_core_t *chip, int reg, unsigned char val)
+static inline void snd_vx_outb(vx_core_t *chip, int reg, unsigned char val)
 {
 	snd_assert(chip->ops->out8, return);
 	chip->ops->out8(chip, reg, val);
 }
 
-inline static void snd_vx_outl(vx_core_t *chip, int reg, unsigned int val)
+static inline void snd_vx_outl(vx_core_t *chip, int reg, unsigned int val)
 {
 	snd_assert(chip->ops->out32, return);
 	chip->ops->out32(chip, reg, val);
@@ -298,14 +303,14 @@ int snd_vx_check_reg_bit(vx_core_t *chip, int reg, int mask, int bit, int time);
 /*
  * pseudo-DMA transfer
  */
-inline static void vx_pseudo_dma_write(vx_core_t *chip, snd_pcm_runtime_t *runtime,
+static inline void vx_pseudo_dma_write(vx_core_t *chip, snd_pcm_runtime_t *runtime,
 				       vx_pipe_t *pipe, int count)
 {
 	snd_assert(chip->ops->dma_write, return);
 	chip->ops->dma_write(chip, runtime, pipe, count);
 }
 
-inline static void vx_pseudo_dma_read(vx_core_t *chip, snd_pcm_runtime_t *runtime,
+static inline void vx_pseudo_dma_read(vx_core_t *chip, snd_pcm_runtime_t *runtime,
 				      vx_pipe_t *pipe, int count)
 {
 	snd_assert(chip->ops->dma_read, return);
@@ -340,7 +345,6 @@ int vx_set_monitor_level(vx_core_t *chip, int audio, int level, int active);
  */
 void vx_set_iec958_status(vx_core_t *chip, unsigned int bits);
 int vx_set_clock(vx_core_t *chip, unsigned int freq);
-void vx_change_clock_source(vx_core_t *chip, int source);
 void vx_set_internal_clock(vx_core_t *chip, unsigned int freq);
 int vx_change_frequency(vx_core_t *chip);
 

@@ -67,8 +67,8 @@
 typedef int (*initcall_t)(void);
 typedef void (*exitcall_t)(void);
 
-extern initcall_t __con_initcall_start, __con_initcall_end;
-extern initcall_t __security_initcall_start, __security_initcall_end;
+extern initcall_t __con_initcall_start[], __con_initcall_end[];
+extern initcall_t __security_initcall_start[], __security_initcall_end[];
 
 /* Defined in init/main.c */
 extern char saved_command_line[];
@@ -232,6 +232,18 @@ void __init parse_early_param(void);
 #define __devinitdata __initdata
 #define __devexit __exit
 #define __devexitdata __exitdata
+#endif
+
+#ifdef CONFIG_HOTPLUG_CPU
+#define __cpuinit
+#define __cpuinitdata
+#define __cpuexit
+#define __cpuexitdata
+#else
+#define __cpuinit	__init
+#define __cpuinitdata __initdata
+#define __cpuexit __exit
+#define __cpuexitdata	__exitdata
 #endif
 
 /* Functions marked as __devexit may be discarded at kernel link time, depending

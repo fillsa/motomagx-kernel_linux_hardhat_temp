@@ -68,8 +68,6 @@
 #ifndef CONFIG_BT_HCIUSB_DEBUG
 #undef  BT_DBG
 #define BT_DBG(D...)
-#undef  BT_DMP
-#define BT_DMP(D...)
 #endif
 
 #ifndef CONFIG_BT_HCIUSB_ZERO_PACKET
@@ -77,11 +75,14 @@
 #define URB_ZERO_PACKET 0
 #endif
 
+static int ignore = 0;
+static int reset = 0;
+
 #ifdef CONFIG_BT_HCIUSB_SCO
 static int isoc = 2;
 #endif
 
-#define VERSION "2.7"
+#define VERSION "2.8"
 
 static struct usb_driver hci_usb_driver; 
 
@@ -112,21 +113,27 @@ static struct usb_device_id blacklist_ids[] = {
 	{ USB_DEVICE(0x0a5c, 0x2033), .driver_info = HCI_IGNORE },
 
 	/* Broadcom BCM2035 */
-	{ USB_DEVICE(0x0a5c, 0x2009), .driver_info = HCI_RESET | HCI_BROKEN_ISOC },
 	{ USB_DEVICE(0x0a5c, 0x200a), .driver_info = HCI_RESET | HCI_BROKEN_ISOC },
+	{ USB_DEVICE(0x0a5c, 0x2009), .driver_info = HCI_BCM92035 },
 
 	/* Microsoft Wireless Transceiver for Bluetooth 2.0 */
-	{ USB_DEVICE(0x045e, 0x009c), .driver_info = HCI_RESET | HCI_BROKEN_ISOC },
+	{ USB_DEVICE(0x045e, 0x009c), .driver_info = HCI_RESET },
+
+	/* Kensington Bluetooth USB adapter */
+	{ USB_DEVICE(0x047d, 0x105d), .driver_info = HCI_RESET },
 
 	/* ISSC Bluetooth Adapter v3.1 */
 	{ USB_DEVICE(0x1131, 0x1001), .driver_info = HCI_RESET },
+
+	/* RTX Telecom based adapter with buggy SCO support */
+	{ USB_DEVICE(0x0400, 0x0807), .driver_info = HCI_BROKEN_ISOC },
 
 	/* Digianswer devices */
 	{ USB_DEVICE(0x08fd, 0x0001), .driver_info = HCI_DIGIANSWER },
 	{ USB_DEVICE(0x08fd, 0x0002), .driver_info = HCI_IGNORE },
 
-	/* RTX Telecom based adapter with buggy SCO support */
-	{ USB_DEVICE(0x0400, 0x0807), .driver_info = HCI_BROKEN_ISOC },
+	/* CSR BlueCore Bluetooth Sniffer */
+	{ USB_DEVICE(0x0a12, 0x0002), .driver_info = HCI_SNIFFER },
 
 	{ }	/* Terminating entry */
 };
@@ -204,7 +211,7 @@ static int hci_usb_intr_rx_submit(struct hci_usb *husb)
 
 	BT_DBG("%s", husb->hdev->name);
 
-	size = husb->intr_in_ep->desc.wMaxPacketSize;
+	size = le16_to_cpu(husb->intr_in_ep->desc.wMaxPacketSize);
 
 	buf = kmalloc(size, GFP_ATOMIC);
 	if (!buf)
@@ -279,7 +286,7 @@ static int hci_usb_isoc_rx_submit(struct hci_usb *husb)
 	int err, mtu, size;
 	void *buf;
 
-	mtu  = husb->isoc_in_ep->desc.wMaxPacketSize;
+	mtu  = le16_to_cpu(husb->isoc_in_ep->desc.wMaxPacketSize);
 	size = mtu * HCI_MAX_ISOC_FRAMES;
 
 	buf = kmalloc(size, GFP_ATOMIC);
@@ -392,10 +399,8 @@ static void hci_usb_unlink_urbs(struct hci_usb *husb)
 			urb = &_urb->urb;
 			BT_DBG("%s freeing _urb %p type %d urb %p",
 					husb->hdev->name, _urb, _urb->type, urb);
-			if (urb->setup_packet)
-				kfree(urb->setup_packet);
-			if (urb->transfer_buffer)
-				kfree(urb->transfer_buffer);
+			kfree(urb->setup_packet);
+			kfree(urb->transfer_buffer);
 			_urb_free(_urb);
 		}
 
@@ -536,7 +541,7 @@ static inline int hci_usb_send_isoc(struct hci_usb *husb, struct sk_buff *skb)
 	urb->transfer_buffer = skb->data;
 	urb->transfer_buffer_length = skb->len;
 
-	__fill_isoc_desc(urb, skb->len, husb->isoc_out_ep->desc.wMaxPacketSize);
+	__fill_isoc_desc(urb, skb->len, le16_to_cpu(husb->isoc_out_ep->desc.wMaxPacketSize));
 
 	_urb->priv = skb;
 	return __tx_submit(husb, _urb);
@@ -838,7 +843,7 @@ static int hci_usb_probe(struct usb_interface *intf, const struct usb_device_id 
 			id = match;
 	}
 
-	if (id->driver_info & HCI_IGNORE)
+	if (ignore || id->driver_info & HCI_IGNORE)
 		return -ENODEV;
 
 	if (intf->cur_altsetting->desc.bInterfaceNumber > 0)
@@ -893,7 +898,7 @@ static int hci_usb_probe(struct usb_interface *intf, const struct usb_device_id 
 	isoc_ifnum = 1;
 
 #ifdef CONFIG_BT_HCIUSB_SCO
-	if (isoc && !(id->driver_info & HCI_BROKEN_ISOC))
+	if (isoc && !(id->driver_info & (HCI_BROKEN_ISOC | HCI_SNIFFER)))
 		isoc_iface = usb_ifnum_to_if(udev, isoc_ifnum);
 
 	if (isoc_iface) {
@@ -908,10 +913,10 @@ static int hci_usb_probe(struct usb_interface *intf, const struct usb_device_id 
 
 				switch (ep->desc.bmAttributes & USB_ENDPOINT_XFERTYPE_MASK) {
 				case USB_ENDPOINT_XFER_ISOC:
-					if (ep->desc.wMaxPacketSize < size ||
+					if (le16_to_cpu(ep->desc.wMaxPacketSize) < size ||
 							uif->desc.bAlternateSetting != isoc)
 						break;
-					size = ep->desc.wMaxPacketSize;
+					size = le16_to_cpu(ep->desc.wMaxPacketSize);
 
 					isoc_alts = uif->desc.bAlternateSetting;
 
@@ -974,8 +979,24 @@ static int hci_usb_probe(struct usb_interface *intf, const struct usb_device_id 
 
 	hdev->owner = THIS_MODULE;
 
-	if (id->driver_info & HCI_RESET)
+	if (reset || id->driver_info & HCI_RESET)
 		set_bit(HCI_QUIRK_RESET_ON_INIT, &hdev->quirks);
+
+	if (id->driver_info & HCI_SNIFFER) {
+		if (le16_to_cpu(udev->descriptor.bcdDevice) > 0x997)
+			set_bit(HCI_QUIRK_RAW_DEVICE, &hdev->quirks);
+	}
+
+	if (id->driver_info & HCI_BCM92035) {
+		unsigned char cmd[] = { 0x3b, 0xfc, 0x01, 0x00 };
+		struct sk_buff *skb;
+
+		skb = bt_skb_alloc(sizeof(cmd), GFP_KERNEL);
+		if (skb) {
+			memcpy(skb_put(skb, sizeof(cmd)), cmd, sizeof(cmd));
+			skb_queue_tail(&hdev->driver_init, skb);
+		}
+	}
 
 	if (hci_register_dev(hdev) < 0) {
 		BT_ERR("Can't register HCI device");
@@ -1046,6 +1067,12 @@ static void __exit hci_usb_exit(void)
 
 module_init(hci_usb_init);
 module_exit(hci_usb_exit);
+
+module_param(ignore, bool, 0644);
+MODULE_PARM_DESC(ignore, "Ignore devices from the matching table");
+
+module_param(reset, bool, 0644);
+MODULE_PARM_DESC(reset, "Send HCI reset command on initialization");
 
 #ifdef CONFIG_BT_HCIUSB_SCO
 module_param(isoc, int, 0644);

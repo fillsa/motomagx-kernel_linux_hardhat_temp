@@ -7,7 +7,7 @@
  *****************************************************************************/
 
 /*
- * Copyright (C) 2000 - 2004, R. Byron Moore
+ * Copyright (C) 2000 - 2005, R. Byron Moore
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -146,8 +146,7 @@
 
 /* prefixed opcodes */
 
-#define AML_EXTOP                   (u16) 0x005b
-
+#define AML_EXTOP                   (u16) 0x005b     /* prefix for 2-byte opcodes */
 
 #define AML_MUTEX_OP                (u16) 0x5b01
 #define AML_EVENT_OP                (u16) 0x5b02
@@ -194,7 +193,6 @@
  * Use only "Unknown" AML opcodes, don't attempt to use
  * any valid ACPI ASCII values (A-Z, 0-9, '-')
  */
-
 #define AML_INT_NAMEPATH_OP         (u16) 0x002d
 #define AML_INT_NAMEDFIELD_OP       (u16) 0x0030
 #define AML_INT_RESERVEDFIELD_OP    (u16) 0x0031
@@ -214,7 +212,6 @@
  * There can be up to 31 unique argument types
  * Zero is reserved as end-of-list indicator
  */
-
 #define ARGP_BYTEDATA               0x01
 #define ARGP_BYTELIST               0x02
 #define ARGP_CHARLIST               0x03
@@ -278,6 +275,7 @@
 #define ARGI_COMPLEXOBJ             0x13    /* Buffer, String, or package (Used by INDEX op only) */
 #define ARGI_REF_OR_STRING          0x14    /* Reference or String (Used by DEREFOF op only) */
 #define ARGI_REGION_OR_FIELD        0x15    /* Used by LOAD op only */
+#define ARGI_DATAREFOBJ             0x16
 
 /* Note: types above can expand to 0x1F maximum */
 
@@ -294,7 +292,6 @@
 /*
  * opcode groups and types
  */
-
 #define OPGRP_NAMED                 0x01
 #define OPGRP_FIELD                 0x02
 #define OPGRP_BYTELIST              0x04
@@ -320,6 +317,7 @@
 #define AML_HAS_TARGET              0x0800
 #define AML_HAS_ARGS                0x1000
 #define AML_CONSTANT                0x2000
+#define AML_NO_OPERAND_RESOLVE      0x4000
 
 /* Convenient flag groupings */
 
@@ -379,6 +377,12 @@
 #define AML_TYPE_UNDEFINED          0x19
 #define AML_TYPE_BOGUS              0x1A
 
+/* AML Package Length encodings */
+
+#define ACPI_AML_PACKAGE_TYPE1      0x40
+#define ACPI_AML_PACKAGE_TYPE2      0x4000
+#define ACPI_AML_PACKAGE_TYPE3      0x400000
+#define ACPI_AML_PACKAGE_TYPE4      0x40000000
 
 /*
  * Opcode classes

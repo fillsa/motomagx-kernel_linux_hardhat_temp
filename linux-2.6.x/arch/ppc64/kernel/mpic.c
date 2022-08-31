@@ -765,10 +765,8 @@ void mpic_setup_this_cpu(void)
 #ifdef CONFIG_SMP
 	struct mpic *mpic = mpic_primary;
 	unsigned long flags;
-#ifdef CONFIG_IRQ_ALL_CPUS
 	u32 msk = 1 << hard_smp_processor_id();
 	unsigned int i;
-#endif
 
 	BUG_ON(mpic == NULL);
 
@@ -776,16 +774,16 @@ void mpic_setup_this_cpu(void)
 
 	spin_lock_irqsave(&mpic_lock, flags);
 
-#ifdef CONFIG_IRQ_ALL_CPUS
  	/* let the mpic know we want intrs. default affinity is 0xffffffff
 	 * until changed via /proc. That's how it's done on x86. If we want
 	 * it differently, then we should make sure we also change the default
 	 * values of irq_affinity in irq.c.
  	 */
- 	for (i = 0; i < mpic->num_sources ; i++)
-		mpic_irq_write(i, MPIC_IRQ_DESTINATION,
-			mpic_irq_read(i, MPIC_IRQ_DESTINATION) | msk);
-#endif /* CONFIG_IRQ_ALL_CPUS */
+	if (distribute_irqs) {
+	 	for (i = 0; i < mpic->num_sources ; i++)
+			mpic_irq_write(i, MPIC_IRQ_DESTINATION,
+				mpic_irq_read(i, MPIC_IRQ_DESTINATION) | msk);
+	}
 
 	/* Set current processor priority to 0 */
 	mpic_cpu_write(MPIC_CPU_CURRENT_TASK_PRI, 0);
@@ -793,6 +791,35 @@ void mpic_setup_this_cpu(void)
 	spin_unlock_irqrestore(&mpic_lock, flags);
 #endif /* CONFIG_SMP */
 }
+
+/*
+ * XXX: someone who knows mpic should check this.
+ * do we need to eoi the ipi including for kexec cpu here (see xics comments)?
+ * or can we reset the mpic in the new kernel?
+ */
+void mpic_teardown_this_cpu(int secondary)
+{
+	struct mpic *mpic = mpic_primary;
+	unsigned long flags;
+	u32 msk = 1 << hard_smp_processor_id();
+	unsigned int i;
+
+	BUG_ON(mpic == NULL);
+
+	DBG("%s: teardown_this_cpu(%d)\n", mpic->name, hard_smp_processor_id());
+	spin_lock_irqsave(&mpic_lock, flags);
+
+	/* let the mpic know we don't want intrs.  */
+	for (i = 0; i < mpic->num_sources ; i++)
+		mpic_irq_write(i, MPIC_IRQ_DESTINATION,
+			mpic_irq_read(i, MPIC_IRQ_DESTINATION) & ~msk);
+
+	/* Set current processor priority to max */
+	mpic_cpu_write(MPIC_CPU_CURRENT_TASK_PRI, 0xf);
+
+	spin_unlock_irqrestore(&mpic_lock, flags);
+}
+
 
 void mpic_send_ipi(unsigned int ipi_no, unsigned int cpu_mask)
 {

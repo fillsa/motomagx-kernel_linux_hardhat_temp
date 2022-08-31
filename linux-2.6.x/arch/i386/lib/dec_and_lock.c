@@ -8,6 +8,7 @@
  */
 
 #include <linux/spinlock.h>
+#include <linux/module.h>
 #include <asm/atomic.h>
 
 int _atomic_dec_and_raw_spin_lock(atomic_t *atomic, raw_spinlock_t *lock)
@@ -38,3 +39,4 @@ slow_path:
 	_raw_spin_unlock(lock);
 	return 0;
 }
+EXPORT_SYMBOL(_atomic_dec_and_lock);

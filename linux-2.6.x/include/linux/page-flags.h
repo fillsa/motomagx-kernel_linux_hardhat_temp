@@ -61,20 +61,20 @@
 #define PG_active		 6
 #define PG_slab			 7	/* slab debug (Suparna wants this) */
 
-#define PG_highmem		 8
-#define PG_checked		 9	/* kill me in 2.5.<early>. */
-#define PG_arch_1		10
-#define PG_reserved		11
+#define PG_checked		 8	/* kill me in 2.5.<early>. */
+#define PG_arch_1		 9
+#define PG_reserved		10
+#define PG_private		11	/* Has something at ->private */
 
-#define PG_private		12	/* Has something at ->private */
-#define PG_writeback		13	/* Page is under writeback */
-#define PG_nosave		14	/* Used for system suspend/resume */
-#define PG_compound		15	/* Part of a compound page */
+#define PG_writeback		12	/* Page is under writeback */
+#define PG_nosave		13	/* Used for system suspend/resume */
+#define PG_compound		14	/* Part of a compound page */
+#define PG_swapcache		15	/* Swap page: swp_entry_t in private */
 
-#define PG_swapcache		16	/* Swap page: swp_entry_t in private */
-#define PG_mappedtodisk		17	/* Has blocks allocated on-disk */
-#define PG_reclaim		18	/* To be reclaimed asap */
-
+#define PG_mappedtodisk		16	/* Has blocks allocated on-disk */
+#define PG_reclaim		17	/* To be reclaimed asap */
+#define PG_nosave_free		18	/* Free, should not be written */
+#define PG_uncached		19	/* Page has been mapped as uncached */
 
 /*
  * Global page accounting.  One instance per CPU.  Only unsigned longs are
@@ -130,42 +130,35 @@ struct page_state {
 	unsigned long allocstall;	/* direct reclaim calls */
 
 	unsigned long pgrotated;	/* pages rotated to tail of the LRU */
+	unsigned long nr_bounce;	/* pages for bounce buffers */
 };
-
-DECLARE_PER_CPU(struct page_state, page_states);
 
 extern void get_page_state(struct page_state *ret);
 extern void get_full_page_state(struct page_state *ret);
-extern unsigned long __read_page_state(unsigned offset);
+extern unsigned long __read_page_state(unsigned long offset);
+extern void __mod_page_state(unsigned long offset, unsigned long delta);
 
 #define read_page_state(member) \
 	__read_page_state(offsetof(struct page_state, member))
 
-#define mod_page_state(member, delta)					\
-	do {								\
-		unsigned long flags;					\
-		local_irq_save(flags);					\
-		__get_cpu_var(page_states).member += (delta);		\
-		local_irq_restore(flags);				\
-	} while (0)
-
+#define mod_page_state(member, delta)	\
+	__mod_page_state(offsetof(struct page_state, member), (delta))
 
 #define inc_page_state(member)	mod_page_state(member, 1UL)
 #define dec_page_state(member)	mod_page_state(member, 0UL - 1)
 #define add_page_state(member,delta) mod_page_state(member, (delta))
 #define sub_page_state(member,delta) mod_page_state(member, 0UL - (delta))
 
-#define mod_page_state_zone(zone, member, delta)			\
-	do {								\
-		unsigned long flags;					\
-		local_irq_save(flags);					\
-		if (is_highmem(zone))					\
-			__get_cpu_var(page_states).member##_high += (delta);\
-		else if (is_normal(zone))				\
-			__get_cpu_var(page_states).member##_normal += (delta);\
-		else							\
-			__get_cpu_var(page_states).member##_dma += (delta);\
-		local_irq_restore(flags);				\
+#define mod_page_state_zone(zone, member, delta)				\
+	do {									\
+		unsigned offset;						\
+		if (is_highmem(zone))						\
+			offset = offsetof(struct page_state, member##_high);	\
+		else if (is_normal(zone))					\
+			offset = offsetof(struct page_state, member##_normal);	\
+		else								\
+			offset = offsetof(struct page_state, member##_dma);	\
+		__mod_page_state(offset, (delta));				\
 	} while (0)
 
 /*
@@ -221,7 +214,7 @@ extern unsigned long __read_page_state(unsigned offset);
 #define TestSetPageSlab(page)	test_and_set_bit(PG_slab, &(page)->flags)
 
 #ifdef CONFIG_HIGHMEM
-#define PageHighMem(page)	test_bit(PG_highmem, &(page)->flags)
+#define PageHighMem(page)	is_highmem(page_zone(page))
 #else
 #define PageHighMem(page)	0 /* needed to optimize away at compile time */
 #endif
@@ -238,6 +231,8 @@ extern unsigned long __read_page_state(unsigned offset);
 #define SetPagePrivate(page)	set_bit(PG_private, &(page)->flags)
 #define ClearPagePrivate(page)	clear_bit(PG_private, &(page)->flags)
 #define PagePrivate(page)	test_bit(PG_private, &(page)->flags)
+#define __SetPagePrivate(page)  __set_bit(PG_private, &(page)->flags)
+#define __ClearPagePrivate(page) __clear_bit(PG_private, &(page)->flags)
 
 #define PageWriteback(page)	test_bit(PG_writeback, &(page)->flags)
 #define SetPageWriteback(page)						\
@@ -277,6 +272,10 @@ extern unsigned long __read_page_state(unsigned offset);
 #define ClearPageNosave(page)		clear_bit(PG_nosave, &(page)->flags)
 #define TestClearPageNosave(page)	test_and_clear_bit(PG_nosave, &(page)->flags)
 
+#define PageNosaveFree(page)	test_bit(PG_nosave_free, &(page)->flags)
+#define SetPageNosaveFree(page)	set_bit(PG_nosave_free, &(page)->flags)
+#define ClearPageNosaveFree(page)		clear_bit(PG_nosave_free, &(page)->flags)
+
 #define PageMappedToDisk(page)	test_bit(PG_mappedtodisk, &(page)->flags)
 #define SetPageMappedToDisk(page) set_bit(PG_mappedtodisk, &(page)->flags)
 #define ClearPageMappedToDisk(page) clear_bit(PG_mappedtodisk, &(page)->flags)
@@ -286,7 +285,11 @@ extern unsigned long __read_page_state(unsigned offset);
 #define ClearPageReclaim(page)	clear_bit(PG_reclaim, &(page)->flags)
 #define TestClearPageReclaim(page) test_and_clear_bit(PG_reclaim, &(page)->flags)
 
+#ifdef CONFIG_HUGETLB_PAGE
 #define PageCompound(page)	test_bit(PG_compound, &(page)->flags)
+#else
+#define PageCompound(page)	0
+#endif
 #define SetPageCompound(page)	set_bit(PG_compound, &(page)->flags)
 #define ClearPageCompound(page)	clear_bit(PG_compound, &(page)->flags)
 
@@ -298,10 +301,13 @@ extern unsigned long __read_page_state(unsigned offset);
 #define PageSwapCache(page)	0
 #endif
 
+#define PageUncached(page)	test_bit(PG_uncached, &(page)->flags)
+#define SetPageUncached(page)	set_bit(PG_uncached, &(page)->flags)
+#define ClearPageUncached(page)	clear_bit(PG_uncached, &(page)->flags)
+
 struct page;	/* forward declaration */
 
 int test_clear_page_dirty(struct page *page);
-int __clear_page_dirty(struct page *page);
 int test_clear_page_writeback(struct page *page);
 int test_set_page_writeback(struct page *page);
 

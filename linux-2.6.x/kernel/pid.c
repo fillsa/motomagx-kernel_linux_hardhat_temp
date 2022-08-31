@@ -278,7 +278,6 @@ void __init pidhash_init(void)
 		for (j = 0; j < pidhash_size; j++)
 			INIT_HLIST_HEAD(&pid_hash[i][j]);
 	}
-
 #ifdef CONFIG_KGDB
 	pidhash_init_done = 1;
 #endif

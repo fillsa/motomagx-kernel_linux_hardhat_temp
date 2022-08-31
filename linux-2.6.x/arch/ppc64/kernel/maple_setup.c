@@ -75,19 +75,80 @@ extern void maple_calibrate_decr(void);
 extern void maple_pci_init(void);
 extern void maple_pcibios_fixup(void);
 extern int maple_pci_get_legacy_ide_irq(struct pci_dev *dev, int channel);
-extern void generic_find_legacy_serial_ports(unsigned int *default_speed);
-
+extern void generic_find_legacy_serial_ports(u64 *physport,
+		unsigned int *default_speed);
 
 static void maple_restart(char *cmd)
 {
+	unsigned int maple_nvram_base;
+	unsigned int maple_nvram_offset;
+	unsigned int maple_nvram_command;
+	struct device_node *rtcs;
+
+	/* find NVRAM device */
+	rtcs = find_compatible_devices("nvram", "AMD8111");
+	if (rtcs && rtcs->addrs) {
+		maple_nvram_base = rtcs->addrs[0].address;
+	} else {
+		printk(KERN_EMERG "Maple: Unable to find NVRAM\n");
+		printk(KERN_EMERG "Maple: Manual Restart Required\n");
+		return;
+	}
+
+	/* find service processor device */
+	rtcs = find_devices("service-processor");
+	if (!rtcs) {
+		printk(KERN_EMERG "Maple: Unable to find Service Processor\n");
+		printk(KERN_EMERG "Maple: Manual Restart Required\n");
+		return;
+	}
+	maple_nvram_offset = *(unsigned int*) get_property(rtcs,
+			"restart-addr", NULL);
+	maple_nvram_command = *(unsigned int*) get_property(rtcs,
+			"restart-value", NULL);
+
+	/* send command */
+	outb_p(maple_nvram_command, maple_nvram_base + maple_nvram_offset);
+	for (;;) ;
 }
 
 static void maple_power_off(void)
 {
+	unsigned int maple_nvram_base;
+	unsigned int maple_nvram_offset;
+	unsigned int maple_nvram_command;
+	struct device_node *rtcs;
+
+	/* find NVRAM device */
+	rtcs = find_compatible_devices("nvram", "AMD8111");
+	if (rtcs && rtcs->addrs) {
+		maple_nvram_base = rtcs->addrs[0].address;
+	} else {
+		printk(KERN_EMERG "Maple: Unable to find NVRAM\n");
+		printk(KERN_EMERG "Maple: Manual Power-Down Required\n");
+		return;
+	}
+
+	/* find service processor device */
+	rtcs = find_devices("service-processor");
+	if (!rtcs) {
+		printk(KERN_EMERG "Maple: Unable to find Service Processor\n");
+		printk(KERN_EMERG "Maple: Manual Power-Down Required\n");
+		return;
+	}
+	maple_nvram_offset = *(unsigned int*) get_property(rtcs,
+			"power-off-addr", NULL);
+	maple_nvram_command = *(unsigned int*) get_property(rtcs,
+			"power-off-value", NULL);
+
+	/* send command */
+	outb_p(maple_nvram_command, maple_nvram_base + maple_nvram_offset);
+	for (;;) ;
 }
 
 static void maple_halt(void)
 {
+	maple_power_off();
 }
 
 #ifdef CONFIG_SMP
@@ -110,17 +171,14 @@ void __init maple_setup_arch(void)
 #ifdef CONFIG_SMP
 	smp_ops = &maple_smp_ops;
 #endif
-	/* Setup the PCI DMA to "direct" by default. May be overriden
-	 * by iommu later on
-	 */
-	pci_dma_init_direct();
-
 	/* Lookup PCI hosts */
        	maple_pci_init();
 
 #ifdef CONFIG_DUMMY_CONSOLE
 	conswitchp = &dummy_con;
 #endif
+
+	printk(KERN_INFO "Using native/NAP idle loop\n");
 }
 
 /* 
@@ -129,6 +187,7 @@ void __init maple_setup_arch(void)
 static void __init maple_init_early(void)
 {
 	unsigned int default_speed;
+	u64 physport;
 
 	DBG(" -> maple_init_early\n");
 
@@ -138,14 +197,14 @@ static void __init maple_init_early(void)
 	hpte_init_native();
 
 	/* Find the serial port */
-       	generic_find_legacy_serial_ports(&default_speed);
+	generic_find_legacy_serial_ports(&physport, &default_speed);
 
-	DBG("naca->serialPortAddr: %lx\n", (long)naca->serialPortAddr);
+	DBG("phys port addr: %lx\n", (long)physport);
 
-	if (naca->serialPortAddr) {
+	if (physport) {
 		void *comport;
 		/* Map the uart for udbg. */
-		comport = (void *)__ioremap(naca->serialPortAddr, 16, _PAGE_NO_CACHE);
+		comport = (void *)ioremap(physport, 16);
 		udbg_init_uart(comport, default_speed);
 
 		ppc_md.udbg_putc = udbg_putc;
@@ -155,7 +214,9 @@ static void __init maple_init_early(void)
 	}
 
 	/* Setup interrupt mapping options */
-	naca->interrupt_controller = IC_OPEN_PIC;
+	ppc64_interrupt_controller = IC_OPEN_PIC;
+
+	iommu_init_early_u3();
 
 	DBG(" <- maple_init_early\n");
 }
@@ -236,6 +297,7 @@ struct machdep_calls __initdata maple_md = {
        	.get_boot_time		= maple_get_boot_time,
        	.set_rtc_time		= maple_set_rtc_time,
        	.get_rtc_time		= maple_get_rtc_time,
-      	.calibrate_decr		= maple_calibrate_decr,
+      	.calibrate_decr		= generic_calibrate_decr,
 	.progress		= maple_progress,
+	.idle_loop		= native_idle,
 };

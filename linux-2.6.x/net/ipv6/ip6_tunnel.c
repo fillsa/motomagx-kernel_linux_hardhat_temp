@@ -92,6 +92,7 @@ static inline struct dst_entry *ip6_tnl_dst_check(struct ip6_tnl *t)
 	if (dst && dst->obsolete && 
 	    dst->ops->check(dst, t->dst_cookie) == NULL) {
 		t->dst_cache = NULL;
+		dst_release(dst);
 		return NULL;
 	}
 
@@ -185,10 +186,10 @@ ip6ip6_tnl_link(struct ip6_tnl *t)
 {
 	struct ip6_tnl **tp = ip6ip6_bucket(&t->parms);
 
-	write_lock_bh(&ip6ip6_lock);
 	t->next = *tp;
-	write_unlock_bh(&ip6ip6_lock);
+	write_lock_bh(&ip6ip6_lock);
 	*tp = t;
+	write_unlock_bh(&ip6ip6_lock);
 }
 
 /**
@@ -436,9 +437,9 @@ ip6ip6_err(struct sk_buff *skb, struct inet6_skb_parm *opt,
 		}
 		break;
 	case ICMPV6_PARAMPROB:
-		if (code == ICMPV6_HDR_FIELD)
+		if (code == ICMPV6_HDR_FIELD) {
 			teli = parse_tlv_tnl_enc_lim(skb, skb->data);
-		else 
+		} else 
 			teli = 0;
 
 		if (teli && teli == ntohl(info) - 2) {
@@ -704,7 +705,8 @@ ip6ip6_tnl_xmit(struct sk_buff *skb, struct net_device *dev)
 		goto tx_err;
 	}
 	if (skb->protocol != htons(ETH_P_IPV6) ||
-	    !ip6_tnl_xmit_ctl(t) || ip6ip6_tnl_addr_conflict(t, ipv6h)) {
+	    !ip6_tnl_xmit_ctl(t) ||
+	    ip6ip6_tnl_addr_conflict(t, ipv6h)) {
 		goto tx_err;
 	}
 	if ((offset = parse_tlv_tnl_enc_lim(skb, skb->nh.raw)) > 0) {
@@ -751,14 +753,14 @@ ip6ip6_tnl_xmit(struct sk_buff *skb, struct net_device *dev)
 			       t->parms.name);
 		goto tx_err_dst_release;
 	}
-	mtu = dst_pmtu(dst) - sizeof (*ipv6h);
+	mtu = dst_mtu(dst) - sizeof (*ipv6h);
 	if (opt) {
 		max_headroom += 8;
 		mtu -= 8;
 	}
 	if (mtu < IPV6_MIN_MTU)
 		mtu = IPV6_MIN_MTU;
-	if (skb->dst && mtu < dst_pmtu(skb->dst)) {
+	if (skb->dst && mtu < dst_mtu(skb->dst)) {
 		struct rt6_info *rt = (struct rt6_info *) skb->dst;
 		rt->rt6i_flags |= RTF_MODIFIED;
 		rt->u.dst.metrics[RTAX_MTU-1] = mtu;
@@ -888,9 +890,7 @@ static void ip6ip6_tnl_link_config(struct ip6_tnl *t)
 	dev->iflink = p->link;
 
 	if (p->flags & IP6_TNL_F_CAP_XMIT) {
-		struct rt6_info *rt;
-
-		rt = (struct rt6_info *) rt6_fl_lookup(fl, 0);
+		struct rt6_info *rt = (struct rt6_info *) rt6_fl_lookup(fl, 0);
 
 		if (rt == NULL)
 			return;
@@ -927,6 +927,7 @@ ip6ip6_tnl_change(struct ip6_tnl *t, struct ip6_tnl_parm *p)
 	t->parms.hop_limit = p->hop_limit;
 	t->parms.encap_limit = p->encap_limit;
 	t->parms.flowinfo = p->flowinfo;
+	t->parms.link = p->link;
 	ip6ip6_tnl_link_config(t);
 	return 0;
 }
@@ -1154,11 +1155,39 @@ ip6ip6_fb_tnl_dev_init(struct net_device *dev)
 	return 0;
 }
 
+#ifdef CONFIG_INET6_TUNNEL
 static struct xfrm6_tunnel ip6ip6_handler = {
-	.handler = ip6ip6_rcv,
-	.err_handler = ip6ip6_err,
+	.handler	= ip6ip6_rcv,
+	.err_handler	= ip6ip6_err,
 	.dev_lookup = ip6ip6_dev_lookup,
 };
+
+static inline int ip6ip6_register(void)
+{
+	return xfrm6_tunnel_register(&ip6ip6_handler);
+}
+
+static inline int ip6ip6_unregister(void)
+{
+	return xfrm6_tunnel_deregister(&ip6ip6_handler);
+}
+#else
+static struct inet6_protocol xfrm6_tunnel_protocol = {
+	.handler	= ip6ip6_rcv,
+	.err_handler	= ip6ip6_err,
+	.flags		= INET6_PROTO_NOPOLICY|INET6_PROTO_FINAL,
+};
+
+static inline int ip6ip6_register(void)
+{
+	return inet6_add_protocol(&xfrm6_tunnel_protocol, IPPROTO_IPV6);
+}
+
+static inline int ip6ip6_unregister(void)
+{
+	return inet6_del_protocol(&xfrm6_tunnel_protocol, IPPROTO_IPV6);
+}
+#endif
 
 /**
  * ip6_tunnel_init - register protocol and reserve needed resources
@@ -1170,7 +1199,7 @@ static int __init ip6_tunnel_init(void)
 {
 	int  err;
 
-	if (xfrm6_tunnel_register(&ip6ip6_handler) < 0) {
+	if (ip6ip6_register() < 0) {
 		printk(KERN_ERR "ip6ip6 init: can't register tunnel\n");
 		return -EAGAIN;
 	}
@@ -1189,7 +1218,7 @@ static int __init ip6_tunnel_init(void)
 	}
 	return 0;
 fail:
-	xfrm6_tunnel_deregister(&ip6ip6_handler);
+	ip6ip6_unregister();
 	return err;
 }
 
@@ -1199,7 +1228,7 @@ fail:
 
 static void __exit ip6_tunnel_cleanup(void)
 {
-	if (xfrm6_tunnel_deregister(&ip6ip6_handler) < 0)
+	if (ip6ip6_unregister() < 0)
 		printk(KERN_INFO "ip6ip6 close: can't deregister tunnel\n");
 
 	unregister_netdev(ip6ip6_fb_tnl_dev);

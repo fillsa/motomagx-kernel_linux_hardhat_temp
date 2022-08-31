@@ -34,6 +34,7 @@
 #include "ext2.h"
 #include "xattr.h"
 #include "acl.h"
+#include "xip.h"
 
 /*
  * Couple of helper functions - make the code slightly cleaner.
@@ -127,11 +128,16 @@ static int ext2_create (struct inode * dir, struct dentry * dentry, int mode, st
 	int err = PTR_ERR(inode);
 	if (!IS_ERR(inode)) {
 		inode->i_op = &ext2_file_inode_operations;
-		inode->i_fop = &ext2_file_operations;
-		if (test_opt(inode->i_sb, NOBH))
+		if (ext2_use_xip(inode->i_sb)) {
+			inode->i_mapping->a_ops = &ext2_aops_xip;
+			inode->i_fop = &ext2_xip_file_operations;
+		} else if (test_opt(inode->i_sb, NOBH)) {
 			inode->i_mapping->a_ops = &ext2_nobh_aops;
-		else
+			inode->i_fop = &ext2_file_operations;
+		} else {
 			inode->i_mapping->a_ops = &ext2_aops;
+			inode->i_fop = &ext2_file_operations;
+		}
 		mark_inode_dirty(inode);
 		err = ext2_add_nondir(dentry, inode);
 	}
@@ -211,7 +217,7 @@ static int ext2_link (struct dentry * old_dentry, struct inode * dir,
 	if (inode->i_nlink >= EXT2_LINK_MAX)
 		return -EMLINK;
 
-	inode->i_ctime = CURRENT_TIME;
+	inode->i_ctime = CURRENT_TIME_SEC;
 	ext2_inc_count(inode);
 	atomic_inc(&inode->i_count);
 
@@ -337,7 +343,7 @@ static int ext2_rename (struct inode * old_dir, struct dentry * old_dentry,
 			goto out_dir;
 		ext2_inc_count(old_inode);
 		ext2_set_link(new_dir, new_de, new_page, old_inode);
-		new_inode->i_ctime = CURRENT_TIME;
+		new_inode->i_ctime = CURRENT_TIME_SEC;
 		if (dir_de)
 			new_inode->i_nlink--;
 		ext2_dec_count(new_inode);
@@ -362,7 +368,7 @@ static int ext2_rename (struct inode * old_dir, struct dentry * old_dentry,
  	 * rename.
 	 * ext2_dec_count() will mark the inode dirty.
 	 */
-	old_inode->i_ctime = CURRENT_TIME;
+	old_inode->i_ctime = CURRENT_TIME_SEC;
 
 	ext2_delete_entry (old_de, old_page);
 	ext2_dec_count(old_inode);

@@ -9,8 +9,6 @@
  *      Copyright (C) 1995  Linus Torvalds
  */
 
-/* $Id$ */
-
 #include <linux/init.h>
 #include <linux/kernel.h>
 #include <linux/mm.h>
@@ -19,6 +17,7 @@
 #include <linux/swap.h>
 #include <linux/highmem.h>
 #include <linux/bitops.h>
+#include <linux/nodemask.h>
 #include <asm/types.h>
 #include <asm/processor.h>
 #include <asm/page.h>
@@ -50,7 +49,7 @@ void show_mem(void)
 	printk("Free swap:       %6ldkB\n",nr_swap_pages<<(PAGE_SHIFT-10));
 	for_each_pgdat(pgdat) {
 		for (i = 0; i < pgdat->node_spanned_pages; ++i) {
-			page = pgdat->node_mem_map + i;
+			page = pgdat_page_nr(pgdat, i);
 			total++;
 			if (PageHighMem(page))
 				highmem++;
@@ -122,8 +121,6 @@ unsigned long __init zone_sizes_init(void)
 
 	free_area_init_node(0, NODE_DATA(0), zones_size, start_pfn, 0);
 
-	mem_map = contig_page_data.node_mem_map;
-
 	return 0;
 }
 #else	/* CONFIG_DISCONTIGMEM */
@@ -153,9 +150,9 @@ int __init reservedpages_count(void)
 	int reservedpages, nid, i;
 
 	reservedpages = 0;
-	for (nid = 0 ; nid < numnodes ; nid++)
+	for_each_online_node(nid)
 		for (i = 0 ; i < MAX_LOW_PFN(nid) - START_PFN(nid) ; i++)
-			if (PageReserved(NODE_DATA(nid)->node_mem_map + i))
+			if (PageReserved(nid_page_nr(nid, i)))
 				reservedpages++;
 
 	return reservedpages;
@@ -174,7 +171,7 @@ void __init mem_init(void)
 #endif
 
 	num_physpages = 0;
-	for (nid = 0 ; nid < numnodes ; nid++)
+	for_each_online_node(nid)
 		num_physpages += MAX_LOW_PFN(nid) - START_PFN(nid) + 1;
 
 	num_physpages -= hole_pages;
@@ -193,7 +190,7 @@ void __init mem_init(void)
 	memset(empty_zero_page, 0, PAGE_SIZE);
 
 	/* this will put all low memory onto the freelists */
-	for (nid = 0 ; nid < numnodes ; nid++)
+	for_each_online_node(nid)
 		totalram_pages += free_all_bootmem_node(NODE_DATA(nid));
 
 	reservedpages = reservedpages_count() - hole_pages;

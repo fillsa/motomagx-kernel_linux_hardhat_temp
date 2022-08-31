@@ -1,5 +1,5 @@
 /* 
- * $Id: mtd.h,v 1.58 2005/04/01 01:59:54 nico Exp $
+ * $Id: mtd.h,v 1.59 2005/04/11 10:19:02 gleixner Exp $
  *
  * Copyright (C) 2006-2007 Motorola, Inc.
  * Copyright (C) 1999-2003 David Woodhouse <dwmw2@infradead.org> et al.
@@ -86,7 +86,7 @@ struct mtd_info {
 	u_int32_t oobsize;   // Amount of OOB data per block (e.g. 16)
 	u_int32_t ecctype;
 	u_int32_t eccsize;
-
+	
 	/*
 	 * Reuse some of the above unused fields in the case of NOR flash
 	 * with configurable programming regions to avoid modifying the
@@ -180,6 +180,7 @@ struct mtd_info {
 	/* get block replacement from reserve pool */
 	int (*block_replace) (struct mtd_info *mtd, loff_t ofs, int lock);
 #endif
+
 	struct notifier_block reboot_notifier;  /* default mode before reboot */
 
 	void *priv;
@@ -247,6 +248,7 @@ int default_mtd_readv(struct mtd_info *mtd, struct kvec *vecs,
 #define MTD_WRITEOOB(mtd, args...) (*(mtd->write_oob))(mtd, args)
 #define MTD_SYNC(mtd) do { if (mtd->sync) (*(mtd->sync))(mtd);  } while (0) 
 
+
 #ifdef CONFIG_MTD_PARTITIONS
 void mtd_erase_callback(struct erase_info *instr);
 #else
@@ -256,7 +258,6 @@ static inline void mtd_erase_callback(struct erase_info *instr)
 		instr->callback(instr);
 }
 #endif
-
 
 #ifdef CONFIG_MOT_FEAT_MTD_FS
 /*
@@ -284,10 +285,10 @@ extern int mtd_fs_runtime_info;
 /*
  * Debugging macro and defines
  */
-  #define MTD_DEBUG_LEVEL0        (0)     /* Quiet   */
-  #define MTD_DEBUG_LEVEL1        (1)     /* Audible */
-  #define MTD_DEBUG_LEVEL2        (2)     /* Loud    */
-  #define MTD_DEBUG_LEVEL3        (3)     /* Noisy   */
+#define MTD_DEBUG_LEVEL0	(0)	/* Quiet   */
+#define MTD_DEBUG_LEVEL1	(1)	/* Audible */
+#define MTD_DEBUG_LEVEL2	(2)	/* Loud    */
+#define MTD_DEBUG_LEVEL3	(3)	/* Noisy   */
 
 #ifdef CONFIG_MTD_DEBUG
 #define DEBUG(n, args...)				\

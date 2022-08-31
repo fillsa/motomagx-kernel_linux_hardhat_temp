@@ -31,12 +31,18 @@
 /*
  * per-CPU timer vector definitions:
  */
-#define TVN_BITS 6
-#define TVR_BITS 8
+
+#define TVN_BITS (CONFIG_BASE_SMALL ? 4 : 6)
+#define TVR_BITS (CONFIG_BASE_SMALL ? 6 : 8)
 #define TVN_SIZE (1 << TVN_BITS)
 #define TVR_SIZE (1 << TVR_BITS)
 #define TVN_MASK (TVN_SIZE - 1)
 #define TVR_MASK (TVR_SIZE - 1)
+
+struct timer_base_s {
+	spinlock_t lock;
+	struct timer_list *running_timer;
+};
 
 typedef struct tvec_s {
 	struct list_head vec[TVN_SIZE];
@@ -47,9 +53,8 @@ typedef struct tvec_root_s {
 } tvec_root_t;
 
 struct tvec_t_base_s {
-	spinlock_t lock;
+	struct timer_base_s t_base;
 	unsigned long timer_jiffies;
-	struct timer_list *running_timer;
 	wait_queue_head_t wait_for_running_timer;
 	tvec_root_t tv1;
 	tvec_t tv2;
@@ -58,13 +63,9 @@ struct tvec_t_base_s {
 	tvec_t tv5;
 	VST_VISIT_COUNT
 } ____cacheline_aligned_in_smp;
-/*
- * per-CPU timer vector definitions:
- */
-
 
 typedef struct tvec_t_base_s tvec_base_t;
+static DEFINE_PER_CPU(tvec_base_t, tvec_bases);
 
-DECLARE_PER_CPU(tvec_base_t, tvec_bases);
 
 #endif

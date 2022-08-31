@@ -16,6 +16,7 @@
 #include <linux/smp_lock.h>
 #include <linux/ptrace.h>
 #include <linux/security.h>
+#include <linux/signal.h>
 
 #include <asm/pgtable.h>
 #include <asm/uaccess.h>
@@ -43,25 +44,22 @@ void __ptrace_link(task_t *child, task_t *new_parent)
 	SET_LINKS(child);
 }
  
-static inline int pending_resume_signal(struct sigpending *pending)
-{
-#define M(sig) (1UL << ((sig)-1))
-	return sigtestsetmask(&pending->signal, M(SIGCONT) | M(SIGKILL));
-}
-
 /*
  * Turn a tracing stop into a normal stop now, since with no tracer there
  * would be no way to wake it up with SIGCONT or SIGKILL.  If there was a
  * signal sent that would resume the child, but didn't because it was in
  * TASK_TRACED, resume it now.
+ * Requires that irqs be disabled.
  */
 void ptrace_untrace(task_t *child)
 {
 	spin_lock(&child->sighand->siglock);
-	child->state = TASK_STOPPED;
-	if (pending_resume_signal(&child->pending) ||
-	    pending_resume_signal(&child->signal->shared_pending)) {
-		signal_wake_up(child, 1);
+	if (child->state == TASK_TRACED) {
+		if (child->signal->flags & SIGNAL_STOP_STOPPED) {
+			child->state = TASK_STOPPED;
+		} else {
+			signal_wake_up(child, 1);
+		}
 	}
 	spin_unlock(&child->sighand->siglock);
 }
@@ -143,7 +141,7 @@ int ptrace_attach(struct task_struct *task)
  	    (current->gid != task->sgid) ||
  	    (current->gid != task->gid)) && !capable(CAP_SYS_PTRACE))
 		goto bad;
-	rmb();
+	smp_rmb();
 	if (!task->mm->dumpable && !capable(CAP_SYS_PTRACE))
 		goto bad;
 	/* the same process cannot be attached many times */
@@ -174,7 +172,7 @@ bad:
 
 int ptrace_detach(struct task_struct *child, unsigned int data)
 {
-	if ((unsigned long) data > _NSIG)
+	if (!valid_signal(data))
 		return	-EIO;
 
 	/* Architecture-specific hardware disable .. */
@@ -231,12 +229,12 @@ int access_process_vm(struct task_struct *tsk, unsigned long addr, void *buf, in
 			page = NULL;
 		} else {
 			ret = get_user_pages(tsk, mm, addr, 1,
-					     write, 1, &page, &vma);
+				write, 1, &page, &vma);
 			if (ret <= 0)
 				break;
 			maddr = kmap(page);
 		}
-		
+
 		bytes = len;
 		offset = addr & (PAGE_SIZE-1);
 		if (bytes > PAGE_SIZE-offset)

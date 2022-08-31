@@ -88,9 +88,9 @@ static int rx_copybreak = 100;
 	ToDo: Non-Intel setting could be better.
 */
 
-#if defined(__alpha__) || defined(__ia64__) || defined(__x86_64__)
+#if defined(__alpha__) || defined(__ia64__)
 static int csr0 = 0x01A00000 | 0xE000;
-#elif defined(__i386__) || defined(__powerpc__)
+#elif defined(__i386__) || defined(__powerpc__) || defined(__x86_64__)
 static int csr0 = 0x01A00000 | 0x8000;
 #elif defined(__sparc__) || defined(__hppa__)
 /* The UltraSparc PCI controllers will disconnect at every 64-byte
@@ -115,12 +115,13 @@ static int csr0 = 0x00A00000 | 0x4800;
 MODULE_AUTHOR("The Linux Kernel Team");
 MODULE_DESCRIPTION("Digital 21*4* Tulip ethernet driver");
 MODULE_LICENSE("GPL");
-MODULE_PARM(tulip_debug, "i");
-MODULE_PARM(max_interrupt_work, "i");
-MODULE_PARM(rx_copybreak, "i");
-MODULE_PARM(csr0, "i");
-MODULE_PARM(options, "1-" __MODULE_STRING(MAX_UNITS) "i");
-MODULE_PARM(full_duplex, "1-" __MODULE_STRING(MAX_UNITS) "i");
+MODULE_VERSION(DRV_VERSION);
+module_param(tulip_debug, int, 0);
+module_param(max_interrupt_work, int, 0);
+module_param(rx_copybreak, int, 0);
+module_param(csr0, int, 0);
+module_param_array(options, int, NULL, 0);
+module_param_array(full_duplex, int, NULL, 0);
 
 #define PFX DRV_NAME ": "
 
@@ -197,6 +198,10 @@ struct tulip_chip_table tulip_tbl[] = {
   /* RS7112 */
   { "Conexant LANfinity", 256, 0x0001ebef,
 	HAS_MII | HAS_ACPI, tulip_timer },
+
+   /* ULi526X */
+   { "ULi M5261/M5263", 128, 0x0001ebef,
+        HAS_MII | HAS_MEDIA_TABLE | CSR12_IN_SROM | HAS_ACPI, tulip_timer },
 };
 
 
@@ -228,13 +233,16 @@ static struct pci_device_id tulip_pci_tbl[] = {
 	{ 0x1113, 0x9511, PCI_ANY_ID, PCI_ANY_ID, 0, 0, COMET },
 	{ 0x1186, 0x1541, PCI_ANY_ID, PCI_ANY_ID, 0, 0, COMET },
 	{ 0x1186, 0x1561, PCI_ANY_ID, PCI_ANY_ID, 0, 0, COMET },
+	{ 0x1186, 0x1591, PCI_ANY_ID, PCI_ANY_ID, 0, 0, COMET },
 	{ 0x14f1, 0x1803, PCI_ANY_ID, PCI_ANY_ID, 0, 0, CONEXANT },
 	{ 0x1626, 0x8410, PCI_ANY_ID, PCI_ANY_ID, 0, 0, COMET },
 	{ 0x1737, 0xAB09, PCI_ANY_ID, PCI_ANY_ID, 0, 0, COMET },
 	{ 0x1737, 0xAB08, PCI_ANY_ID, PCI_ANY_ID, 0, 0, COMET },
 	{ 0x17B3, 0xAB08, PCI_ANY_ID, PCI_ANY_ID, 0, 0, COMET },
- 	{ 0x10b9, 0x5261, PCI_ANY_ID, PCI_ANY_ID, 0, 0, DM910X },	/* ALi 1563 integrated ethernet */
+ 	{ 0x10b9, 0x5261, PCI_ANY_ID, PCI_ANY_ID, 0, 0, ULI526X },	/* ALi 1563 integrated ethernet */
+ 	{ 0x10b9, 0x5263, PCI_ANY_ID, PCI_ANY_ID, 0, 0, ULI526X },	/* ALi 1563 integrated ethernet */
 	{ 0x10b7, 0x9300, PCI_ANY_ID, PCI_ANY_ID, 0, 0, COMET }, /* 3Com 3CSOHO100B-TX */
+	{ 0x14ea, 0xab08, PCI_ANY_ID, PCI_ANY_ID, 0, 0, COMET }, /* Planex FNW-3602-TX */
 	{ } /* terminate list */
 };
 MODULE_DEVICE_TABLE(pci, tulip_pci_tbl);
@@ -514,7 +522,7 @@ static void tulip_tx_timeout(struct net_device *dev)
 				   dev->name);
 	} else if (tp->chip_id == DC21140 || tp->chip_id == DC21142
 			   || tp->chip_id == MX98713 || tp->chip_id == COMPEX9881
-			   || tp->chip_id == DM910X) {
+			   || tp->chip_id == DM910X || tp->chip_id == ULI526X) {
 		printk(KERN_WARNING "%s: 21140 transmit timed out, status %8.8x, "
 			   "SIA %8.8x %8.8x %8.8x %8.8x, resetting...\n",
 			   dev->name, ioread32(ioaddr + CSR5), ioread32(ioaddr + CSR12),
@@ -617,7 +625,7 @@ static void tulip_init_ring(struct net_device *dev)
 		tp->rx_buffers[i].skb = skb;
 		if (skb == NULL)
 			break;
-		mapping = pci_map_single(tp->pdev, skb->tail,
+		mapping = pci_map_single(tp->pdev, skb->data,
 					 PKT_BUF_SZ, PCI_DMA_FROMDEVICE);
 		tp->rx_buffers[i].mapping = mapping;
 		skb->dev = dev;			/* Mark as being used by this device. */
@@ -1044,7 +1052,7 @@ static void set_rx_mode(struct net_device *dev)
 				else
 					filterbit = ether_crc(ETH_ALEN, mclist->dmi_addr) >> 26;
 				filterbit &= 0x3f;
-				mc_filter[filterbit >> 5] |= cpu_to_le32(1 << (filterbit & 31));
+				mc_filter[filterbit >> 5] |= 1 << (filterbit & 31);
 				if (tulip_debug > 2) {
 					printk(KERN_INFO "%s: Added filter for %2.2x:%2.2x:%2.2x:"
 						   "%2.2x:%2.2x:%2.2x  %8.8x bit %d.\n", dev->name,
@@ -1095,15 +1103,18 @@ static void set_rx_mode(struct net_device *dev)
 			entry = tp->cur_tx++ % TX_RING_SIZE;
 
 			if (entry != 0) {
-				/* Avoid a chip errata by prefixing a dummy entry. */
-				tp->tx_buffers[entry].skb = NULL;
-				tp->tx_buffers[entry].mapping = 0;
-				tp->tx_ring[entry].length =
-					(entry == TX_RING_SIZE-1) ? cpu_to_le32(DESC_RING_WRAP) : 0;
-				tp->tx_ring[entry].buffer1 = 0;
-				/* Must set DescOwned later to avoid race with chip */
-				dummy = entry;
-				entry = tp->cur_tx++ % TX_RING_SIZE;
+				/* Avoid a chip errata by prefixing a dummy entry. Don't do
+				   this on the ULI526X as it triggers a different problem */
+				if (!(tp->chip_id == ULI526X && (tp->revision == 0x40 || tp->revision == 0x50))) {
+					tp->tx_buffers[entry].skb = NULL;
+					tp->tx_buffers[entry].mapping = 0;
+					tp->tx_ring[entry].length =
+						(entry == TX_RING_SIZE-1) ? cpu_to_le32(DESC_RING_WRAP) : 0;
+					tp->tx_ring[entry].buffer1 = 0;
+					/* Must set DescOwned later to avoid race with chip */
+					dummy = entry;
+					entry = tp->cur_tx++ % TX_RING_SIZE;
+				}
 			}
 
 			tp->tx_buffers[entry].skb = NULL;
@@ -1215,6 +1226,22 @@ out:
 }
 #endif
 
+/*
+ *	Chips that have the MRM/reserved bit quirk and the burst quirk. That
+ *	is the DM910X and the on chip ULi devices
+ */
+ 
+static int tulip_uli_dm_quirk(struct pci_dev *pdev)
+{
+	if (pdev->vendor == 0x1282 && pdev->device == 0x9102)
+		return 1;
+	if (pdev->vendor == 0x10b9 && pdev->device == 0x5261)
+		return 1;
+	if (pdev->vendor == 0x10b9 && pdev->device == 0x5263)
+		return 1;
+	return 0;
+}
+
 static int __devinit tulip_init_one (struct pci_dev *pdev,
 				     const struct pci_device_id *ent)
 {
@@ -1303,17 +1330,12 @@ static int __devinit tulip_init_one (struct pci_dev *pdev,
 		csr0 &= ~0xfff10000; /* zero reserved bits 31:20, 16 */
 
 	/* DM9102A has troubles with MRM & clear reserved bits 24:22, 20, 16, 7:1 */
-	if ((pdev->vendor == 0x1282 && pdev->device == 0x9102)
-		|| (pdev->vendor == 0x10b9 && pdev->device == 0x5261))
+	if (tulip_uli_dm_quirk(pdev)) {
 		csr0 &= ~0x01f100ff;
-
 #if defined(__sparc__)
-        /* DM9102A needs 32-dword alignment/burst length on sparc - chip bug? */
-	if ((pdev->vendor == 0x1282 && pdev->device == 0x9102)
-		|| (pdev->vendor == 0x10b9 && pdev->device == 0x5261))
                 csr0 = (csr0 & ~0xff00) | 0xe000;
 #endif
-
+	}
 	/*
 	 *	And back to business
 	 */
@@ -1493,8 +1515,8 @@ static int __devinit tulip_init_one (struct pci_dev *pdev,
                     (PCI_SLOT(pdev->devfn) == 12))) {
                        /* Cobalt MAC address in first EEPROM locations. */
                        sa_offset = 0;
-                       /* No media table either */
-                       tp->flags &= ~HAS_MEDIA_TABLE;
+		       /* Ensure our media table fixup get's applied */
+		       memcpy(ee_data + 16, ee_data, 8);
                }
 #endif
 #ifdef CONFIG_GSC
@@ -1658,6 +1680,7 @@ static int __devinit tulip_init_one (struct pci_dev *pdev,
 	switch (chip_idx) {
 	case DC21140:
 	case DM910X:
+	case ULI526X:
 	default:
 		if (tp->mtable)
 			iowrite32(tp->mtable->csr12dir | 0x100, ioaddr + CSR12);
@@ -1730,15 +1753,23 @@ err_out_free_netdev:
 
 #ifdef CONFIG_PM
 
-static int tulip_suspend (struct pci_dev *pdev, u32 state)
+static int tulip_suspend (struct pci_dev *pdev, pm_message_t state)
 {
 	struct net_device *dev = pci_get_drvdata(pdev);
 
-	if (dev && netif_running (dev) && netif_device_present (dev)) {
-		netif_device_detach (dev);
-		tulip_down (dev);
-		/* pci_power_off(pdev, -1); */
-	}
+	if (!dev)
+		return -EINVAL;
+
+	if (netif_running(dev))
+		tulip_down(dev);
+
+	netif_device_detach(dev);
+	free_irq(dev->irq, dev);
+
+	pci_save_state(pdev);
+	pci_disable_device(pdev);
+	pci_set_power_state(pdev, pci_choose_state(pdev, state));
+
 	return 0;
 }
 
@@ -1746,15 +1777,26 @@ static int tulip_suspend (struct pci_dev *pdev, u32 state)
 static int tulip_resume(struct pci_dev *pdev)
 {
 	struct net_device *dev = pci_get_drvdata(pdev);
+	int retval;
 
-	if (dev && netif_running (dev) && !netif_device_present (dev)) {
-#if 1
-		pci_enable_device (pdev);
-#endif
-		/* pci_power_on(pdev); */
-		tulip_up (dev);
-		netif_device_attach (dev);
+	if (!dev)
+		return -EINVAL;
+
+	pci_set_power_state(pdev, PCI_D0);
+	pci_restore_state(pdev);
+
+	pci_enable_device(pdev);
+
+	if ((retval = request_irq(dev->irq, &tulip_interrupt, SA_SHIRQ, dev->name, dev))) {
+		printk (KERN_ERR "tulip: request_irq failed in resume\n");
+		return retval;
 	}
+
+	netif_device_attach(dev);
+
+	if (netif_running(dev))
+		tulip_up(dev);
+
 	return 0;
 }
 

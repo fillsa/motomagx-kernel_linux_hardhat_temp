@@ -30,25 +30,18 @@
  * 2 of the License, or (at your option) any later version.
  */
 
-#include <linux/module.h>
-#include <linux/kernel.h>
-#include <linux/pci.h>
-#include <linux/i2o.h>
-#include <linux/errno.h>
-#include <linux/init.h>
-#include <linux/slab.h>
 #include <linux/miscdevice.h>
-#include <linux/mm.h>
-#include <linux/spinlock.h>
 #include <linux/smp_lock.h>
-#include <linux/ioctl32.h>
 #include <linux/compat.h>
-#include <linux/syscalls.h>
 
 #include <asm/uaccess.h>
-#include <asm/io.h>
 
-extern int i2o_parm_issue(struct i2o_device *, int, void *, int, void *, int);
+#include "core.h"
+
+#define SG_TABLESIZE		30
+
+static int i2o_cfg_ioctl(struct inode *inode, struct file *fp, unsigned int cmd,
+			 unsigned long arg);
 
 static spinlock_t i2o_config_lock;
 
@@ -72,15 +65,6 @@ struct i2o_cfg_info {
 };
 static struct i2o_cfg_info *open_files = NULL;
 static ulong i2o_cfg_info_id = 0;
-
-/*
- *	Each of these describes an i2o message handler. They are
- *	multiplexed by the i2o_core code
- */
-
-static struct i2o_driver i2o_config_driver = {
-	.name = "Config-OSM"
-};
 
 static int i2o_cfg_getiops(unsigned long arg)
 {
@@ -296,7 +280,7 @@ static int i2o_cfg_swdl(unsigned long arg)
 	writel(0xD0000000 | fragsize, &msg->body[3]);
 	writel(buffer.phys, &msg->body[4]);
 
-//      printk(KERN_INFO "i2o_config: swdl frag %d/%d (size %d)\n", curfrag, maxfrag, fragsize);
+	osm_debug("swdl frag %d/%d (size %d)\n", curfrag, maxfrag, fragsize);
 	status = i2o_msg_post_wait_mem(c, m, 60, &buffer);
 
 	if (status != -ETIMEDOUT)
@@ -305,9 +289,7 @@ static int i2o_cfg_swdl(unsigned long arg)
 	if (status != I2O_POST_WAIT_OK) {
 		// it fails if you try and send frags out of order
 		// and for some yet unknown reasons too
-		printk(KERN_INFO
-		       "i2o_config: swdl failed, DetailedStatus = %d\n",
-		       status);
+		osm_info("swdl failed, DetailedStatus = %d\n", status);
 		return status;
 	}
 
@@ -370,16 +352,14 @@ static int i2o_cfg_swul(unsigned long arg)
 	writel(0xD0000000 | fragsize, &msg->body[3]);
 	writel(buffer.phys, &msg->body[4]);
 
-//      printk(KERN_INFO "i2o_config: swul frag %d/%d (size %d)\n", curfrag, maxfrag, fragsize);
+	osm_debug("swul frag %d/%d (size %d)\n", curfrag, maxfrag, fragsize);
 	status = i2o_msg_post_wait_mem(c, m, 60, &buffer);
 
 	if (status != I2O_POST_WAIT_OK) {
 		if (status != -ETIMEDOUT)
 			i2o_dma_free(&c->pdev->dev, &buffer);
 
-		printk(KERN_INFO
-		       "i2o_config: swul failed, DetailedStatus = %d\n",
-		       status);
+		osm_info("swul failed, DetailedStatus = %d\n", status);
 		return status;
 	}
 
@@ -388,9 +368,9 @@ static int i2o_cfg_swul(unsigned long arg)
 
 	i2o_dma_free(&c->pdev->dev, &buffer);
 
-return_ret:
+      return_ret:
 	return ret;
-return_fault:
+      return_fault:
 	ret = -EFAULT;
 	goto return_ret;
 };
@@ -432,9 +412,7 @@ static int i2o_cfg_swdel(unsigned long arg)
 	token = i2o_msg_post_wait(c, m, 10);
 
 	if (token != I2O_POST_WAIT_OK) {
-		printk(KERN_INFO
-		       "i2o_config: swdel failed, DetailedStatus = %d\n",
-		       token);
+		osm_info("swdel failed, DetailedStatus = %d\n", token);
 		return -ETIMEDOUT;
 	}
 
@@ -466,8 +444,8 @@ static int i2o_cfg_validate(unsigned long arg)
 	token = i2o_msg_post_wait(c, m, 10);
 
 	if (token != I2O_POST_WAIT_OK) {
-		printk(KERN_INFO "Can't validate configuration, ErrorStatus = "
-		       "%d\n", token);
+		osm_info("Can't validate configuration, ErrorStatus = %d\n",
+			 token);
 		return -ETIMEDOUT;
 	}
 
@@ -539,9 +517,10 @@ static int i2o_cfg_evt_get(unsigned long arg, struct file *fp)
 	return 0;
 }
 
+#ifdef CONFIG_I2O_EXT_ADAPTEC
 #ifdef CONFIG_COMPAT
-static int i2o_cfg_passthru32(unsigned fd, unsigned cmnd, unsigned long arg,
-			      struct file *file)
+static int i2o_cfg_passthru32(struct file *file, unsigned cmnd,
+			      unsigned long arg)
 {
 	struct i2o_cmd_passthru32 __user *cmd;
 	struct i2o_controller *c;
@@ -555,6 +534,7 @@ static int i2o_cfg_passthru32(unsigned fd, unsigned cmnd, unsigned long arg,
 	u32 sg_offset = 0;
 	u32 sg_count = 0;
 	u32 i = 0;
+	u32 sg_index = 0;
 	i2o_status_block *sb;
 	struct i2o_message *msg;
 	u32 m;
@@ -569,7 +549,7 @@ static int i2o_cfg_passthru32(unsigned fd, unsigned cmnd, unsigned long arg,
 
 	c = i2o_find_iop(iop);
 	if (!c) {
-		pr_debug("controller %d not found\n", iop);
+		osm_debug("controller %d not found\n", iop);
 		return -ENXIO;
 	}
 
@@ -578,13 +558,13 @@ static int i2o_cfg_passthru32(unsigned fd, unsigned cmnd, unsigned long arg,
 	sb = c->status_block.virt;
 
 	if (get_user(size, &user_msg[0])) {
-		printk(KERN_WARNING "unable to get size!\n");
+		osm_warn("unable to get size!\n");
 		return -EFAULT;
 	}
 	size = size >> 16;
 
 	if (size > sb->inbound_frame_size) {
-		pr_debug("size of message > inbound_frame_size");
+		osm_warn("size of message > inbound_frame_size");
 		return -EFAULT;
 	}
 
@@ -594,7 +574,7 @@ static int i2o_cfg_passthru32(unsigned fd, unsigned cmnd, unsigned long arg,
 
 	/* Copy in the user's I2O command */
 	if (copy_from_user(msg, user_msg, size)) {
-		printk(KERN_WARNING "unable to copy user message\n");
+		osm_warn("unable to copy user message\n");
 		return -EFAULT;
 	}
 	i2o_dump_message(msg);
@@ -634,8 +614,8 @@ static int i2o_cfg_passthru32(unsigned fd, unsigned cmnd, unsigned long arg,
 		if (sg_count > SG_TABLESIZE) {
 			printk(KERN_DEBUG "%s:IOCTL SG List too large (%u)\n",
 			       c->name, sg_count);
-			kfree(reply);
-			return -EINVAL;
+			rcode = -EINVAL;
+			goto cleanup;
 		}
 
 		for (i = 0; i < sg_count; i++) {
@@ -651,7 +631,7 @@ static int i2o_cfg_passthru32(unsigned fd, unsigned cmnd, unsigned long arg,
 				goto cleanup;
 			}
 			sg_size = sg[i].flag_count & 0xffffff;
-			p = &(sg_list[i]);
+			p = &(sg_list[sg_index++]);
 			/* Allocate memory for the transfer */
 			if (i2o_dma_alloc
 			    (&c->pdev->dev, p, sg_size,
@@ -660,20 +640,21 @@ static int i2o_cfg_passthru32(unsigned fd, unsigned cmnd, unsigned long arg,
 				       "%s: Could not allocate SG buffer - size = %d buffer number %d of %d\n",
 				       c->name, sg_size, i, sg_count);
 				rcode = -ENOMEM;
-				goto cleanup;
+				goto sg_list_cleanup;
 			}
 			/* Copy in the user's SG buffer if necessary */
 			if (sg[i].
 			    flag_count & 0x04000000 /*I2O_SGL_FLAGS_DIR */ ) {
 				// TODO 64bit fix
 				if (copy_from_user
-				    (p->virt, (void __user *)(unsigned long)sg[i].addr_bus,
-				     sg_size)) {
+				    (p->virt,
+				     (void __user *)(unsigned long)sg[i].
+				     addr_bus, sg_size)) {
 					printk(KERN_DEBUG
 					       "%s: Could not copy SG buf %d FROM user\n",
 					       c->name, i);
 					rcode = -EFAULT;
-					goto cleanup;
+					goto sg_list_cleanup;
 				}
 			}
 			//TODO 64bit fix
@@ -683,30 +664,29 @@ static int i2o_cfg_passthru32(unsigned fd, unsigned cmnd, unsigned long arg,
 
 	rcode = i2o_msg_post_wait(c, m, 60);
 	if (rcode)
-		goto cleanup;
+		goto sg_list_cleanup;
 
 	if (sg_offset) {
-		u32 msg[128];
+		u32 msg[I2O_OUTBOUND_MSG_FRAME_SIZE];
 		/* Copy back the Scatter Gather buffers back to user space */
 		u32 j;
 		// TODO 64bit fix
 		struct sg_simple_element *sg;
 		int sg_size;
-		printk(KERN_INFO "sg_offset\n");
 
 		// re-acquire the original message to handle correctly the sg copy operation
-		memset(&msg, 0, MSG_FRAME_SIZE * 4);
+		memset(&msg, 0, I2O_OUTBOUND_MSG_FRAME_SIZE * 4);
 		// get user msg size in u32s
 		if (get_user(size, &user_msg[0])) {
 			rcode = -EFAULT;
-			goto cleanup;
+			goto sg_list_cleanup;
 		}
 		size = size >> 16;
 		size *= 4;
 		/* Copy in the user's I2O command */
 		if (copy_from_user(msg, user_msg, size)) {
 			rcode = -EFAULT;
-			goto cleanup;
+			goto sg_list_cleanup;
 		}
 		sg_count =
 		    (size - sg_offset * 4) / sizeof(struct sg_simple_element);
@@ -728,7 +708,7 @@ static int i2o_cfg_passthru32(unsigned fd, unsigned cmnd, unsigned long arg,
 					       c->name, sg_list[j].virt,
 					       sg[j].addr_bus);
 					rcode = -EFAULT;
-					goto cleanup;
+					goto sg_list_cleanup;
 				}
 			}
 		}
@@ -737,12 +717,12 @@ static int i2o_cfg_passthru32(unsigned fd, unsigned cmnd, unsigned long arg,
 	/* Copy back the reply to user space */
 	if (reply_size) {
 		// we wrote our own values for context - now restore the user supplied ones
-		printk(KERN_INFO "reply_size\n");
 		if (copy_from_user(reply + 2, user_msg + 2, sizeof(u32) * 2)) {
 			printk(KERN_WARNING
 			       "%s: Could not copy message context FROM user\n",
 			       c->name);
 			rcode = -EFAULT;
+			goto sg_list_cleanup;
 		}
 		if (copy_to_user(user_reply, reply, reply_size)) {
 			printk(KERN_WARNING
@@ -751,13 +731,36 @@ static int i2o_cfg_passthru32(unsigned fd, unsigned cmnd, unsigned long arg,
 		}
 	}
 
+      sg_list_cleanup:
+	for (i = 0; i < sg_index; i++)
+		i2o_dma_free(&c->pdev->dev, &sg_list[i]);
+
       cleanup:
 	kfree(reply);
-	printk(KERN_INFO "rcode: %d\n", rcode);
 	return rcode;
 }
 
-#else
+static long i2o_cfg_compat_ioctl(struct file *file, unsigned cmd,
+				 unsigned long arg)
+{
+	int ret;
+	lock_kernel();
+	switch (cmd) {
+	case I2OGETIOPS:
+		ret = i2o_cfg_ioctl(NULL, file, cmd, arg);
+		break;
+	case I2OPASSTHRU32:
+		ret = i2o_cfg_passthru32(file, cmd, arg);
+		break;
+	default:
+		ret = -ENOIOCTLCMD;
+		break;
+	}
+	unlock_kernel();
+	return ret;
+}
+
+#endif
 
 static int i2o_cfg_passthru(unsigned long arg)
 {
@@ -786,7 +789,7 @@ static int i2o_cfg_passthru(unsigned long arg)
 
 	c = i2o_find_iop(iop);
 	if (!c) {
-		pr_debug("controller %d not found\n", iop);
+		osm_warn("controller %d not found\n", iop);
 		return -ENXIO;
 	}
 
@@ -799,7 +802,7 @@ static int i2o_cfg_passthru(unsigned long arg)
 	size = size >> 16;
 
 	if (size > sb->inbound_frame_size) {
-		pr_debug("size of message > inbound_frame_size");
+		osm_warn("size of message > inbound_frame_size");
 		return -EFAULT;
 	}
 
@@ -846,8 +849,8 @@ static int i2o_cfg_passthru(unsigned long arg)
 		if (sg_count > SG_TABLESIZE) {
 			printk(KERN_DEBUG "%s:IOCTL SG List too large (%u)\n",
 			       c->name, sg_count);
-			kfree(reply);
-			return -EINVAL;
+			rcode = -EINVAL;
+			goto cleanup;
 		}
 
 		for (i = 0; i < sg_count; i++) {
@@ -859,7 +862,7 @@ static int i2o_cfg_passthru(unsigned long arg)
 				       "%s:Bad SG element %d - not simple (%x)\n",
 				       c->name, i, sg[i].flag_count);
 				rcode = -EINVAL;
-				goto cleanup;
+				goto sg_list_cleanup;
 			}
 			sg_size = sg[i].flag_count & 0xffffff;
 			/* Allocate memory for the transfer */
@@ -869,7 +872,7 @@ static int i2o_cfg_passthru(unsigned long arg)
 				       "%s: Could not allocate SG buffer - size = %d buffer number %d of %d\n",
 				       c->name, sg_size, i, sg_count);
 				rcode = -ENOMEM;
-				goto cleanup;
+				goto sg_list_cleanup;
 			}
 			sg_list[sg_index++] = p;	// sglist indexed with input frame, not our internal frame.
 			/* Copy in the user's SG buffer if necessary */
@@ -883,7 +886,7 @@ static int i2o_cfg_passthru(unsigned long arg)
 					       "%s: Could not copy SG buf %d FROM user\n",
 					       c->name, i);
 					rcode = -EFAULT;
-					goto cleanup;
+					goto sg_list_cleanup;
 				}
 			}
 			//TODO 64bit fix
@@ -893,7 +896,7 @@ static int i2o_cfg_passthru(unsigned long arg)
 
 	rcode = i2o_msg_post_wait(c, m, 60);
 	if (rcode)
-		goto cleanup;
+		goto sg_list_cleanup;
 
 	if (sg_offset) {
 		u32 msg[128];
@@ -902,21 +905,20 @@ static int i2o_cfg_passthru(unsigned long arg)
 		// TODO 64bit fix
 		struct sg_simple_element *sg;
 		int sg_size;
-		printk(KERN_INFO "sg_offset\n");
 
 		// re-acquire the original message to handle correctly the sg copy operation
-		memset(&msg, 0, MSG_FRAME_SIZE * 4);
+		memset(&msg, 0, I2O_OUTBOUND_MSG_FRAME_SIZE * 4);
 		// get user msg size in u32s
 		if (get_user(size, &user_msg[0])) {
 			rcode = -EFAULT;
-			goto cleanup;
+			goto sg_list_cleanup;
 		}
 		size = size >> 16;
 		size *= 4;
 		/* Copy in the user's I2O command */
 		if (copy_from_user(msg, user_msg, size)) {
 			rcode = -EFAULT;
-			goto cleanup;
+			goto sg_list_cleanup;
 		}
 		sg_count =
 		    (size - sg_offset * 4) / sizeof(struct sg_simple_element);
@@ -938,7 +940,7 @@ static int i2o_cfg_passthru(unsigned long arg)
 					       c->name, sg_list[j],
 					       sg[j].addr_bus);
 					rcode = -EFAULT;
-					goto cleanup;
+					goto sg_list_cleanup;
 				}
 			}
 		}
@@ -947,7 +949,6 @@ static int i2o_cfg_passthru(unsigned long arg)
 	/* Copy back the reply to user space */
 	if (reply_size) {
 		// we wrote our own values for context - now restore the user supplied ones
-		printk(KERN_INFO "reply_size\n");
 		if (copy_from_user(reply + 2, user_msg + 2, sizeof(u32) * 2)) {
 			printk(KERN_WARNING
 			       "%s: Could not copy message context FROM user\n",
@@ -960,6 +961,10 @@ static int i2o_cfg_passthru(unsigned long arg)
 			rcode = -EFAULT;
 		}
 	}
+
+      sg_list_cleanup:
+	for (i = 0; i < sg_index; i++)
+		kfree(sg_list[i]);
 
       cleanup:
 	kfree(reply);
@@ -1020,14 +1025,14 @@ static int i2o_cfg_ioctl(struct inode *inode, struct file *fp, unsigned int cmd,
 		ret = i2o_cfg_evt_get(arg, fp);
 		break;
 
-#ifndef CONFIG_COMPAT
+#ifdef CONFIG_I2O_EXT_ADAPTEC
 	case I2OPASSTHRU:
 		ret = i2o_cfg_passthru(arg);
 		break;
 #endif
 
 	default:
-		pr_debug("i2o_config: unknown ioctl called!\n");
+		osm_debug("unknown ioctl called!\n");
 		ret = -EINVAL;
 	}
 
@@ -1112,6 +1117,9 @@ static struct file_operations config_fops = {
 	.owner = THIS_MODULE,
 	.llseek = no_llseek,
 	.ioctl = i2o_cfg_ioctl,
+#ifdef CONFIG_COMPAT
+	.compat_ioctl = i2o_cfg_compat_ioctl,
+#endif
 	.open = cfg_open,
 	.release = cfg_release,
 	.fasync = cfg_fasync,
@@ -1123,45 +1131,21 @@ static struct miscdevice i2o_miscdev = {
 	&config_fops
 };
 
-static int __init i2o_config_init(void)
+static int __init i2o_config_old_init(void)
 {
-	printk(KERN_INFO "I2O configuration manager v 0.04.\n");
-	printk(KERN_INFO "  (C) Copyright 1999 Red Hat Software\n");
-
 	spin_lock_init(&i2o_config_lock);
 
 	if (misc_register(&i2o_miscdev) < 0) {
-		printk(KERN_ERR "i2o_config: can't register device.\n");
+		osm_err("can't register device.\n");
 		return -EBUSY;
 	}
-	/*
-	 *      Install our handler
-	 */
-	if (i2o_driver_register(&i2o_config_driver)) {
-		printk(KERN_ERR "i2o_config: handler register failed.\n");
-		misc_deregister(&i2o_miscdev);
-		return -EBUSY;
-	}
-#ifdef CONFIG_COMPAT
-	register_ioctl32_conversion(I2OPASSTHRU32, i2o_cfg_passthru32);
-	register_ioctl32_conversion(I2OGETIOPS, (void *)sys_ioctl);
-#endif
+
 	return 0;
 }
 
-static void i2o_config_exit(void)
+static void i2o_config_old_exit(void)
 {
-#ifdef CONFIG_COMPAT
-	unregister_ioctl32_conversion(I2OPASSTHRU32);
-	unregister_ioctl32_conversion(I2OGETIOPS);
-#endif
 	misc_deregister(&i2o_miscdev);
-	i2o_driver_unregister(&i2o_config_driver);
 }
 
 MODULE_AUTHOR("Red Hat Software");
-MODULE_DESCRIPTION("I2O Configuration");
-MODULE_LICENSE("GPL");
-
-module_init(i2o_config_init);
-module_exit(i2o_config_exit);

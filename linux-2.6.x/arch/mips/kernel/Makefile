@@ -8,6 +8,14 @@ obj-y		+= cpu-probe.o branch.o entry.o genex.o irq.o process.o \
 		   ptrace.o reset.o setup.o signal.o syscall.o \
 		   traps.o unaligned.o
 
+obj-$(CONFIG_ASM_SEMAPHORES)	+= semaphore.o
+
+ifdef CONFIG_CPU_TIMER
+obj-y				+= cpu-timer.o
+else
+obj-y				+= time.o
+endif
+
 binfmt_irix-objs	:= irixelf.o irixinv.o irixioctl.o irixsig.o	\
 			   irix5sys.o sysirix.o
 
@@ -15,14 +23,6 @@ ifdef CONFIG_MODULES
 obj-y				+= mips_ksyms.o module.o
 obj-$(CONFIG_MIPS32)		+= module-elf32.o
 obj-$(CONFIG_MIPS64)		+= module-elf64.o
-endif
-
-obj-$(CONFIG_ASM_SEMAPHORES)	+= semaphore.o
-
-ifdef CONFIG_CPU_TIMER
-obj-y				+= cpu-timer.o
-else
-obj-y				+= time.o
 endif
 
 obj-$(CONFIG_CPU_R3000)		+= r2300_fpu.o r2300_switch.o

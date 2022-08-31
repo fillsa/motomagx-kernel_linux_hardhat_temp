@@ -84,6 +84,7 @@ __strncpy_from_user(char *dst, const char __user *src, long count)
 	__do_strncpy_from_user(dst, src, count, res);
 	return res;
 }
+EXPORT_SYMBOL(__strncpy_from_user);
 
 /**
  * strncpy_from_user: - Copy a NUL terminated string from userspace.
@@ -111,7 +112,7 @@ strncpy_from_user(char *dst, const char __user *src, long count)
 		__do_strncpy_from_user(dst, src, count, res);
 	return res;
 }
-
+EXPORT_SYMBOL(strncpy_from_user);
 
 /*
  * Zero Userspace
@@ -157,6 +158,7 @@ clear_user(void __user *to, unsigned long n)
 		__do_clear_user(to, n);
 	return n;
 }
+EXPORT_SYMBOL(clear_user);
 
 /**
  * __clear_user: - Zero a block of memory in user space, with less checking.
@@ -175,6 +177,7 @@ __clear_user(void __user *to, unsigned long n)
 	__do_clear_user(to, n);
 	return n;
 }
+EXPORT_SYMBOL(__clear_user);
 
 /**
  * strlen_user: - Get the size of a string in user space.
@@ -218,6 +221,7 @@ long strnlen_user(const char __user *s, long n)
 		:"cc");
 	return res & mask;
 }
+EXPORT_SYMBOL(strnlen_user);
 
 #ifdef CONFIG_X86_INTEL_USERCOPY
 static unsigned long
@@ -514,6 +518,7 @@ do {									\
 
 unsigned long __copy_to_user_ll(void __user *to, const void *from, unsigned long n)
 {
+	BUG_ON((long) n < 0);
 #ifndef CONFIG_X86_WP_WORKS_OK
 	if (unlikely(boot_cpu_data.wp_works_ok == 0) &&
 			((unsigned long )to) < TASK_SIZE) {
@@ -569,16 +574,19 @@ survive:
 		n = __copy_user_intel(to, from, n);
 	return n;
 }
+EXPORT_SYMBOL(__copy_to_user_ll);
 
 unsigned long
 __copy_from_user_ll(void *to, const void __user *from, unsigned long n)
 {
+	BUG_ON((long)n < 0);
 	if (movsl_is_ok(to, from, n))
 		__copy_user_zeroing(to, from, n);
 	else
 		n = __copy_user_zeroing_intel(to, from, n);
 	return n;
 }
+EXPORT_SYMBOL(__copy_from_user_ll);
 
 /**
  * copy_to_user: - Copy a block of data into user space.
@@ -597,6 +605,7 @@ unsigned long
 copy_to_user(void __user *to, const void *from, unsigned long n)
 {
 	might_sleep();
+	BUG_ON((long) n < 0);
 	if (access_ok(VERIFY_WRITE, to, n))
 		n = __copy_to_user(to, from, n);
 	return n;
@@ -623,6 +632,7 @@ unsigned long
 copy_from_user(void *to, const void __user *from, unsigned long n)
 {
 	might_sleep();
+	BUG_ON((long) n < 0);
 	if (access_ok(VERIFY_READ, from, n))
 		n = __copy_from_user(to, from, n);
 	else

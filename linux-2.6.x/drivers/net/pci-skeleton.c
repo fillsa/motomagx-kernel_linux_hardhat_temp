@@ -1897,7 +1897,7 @@ static void netdrv_set_rx_mode (struct net_device *dev)
 
 #ifdef CONFIG_PM
 
-static int netdrv_suspend (struct pci_dev *pdev, u32 state)
+static int netdrv_suspend (struct pci_dev *pdev, pm_message_t state)
 {
 	struct net_device *dev = pci_get_drvdata (pdev);
 	struct netdrv_private *tp = dev->priv;
@@ -1921,7 +1921,7 @@ static int netdrv_suspend (struct pci_dev *pdev, u32 state)
 	spin_unlock_irqrestore (&tp->lock, flags);
 
 	pci_save_state (pdev);
-	pci_set_power_state (pdev, 3);
+	pci_set_power_state (pdev, PCI_D3hot);
 
 	return 0;
 }
@@ -1934,7 +1934,7 @@ static int netdrv_resume (struct pci_dev *pdev)
 
 	if (!netif_running(dev))
 		return 0;
-	pci_set_power_state (pdev, 0);
+	pci_set_power_state (pdev, PCI_D0);
 	pci_restore_state (pdev);
 	netif_device_attach (dev);
 	netdrv_hw_start (dev);

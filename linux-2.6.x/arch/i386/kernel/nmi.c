@@ -28,8 +28,7 @@
 #include <linux/sysctl.h>
 
 #include <asm/smp.h>
-#include <asm/mtrr.h>
-#include <asm/mpspec.h>
+#include <asm/div64.h>
 #include <asm/nmi.h>
 #include <linux/cpumask.h>
 
@@ -103,23 +102,28 @@ int nmi_active;
 	(P4_CCCR_OVF_PMI0|P4_CCCR_THRESHOLD(15)|P4_CCCR_COMPLEMENT|	\
 	 P4_CCCR_COMPARE|P4_CCCR_REQUIRED|P4_CCCR_ESCR_SELECT(4)|P4_CCCR_ENABLE)
 
-int __init check_nmi_watchdog (void)
+static int __init check_nmi_watchdog(void)
 {
 	unsigned int prev_nmi_count[NR_CPUS];
 	int cpu;
 
-	printk(KERN_INFO "testing NMI watchdog ... ");
+	if (nmi_watchdog == NMI_NONE)
+		return 0;
+
+	printk(KERN_INFO "Testing NMI watchdog ... ");
 
 	for (cpu = 0; cpu < NR_CPUS; cpu++)
-		prev_nmi_count[cpu] = irq_stat[cpu].__nmi_count;
+		prev_nmi_count[cpu] = per_cpu(irq_stat, cpu).__nmi_count;
 	local_irq_enable();
 	mdelay((100*1000)/nmi_hz); // wait 100 ticks
 
-	/* FIXME: Only boot CPU is online at this stage.  Check CPUs
-           as they come up. */
 	for (cpu = 0; cpu < NR_CPUS; cpu++) {
-		if (!cpu_online(cpu))
+#ifdef CONFIG_SMP
+		/* Check cpu_callin_map here because that is set
+		   after the timer is started. */
+		if (!cpu_isset(cpu, cpu_callin_map))
 			continue;
+#endif
 		if (nmi_count(cpu) - prev_nmi_count[cpu] <= 5) {
 			printk("CPU#%d: NMI appears to be stuck!\n", cpu);
 			nmi_active = 0;
@@ -136,6 +140,8 @@ int __init check_nmi_watchdog (void)
 
 	return 0;
 }
+/* This needs to happen later in boot so counters are working */
+late_initcall(check_nmi_watchdog);
 
 static int __init setup_nmi_watchdog(char *str)
 {
@@ -190,7 +196,7 @@ static void disable_lapic_nmi_watchdog(void)
 			wrmsr(MSR_P6_EVNTSEL0, 0, 0);
 			break;
 		case 15:
-			if (boot_cpu_data.x86_model > 0x3)
+			if (boot_cpu_data.x86_model > 0x4)
 				break;
 
 			wrmsr(MSR_P4_IQ_CCCR0, 0, 0);
@@ -262,7 +268,7 @@ void enable_timer_nmi_watchdog(void)
 
 static int nmi_pm_active; /* nmi_active before suspend */
 
-static int lapic_nmi_suspend(struct sys_device *dev, u32 state)
+static int lapic_nmi_suspend(struct sys_device *dev, pm_message_t state)
 {
 	nmi_pm_active = nmi_active;
 	disable_lapic_nmi_watchdog();
@@ -373,6 +379,16 @@ static void clear_msr_range(unsigned int base, unsigned int n)
 		wrmsr(base+i, 0, 0);
 }
 
+static inline void write_watchdog_counter(const char *descr)
+{
+	u64 count = (u64)cpu_khz * 1000;
+
+	do_div(count, nmi_hz);
+	if(descr)
+		Dprintk("setting %s to -0x%08Lx\n", descr, count);
+	wrmsrl(nmi_perfctr_msr, 0 - count);
+}
+
 static void setup_k7_watchdog(void)
 {
 	unsigned int evntsel;
@@ -388,8 +404,7 @@ static void setup_k7_watchdog(void)
 		| K7_NMI_EVENT;
 
 	wrmsr(MSR_K7_EVNTSEL0, evntsel, 0);
-	Dprintk("setting K7_PERFCTR0 to %08lx\n", -(cpu_khz*1000/nmi_hz));
-	wrmsr(MSR_K7_PERFCTR0, -(cpu_khz*1000/nmi_hz), -1);
+	write_watchdog_counter("K7_PERFCTR0");
 	apic_write(APIC_LVTPC, APIC_DM_NMI);
 	evntsel |= K7_EVNTSEL_ENABLE;
 	wrmsr(MSR_K7_EVNTSEL0, evntsel, 0);
@@ -410,8 +425,7 @@ static void setup_p6_watchdog(void)
 		| P6_NMI_EVENT;
 
 	wrmsr(MSR_P6_EVNTSEL0, evntsel, 0);
-	Dprintk("setting P6_PERFCTR0 to %08lx\n", -(cpu_khz*1000/nmi_hz));
-	wrmsr(MSR_P6_PERFCTR0, -(cpu_khz*1000/nmi_hz), 0);
+	write_watchdog_counter("P6_PERFCTR0");
 	apic_write(APIC_LVTPC, APIC_DM_NMI);
 	evntsel |= P6_EVNTSEL0_ENABLE;
 	wrmsr(MSR_P6_EVNTSEL0, evntsel, 0);
@@ -451,8 +465,7 @@ static int setup_p4_watchdog(void)
 
 	wrmsr(MSR_P4_CRU_ESCR0, P4_NMI_CRU_ESCR0, 0);
 	wrmsr(MSR_P4_IQ_CCCR0, P4_NMI_IQ_CCCR0 & ~P4_CCCR_ENABLE, 0);
-	Dprintk("setting P4_IQ_COUNTER0 to 0x%08lx\n", -(cpu_khz*1000/nmi_hz));
-	wrmsr(MSR_P4_IQ_COUNTER0, -(cpu_khz*1000/nmi_hz), -1);
+	write_watchdog_counter("P4_IQ_COUNTER0");
 	apic_write(APIC_LVTPC, APIC_DM_NMI);
 	wrmsr(MSR_P4_IQ_CCCR0, nmi_p4_cccr_val, 0);
 	return 1;
@@ -475,7 +488,7 @@ void setup_apic_nmi_watchdog (void)
 			setup_p6_watchdog();
 			break;
 		case 15:
-			if (boot_cpu_data.x86_model > 0x3)
+			if (boot_cpu_data.x86_model > 0x4)
 				return;
 
 			if (!setup_p4_watchdog())
@@ -557,7 +570,7 @@ void notrace nmi_watchdog_tick (struct pt_regs * regs)
 	 */
 	int sum, cpu = _smp_processor_id();
 
-	sum = irq_stat[cpu].apic_timer_irqs;
+	sum = per_cpu(irq_stat, cpu).apic_timer_irqs;
 
 	if (nmi_show_regs[cpu]) {
 		nmi_show_regs[cpu] = 0;
@@ -603,7 +616,7 @@ void notrace nmi_watchdog_tick (struct pt_regs * regs)
 			 * other P6 variant */
 			apic_write(APIC_LVTPC, APIC_DM_NMI);
 		}
-		wrmsr(nmi_perfctr_msr, -(cpu_khz*1000/nmi_hz), -1);
+		write_watchdog_counter(NULL);
 	}
 }
 

@@ -525,7 +525,7 @@ static int snd_trident_simple_put_sample(void *private_data, simple_instrument_t
 	if (trident->synth.current_size + size > trident->synth.max_size)
 		return -ENOMEM;
 
-	if (verify_area(VERIFY_READ, data, size))
+	if (!access_ok(VERIFY_READ, data, size))
 		return -EFAULT;
 
 	if (trident->tlb.entries) {
@@ -570,7 +570,7 @@ static int snd_trident_simple_get_sample(void *private_data, simple_instrument_t
 		shift++;
 	size <<= shift;
 
-	if (verify_area(VERIFY_WRITE, data, size))
+	if (!access_ok(VERIFY_WRITE, data, size))
 		return -EFAULT;
 
 	/* FIXME: not implemented yet */
@@ -618,7 +618,7 @@ static void select_instrument(trident_t * trident, snd_trident_voice_t * v)
 	instr = snd_seq_instr_find(trident->synth.ilist, &v->instr, 0, 1);
 	if (instr != NULL) {
 		if (instr->ops) {
-			if (instr->ops->instr_type == snd_seq_simple_id)
+			if (!strcmp(instr->ops->instr_type, SNDRV_SEQ_INSTR_ID_SIMPLE))
 				snd_trident_simple_init(v);
 		}
 		snd_seq_instr_free_use(trident->synth.ilist, instr);
@@ -811,7 +811,7 @@ static void snd_trident_synth_free_private_instruments(snd_trident_port_t * p, i
 	snd_seq_instr_list_free_cond(p->trident->synth.ilist, &ifree, client, 0);
 }
 
-int snd_trident_synth_event_input(snd_seq_event_t * ev, int direct, void *private_data, int atomic, int hop)
+static int snd_trident_synth_event_input(snd_seq_event_t * ev, int direct, void *private_data, int atomic, int hop)
 {
 	snd_trident_port_t *p = (snd_trident_port_t *) private_data;
 

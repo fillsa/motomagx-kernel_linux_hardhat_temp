@@ -28,7 +28,7 @@ do {						\
 	spin_lock_init(&(_tp)->lock);		\
 	(_tp)->next = 0;			\
 	(_tp)->allocations = 0;			\
-	sema_init(&(_tp)->count, 63);	\
+	sema_init(&(_tp)->count, 63);		\
 } while (0)
 
 

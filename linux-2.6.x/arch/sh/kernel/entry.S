@@ -261,7 +261,8 @@ debug_kernel:
 
 	.align 2
 	.globl debug_enter
-debug_enter:
+
+debug_enter:		
 #if defined(CONFIG_KGDB)
 	/* Jump to kgdb, pass stacked regs as arg */
 debug_kernel_sw:
@@ -316,7 +317,7 @@ debug_kernel_fw:
 
 
 	.align	2
-debug_trap:
+debug_trap:	
 #if defined(CONFIG_SH_STANDARD_BIOS) || defined(CONFIG_KGDB)
 	mov	#OFF_SR, r0
 	mov.l	@(r0,r15), r0		! get status register
@@ -1187,5 +1188,10 @@ ENTRY(sys_call_table)
 	.long sys_add_key		/* 285 */
 	.long sys_request_key
 	.long sys_keyctl
+	.long sys_ioprio_set
+	.long sys_ioprio_get
+	.long sys_inotify_init		/* 290 */
+	.long sys_inotify_add_watch
+	.long sys_inotify_rm_watch
 
 /* End of entry.S */

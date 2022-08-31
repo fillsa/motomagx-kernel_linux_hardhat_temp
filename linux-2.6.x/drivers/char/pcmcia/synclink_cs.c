@@ -71,7 +71,6 @@
 #include <linux/workqueue.h>
 #include <linux/hdlc.h>
 
-#include <pcmcia/version.h>
 #include <pcmcia/cs_types.h>
 #include <pcmcia/cs.h>
 #include <pcmcia/cistpl.h>
@@ -464,21 +463,11 @@ static int debug_level = 0;
 static int maxframe[MAX_DEVICE_COUNT] = {0,};
 static int dosyncppp[MAX_DEVICE_COUNT] = {1,1,1,1};
 
-/* The old way: bit map of interrupts to choose from */
-/* This means pick from 15, 14, 12, 11, 10, 9, 7, 5, 4, and 3 */
-static u_int irq_mask = 0xdeb8;
-
-/* Newer, simpler way of listing specific interrupts */
-static int irq_list[4] = { -1 };
-
-MODULE_PARM(irq_mask, "i");
-MODULE_PARM(irq_list, "1-4i");
-
-MODULE_PARM(break_on_load,"i");
-MODULE_PARM(ttymajor,"i");
-MODULE_PARM(debug_level,"i");
-MODULE_PARM(maxframe,"1-" __MODULE_STRING(MAX_DEVICE_COUNT) "i");
-MODULE_PARM(dosyncppp,"1-" __MODULE_STRING(MAX_DEVICE_COUNT) "i");
+module_param(break_on_load, bool, 0);
+module_param(ttymajor, int, 0);
+module_param(debug_level, int, 0);
+module_param_array(maxframe, int, NULL, 0);
+module_param_array(dosyncppp, int, NULL, 0);
 
 MODULE_LICENSE("GPL");
 
@@ -555,7 +544,7 @@ static dev_link_t *mgslpc_attach(void)
     MGSLPC_INFO *info;
     dev_link_t *link;
     client_reg_t client_reg;
-    int ret, i;
+    int ret;
     
     if (debug_level >= DEBUG_LEVEL_INFO)
 	    printk("mgslpc_attach\n");
@@ -591,12 +580,7 @@ static dev_link_t *mgslpc_attach(void)
 
     /* Interrupt setup */
     link->irq.Attributes = IRQ_TYPE_EXCLUSIVE;
-    link->irq.IRQInfo1   = IRQ_INFO2_VALID | IRQ_LEVEL_ID;
-    if (irq_list[0] == -1)
-	    link->irq.IRQInfo2 = irq_mask;
-    else
-	    for (i = 0; i < 4; i++)
-		    link->irq.IRQInfo2 |= 1 << irq_list[i];
+    link->irq.IRQInfo1   = IRQ_LEVEL_ID;
     link->irq.Handler = NULL;
     
     link->conf.Attributes = 0;
@@ -608,12 +592,6 @@ static dev_link_t *mgslpc_attach(void)
     dev_list = link;
 
     client_reg.dev_info = &dev_info;
-    client_reg.Attributes = INFO_IO_CLIENT | INFO_CARD_SHARE;
-    client_reg.EventMask =
-	    CS_EVENT_CARD_INSERTION | CS_EVENT_CARD_REMOVAL |
-	    CS_EVENT_RESET_PHYSICAL | CS_EVENT_CARD_RESET |
-	    CS_EVENT_PM_SUSPEND | CS_EVENT_PM_RESUME;
-    client_reg.event_handler = &mgslpc_event;
     client_reg.Version = 0x0210;
     client_reg.event_callback_args.client_data = link;
 
@@ -923,7 +901,7 @@ static void tx_release(struct tty_struct *tty)
 /* Return next bottom half action to perform.
  * or 0 if nothing to do.
  */
-int bh_action(MGSLPC_INFO *info)
+static int bh_action(MGSLPC_INFO *info)
 {
 	unsigned long flags;
 	int rc = 0;
@@ -1017,7 +995,7 @@ void bh_status(MGSLPC_INFO *info)
 }
 
 /* eom: non-zero = end of frame */ 
-void rx_ready_hdlc(MGSLPC_INFO *info, int eom) 
+static void rx_ready_hdlc(MGSLPC_INFO *info, int eom)
 {
 	unsigned char data[2];
 	unsigned char fifo_count, read_count, i;
@@ -1079,7 +1057,7 @@ void rx_ready_hdlc(MGSLPC_INFO *info, int eom)
 	issue_command(info, CHA, CMD_RXFIFO);
 }
 
-void rx_ready_async(MGSLPC_INFO *info, int tcd) 
+static void rx_ready_async(MGSLPC_INFO *info, int tcd)
 {
 	unsigned char data, status;
 	int fifo_count;
@@ -1153,7 +1131,7 @@ void rx_ready_async(MGSLPC_INFO *info, int tcd)
 }
 
 
-void tx_done(MGSLPC_INFO *info) 
+static void tx_done(MGSLPC_INFO *info)
 {
 	if (!info->tx_active)
 		return;
@@ -1190,7 +1168,7 @@ void tx_done(MGSLPC_INFO *info)
 	}
 }
 
-void tx_ready(MGSLPC_INFO *info) 
+static void tx_ready(MGSLPC_INFO *info)
 {
 	unsigned char fifo_count = 32;
 	int c;
@@ -1239,7 +1217,7 @@ void tx_ready(MGSLPC_INFO *info)
 	}
 }
 
-void cts_change(MGSLPC_INFO *info) 
+static void cts_change(MGSLPC_INFO *info)
 {
 	get_signals(info);
 	if ((info->cts_chkcount)++ >= IO_PIN_SHUTDOWN_LIMIT)
@@ -1276,7 +1254,7 @@ void cts_change(MGSLPC_INFO *info)
 	info->pending_bh |= BH_STATUS;
 }
 
-void dcd_change(MGSLPC_INFO *info) 
+static void dcd_change(MGSLPC_INFO *info)
 {
 	get_signals(info);
 	if ((info->dcd_chkcount)++ >= IO_PIN_SHUTDOWN_LIMIT)
@@ -1310,7 +1288,7 @@ void dcd_change(MGSLPC_INFO *info)
 	info->pending_bh |= BH_STATUS;
 }
 
-void dsr_change(MGSLPC_INFO *info) 
+static void dsr_change(MGSLPC_INFO *info)
 {
 	get_signals(info);
 	if ((info->dsr_chkcount)++ >= IO_PIN_SHUTDOWN_LIMIT)
@@ -1325,7 +1303,7 @@ void dsr_change(MGSLPC_INFO *info)
 	info->pending_bh |= BH_STATUS;
 }
 
-void ri_change(MGSLPC_INFO *info) 
+static void ri_change(MGSLPC_INFO *info)
 {
 	get_signals(info);
 	if ((info->ri_chkcount)++ >= IO_PIN_SHUTDOWN_LIMIT)
@@ -2955,7 +2933,7 @@ static inline int line_info(char *buf, MGSLPC_INFO *info)
 
 /* Called to print information about devices
  */
-int mgslpc_read_proc(char *page, char **start, off_t off, int count,
+static int mgslpc_read_proc(char *page, char **start, off_t off, int count,
 		 int *eof, void *data)
 {
 	int len = 0, l;
@@ -3097,13 +3075,21 @@ void mgslpc_remove_device(MGSLPC_INFO *remove_info)
 	}
 }
 
+static struct pcmcia_device_id mgslpc_ids[] = {
+	PCMCIA_DEVICE_MANF_CARD(0x02c5, 0x0050),
+	PCMCIA_DEVICE_NULL
+};
+MODULE_DEVICE_TABLE(pcmcia, mgslpc_ids);
+
 static struct pcmcia_driver mgslpc_driver = {
 	.owner		= THIS_MODULE,
 	.drv		= {
 		.name	= "synclink_cs",
 	},
 	.attach		= mgslpc_attach,
+	.event		= mgslpc_event,
 	.detach		= mgslpc_detach,
+	.id_table	= mgslpc_ids,
 };
 
 static struct tty_operations mgslpc_ops = {
@@ -3147,13 +3133,7 @@ static void synclink_cs_cleanup(void)
 	}
 
 	pcmcia_unregister_driver(&mgslpc_driver);
-
-	/* XXX: this really needs to move into generic code.. */
-	while (dev_list != NULL) {
-		if (dev_list->state & DEV_CONFIG)
-			mgslpc_release((u_long)dev_list);
-		mgslpc_detach(dev_list);
-	}
+	BUG_ON(dev_list != NULL);
 }
 
 static int __init synclink_cs_init(void)
@@ -3218,7 +3198,7 @@ static void __exit synclink_cs_exit(void)
 module_init(synclink_cs_init);
 module_exit(synclink_cs_exit);
 
-void mgslpc_set_rate(MGSLPC_INFO *info, unsigned char channel, unsigned int rate) 
+static void mgslpc_set_rate(MGSLPC_INFO *info, unsigned char channel, unsigned int rate)
 {
 	unsigned int M, N;
 	unsigned char val;
@@ -3254,7 +3234,7 @@ void mgslpc_set_rate(MGSLPC_INFO *info, unsigned char channel, unsigned int rate
 
 /* Enabled the AUX clock output at the specified frequency.
  */
-void enable_auxclk(MGSLPC_INFO *info)
+static void enable_auxclk(MGSLPC_INFO *info)
 {
 	unsigned char val;
 	

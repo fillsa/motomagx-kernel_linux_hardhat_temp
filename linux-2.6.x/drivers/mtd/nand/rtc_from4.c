@@ -6,7 +6,7 @@
  *  Derived from drivers/mtd/nand/spia.c
  *       Copyright (C) 2000 Steven J. Hill (sjhill@realitydiluted.com)
  *
- * $Id: rtc_from4.c,v 1.8 2005/01/17 19:44:36 dmarlin Exp $
+ * $Id: rtc_from4.c,v 1.9 2005/01/24 20:40:11 dmarlin Exp $
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 as

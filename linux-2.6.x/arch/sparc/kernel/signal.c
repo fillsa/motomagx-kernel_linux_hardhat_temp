@@ -202,10 +202,10 @@ restore_fpu_state(struct pt_regs *regs, __siginfo_fpu_t __user *fpu)
 		regs->psr &= ~PSR_EF;
 	}
 #endif
-	current->used_math = 1;
+	set_used_math();
 	clear_tsk_thread_flag(current, TIF_USEDFPU);
 
-	if (verify_area(VERIFY_READ, fpu, sizeof(*fpu)))
+	if (!access_ok(VERIFY_READ, fpu, sizeof(*fpu)))
 		return -EFAULT;
 
 	err = __copy_from_user(&current->thread.float_regs[0], &fpu->si_float_regs[0],
@@ -231,7 +231,7 @@ static inline void do_new_sigreturn (struct pt_regs *regs)
 	sf = (struct new_signal_frame __user *) regs->u_regs[UREG_FP];
 
 	/* 1. Make sure we are not getting garbage from the user */
-	if (verify_area(VERIFY_READ, sf, sizeof(*sf)))
+	if (!access_ok(VERIFY_READ, sf, sizeof(*sf)))
 		goto segv_and_exit;
 
 	if (((unsigned long) sf) & 3)
@@ -297,7 +297,7 @@ asmlinkage void do_sigreturn(struct pt_regs *regs)
 	scptr = (struct sigcontext __user *) regs->u_regs[UREG_I0];
 
 	/* Check sanity of the user arg. */
-	if (verify_area(VERIFY_READ, scptr, sizeof(struct sigcontext)) ||
+	if (!access_ok(VERIFY_READ, scptr, sizeof(struct sigcontext)) ||
 	    (((unsigned long) scptr) & 3))
 		goto segv_and_exit;
 
@@ -356,7 +356,7 @@ asmlinkage void do_rt_sigreturn(struct pt_regs *regs)
 
 	synchronize_user_stack();
 	sf = (struct rt_signal_frame __user *) regs->u_regs[UREG_FP];
-	if (verify_area(VERIFY_READ, sf, sizeof(*sf)) ||
+	if (!access_ok(VERIFY_READ, sf, sizeof(*sf)) ||
 	    (((unsigned long) sf) & 0x03))
 		goto segv;
 
@@ -535,7 +535,7 @@ setup_frame(struct sigaction *sa, struct pt_regs *regs, int signr, sigset_t *old
 			sig_address = NULL;
 		}
 	}
-	err |= __put_user((long)sig_address, &sframep->sig_address);
+	err |= __put_user((unsigned long)sig_address, &sframep->sig_address);
 	err |= __put_user(sig_code, &sframep->sig_code);
 	err |= __put_user(sc, &sframep->sig_scptr);
 	if (err)
@@ -584,7 +584,7 @@ save_fpu_state(struct pt_regs *regs, __siginfo_fpu_t __user *fpu)
 				      &current->thread.fpqueue[0],
 				      ((sizeof(unsigned long) +
 				      (sizeof(unsigned long *)))*16));
-	current->used_math = 0;
+	clear_used_math();
 	return err;
 }
 
@@ -599,7 +599,7 @@ new_setup_frame(struct k_sigaction *ka, struct pt_regs *regs,
 	synchronize_user_stack();
 
 	sigframe_size = NF_ALIGNEDSZ;
-	if (!current->used_math)
+	if (!used_math())
 		sigframe_size -= sizeof(__siginfo_fpu_t);
 
 	sf = (struct new_signal_frame __user *)
@@ -616,7 +616,7 @@ new_setup_frame(struct k_sigaction *ka, struct pt_regs *regs,
 	
 	err |= __put_user(0, &sf->extra_size);
 
-	if (current->used_math) {
+	if (used_math()) {
 		err |= save_fpu_state(regs, &sf->fpu_state);
 		err |= __put_user(&sf->fpu_state, &sf->fpu_save);
 	} else {
@@ -677,7 +677,7 @@ new_setup_rt_frame(struct k_sigaction *ka, struct pt_regs *regs,
 
 	synchronize_user_stack();
 	sigframe_size = RT_ALIGNEDSZ;
-	if (!current->used_math)
+	if (!used_math())
 		sigframe_size -= sizeof(__siginfo_fpu_t);
 	sf = (struct rt_signal_frame __user *)
 		get_sigframe(&ka->sa, regs, sigframe_size);
@@ -690,7 +690,7 @@ new_setup_rt_frame(struct k_sigaction *ka, struct pt_regs *regs,
 	err |= __put_user(regs->npc, &sf->regs.npc);
 	err |= __put_user(regs->y, &sf->regs.y);
 	psr = regs->psr;
-	if (current->used_math)
+	if (used_math())
 		psr |= PSR_EF;
 	err |= __put_user(psr, &sf->regs.psr);
 	err |= __copy_to_user(&sf->regs.u_regs, regs->u_regs, sizeof(regs->u_regs));
@@ -832,7 +832,7 @@ setup_svr4_frame(struct sigaction *sa, unsigned long pc, unsigned long npc,
 	 *    to flush the user windows.
 	 */
 	for (window = 0; window < tp->w_saved; window++) {
-		err |= __put_user((int *) &(gw->win[window]), &gw->winptr[window]);
+		err |= __put_user((int __user *) &(gw->win[window]), &gw->winptr[window]);
 		err |= __copy_to_user(&gw->win[window],
 				      &tp->reg_window[window],
 				      sizeof(svr4_rwindow_t));
@@ -1016,6 +1016,7 @@ asmlinkage int svr4_setcontext(svr4_ucontext_t __user *c, struct pt_regs *regs)
 
 sigsegv_and_return:
 	force_sig(SIGSEGV, current);
+	return -EFAULT;
 }
 
 static inline void

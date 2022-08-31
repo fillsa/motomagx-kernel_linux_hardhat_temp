@@ -36,8 +36,7 @@
  * Power off function, if any
  */
 void (*pm_power_off)(void);
-
-int reboot_thru_bios;
+EXPORT_SYMBOL(pm_power_off);
 
 int voyager_level = 0;
 
@@ -253,6 +252,12 @@ kb_wait(void)
 }
 
 void
+machine_shutdown(void)
+{
+	/* Architecture specific shutdown needed before a kexec */
+}
+
+void
 machine_restart(char *cmd)
 {
 	printk("Voyager Warm Restart\n");
@@ -279,7 +284,12 @@ machine_restart(char *cmd)
 	}
 }
 
-EXPORT_SYMBOL(machine_restart);
+void
+machine_emergency_restart(void)
+{
+	/*for now, just hook this to a warm restart */
+	machine_restart(NULL);
+}
 
 void
 mca_nmi_hook(void)
@@ -316,12 +326,9 @@ machine_halt(void)
 	machine_power_off();
 }
 
-EXPORT_SYMBOL(machine_halt);
-
 void machine_power_off(void)
 {
 	if (pm_power_off)
 		pm_power_off();
 }
 
-EXPORT_SYMBOL(machine_power_off);

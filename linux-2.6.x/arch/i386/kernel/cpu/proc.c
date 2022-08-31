@@ -25,10 +25,10 @@ static int show_cpuinfo(struct seq_file *m, void *v)
 	        "fxsr", "sse", "sse2", "ss", "ht", "tm", "ia64", "pbe",
 
 		/* AMD-defined */
-		"pni", NULL, NULL, NULL, NULL, NULL, NULL, NULL,
+		NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL,
 		NULL, NULL, NULL, "syscall", NULL, NULL, NULL, NULL,
 		NULL, NULL, NULL, "mp", "nx", NULL, "mmxext", NULL,
-		NULL, NULL, NULL, NULL, NULL, "lm", "3dnowext", "3dnow",
+		NULL, "fxsr_opt", NULL, NULL, NULL, "lm", "3dnowext", "3dnow",
 
 		/* Transmeta-defined */
 		"recovery", "longrun", NULL, "lrti", NULL, NULL, NULL, NULL,
@@ -45,12 +45,18 @@ static int show_cpuinfo(struct seq_file *m, void *v)
 
 		/* Intel-defined (#2) */
 		"pni", NULL, NULL, "monitor", "ds_cpl", NULL, NULL, "est",
-		"tm2", NULL, "cid", NULL, NULL, NULL, "xtpr", NULL,
+		"tm2", NULL, "cid", NULL, NULL, "cx16", "xtpr", NULL,
 		NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL,
 		NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL,
 
 		/* VIA/Cyrix/Centaur-defined */
 		NULL, NULL, "rng", "rng_en", NULL, NULL, "ace", "ace_en",
+		NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL,
+		NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL,
+		NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL,
+
+		/* AMD-defined (#2) */
+		"lahf_lm", "cmp_legacy", NULL, NULL, NULL, NULL, NULL, NULL,
 		NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL,
 		NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL,
 		NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL,
@@ -80,7 +86,7 @@ static int show_cpuinfo(struct seq_file *m, void *v)
 		seq_printf(m, "stepping\t: unknown\n");
 
 	if ( cpu_has(c, X86_FEATURE_TSC) ) {
-		seq_printf(m, "cpu MHz\t\t: %lu.%03lu\n",
+		seq_printf(m, "cpu MHz\t\t: %u.%03u\n",
 			cpu_khz / 1000, (cpu_khz % 1000));
 	}
 
@@ -88,10 +94,12 @@ static int show_cpuinfo(struct seq_file *m, void *v)
 	if (c->x86_cache_size >= 0)
 		seq_printf(m, "cache size\t: %d KB\n", c->x86_cache_size);
 #ifdef CONFIG_X86_HT
-	if (smp_num_siblings > 1) {
-		extern int phys_proc_id[NR_CPUS];
+	if (c->x86_num_cores * smp_num_siblings > 1) {
 		seq_printf(m, "physical id\t: %d\n", phys_proc_id[n]);
-		seq_printf(m, "siblings\t: %d\n", smp_num_siblings);
+		seq_printf(m, "siblings\t: %d\n",
+				c->x86_num_cores * smp_num_siblings);
+		seq_printf(m, "core id\t\t: %d\n", cpu_core_id[n]);
+		seq_printf(m, "cpu cores\t: %d\n", c->x86_num_cores);
 	}
 #endif
 	
@@ -123,6 +131,7 @@ static int show_cpuinfo(struct seq_file *m, void *v)
 	seq_printf(m, "\nbogomips\t: %lu.%02lu\n\n",
 		     c->loops_per_jiffy/(500000/HZ),
 		     (c->loops_per_jiffy/(5000/HZ)) % 100);
+
 	return 0;
 }
 

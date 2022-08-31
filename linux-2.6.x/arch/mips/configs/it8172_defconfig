@@ -1,7 +1,7 @@
 #
 # Automatically generated make config: don't edit
-# Linux kernel version: 2.6.10
-# Mon Dec 27 19:10:57 2004
+# Linux kernel version: 2.6.11-rc2
+# Wed Jan 26 02:49:05 2005
 #
 CONFIG_MIPS=y
 # CONFIG_MIPS64 is not set
@@ -87,6 +87,7 @@ CONFIG_MIPS_ITE8172=y
 # CONFIG_SNI_RM200_PCI is not set
 # CONFIG_TOSHIBA_RBTX4927 is not set
 CONFIG_RWSEM_GENERIC_SPINLOCK=y
+CONFIG_GENERIC_CALIBRATE_DELAY=y
 CONFIG_HAVE_DEC_LOCK=y
 CONFIG_DMA_NONCOHERENT=y
 CONFIG_CPU_LITTLE_ENDIAN=y
@@ -234,10 +235,12 @@ CONFIG_MTD_PHYSMAP_BANKWIDTH=2
 # Block devices
 #
 # CONFIG_BLK_DEV_FD is not set
+# CONFIG_BLK_DEV_COW_COMMON is not set
 CONFIG_BLK_DEV_LOOP=y
 # CONFIG_BLK_DEV_CRYPTOLOOP is not set
 # CONFIG_BLK_DEV_NBD is not set
 # CONFIG_BLK_DEV_RAM is not set
+CONFIG_BLK_DEV_RAM_COUNT=16
 CONFIG_BLK_DEV_RAM_COUNT=16
 CONFIG_INITRAMFS_SOURCE=""
 # CONFIG_LBD is not set
@@ -537,6 +540,7 @@ CONFIG_LEGACY_PTY_COUNT=256
 #
 # CONFIG_VGA_CONSOLE is not set
 CONFIG_DUMMY_CONSOLE=y
+# CONFIG_BACKLIGHT_LCD_SUPPORT is not set
 
 #
 # Sound
@@ -570,6 +574,23 @@ CONFIG_SOUND_IT8172=y
 # CONFIG_USB_ARCH_HAS_OHCI is not set
 
 #
+# PCCARD (PCMCIA/CardBus) support
+#
+# CONFIG_PCCARD is not set
+
+#
+# PC-card bridges
+#
+
+#
+# PCI Hotplug Support
+#
+
+#
+# NOTE: USB_STORAGE enables SCSI, and 'SCSI disk support' may also be needed; see USB_STORAGE Help for more information
+#
+
+#
 # NOTE: USB_STORAGE enables SCSI, and 'SCSI disk support' may also be needed; see USB_STORAGE Help for more information
 #
 
@@ -584,7 +605,18 @@ CONFIG_SOUND_IT8172=y
 # CONFIG_MMC is not set
 
 #
+# InfiniBand support
+#
+# CONFIG_INFINIBAND is not set
+
+#
+# MMC/SD Card support
+#
+# CONFIG_MMC is not set
+
+#
 # File systems
+# CONFIG_FW_LOADER is not set
 #
 CONFIG_EXT2_FS=y
 # CONFIG_EXT2_FS_XATTR is not set
@@ -628,6 +660,7 @@ CONFIG_RAMFS=y
 
 #
 # Miscellaneous filesystems
+# CONFIG_MTD_XIP is not set
 #
 # CONFIG_ADFS_FS is not set
 # CONFIG_AFFS_FS is not set
@@ -645,6 +678,7 @@ CONFIG_RAMFS=y
 # CONFIG_SYSV_FS is not set
 # CONFIG_UFS_FS is not set
 
+# CONFIG_MTD_BLOCK2MTD is not set
 #
 # Network File Systems
 #
@@ -688,6 +722,7 @@ CONFIG_MSDOS_PARTITION=y
 CONFIG_CROSSCOMPILE=y
 CONFIG_CMDLINE=""
 
+CONFIG_ATA_OVER_ETH=m
 #
 # Security options
 #
@@ -701,6 +736,10 @@ CONFIG_KEYS_DEBUG_PROC_KEYS=y
 # CONFIG_CRYPTO is not set
 
 #
+# Hardware crypto devices
+#
+
+#
 # Library routines
 #
 # CONFIG_CRC_CCITT is not set
@@ -708,3 +747,4 @@ CONFIG_KEYS_DEBUG_PROC_KEYS=y
 CONFIG_LIBCRC32C=m
 CONFIG_GENERIC_HARDIRQS=y
 CONFIG_GENERIC_IRQ_PROBE=y
+# CONFIG_SERIO_LIBPS2 is not set

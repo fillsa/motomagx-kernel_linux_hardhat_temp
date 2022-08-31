@@ -1,4 +1,6 @@
 /*
+ * tps65010 - driver for tps6501x power management chips
+ *
  * Copyright (C) 2004 Texas Instruments
  *
  * This program is free software; you can redistribute it and/or modify
@@ -26,9 +28,9 @@
 #include <linux/device.h>
 #include <linux/i2c.h>
 #include <linux/delay.h>
+#include <linux/workqueue.h>
 #include <asm/irq.h>
 #include <asm/mach-types.h>
-#include <linux/workqueue.h>
 
 #include <asm/arch/gpio.h>
 #include <asm/arch/mux.h>
@@ -43,9 +45,7 @@ MODULE_LICENSE("GPL");
 
 /* only two addresses possible */
 #define	TPS_BASE	0x48
-static unsigned short normal_i2c[] = {
-	TPS_BASE,
-	I2C_CLIENT_END };
+static unsigned short normal_i2c[] = { TPS_BASE, I2C_CLIENT_END };
 static unsigned short normal_i2c_range[] = { I2C_CLIENT_END };
 
 I2C_CLIENT_INSMOD;
@@ -133,12 +133,14 @@ struct tps65010 {
 	/* plus four GPIOs, probably used to switch power */
 };
 
-#ifdef	DEBUG
+/*-------------------------------------------------------------------------*/
 
-static void show_chgstatus(const char *label, u8 chgstatus)
+#if	defined(DEBUG)
+
+static void dbg_chgstat(char *buf, size_t len, u8 chgstatus)
 {
-	pr_debug("%s: %s %02x%s%s%s%s%s%s%s%s\n",
-		DRIVER_NAME, label, chgstatus,
+	snprintf(buf, len, "%02x%s%s%s%s%s%s%s%s\n",
+		DRIVER_NAME, buf, chgstatus,
 		(chgstatus & TPS_CHG_USB) ? " USB" : "",
 		(chgstatus & TPS_CHG_AC) ? " AC" : "",
 		(chgstatus & TPS_CHG_THERM) ? " therm" : "",
@@ -149,10 +151,10 @@ static void show_chgstatus(const char *label, u8 chgstatus)
 		(chgstatus & TPS_CHG_TEMP_ERR) ? " temp_err" : "");
 }
 
-static void show_regstatus(const char *label, u8 regstatus)
+static void dbg_regstat(char *buf, size_t len, u8 regstatus)
 {
-	pr_debug("%s: %s %02x %s%s%s%s%s%s%s\n",
-		DRIVER_NAME, label, regstatus,
+	snprintf(buf, len, "%02x %s%s%s%s%s%s%s\n",
+		DRIVER_NAME, buf, regstatus,
 		(regstatus & TPS_REG_ONOFF) ? "off" : "(on)",
 		(regstatus & TPS_REG_COVER) ? " uncover" : "",
 		(regstatus & TPS_REG_UVLO) ? " UVLO" : "",
@@ -162,10 +164,12 @@ static void show_regstatus(const char *label, u8 regstatus)
 		(regstatus & TPS_REG_PG_CORE) ? " core_bad" : "");
 }
 
-static void show_chgconfig(const char *label, u8 chgconfig)
+static void dbg_chgconf(int por, char *buf, size_t len, u8 chgconfig)
 {
-	pr_debug("%s: %s 0x%02x %dms%s%s AC=%d%% USB=%dmA %sCharge\n",
-		DRIVER_NAME, label, chgconfig,
+	const char *hibit;
+
+	snprintf(buf, len, "0x%02x %dms%s%s AC=%d%% USB=%dmA %sCharge\n",
+		chgconfig, hibit,
 		(chgconfig & TPS_CHARGE_POR) ? 69: 1000,
 		(chgconfig & TPS_CHARGE_RESET) ? " reset" : "",
 		(chgconfig & TPS_CHARGE_FAST) ? " fast" : "",
@@ -181,20 +185,53 @@ static void show_chgconfig(const char *label, u8 chgconfig)
 		(chgconfig & TPS_CHARGE_ENABLE) ? "" : "No");
 }
 
+#endif
+
+#ifdef	DEBUG
+
+static void show_chgstatus(const char *label, u8 chgstatus)
+{
+	char buf [100];
+
+	dbg_chgstat(buf, sizeof buf, chgstatus);
+	pr_debug("%s: %s %s", DRIVER_NAME, label, buf);
+}
+
+static void show_regstatus(const char *label, u8 regstatus)
+{
+	char buf [100];
+
+	dbg_regstat(buf, sizeof buf, regstatus);
+	pr_debug("%s: %s %s", DRIVER_NAME, label, buf);
+}
+
+static void show_chgconfig(int por, const char *label, u8 chgconfig)
+{
+	char buf [100];
+
+	dbg_chgconf(por, buf, sizeof buf, chgconfig);
+	pr_debug("%s: %s %s", DRIVER_NAME, label, buf);
+}
+
 #else
 
 static inline void show_chgstatus(const char *label, u8 chgstatus) { }
 static inline void show_regstatus(const char *label, u8 chgstatus) { }
-static inline void show_chgconfig(const char *label, u8 chgconfig) { }
+static inline void show_chgconfig(int por, const char *label, u8 chgconfig) { }
 
 #endif
 
 /*-------------------------------------------------------------------------*/
 
-/* handle IRQs using keventd for now */
+/* handle IRQS in a task context, so we can use I2C calls */
 static void tps65010_interrupt(struct tps65010 *tps)
 {
-	u8 tmp = 0, mask;
+	u8 tmp = 0, mask, poll;
+
+	/* IRQs won't trigger irqs for certain events, but we can get
+	 * others by polling (normally, with external power applied).
+	 */
+	poll = 0;
 
 	/* regstatus irqs */
 	if (tps->nmask2) {
@@ -222,13 +259,14 @@ static void tps65010_interrupt(struct tps65010 *tps)
 		show_chgstatus("chg/irq", tmp);
 		if (tmp & (TPS_CHG_USB|TPS_CHG_AC))
 			show_chgconfig("conf", tps->chgconf);
+
 		/* charging starts or stops */
 	}
 
 	/* also potentially gpio-in rise or fall */
 }
 
-/* handle IRQs using keventd for now */
+/* handle IRQs and polling using keventd for now */
 static void tps65010_work(void *_tps)
 {
 	struct tps65010		*tps = _tps;
@@ -294,7 +332,8 @@ static int tps65010_detach_client(struct i2c_client *client)
 }
 
 /* no error returns, they'd just make bus scanning stop */
-static int tps65010_probe(struct i2c_adapter *bus, int address, int kind)
+static int
+tps65010_probe(struct i2c_adapter *bus, int address, int kind)
 {
 	static int		tps65010_id;
 	struct tps65010		*tps;
@@ -448,14 +487,14 @@ int tps65010_set_gpio_out_value(unsigned gpio, unsigned value)
 		return -ENODEV;
 	if ((gpio < GPIO1) || (gpio > GPIO4))
 		return -EINVAL;
-	
+
 	down(&the_tps->lock);
 
 	defgpio = i2c_smbus_read_byte_data(&the_tps->client, TPS_DEFGPIO);
 
 	/* Configure GPIO for output */
 	defgpio |= 1 << (gpio + 3);
-	
+
 	/* Writing 1 forces a logic 0 on that GPIO and vice versa */
 	switch (value) {
 	case LOW:
@@ -466,14 +505,14 @@ int tps65010_set_gpio_out_value(unsigned gpio, unsigned value)
 		defgpio &= ~(1 << (gpio - 1)); /* set GPIO high by writing 0 */
 		break;
 	}
-	
+
 	status = i2c_smbus_write_byte_data(&the_tps->client,
 		TPS_DEFGPIO, defgpio);
 
 	pr_debug("%s: gpio%dout = %s, defgpio 0x%02x\n", DRIVER_NAME,
 		gpio, value ? "high" : "low",
 		i2c_smbus_read_byte_data(&the_tps->client, TPS_DEFGPIO));
-	
+
 	up(&the_tps->lock);
 	return status;
 }
@@ -492,7 +531,7 @@ int tps65010_set_led(unsigned led, unsigned mode)
 	if (!the_tps)
 		return -ENODEV;
 
-	if(led == LED1)
+	if (led == LED1)
 		offs = 0;
 	else {
 		offs = 2;
@@ -505,8 +544,9 @@ int tps65010_set_led(unsigned led, unsigned mode)
 		i2c_smbus_read_byte_data(&the_tps->client, TPS_LED1_ON + offs));
 
 	dev_dbg (&the_tps->client.dev, "led%i_per  0x%02x\n", led,
-		i2c_smbus_read_byte_data(&the_tps->client, TPS_LED1_PER + offs));
-	
+		i2c_smbus_read_byte_data(&the_tps->client,
+				TPS_LED1_PER + offs));
+
 	switch (mode) {
 	case OFF:
 		led_on  = 1 << 7;
@@ -531,11 +571,11 @@ int tps65010_set_led(unsigned led, unsigned mode)
 			TPS_LED1_ON + offs, led_on);
 
 	if (status != 0) {
-		printk(KERN_ERR "%s: Failed to write led%i_on register\n", 
+		printk(KERN_ERR "%s: Failed to write led%i_on register\n",
 		       DRIVER_NAME, led);
 		up(&the_tps->lock);
 		return status;
-	} 
+	}
 
 	dev_dbg (&the_tps->client.dev, "led%i_on   0x%02x\n", led,
 		i2c_smbus_read_byte_data(&the_tps->client, TPS_LED1_ON + offs));
@@ -551,7 +591,8 @@ int tps65010_set_led(unsigned led, unsigned mode)
 	}
 
 	dev_dbg (&the_tps->client.dev, "led%i_per  0x%02x\n", led,
-		i2c_smbus_read_byte_data(&the_tps->client, TPS_LED1_PER + offs));
+		i2c_smbus_read_byte_data(&the_tps->client,
+				TPS_LED1_PER + offs));
 
 	up(&the_tps->lock);
 
@@ -578,7 +619,7 @@ int tps65010_set_low_pwr(unsigned mode)
 		i2c_smbus_read_byte_data(&the_tps->client, TPS_VDCDC1));
 
 	vdcdc1 = i2c_smbus_read_byte_data(&the_tps->client, TPS_VDCDC1);
-	
+
 	switch (mode) {
 	case OFF:
 		vdcdc1 &= ~TPS_ENABLE_LP; /* disable ENABLE_LP bit */
@@ -593,8 +634,8 @@ int tps65010_set_low_pwr(unsigned mode)
 			TPS_VDCDC1, vdcdc1);
 
 	if (status != 0)
-		printk(KERN_ERR "%s: Failed to write vdcdc1 register\n", 
-		       DRIVER_NAME);
+		printk(KERN_ERR "%s: Failed to write vdcdc1 register\n",
+			DRIVER_NAME);
 	else
 		pr_debug("%s: vdcdc1 0x%02x\n", DRIVER_NAME,
 			i2c_smbus_read_byte_data(&the_tps->client, TPS_VDCDC1));
@@ -623,7 +664,8 @@ int tps65013_set_low_pwr(unsigned mode)
 
 	down(&the_tps->lock);
 
-	pr_debug("%s: %s low_pwr, chgconfig 0x%02x vdcdc1 0x%02x\n", DRIVER_NAME,
+	pr_debug("%s: %s low_pwr, chgconfig 0x%02x vdcdc1 0x%02x\n",
+		DRIVER_NAME,
 		mode ? "enable" : "disable",
 		i2c_smbus_read_byte_data(&the_tps->client, TPS_CHGCONFIG),
 		i2c_smbus_read_byte_data(&the_tps->client, TPS_VDCDC1));
@@ -694,7 +736,7 @@ static int __init tps_init(void)
 		msleep(10);
 	}
 
-#if defined(CONFIG_ARM)
+#ifdef	CONFIG_ARM
 	if (machine_is_omap_osk()) {
 
 		// FIXME: This should be placed in the initialization code

@@ -32,7 +32,7 @@
 #define AS_MCTIME	(__GFP_BITS_SHIFT + 2)  /* need m/ctime change */
 #endif
 
-static inline int mapping_gfp_mask(struct address_space * mapping)
+static inline unsigned int __nocast mapping_gfp_mask(struct address_space * mapping)
 {
 	return mapping->flags & __GFP_BITS_MASK;
 }
@@ -63,7 +63,6 @@ static inline void mapping_set_gfp_mask(struct address_space *m, int mask)
 #define page_cache_release(page)	put_page(page)
 void release_pages(struct page **pages, int nr, int cold);
 
-
 static inline struct page *__page_cache_alloc(struct address_space *x,
 					      unsigned long idx,
 					      unsigned int gfp_mask)
@@ -74,13 +73,13 @@ static inline struct page *__page_cache_alloc(struct address_space *x,
 static inline struct page *page_cache_alloc(struct address_space *x,
 					    unsigned long idx)
 {
-	return __page_cache_alloc(x, idx, mapping_gfp_mask(x));
+	return __page_cache_alloc(x, idx, mapping_gfp_mask(x)|__GFP_NORECLAIM);
 }
 
 static inline struct page *page_cache_alloc_cold(struct address_space *x,
 						 unsigned long idx)
 {
-	return __page_cache_alloc(x, idx, mapping_gfp_mask(x)|__GFP_COLD);
+	return __page_cache_alloc(x, idx, mapping_gfp_mask(x)|__GFP_COLD|__GFP_NORECLAIM);
 }
 
 typedef int filler_t(void *, struct page *);
@@ -168,6 +167,14 @@ static inline unsigned long get_page_cache_size(void)
 	if (unlikely(ret < 0))
 		ret = 0;
 	return ret;
+}
+
+/*
+ * Return byte-offset into filesystem object for page.
+ */
+static inline loff_t page_offset(struct page *page)
+{
+	return ((loff_t)page->index) << PAGE_CACHE_SHIFT;
 }
 
 static inline pgoff_t linear_page_index(struct vm_area_struct *vma,

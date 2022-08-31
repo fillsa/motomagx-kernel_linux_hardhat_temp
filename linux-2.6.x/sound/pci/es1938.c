@@ -72,6 +72,10 @@ MODULE_SUPPORTED_DEVICE("{{ESS,ES1938},"
                 "{ESS,ES1969},"
 		"{TerraTec,128i PCI}}");
 
+#if defined(CONFIG_GAMEPORT) || (defined(MODULE) && defined(CONFIG_GAMEPORT_MODULE))
+#define SUPPORT_JOYSTICK 1
+#endif
+
 #ifndef PCI_VENDOR_ID_ESS
 #define PCI_VENDOR_ID_ESS		0x125d
 #endif
@@ -237,8 +241,8 @@ struct _snd_es1938 {
 	spinlock_t mixer_lock;
         snd_info_entry_t *proc_entry;
 
-#if defined(CONFIG_GAMEPORT) || (defined(MODULE) && defined(CONFIG_GAMEPORT_MODULE))
-	struct gameport gameport;
+#ifdef SUPPORT_JOYSTICK
+	struct gameport *gameport;
 #endif
 #ifdef CONFIG_PM
 	unsigned char saved_regs[SAVED_REG_SIZE];
@@ -1381,7 +1385,7 @@ static unsigned char saved_regs[SAVED_REG_SIZE+1] = {
 };
 
 
-static int es1938_suspend(snd_card_t *card, unsigned int state)
+static int es1938_suspend(snd_card_t *card, pm_message_t state)
 {
 	es1938_t *chip = card->pm_private_data;
 	unsigned char *s, *d;
@@ -1395,11 +1399,10 @@ static int es1938_suspend(snd_card_t *card, unsigned int state)
 	outb(0x00, SLIO_REG(chip, IRQCONTROL)); /* disable irqs */
 
 	pci_disable_device(chip->pci);
-	snd_power_change_state(card, SNDRV_CTL_POWER_D3hot);
 	return 0;
 }
 
-static int es1938_resume(snd_card_t *card, unsigned int state)
+static int es1938_resume(snd_card_t *card)
 {
 	es1938_t *chip = card->pm_private_data;
 	unsigned char *s, *d;
@@ -1415,21 +1418,52 @@ static int es1938_resume(snd_card_t *card, unsigned int state)
 			snd_es1938_write(chip, *s, *d);
 	}
 
-	snd_power_change_state(card, SNDRV_CTL_POWER_D0);
 	return 0;
 }
 #endif /* CONFIG_PM */
+
+#ifdef SUPPORT_JOYSTICK
+static int __devinit snd_es1938_create_gameport(es1938_t *chip)
+{
+	struct gameport *gp;
+
+	chip->gameport = gp = gameport_allocate_port();
+	if (!gp) {
+		printk(KERN_ERR "es1938: cannot allocate memory for gameport\n");
+		return -ENOMEM;
+	}
+
+	gameport_set_name(gp, "ES1938");
+	gameport_set_phys(gp, "pci%s/gameport0", pci_name(chip->pci));
+	gameport_set_dev_parent(gp, &chip->pci->dev);
+	gp->io = chip->game_port;
+
+	gameport_register_port(gp);
+
+	return 0;
+}
+
+static void snd_es1938_free_gameport(es1938_t *chip)
+{
+	if (chip->gameport) {
+		gameport_unregister_port(chip->gameport);
+		chip->gameport = NULL;
+	}
+}
+#else
+static inline int snd_es1938_create_gameport(es1938_t *chip) { return -ENOSYS; }
+static inline void snd_es1938_free_gameport(es1938_t *chip) { }
+#endif /* SUPPORT_JOYSTICK */
 
 static int snd_es1938_free(es1938_t *chip)
 {
 	/* disable irqs */
 	outb(0x00, SLIO_REG(chip, IRQCONTROL));
-	/*if (chip->rmidi)
-	  snd_es1938_mixer_bits(chip, ESSSB_IREG_MPU401CONTROL, 0x40, 0);*/
-#if defined(CONFIG_GAMEPORT) || (defined(MODULE) && defined(CONFIG_GAMEPORT_MODULE))
-	if (chip->gameport.io)
-		gameport_unregister_port(&chip->gameport);
-#endif
+	if (chip->rmidi)
+		snd_es1938_mixer_bits(chip, ESSSB_IREG_MPU401CONTROL, 0x40, 0);
+
+	snd_es1938_free_gameport(chip);
+
 	if (chip->irq >= 0)
 		free_irq(chip->irq, (void *)chip);
 	pci_release_regions(chip->pci);
@@ -1576,6 +1610,9 @@ static irqreturn_t snd_es1938_interrupt(int irq, void *dev_id, struct pt_regs *r
 
 	/* MPU401 */
 	if (status & 0x80) {
+		// the following line is evil! It switches off MIDI interrupt handling after the first interrupt received.
+		// replacing the last 0 by 0x40 works for ESS-Solo1, but just doing nothing works as well!
+		// andreas@flying-snail.de
 		// snd_es1938_mixer_bits(chip, ESSSB_IREG_MPU401CONTROL, 0x40, 0); /* ack? */
 		if (chip->rmidi) {
 			handled = 1;
@@ -1690,13 +1727,13 @@ static int __devinit snd_es1938_probe(struct pci_dev *pci,
 	if (snd_mpu401_uart_new(card, 0, MPU401_HW_MPU401,
 				chip->mpu_port, 1, chip->irq, 0, &chip->rmidi) < 0) {
 		printk(KERN_ERR "es1938: unable to initialize MPU-401\n");
-	} /*else
-	    snd_es1938_mixer_bits(chip, ESSSB_IREG_MPU401CONTROL, 0x40, 0x40);*/
+	} else {
+		// this line is vital for MIDI interrupt handling on ess-solo1
+		// andreas@flying-snail.de
+		snd_es1938_mixer_bits(chip, ESSSB_IREG_MPU401CONTROL, 0x40, 0x40);
+	}
 
-#if defined(CONFIG_GAMEPORT) || (defined(MODULE) && defined(CONFIG_GAMEPORT_MODULE))
-	chip->gameport.io = chip->game_port;
-	gameport_register_port(&chip->gameport);
-#endif
+	snd_es1938_create_gameport(chip);
 
 	if ((err = snd_card_register(card)) < 0) {
 		snd_card_free(card);
@@ -1724,7 +1761,7 @@ static struct pci_driver driver = {
 
 static int __init alsa_card_es1938_init(void)
 {
-	return pci_module_init(&driver);
+	return pci_register_driver(&driver);
 }
 
 static void __exit alsa_card_es1938_exit(void)

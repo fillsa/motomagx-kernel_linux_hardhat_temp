@@ -7,7 +7,7 @@
  *
  * For licensing information, see the file 'LICENCE' in this directory.
  *
- * $Id: nodemgmt.c,v 1.121 2005/04/06 16:02:52 dedekind Exp $
+ * $Id: nodemgmt.c,v 1.122 2005/05/06 09:30:27 dedekind Exp $
  *
  */
 
@@ -424,7 +424,6 @@ void jffs2_mark_node_obsolete(struct jffs2_sb_info *c, struct jffs2_raw_node_ref
 		D1(printk(KERN_DEBUG "Obsoleting previously unchecked node at 0x%08x of len %x: ", ref_offset(ref), ref_totlen(c, jeb, ref)));
 		jeb->unchecked_size -= ref_totlen(c, jeb, ref);
 		c->unchecked_size -= ref_totlen(c, jeb, ref);
-
 	} else {
 		D1(if (unlikely(jeb->used_size < ref_totlen(c, jeb, ref))) {
 			printk(KERN_NOTICE "raw node of size 0x%08x freed from erase block %d at 0x%08x, but used_size was already 0x%08x\n",
@@ -477,6 +476,7 @@ void jffs2_mark_node_obsolete(struct jffs2_sb_info *c, struct jffs2_raw_node_ref
 		   obliterate nodes that look obsolete. If they weren't 
 		   marked obsolete on the flash at the time they _became_
 		   obsolete, there was probably a reason for that. */
+		/* We didn't lock the erase_free_sem */
 		spin_unlock(&c->erase_completion_lock);
 		/* We didn't lock the erase_free_sem */
 		return;

@@ -72,6 +72,7 @@
 #include <linux/smp_lock.h>
 #include <linux/security.h>
 #include <linux/syscalls.h>
+#include <linux/audit.h>
 #include <linux/ltt-events.h>
 #include <asm/uaccess.h>
 #include "util.h"
@@ -212,7 +213,7 @@ asmlinkage long sys_semget (key_t key, int nsems, int semflg)
 	if (nsems < 0 || nsems > sc_semmsl)
 		return -EINVAL;
 	down(&sem_ids.sem);
-
+	
 	if (key == IPC_PRIVATE) {
 		err = newary(key, nsems, semflg);
 	} else if ((id = ipc_findkey(&sem_ids, key)) == -1) {  /* key not used */
@@ -367,8 +368,22 @@ static void update_queue (struct sem_array * sma)
 			 */
 			preempt_disable();
 
-			n = q->next;
 			q->status = IN_WAKEUP;
+			/*
+			 * Continue scanning. The next operation
+			 * that must be checked depends on the type of the
+			 * completed operation:
+			 * - if the operation modified the array, then
+			 *   restart from the head of the queue and
+			 *   check for threads that might be waiting
+			 *   for semaphore values to become 0.
+			 * - if the operation didn't modify the array,
+			 *   then just continue.
+			 */
+			if (q->alter)
+				n = sma->sem_pending;
+			else
+				n = q->next;
 			wake_up_process(q->sleeper);
 			/* hands-off: q will disappear immediately after
 			 * writing q->status.
@@ -805,6 +820,8 @@ static int semctl_down(int semid, int semnum, int cmd, int version, union semun 
 	if(cmd == IPC_SET) {
 		if(copy_semid_from_user (&setbuf, arg.buf, version))
 			return -EFAULT;
+		if ((err = audit_ipc_perms(0, setbuf.uid, setbuf.gid, setbuf.mode)))
+			return err;
 	}
 	sma = sem_lock(semid);
 	if(sma==NULL)
@@ -894,7 +911,7 @@ static inline void lock_semundo(void)
 	struct sem_undo_list *undo_list;
 
 	undo_list = current->sysvsem.undo_list;
-	if ((undo_list != NULL) && (atomic_read(&undo_list->refcnt) != 1))
+	if (undo_list)
 		spin_lock(&undo_list->lock);
 }
 
@@ -914,7 +931,7 @@ static inline void unlock_semundo(void)
 	struct sem_undo_list *undo_list;
 
 	undo_list = current->sysvsem.undo_list;
-	if ((undo_list != NULL) && (atomic_read(&undo_list->refcnt) != 1))
+	if (undo_list)
 		spin_unlock(&undo_list->lock);
 }
 
@@ -942,9 +959,7 @@ static inline int get_undo_list(struct sem_undo_list **undo_listp)
 		if (undo_list == NULL)
 			return -ENOMEM;
 		memset(undo_list, 0, size);
-		/* don't initialize unodhd->lock here.  It's done
-		 * in copy_semundo() instead.
-		 */
+		spin_lock_init(&undo_list->lock);
 		atomic_set(&undo_list->refcnt, 1);
 		current->sysvsem.undo_list = undo_list;
 	}
@@ -1053,7 +1068,7 @@ asmlinkage long sys_semtimedop(int semid, struct sembuf __user *tsops,
 	struct sembuf fast_sops[SEMOPM_FAST];
 	struct sembuf* sops = fast_sops, *sop;
 	struct sem_undo *un;
-	int undos = 0, decrease = 0, alter = 0, max;
+	int undos = 0, alter = 0, max;
 	struct sem_queue queue;
 	unsigned long jiffies_left = 0;
 
@@ -1088,13 +1103,10 @@ asmlinkage long sys_semtimedop(int semid, struct sembuf __user *tsops,
 		if (sop->sem_num >= max)
 			max = sop->sem_num;
 		if (sop->sem_flg & SEM_UNDO)
-			undos++;
-		if (sop->sem_op < 0)
-			decrease = 1;
-		if (sop->sem_op > 0)
+			undos = 1;
+		if (sop->sem_op != 0)
 			alter = 1;
 	}
-	alter |= decrease;
 
 retry_undos:
 	if (undos) {
@@ -1135,8 +1147,11 @@ retry_undos:
 		goto out_unlock_free;
 
 	error = try_atomic_semop (sma, sops, nsops, un, current->tgid);
-	if (error <= 0)
-		goto update;
+	if (error <= 0) {
+		if (alter && error == 0)
+			update_queue (sma);
+		goto out_unlock_free;
+	}
 
 	/* We need to sleep on this operation, so we put the current
 	 * task into the pending queue and go to sleep.
@@ -1148,6 +1163,7 @@ retry_undos:
 	queue.undo = un;
 	queue.pid = current->tgid;
 	queue.id = semid;
+	queue.alter = alter;
 	if (alter)
 		append_to_queue(sma ,&queue);
 	else
@@ -1199,9 +1215,6 @@ retry_undos:
 	remove_from_queue(sma,&queue);
 	goto out_unlock_free;
 
-update:
-	if (alter)
-		update_queue (sma);
 out_unlock_free:
 	sem_unlock(sma);
 out_free:
@@ -1232,8 +1245,6 @@ int copy_semundo(unsigned long clone_flags, struct task_struct *tsk)
 		error = get_undo_list(&undo_list);
 		if (error)
 			return error;
-		if (atomic_read(&undo_list->refcnt) == 1)
-			spin_lock_init(&undo_list->lock);
 		atomic_inc(&undo_list->refcnt);
 		tsk->sysvsem.undo_list = undo_list;
 	} else 

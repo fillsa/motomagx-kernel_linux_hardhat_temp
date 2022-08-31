@@ -59,7 +59,7 @@ struct aes_ctx {
 };
 
 #define WPOLY 0x011b
-#define u32_in(x) le32_to_cpu(*(const u32 *)(x))
+#define u32_in(x) le32_to_cpup((const __le32 *)(x))
 #define bytes2word(b0, b1, b2, b3)  \
 	(((u32)(b3) << 24) | ((u32)(b2) << 16) | ((u32)(b1) << 8) | (b0))
 
@@ -93,12 +93,12 @@ static u32 rcon_tab[RC_LENGTH];
 
 u32 ft_tab[4][256];
 u32 fl_tab[4][256];
-u32 ls_tab[4][256];
-u32 im_tab[4][256];
+static u32 ls_tab[4][256];
+static u32 im_tab[4][256];
 u32 il_tab[4][256];
 u32 it_tab[4][256];
 
-void gen_tabs(void)
+static void gen_tabs(void)
 {
 	u32 i, w;
 	u8 pow[512], log[256];

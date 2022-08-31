@@ -87,7 +87,7 @@ static unsigned long iommu_range_alloc(struct iommu_table *tbl,
 		start = largealloc ? tbl->it_largehint : tbl->it_hint;
 
 	/* Use only half of the table for small allocs (15 pages or less) */
-	limit = largealloc ? tbl->it_mapsize : tbl->it_halfpoint;
+	limit = largealloc ? tbl->it_size : tbl->it_halfpoint;
 
 	if (largealloc && start < tbl->it_halfpoint)
 		start = tbl->it_halfpoint;
@@ -114,7 +114,7 @@ static unsigned long iommu_range_alloc(struct iommu_table *tbl,
 			 * Second failure, rescan the other half of the table.
 			 */
 			start = (largealloc ^ pass) ? tbl->it_halfpoint : 0;
-			limit = pass ? tbl->it_mapsize : limit;
+			limit = pass ? tbl->it_size : limit;
 			pass++;
 			goto again;
 		} else {
@@ -194,7 +194,7 @@ static void __iommu_free(struct iommu_table *tbl, dma_addr_t dma_addr,
 	entry = dma_addr >> PAGE_SHIFT;
 	free_entry = entry - tbl->it_offset;
 
-	if (((free_entry + npages) > tbl->it_mapsize) ||
+	if (((free_entry + npages) > tbl->it_size) ||
 	    (entry < tbl->it_offset)) {
 		if (printk_ratelimit()) {
 			printk(KERN_INFO "iommu_free: invalid entry\n");
@@ -202,7 +202,7 @@ static void __iommu_free(struct iommu_table *tbl, dma_addr_t dma_addr,
 			printk(KERN_INFO "\tdma_addr  = 0x%lx\n", (u64)dma_addr);
 			printk(KERN_INFO "\tTable     = 0x%lx\n", (u64)tbl);
 			printk(KERN_INFO "\tbus#      = 0x%lx\n", (u64)tbl->it_busno);
-			printk(KERN_INFO "\tmapsize   = 0x%lx\n", (u64)tbl->it_mapsize);
+			printk(KERN_INFO "\tsize      = 0x%lx\n", (u64)tbl->it_size);
 			printk(KERN_INFO "\tstartOff  = 0x%lx\n", (u64)tbl->it_offset);
 			printk(KERN_INFO "\tindex     = 0x%lx\n", (u64)tbl->it_index);
 			WARN_ON(1);
@@ -242,7 +242,7 @@ int iommu_map_sg(struct device *dev, struct iommu_table *tbl,
 	dma_addr_t dma_next = 0, dma_addr;
 	unsigned long flags;
 	struct scatterlist *s, *outs, *segstart;
-	int outcount;
+	int outcount, incount;
 	unsigned long handle;
 
 	BUG_ON(direction == DMA_NONE);
@@ -252,6 +252,7 @@ int iommu_map_sg(struct device *dev, struct iommu_table *tbl,
 
 	outs = s = segstart = &sglist[0];
 	outcount = 1;
+	incount = nelems;
 	handle = 0;
 
 	/* Init first segment length for backout at failure */
@@ -338,10 +339,10 @@ int iommu_map_sg(struct device *dev, struct iommu_table *tbl,
 
 	DBG("mapped %d elements:\n", outcount);
 
-	/* For the sake of iommu_free_sg, we clear out the length in the
+	/* For the sake of iommu_unmap_sg, we clear out the length in the
 	 * next entry of the sglist if we didn't fill the list completely
 	 */
-	if (outcount < nelems) {
+	if (outcount < incount) {
 		outs++;
 		outs->dma_address = DMA_ERROR_CODE;
 		outs->dma_length = 0;
@@ -407,14 +408,11 @@ struct iommu_table *iommu_init_table(struct iommu_table *tbl)
 	unsigned long sz;
 	static int welcomed = 0;
 
-	/* it_size is in pages, it_mapsize in number of entries */
-	tbl->it_mapsize = (tbl->it_size << PAGE_SHIFT) / tbl->it_entrysize;
-
 	/* Set aside 1/4 of the table for large allocations. */
-	tbl->it_halfpoint = tbl->it_mapsize * 3 / 4;
+	tbl->it_halfpoint = tbl->it_size * 3 / 4;
 
 	/* number of bytes needed for the bitmap */
-	sz = (tbl->it_mapsize + 7) >> 3;
+	sz = (tbl->it_size + 7) >> 3;
 
 	tbl->it_map = (unsigned long *)__get_free_pages(GFP_ATOMIC, get_order(sz));
 	if (!tbl->it_map)
@@ -425,6 +423,9 @@ struct iommu_table *iommu_init_table(struct iommu_table *tbl)
 	tbl->it_hint = 0;
 	tbl->it_largehint = tbl->it_halfpoint;
 	spin_lock_init(&tbl->it_lock);
+
+	/* Clear the hardware table in case firmware left allocations in it */
+	ppc_md.tce_free(tbl, tbl->it_offset, tbl->it_size);
 
 	if (!welcomed) {
 		printk(KERN_INFO "IOMMU table initialized, virtual merging %s\n",
@@ -448,8 +449,8 @@ void iommu_free_table(struct device_node *dn)
 	}
 
 	/* verify that table contains no entries */
-	/* it_mapsize is in entries, and we're examining 64 at a time */
-	for (i = 0; i < (tbl->it_mapsize/64); i++) {
+	/* it_size is in entries, and we're examining 64 at a time */
+	for (i = 0; i < (tbl->it_size/64); i++) {
 		if (tbl->it_map[i] != 0) {
 			printk(KERN_WARNING "%s: Unexpected TCEs for %s\n",
 				__FUNCTION__, dn->full_name);
@@ -458,7 +459,7 @@ void iommu_free_table(struct device_node *dn)
 	}
 
 	/* calculate bitmap size in bytes */
-	bitmap_sz = (tbl->it_mapsize + 7) / 8;
+	bitmap_sz = (tbl->it_size + 7) / 8;
 
 	/* free bitmap */
 	order = get_order(bitmap_sz);
@@ -516,8 +517,8 @@ void iommu_unmap_single(struct iommu_table *tbl, dma_addr_t dma_handle,
  * Returns the virtual address of the buffer and sets dma_handle
  * to the dma address (mapping) of the first page.
  */
-void *iommu_alloc_consistent(struct iommu_table *tbl, size_t size,
-		dma_addr_t *dma_handle)
+void *iommu_alloc_coherent(struct iommu_table *tbl, size_t size,
+		dma_addr_t *dma_handle, unsigned int __nocast flag)
 {
 	void *ret = NULL;
 	dma_addr_t mapping;
@@ -541,7 +542,7 @@ void *iommu_alloc_consistent(struct iommu_table *tbl, size_t size,
 		return NULL;
 
 	/* Alloc enough pages (and possibly more) */
-	ret = (void *)__get_free_pages(GFP_ATOMIC, order);
+	ret = (void *)__get_free_pages(flag, order);
 	if (!ret)
 		return NULL;
 	memset(ret, 0, size);
@@ -556,7 +557,7 @@ void *iommu_alloc_consistent(struct iommu_table *tbl, size_t size,
 	return ret;
 }
 
-void iommu_free_consistent(struct iommu_table *tbl, size_t size,
+void iommu_free_coherent(struct iommu_table *tbl, size_t size,
 			 void *vaddr, dma_addr_t dma_handle)
 {
 	unsigned int npages;

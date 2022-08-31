@@ -33,11 +33,6 @@
  */
 MODULE_AUTHOR("R.J.Dunlop <bob.dunlop@farsite.co.uk>");
 MODULE_DESCRIPTION("FarSync T-Series WAN driver. FarSite Communications Ltd.");
-MODULE_PARM(fst_txq_low, "i");
-MODULE_PARM(fst_txq_high, "i");
-MODULE_PARM(fst_max_reads, "i");
-MODULE_PARM(fst_excluded_cards, "i");
-MODULE_PARM(fst_excluded_list, "0-32i");
 MODULE_LICENSE("GPL");
 
 /*      Driver configuration and global parameters
@@ -84,6 +79,12 @@ int fst_txq_high = FST_HIGH_WATER_MARK;
 int fst_max_reads = 7;
 int fst_excluded_cards = 0;
 int fst_excluded_list[FST_MAX_CARDS];
+
+module_param(fst_txq_low, int, 0);
+module_param(fst_txq_high, int, 0);
+module_param(fst_max_reads, int, 0);
+module_param(fst_excluded_cards, int, 0);
+module_param_array(fst_excluded_list, int, NULL, 0);
 
 /*      Card shared memory layout
  *      =========================
@@ -860,8 +861,7 @@ fst_tx_dma_complete(struct fst_card_info *card, struct fst_port_info *port,
 /*
  * Mark it for our own raw sockets interface
  */
-static unsigned short farsync_type_trans(struct sk_buff *skb,
-					 struct net_device *dev)
+static __be16 farsync_type_trans(struct sk_buff *skb, struct net_device *dev)
 {
 	skb->dev = dev;
 	skb->mac.raw = skb->data;
@@ -980,6 +980,7 @@ fst_issue_cmd(struct fst_port_info *port, unsigned short cmd)
 	/* Wait for any previous command to complete */
 	while (mbval > NAK) {
 		spin_unlock_irqrestore(&card->card_lock, flags);
+		set_current_state(TASK_UNINTERRUPTIBLE);
 		schedule_timeout(1);
 		spin_lock_irqsave(&card->card_lock, flags);
 

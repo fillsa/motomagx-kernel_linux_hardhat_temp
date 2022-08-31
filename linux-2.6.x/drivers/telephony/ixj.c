@@ -41,9 +41,6 @@
  *
  ***************************************************************************/
 
-static char ixj_c_rcsid[] = "$Id: ixj.c,v 4.7 2001/08/13 06:19:33 craigs Exp $";
-static char ixj_c_revision[] = "$Revision: 4.7 $";
-
 /*
  * $Log: ixj.c,v $
  *
@@ -285,7 +282,7 @@ static int ixjdebug;
 static int hertz = HZ;
 static int samplerate = 100;
 
-MODULE_PARM(ixjdebug, "i");
+module_param(ixjdebug, int, 0);
 
 /************************************************************************
 *
@@ -332,10 +329,8 @@ static IXJ *ixj_alloc()
 
 static void ixj_fsk_free(IXJ *j)
 {
-	if(j->fskdata != NULL) {
-		kfree(j->fskdata);
-		j->fskdata = NULL;
-	}
+	kfree(j->fskdata);
+	j->fskdata = NULL;
 }
 
 static void ixj_fsk_alloc(IXJ *j)
@@ -406,14 +401,10 @@ static int Stub(IXJ * J, unsigned long arg)
 	return 0;
 }
 
-static IXJ_REGFUNC ixj_DownloadG729 = &Stub;
-static IXJ_REGFUNC ixj_DownloadTS85 = &Stub;
 static IXJ_REGFUNC ixj_PreRead = &Stub;
 static IXJ_REGFUNC ixj_PostRead = &Stub;
 static IXJ_REGFUNC ixj_PreWrite = &Stub;
 static IXJ_REGFUNC ixj_PostWrite = &Stub;
-static IXJ_REGFUNC ixj_PreIoctl = &Stub;
-static IXJ_REGFUNC ixj_PostIoctl = &Stub;
 
 static void ixj_read_frame(IXJ *j);
 static void ixj_write_frame(IXJ *j);
@@ -791,97 +782,6 @@ static int ixj_wink(IXJ *j)
 	SLIC_SetState(slicnow, j);
 	return 0;
 }
-
-static int ixj_register(int index, IXJ_REGFUNC regfunc)
-{
-	int cnt;
-	int retval = 0;
-	switch (index) {
-	case G729LOADER:
-		ixj_DownloadG729 = regfunc;
-		for (cnt = 0; cnt < IXJMAX; cnt++) {
-			IXJ *j = get_ixj(cnt);
-			while(test_and_set_bit(cnt, (void *)&j->busyflags) != 0) {
-				set_current_state(TASK_INTERRUPTIBLE);
-				schedule_timeout(1);
-			}
-			ixj_DownloadG729(j, 0L);
-			clear_bit(cnt, &j->busyflags);
-		}
-		break;
-	case TS85LOADER:
-		ixj_DownloadTS85 = regfunc;
-		for (cnt = 0; cnt < IXJMAX; cnt++) {
-			IXJ *j = get_ixj(cnt);
-			while(test_and_set_bit(cnt, (void *)&j->busyflags) != 0) {
-				set_current_state(TASK_INTERRUPTIBLE);
-				schedule_timeout(1);
-			}
-			ixj_DownloadTS85(j, 0L);
-			clear_bit(cnt, &j->busyflags);
-		}
-		break;
-	case PRE_READ:
-		ixj_PreRead = regfunc;
-		break;
-	case POST_READ:
-		ixj_PostRead = regfunc;
-		break;
-	case PRE_WRITE:
-		ixj_PreWrite = regfunc;
-		break;
-	case POST_WRITE:
-		ixj_PostWrite = regfunc;
-		break;
-	case PRE_IOCTL:
-		ixj_PreIoctl = regfunc;
-		break;
-	case POST_IOCTL:
-		ixj_PostIoctl = regfunc;
-		break;
-	default:
-		retval = 1;
-	}
-	return retval;
-}
-
-EXPORT_SYMBOL(ixj_register);
-
-static int ixj_unregister(int index)
-{
-	int retval = 0;
-	switch (index) {
-	case G729LOADER:
-		ixj_DownloadG729 = &Stub;
-		break;
-	case TS85LOADER:
-		ixj_DownloadTS85 = &Stub;
-		break;
-	case PRE_READ:
-		ixj_PreRead = &Stub;
-		break;
-	case POST_READ:
-		ixj_PostRead = &Stub;
-		break;
-	case PRE_WRITE:
-		ixj_PreWrite = &Stub;
-		break;
-	case POST_WRITE:
-		ixj_PostWrite = &Stub;
-		break;
-	case PRE_IOCTL:
-		ixj_PreIoctl = &Stub;
-		break;
-	case POST_IOCTL:
-		ixj_PostIoctl = &Stub;
-		break;
-	default:
-		retval = 1;
-	}
-	return retval;
-}
-
-EXPORT_SYMBOL(ixj_unregister);
 
 static void ixj_init_timer(IXJ *j)
 {
@@ -2257,7 +2157,7 @@ static int ixj_open(struct phone_device *p, struct file *file_p)
 	return 0;
 }
 
-int ixj_release(struct inode *inode, struct file *file_p)
+static int ixj_release(struct inode *inode, struct file *file_p)
 {
 	IXJ_TONE ti;
 	int cnt;
@@ -3965,13 +3865,11 @@ static int set_rec_codec(IXJ *j, int rate)
 		j->rec_mode = 7;
 		break;
 	default:
+		kfree(j->read_buffer);
 		j->rec_frame_size = 0;
 		j->rec_mode = -1;
-		if (j->read_buffer) {
-			kfree(j->read_buffer);
-			j->read_buffer = NULL;
-			j->read_buffer_size = 0;
-		}
+		j->read_buffer = NULL;
+		j->read_buffer_size = 0;
 		retval = 1;
 		break;
 	}
@@ -4089,14 +3987,12 @@ static int ixj_record_start(IXJ *j)
 
 static void ixj_record_stop(IXJ *j)
 {
-	if(ixjdebug & 0x0002)
+	if (ixjdebug & 0x0002)
 		printk("IXJ %d Stopping Record Codec %d at %ld\n", j->board, j->rec_codec, jiffies);
 
-	if (j->read_buffer) {
-		kfree(j->read_buffer);
-		j->read_buffer = NULL;
-		j->read_buffer_size = 0;
-	}
+	kfree(j->read_buffer);
+	j->read_buffer = NULL;
+	j->read_buffer_size = 0;
 	if (j->rec_mode > -1) {
 		ixj_WriteDSPCommand(0x5120, j);
 		j->rec_mode = -1;
@@ -4547,13 +4443,11 @@ static int set_play_codec(IXJ *j, int rate)
 		j->play_mode = 5;
 		break;
 	default:
+		kfree(j->write_buffer);
 		j->play_frame_size = 0;
 		j->play_mode = -1;
-		if (j->write_buffer) {
-			kfree(j->write_buffer);
-			j->write_buffer = NULL;
-			j->write_buffer_size = 0;
-		}
+		j->write_buffer = NULL;
+		j->write_buffer_size = 0;
 		retval = 1;
 		break;
 	}
@@ -4676,14 +4570,12 @@ static int ixj_play_start(IXJ *j)
 
 static void ixj_play_stop(IXJ *j)
 {
-	if(ixjdebug & 0x0002)
+	if (ixjdebug & 0x0002)
 		printk("IXJ %d Stopping Play Codec %d at %ld\n", j->board, j->play_codec, jiffies);
 
-	if (j->write_buffer) {
-		kfree(j->write_buffer);
-		j->write_buffer = NULL;
-		j->write_buffer_size = 0;
-	}
+	kfree(j->write_buffer);
+	j->write_buffer = NULL;
+	j->write_buffer_size = 0;
 	if (j->play_mode > -1) {
 		ixj_WriteDSPCommand(0x5221, j);	/* Stop playback and flush buffers.  8022 reference page 9-40 */
 
@@ -5908,9 +5800,7 @@ static void ixj_cpt_stop(IXJ *j)
 		ixj_play_tone(j, 0);
 		j->tone_state = j->tone_cadence_state = 0;
 		if (j->cadence_t) {
-			if (j->cadence_t->ce) {
-				kfree(j->cadence_t->ce);
-			}
+			kfree(j->cadence_t->ce);
 			kfree(j->cadence_t);
 			j->cadence_t = NULL;
 		}
@@ -6044,10 +5934,10 @@ static int ixj_build_filter_cadence(IXJ *j, IXJ_FILTER_CADENCE __user * cp)
 	j->cadence_f[lcp->filter].off3 = lcp->off3;
 	j->cadence_f[lcp->filter].off3min = 0;
 	j->cadence_f[lcp->filter].off3max = 0;
-	kfree(lcp);
 	if(ixjdebug & 0x0002) {
 		printk(KERN_INFO "Cadence %d loaded\n", lcp->filter);
 	}
+	kfree(lcp);
 	return 0;
 }
 
@@ -6267,8 +6157,14 @@ static int ixj_ioctl(struct inode *inode, struct file *file_p, unsigned int cmd,
 		retval = j->serial;
 		break;
 	case IXJCTL_VERSION:
-		if (copy_to_user(argp, ixj_c_revision, strlen(ixj_c_revision))) 
-			retval = -EFAULT;
+		{
+			char arg_str[100];
+			snprintf(arg_str, sizeof(arg_str),
+				"\nDriver version %i.%i.%i", IXJ_VER_MAJOR,
+				IXJ_VER_MINOR, IXJ_BLD_VER);
+			if (copy_to_user(argp, arg_str, strlen(arg_str)))
+				retval = -EFAULT;
+		}
 		break;
 	case PHONE_RING_CADENCE:
 		j->ring_cadence = arg;
@@ -6785,7 +6681,7 @@ static int ixj_fasync(int fd, struct file *file_p, int mode)
 	return fasync_helper(fd, file_p, mode, &j->async_queue);
 }
 
-struct file_operations ixj_fops =
+static struct file_operations ixj_fops =
 {
         .owner          = THIS_MODULE,
         .read           = ixj_enhanced_read,
@@ -7263,9 +7159,6 @@ static int ixj_get_status_proc(char *buf)
 	int cnt;
 	IXJ *j;
 	len = 0;
-	len += sprintf(buf + len, "%s", ixj_c_rcsid);
-	len += sprintf(buf + len, "\n%s", ixj_h_rcsid);
-	len += sprintf(buf + len, "\n%s", ixjuser_h_rcsid);
 	len += sprintf(buf + len, "\nDriver version %i.%i.%i", IXJ_VER_MAJOR, IXJ_VER_MINOR, IXJ_BLD_VER);
 	len += sprintf(buf + len, "\nsizeof IXJ struct %Zd bytes", sizeof(IXJ));
 	len += sprintf(buf + len, "\nsizeof DAA struct %Zd bytes", sizeof(DAA_REGS));
@@ -7592,10 +7485,8 @@ static void cleanup(void)
 					printk(KERN_INFO "IXJ: Releasing XILINX address for /dev/phone%d\n", cnt);
 				release_region(j->XILINXbase, 4);
 			}
-			if (j->read_buffer)
-				kfree(j->read_buffer);
-			if (j->write_buffer)
-				kfree(j->write_buffer);
+			kfree(j->read_buffer);
+			kfree(j->write_buffer);
 			if (j->dev)
 				pnp_device_detach(j->dev);
 			if (ixjdebug & 0x0002)
@@ -7707,8 +7598,8 @@ static int xio[IXJMAX + 1] =
 	0,
 };
 
-MODULE_PARM(dspio, "1-" __MODULE_STRING(IXJMAX) "i");
-MODULE_PARM(xio, "1-" __MODULE_STRING(IXJMAX) "i");
+module_param_array(dspio, int, NULL, 0);
+module_param_array(xio, int, NULL, 0);
 MODULE_DESCRIPTION("Quicknet VoIP Telephony card module - www.quicknet.net");
 MODULE_AUTHOR("Ed Okerson <eokerson@quicknet.net>");
 MODULE_LICENSE("GPL");
@@ -7735,7 +7626,7 @@ static IXJ *new_ixj(unsigned long port)
 	return res;
 }
 
-int __init ixj_probe_isapnp(int *cnt)
+static int __init ixj_probe_isapnp(int *cnt)
 {               
 	int probe = 0;
 	int func = 0x110;
@@ -7815,7 +7706,7 @@ int __init ixj_probe_isapnp(int *cnt)
 	return probe;
 }
                         
-int __init ixj_probe_isa(int *cnt)
+static int __init ixj_probe_isa(int *cnt)
 {
 	int i, probe;
 
@@ -7839,7 +7730,7 @@ int __init ixj_probe_isa(int *cnt)
 	return 0;
 }
 
-int __init ixj_probe_pci(int *cnt)
+static int __init ixj_probe_pci(int *cnt)
 {
 	struct pci_dev *pci = NULL;   
 	int i, probe = 0;
@@ -7885,7 +7776,7 @@ static int __init ixj_init(void)
 	if ((probe = ixj_probe_pci(&cnt)) < 0) {
 		return probe;
 	}
-	printk("%s\n", ixj_c_rcsid);
+	printk(KERN_INFO "ixj driver initialized.\n");
 	create_proc_read_entry ("ixj", 0, NULL, ixj_read_proc, NULL);
 	return probe;
 }

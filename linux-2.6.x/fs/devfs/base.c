@@ -2491,11 +2491,11 @@ static int devfs_mknod(struct inode *dir, struct dentry *dentry, int mode,
 	return 0;
 }				/*  End Function devfs_mknod  */
 
-static int devfs_follow_link(struct dentry *dentry, struct nameidata *nd)
+static void *devfs_follow_link(struct dentry *dentry, struct nameidata *nd)
 {
 	struct devfs_entry *p = get_devfs_entry_from_vfs_inode(dentry->d_inode);
 	nd_set_link(nd, p ? p->u.symlink.linkname : ERR_PTR(-ENODEV));
-	return 0;
+	return NULL;
 }				/*  End Function devfs_follow_link  */
 
 static struct inode_operations devfs_iops = {
@@ -2533,6 +2533,7 @@ static int devfs_fill_super(struct super_block *sb, void *data, int silent)
 	sb->s_blocksize_bits = 10;
 	sb->s_magic = DEVFS_SUPER_MAGIC;
 	sb->s_op = &devfs_sops;
+	sb->s_time_gran = 1;
 	if ((root_inode = _devfs_get_vfs_inode(sb, root_entry, NULL)) == NULL)
 		goto out_no_root;
 	sb->s_root = d_alloc_root(root_inode);

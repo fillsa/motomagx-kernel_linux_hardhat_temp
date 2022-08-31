@@ -78,6 +78,7 @@ static struct iforce_device iforce_device[] = {
 	{ 0x061c, 0xc0a4, "ACT LABS Force RS",                          btn_wheel, abs_wheel, ff_iforce }, //?
 	{ 0x06f8, 0x0001, "Guillemot Race Leader Force Feedback",	btn_wheel, abs_wheel, ff_iforce }, //?
 	{ 0x06f8, 0x0004, "Guillemot Force Feedback Racing Wheel",	btn_wheel, abs_wheel, ff_iforce }, //?
+	{ 0x06f8, 0x0004, "Gullemot Jet Leader 3D",			btn_joystick, abs_joystick, ff_iforce }, //?
 	{ 0x0000, 0x0000, "Unknown I-Force Device [%04x:%04x]",		btn_joystick, abs_joystick, ff_iforce }
 };
 
@@ -352,7 +353,21 @@ int iforce_init_device(struct iforce *iforce)
  * Input device fields.
  */
 
-	iforce->dev.id.bustype = BUS_USB;
+	switch (iforce->bus) {
+#ifdef CONFIG_JOYSTICK_IFORCE_USB
+	case IFORCE_USB:
+		iforce->dev.id.bustype = BUS_USB;
+		iforce->dev.dev = &iforce->usbdev->dev;
+		break;
+#endif
+#ifdef CONFIG_JOYSTICK_IFORCE_232
+	case IFORCE_232:
+		iforce->dev.id.bustype = BUS_RS232;
+		iforce->dev.dev = &iforce->serio->dev;
+		break;
+#endif
+	}
+
 	iforce->dev.private = iforce;
 	iforce->dev.name = "Unknown I-Force device";
 	iforce->dev.open = iforce_open;

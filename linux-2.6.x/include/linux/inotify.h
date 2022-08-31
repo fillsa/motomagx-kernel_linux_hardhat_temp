@@ -26,11 +26,11 @@
  * such as IN_CREATE, IN_DELETE, IN_OPEN, IN_CLOSE, ..., relative to the wd.
  */
 struct inotify_event {
-	__s32 wd;	/* watch descriptor */
-	__u32 mask;	/* watch mask */
-	__u32 cookie;	/* cookie used for synchronizing two events */
-	size_t len;	/* length (including nulls) of name */
-	char name[0];	/* stub for possible name */
+	__s32		wd;		/* watch descriptor */
+	__u32		mask;		/* watch mask */
+	__u32		cookie;		/* cookie used for synchronizing two events */
+	size_t		len;		/* length (including nulls) of name */
+	char		name[0];	/* stub for possible name */
 };
 
 /*
@@ -53,7 +53,7 @@ struct inotify_watch_request {
 #define IN_MOVED_FROM		0x00000040	/* File was moved from X */
 #define IN_MOVED_TO		0x00000080	/* File was moved to Y */
 #define IN_DELETE_SUBDIR	0x00000100	/* Subdir was deleted */ 
-#define IN_DELETE_FILE		0x00000200	/* Subfile was deleted */
+#define IN_DELETE		0x00000200	/* Subfile was deleted */
 #define IN_CREATE_SUBDIR	0x00000400	/* Subdir was created */
 #define IN_CREATE_FILE		0x00000800	/* Subfile was created */
 #define IN_DELETE_SELF		0x00001000	/* Self was deleted */
@@ -64,7 +64,8 @@ struct inotify_watch_request {
 /* special flags */
 #define IN_ALL_EVENTS		0xffffffff	/* All the events */
 #define IN_CLOSE		(IN_CLOSE_WRITE | IN_CLOSE_NOWRITE)
-#define IN_ISDIR                0x40000000      /* Event occurred against dir */
+#define IN_ISDIR		0x40000000	/* Event occurred against dir */
+#define IN_ONESHOT		0x80000000	/* only send event once */
 
 #define INOTIFY_IOCTL_MAGIC	'Q'
 #define INOTIFY_IOCTL_MAXNR	2

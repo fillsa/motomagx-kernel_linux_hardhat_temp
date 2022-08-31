@@ -33,6 +33,7 @@
 
 #include <asm/uaccess.h>
 #include <linux/fs.h>
+#include <linux/personality.h>
 #include <linux/pagemap.h>
 #include <linux/syscalls.h>
 
@@ -219,10 +220,9 @@ int do_truncate(struct dentry *dentry, loff_t length)
 
 	newattrs.ia_size = length;
 	newattrs.ia_valid = ATTR_SIZE | ATTR_CTIME;
+
 	down(&dentry->d_inode->i_sem);
-	down_write(&dentry->d_inode->i_alloc_sem);
 	err = notify_change(dentry, &newattrs);
-	up_write(&dentry->d_inode->i_alloc_sem);
 	up(&dentry->d_inode->i_sem);
 	return err;
 }
@@ -824,7 +824,9 @@ struct file *dentry_open(struct dentry *dentry, struct vfsmount *mnt, int flags)
 
 	/* NB: we're sure to have correct a_ops only after f_op->open */
 	if (f->f_flags & O_DIRECT) {
-		if (!f->f_mapping->a_ops || !f->f_mapping->a_ops->direct_IO) {
+		if (!f->f_mapping->a_ops ||
+		    ((!f->f_mapping->a_ops->direct_IO) &&
+		    (!f->f_mapping->a_ops->get_xip_page))) {
 			fput(f);
 			f = ERR_PTR(-EINVAL);
 		}
@@ -872,26 +874,18 @@ repeat:
 	if (fd >= current->signal->rlim[RLIMIT_NOFILE].rlim_cur)
 		goto out;
 
-	/* Do we need to expand the fdset array? */
-	if (fd >= files->max_fdset) {
-		error = expand_fdset(files, fd);
-		if (!error) {
-			error = -EMFILE;
-			goto repeat;
-		}
+	/* Do we need to expand the fd array or fd set?  */
+	error = expand_files(files, fd);
+	if (error < 0)
 		goto out;
-	}
-	
-	/* 
-	 * Check whether we need to expand the fd array.
-	 */
-	if (fd >= files->max_fds) {
-		error = expand_fd_array(files, fd);
-		if (!error) {
-			error = -EMFILE;
-			goto repeat;
-		}
-		goto out;
+
+	if (error) {
+		/*
+	 	 * If we needed to expand the fs array we
+		 * might have blocked - try again.
+		 */
+		error = -EMFILE;
+		goto repeat;
 	}
 
 	FD_SET(fd, files->open_fds);
@@ -958,11 +952,11 @@ EXPORT_SYMBOL(fd_install);
 asmlinkage long sys_open(const char __user * filename, int flags, int mode)
 {
 	char * tmp;
-	int fd, error;
+	int fd;
 
-#if BITS_PER_LONG != 32
-	flags |= O_LARGEFILE;
-#endif
+	if (force_o_largefile())
+		flags |= O_LARGEFILE;
+
 	tmp = getname(filename);
 
 #ifdef CONFIG_MOT_FEAT_ANTIVIRUS_HOOKS
@@ -978,30 +972,24 @@ asmlinkage long sys_open(const char __user * filename, int flags, int mode)
 #ifdef CONFIG_MOT_FEAT_INOTIFY
 			struct dentry *dentry;
 #endif
-			error = PTR_ERR(f);
-			if (IS_ERR(f))
-				goto out_error;
+			if (IS_ERR(f)) {
+				put_unused_fd(fd);
+				fd = PTR_ERR(f);
+			} else {
 #ifdef CONFIG_MOT_FEAT_INOTIFY
-			dentry = f->f_dentry;
-			fsnotify_open(dentry, dentry->d_inode,
-				      dentry->d_name.name);
+				fsnotify_open(f->f_dentry);
 #endif
 
-			ltt_ev_file_system(LTT_EV_FILE_SYSTEM_OPEN,
+				ltt_ev_file_system(LTT_EV_FILE_SYSTEM_OPEN,
 					  fd,
 					  f->f_dentry->d_name.len,
 					  f->f_dentry->d_name.name); 
-			fd_install(fd, f);
+				fd_install(fd, f);
+			}
 		}
-out:
 		putname(tmp);
 	}
 	return fd;
-
-out_error:
-	put_unused_fd(fd);
-	fd = error;
-	goto out;
 }
 EXPORT_SYMBOL_GPL(sys_open);
 
@@ -1024,23 +1012,15 @@ asmlinkage long sys_creat(const char __user * pathname, int mode)
  */
 int filp_close(struct file *filp, fl_owner_t id)
 {
-	int retval;
-
-	/* Report and clear outstanding errors */
-	retval = filp->f_error;
-	if (retval)
-		filp->f_error = 0;
+	int retval = 0;
 
 	if (!file_count(filp)) {
 		printk(KERN_ERR "VFS: Close: file count is 0\n");
-		return retval;
+		return 0;
 	}
 
-	if (filp->f_op && filp->f_op->flush) {
-		int err = filp->f_op->flush(filp);
-		if (!retval)
-			retval = err;
-	}
+	if (filp->f_op && filp->f_op->flush)
+		retval = filp->f_op->flush(filp);
 
 #ifdef CONFIG_MOT_FEAT_INOTIFY
 	fsnotify_flush(filp, id);

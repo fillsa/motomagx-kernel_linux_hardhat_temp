@@ -11,7 +11,6 @@
 
 /* include the world */
 #include <linux/cpufreq.h>
-#include <pcmcia/version.h>
 #include <pcmcia/cs_types.h>
 #include <pcmcia/cs.h>
 #include <pcmcia/ss.h>
@@ -53,7 +52,7 @@ struct soc_pcmcia_socket {
 	struct resource		res_io;
 	struct resource		res_mem;
 	struct resource		res_attr;
-	void			*virt_io;
+	void __iomem		*virt_io;
 
 	unsigned int		irq_state;
 

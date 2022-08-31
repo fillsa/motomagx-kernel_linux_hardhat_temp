@@ -32,7 +32,7 @@ int tap_open_common(void *dev, char *gate_addr)
 	return(0);
 }
 
-void tap_check_ips(char *gate_addr, char *eth_addr)
+void tap_check_ips(char *gate_addr, unsigned char *eth_addr)
 {
 	int tap_addr[4];
 
@@ -173,10 +173,12 @@ static int change_tramp(char **argv, char *output, int output_len)
 	pe_data.stdout = fds[1];
 	pid = run_helper(change_pre_exec, &pe_data, argv, NULL);
 
-	os_close_file(fds[1]);
 	read_output(fds[0], output, output_len);
+	os_close_file(fds[0]);
+	os_close_file(fds[1]);
 
-	CATCH_EINTR(err = waitpid(pid, NULL, 0));
+	if (pid > 0)
+		CATCH_EINTR(err = waitpid(pid, NULL, 0));
 	return(pid);
 }
 

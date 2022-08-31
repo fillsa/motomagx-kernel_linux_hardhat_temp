@@ -1,6 +1,5 @@
 /*
  *  drivers/mtd/nand.c
- 
  *
  *  Overview:
  *   This is the generic MTD driver for NAND flash devices. It should be
@@ -100,7 +99,7 @@
  *	The AG-AND chips have nice features for speed improvement,
  *	which are not supported yet. Read / program 4 pages in one go.
  *
- * $Id: nand_base.c,v 1.145 2005/05/31 20:32:53 gleixner Exp $
+ * $Id: nand_base.c,v 1.147 2005/07/15 07:18:06 gleixner Exp $
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 as
@@ -522,7 +521,7 @@ static int nand_block_bad(struct mtd_info *mtd, loff_t ofs, int getchip)
 	int page, chipnr, res = 0;
 	struct nand_chip *this = mtd->priv;
 	u16 bad;
-	
+
 	if (getchip) {
 		page = (int)(ofs >> this->page_shift);
 		chipnr = (int)(ofs >> this->chip_shift);
@@ -555,7 +554,7 @@ static int nand_block_bad(struct mtd_info *mtd, loff_t ofs, int getchip)
 		/* Deselect and wake up anyone waiting on the device */
 		nand_release_device(mtd);
 	}	
-
+	
 	return res;
 }
 
@@ -690,10 +689,10 @@ static int nand_check_wp (struct mtd_info *mtd)
 static int nand_block_checkbad (struct mtd_info *mtd, loff_t ofs, int getchip, int allowbbt)
 {
 	struct nand_chip *this = mtd->priv;
-
+	
 	if (!this->bbt)
 		return this->block_bad(mtd, ofs, getchip);
-
+	
 #if defined(CONFIG_MTD_NAND_BBM)
 /*
  * With the Bad Block management feature, this function has been modified to
@@ -1186,6 +1185,7 @@ static int nand_write_page (struct mtd_info *mtd, struct nand_chip *this, int pa
 	u_char *oob_buf,  struct nand_oobinfo *oobsel, int cached)
 {
 	int 	i, oobidx, status;
+//2.6.11	+	u_char	ecc_code[32];
 	u_char	ecc_code[40];
 	int	eccmode = oobsel->useecc ? this->eccmode : NAND_ECC_NONE;
 	int  	*oob_config = oobsel->eccpos;
@@ -1194,7 +1194,7 @@ static int nand_write_page (struct mtd_info *mtd, struct nand_chip *this, int pa
 	
 	/* FIXME: Enable cached programming */
 	cached = 0;
-
+	
 	/* Send command to begin auto page programming */
 	this->cmdfunc (mtd, NAND_CMD_SEQIN, 0x00, page);
 
@@ -1220,7 +1220,6 @@ static int nand_write_page (struct mtd_info *mtd, struct nand_chip *this, int pa
 		break;
 	default:
 		eccbytes = this->eccbytes;
-
 		if (! this->layout) {
 			for (; eccsteps; eccsteps--) {
 				/* enable hardware ecc logic for write */
@@ -1496,6 +1495,7 @@ static int nand_read_ecc (struct mtd_info *mtd, loff_t from, size_t len,
 #endif
 }
 
+
 /**
  * nand_do_read_ecc - [MTD Interface] Read data with ECC
  * @mtd:	MTD device structure
@@ -1520,6 +1520,7 @@ int nand_do_read_ecc (struct mtd_info *mtd, loff_t from, size_t len,
 			     struct nand_oobinfo *oobsel, int flags)
 #endif
 {
+
 	int i, j, col, realpage, page, end, ecc, chipnr, sndcmd = 1;
 	int read = 0, oob = 0, oobidx, ecc_status = 0, ecc_failed = 0, eccidx;
 	struct nand_chip *this = mtd->priv;
@@ -1798,8 +1799,8 @@ int nand_do_read_ecc (struct mtd_info *mtd, loff_t from, size_t len,
 				int *p = (int *)(&oob_data[mtd->oobsize]);
 				p[i] = ecc_status;
 			}
-
-			if ((ecc_status == -1) || (ecc_status > (flags && 0xff))) {
+			
+			if ((ecc_status == -1) || (ecc_status > (flags && 0xff))) {	
 #ifdef CONFIG_MOT_FEAT_NAND_RDDIST
 				printk (KERN_NOTICE "nand_read_ecc:%d Failed ECC read, page 0x%08x\n",__LINE__, page);
 #else
@@ -2305,16 +2306,6 @@ static int nand_read_oob (struct mtd_info *mtd, loff_t from, size_t len, size_t 
 		thislen = min_t(int, thislen, len);
 		this->read_buf(mtd, &buf[i], thislen);
 		i += thislen;
-		
-		/* Apply delay or wait for ready/busy pin 
-		 * Do this before the AUTOINCR check, so no problems
-		 * arise if a chip which does auto increment
-		 * is marked as NOAUTOINCR by the board driver.
-		*/
-		if (!this->dev_ready) 
-			udelay (this->chip_delay);
-		else
-			nand_wait_ready(mtd);
 
 		/* Read more ? */
 		if (i < len) {
@@ -2328,6 +2319,16 @@ static int nand_read_oob (struct mtd_info *mtd, loff_t from, size_t len, size_t 
 				this->select_chip(mtd, chipnr);
 			}
 				
+			/* Apply delay or wait for ready/busy pin 
+			 * Do this before the AUTOINCR check, so no problems
+			 * arise if a chip which does auto increment
+			 * is marked as NOAUTOINCR by the board driver.
+			 */
+			if (!this->dev_ready) 
+				udelay (this->chip_delay);
+			else
+				nand_wait_ready(mtd);
+
 			/* Check, if the chip supports auto page increment 
 			 * or if we have hit a block boundary. 
 			*/ 
@@ -2729,7 +2730,7 @@ static int nand_write_ecc (struct mtd_info *mtd, loff_t to, size_t len,
 	if (oobsel->useecc == MTD_NANDECC_AUTOPLACE) {
 		oobsel = this->autooob;
 		autoplace = 1;
-	}
+	}	
 	if (oobsel->useecc == MTD_NANDECC_AUTOPL_USR)
 		autoplace = 1;
 
@@ -3582,7 +3583,7 @@ int nand_erase_nand (struct mtd_info *mtd, struct erase_info *instr, int allowbb
 			goto erase_exit;
 		}
 #endif	
-
+		
 #ifdef CONFIG_MOT_FEAT_NAND_RDDIST
 		nand_increment_erasecnt (this, page);
 #endif
@@ -3591,6 +3592,7 @@ int nand_erase_nand (struct mtd_info *mtd, struct erase_info *instr, int allowbb
 		   the current cached page */
 		if (page <= this->pagebuf && this->pagebuf < (page + pages_per_block))
 			this->pagebuf = -1;
+
 #ifdef CONFIG_MOT_WFN455
 	retry:
 		start_erase = get_cycles();
@@ -3599,6 +3601,7 @@ int nand_erase_nand (struct mtd_info *mtd, struct erase_info *instr, int allowbb
 #else
 		this->erase_cmd (mtd, page & this->pagemask);
 #endif
+		
 		status = this->waitfunc (mtd, this, FL_ERASING);
 
 		/* See if operation failed and additional status checks are available */
@@ -3650,7 +3653,7 @@ int nand_erase_nand (struct mtd_info *mtd, struct erase_info *instr, int allowbb
 		/* Increment page address and decrement length */
 		len -= (1 << this->phys_erase_shift);
 		page += pages_per_block;
-		
+
 		/* Check, if we cross a chip boundary */
 		if (len && !(page & this->pagemask)) {
 			chipnr++;
@@ -3662,6 +3665,7 @@ int nand_erase_nand (struct mtd_info *mtd, struct erase_info *instr, int allowbb
 			if ((this->options & BBT_AUTO_REFRESH) && (this->bbt_td->options & NAND_BBT_PERCHIP)) {
 				bbt_masked_page = this->bbt_td->pages[chipnr] & BBT_PAGE_MASK;
 			}
+
 		}
 	}
 	instr->state = MTD_ERASE_DONE;
@@ -3884,7 +3888,7 @@ int nand_scan (struct mtd_info *mtd, int maxchips)
 {
 	int i, nand_maf_id, nand_dev_id, busw, maf_id;
 	struct nand_chip *this = mtd->priv;
-	
+
 	/* Get buswidth to select the correct functions*/
 	busw = this->options & NAND_BUSWIDTH_16;
 
@@ -3963,6 +3967,7 @@ int nand_scan (struct mtd_info *mtd, int maxchips)
 			extid >>= 2;
 			/* Get buswidth information */
 			busw = (extid & 0x01) ? NAND_BUSWIDTH_16 : 0;
+		
 		} else {
 			/* Old devices have this data hardcoded in the
 			 * device id table */

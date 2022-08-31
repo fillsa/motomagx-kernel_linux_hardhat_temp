@@ -610,10 +610,14 @@ int ext3_htree_fill_tree(struct file *dir_file, __u32 start_hash,
 		de = (struct ext3_dir_entry_2 *) frames[0].bh->b_data;
 		if ((err = ext3_htree_store_dirent(dir_file, 0, 0, de)) != 0)
 			goto errout;
+		count++;
+	}
+	if (start_hash < 2 || (start_hash ==2 && start_minor_hash==0)) {
+		de = (struct ext3_dir_entry_2 *) frames[0].bh->b_data;
 		de = ext3_next_entry(de);
-		if ((err = ext3_htree_store_dirent(dir_file, 0, 0, de)) != 0)
+		if ((err = ext3_htree_store_dirent(dir_file, 2, 0, de)) != 0)
 			goto errout;
-		count += 2;
+		count++;
 	}
 
 	while (1) {
@@ -928,8 +932,16 @@ static struct buffer_head * ext3_dx_find_entry(struct dentry *dentry,
 	struct inode *dir = dentry->d_parent->d_inode;
 
 	sb = dir->i_sb;
-	if (!(frame = dx_probe(dentry, NULL, &hinfo, frames, err)))
-		return NULL;
+	/* NFS may look up ".." - look at dx_root directory block */
+	if (namelen > 2 || name[0] != '.'||(name[1] != '.' && name[1] != '\0')){
+		if (!(frame = dx_probe(dentry, NULL, &hinfo, frames, err)))
+			return NULL;
+	} else {
+		frame = frames;
+		frame->bh = NULL;			/* for dx_release() */
+		frame->at = (struct dx_entry *)frames;	/* hack for zero entry*/
+		dx_set_block(frame->at, 0);		/* dx_root block is 0 */
+	}
 	hash = hinfo.hash;
 	do {
 		block = dx_get_block(frame->at);
@@ -1252,7 +1264,7 @@ static int add_dirent_to_buf(handle_t *handle, struct dentry *dentry,
 	 * happen is that the times are slightly out of date
 	 * and/or different from the directory change time.
 	 */
-	dir->i_mtime = dir->i_ctime = CURRENT_TIME;
+	dir->i_mtime = dir->i_ctime = CURRENT_TIME_SEC;
 	ext3_update_dx_flag(dir);
 	dir->i_version++;
 	ext3_mark_inode_dirty(handle, dir);
@@ -1633,9 +1645,9 @@ static int ext3_create (struct inode * dir, struct dentry * dentry, int mode,
 	int err, retries = 0;
 
 retry:
-	handle = ext3_journal_start(dir, EXT3_DATA_TRANS_BLOCKS +
+	handle = ext3_journal_start(dir, EXT3_DATA_TRANS_BLOCKS(dir->i_sb) +
 					EXT3_INDEX_EXTRA_TRANS_BLOCKS + 3 +
-					2*EXT3_QUOTA_INIT_BLOCKS);
+					2*EXT3_QUOTA_INIT_BLOCKS(dir->i_sb));
 	if (IS_ERR(handle))
 		return PTR_ERR(handle);
 
@@ -1667,9 +1679,9 @@ static int ext3_mknod (struct inode * dir, struct dentry *dentry,
 		return -EINVAL;
 
 retry:
-	handle = ext3_journal_start(dir, EXT3_DATA_TRANS_BLOCKS +
+	handle = ext3_journal_start(dir, EXT3_DATA_TRANS_BLOCKS(dir->i_sb) +
 			 		EXT3_INDEX_EXTRA_TRANS_BLOCKS + 3 +
-					2*EXT3_QUOTA_INIT_BLOCKS);
+					2*EXT3_QUOTA_INIT_BLOCKS(dir->i_sb));
 	if (IS_ERR(handle))
 		return PTR_ERR(handle);
 
@@ -1703,9 +1715,9 @@ static int ext3_mkdir(struct inode * dir, struct dentry * dentry, int mode)
 		return -EMLINK;
 
 retry:
-	handle = ext3_journal_start(dir, EXT3_DATA_TRANS_BLOCKS +
+	handle = ext3_journal_start(dir, EXT3_DATA_TRANS_BLOCKS(dir->i_sb) +
 					EXT3_INDEX_EXTRA_TRANS_BLOCKS + 3 +
-					2*EXT3_QUOTA_INIT_BLOCKS);
+					2*EXT3_QUOTA_INIT_BLOCKS(dir->i_sb));
 	if (IS_ERR(handle))
 		return PTR_ERR(handle);
 
@@ -1994,7 +2006,7 @@ static int ext3_rmdir (struct inode * dir, struct dentry *dentry)
 	/* Initialize quotas before so that eventual writes go in
 	 * separate transaction */
 	DQUOT_INIT(dentry->d_inode);
-	handle = ext3_journal_start(dir, EXT3_DELETE_TRANS_BLOCKS);
+	handle = ext3_journal_start(dir, EXT3_DELETE_TRANS_BLOCKS(dir->i_sb));
 	if (IS_ERR(handle))
 		return PTR_ERR(handle);
 
@@ -2030,7 +2042,7 @@ static int ext3_rmdir (struct inode * dir, struct dentry *dentry)
 	 * recovery. */
 	inode->i_size = 0;
 	ext3_orphan_add(handle, inode);
-	inode->i_ctime = dir->i_ctime = dir->i_mtime = CURRENT_TIME;
+	inode->i_ctime = dir->i_ctime = dir->i_mtime = CURRENT_TIME_SEC;
 	ext3_mark_inode_dirty(handle, inode);
 	dir->i_nlink--;
 	ext3_update_dx_flag(dir);
@@ -2053,7 +2065,7 @@ static int ext3_unlink(struct inode * dir, struct dentry *dentry)
 	/* Initialize quotas before so that eventual writes go
 	 * in separate transaction */
 	DQUOT_INIT(dentry->d_inode);
-	handle = ext3_journal_start(dir, EXT3_DELETE_TRANS_BLOCKS);
+	handle = ext3_journal_start(dir, EXT3_DELETE_TRANS_BLOCKS(dir->i_sb));
 	if (IS_ERR(handle))
 		return PTR_ERR(handle);
 
@@ -2080,7 +2092,7 @@ static int ext3_unlink(struct inode * dir, struct dentry *dentry)
 	retval = ext3_delete_entry(handle, dir, de, bh);
 	if (retval)
 		goto end_unlink;
-	dir->i_ctime = dir->i_mtime = CURRENT_TIME;
+	dir->i_ctime = dir->i_mtime = CURRENT_TIME_SEC;
 	ext3_update_dx_flag(dir);
 	ext3_mark_inode_dirty(handle, dir);
 	inode->i_nlink--;
@@ -2108,9 +2120,9 @@ static int ext3_symlink (struct inode * dir,
 		return -ENAMETOOLONG;
 
 retry:
-	handle = ext3_journal_start(dir, EXT3_DATA_TRANS_BLOCKS +
+	handle = ext3_journal_start(dir, EXT3_DATA_TRANS_BLOCKS(dir->i_sb) +
 			 		EXT3_INDEX_EXTRA_TRANS_BLOCKS + 5 +
-					2*EXT3_QUOTA_INIT_BLOCKS);
+					2*EXT3_QUOTA_INIT_BLOCKS(dir->i_sb));
 	if (IS_ERR(handle))
 		return PTR_ERR(handle);
 
@@ -2162,7 +2174,7 @@ static int ext3_link (struct dentry * old_dentry,
 		return -EMLINK;
 
 retry:
-	handle = ext3_journal_start(dir, EXT3_DATA_TRANS_BLOCKS +
+	handle = ext3_journal_start(dir, EXT3_DATA_TRANS_BLOCKS(dir->i_sb) +
 					EXT3_INDEX_EXTRA_TRANS_BLOCKS);
 	if (IS_ERR(handle))
 		return PTR_ERR(handle);
@@ -2170,7 +2182,7 @@ retry:
 	if (IS_DIRSYNC(dir))
 		handle->h_sync = 1;
 
-	inode->i_ctime = CURRENT_TIME;
+	inode->i_ctime = CURRENT_TIME_SEC;
 	ext3_inc_count(handle, inode);
 	atomic_inc(&inode->i_count);
 
@@ -2204,7 +2216,8 @@ static int ext3_rename (struct inode * old_dir, struct dentry *old_dentry,
 	 * in separate transaction */
 	if (new_dentry->d_inode)
 		DQUOT_INIT(new_dentry->d_inode);
-	handle = ext3_journal_start(old_dir, 2 * EXT3_DATA_TRANS_BLOCKS +
+	handle = ext3_journal_start(old_dir, 2 *
+					EXT3_DATA_TRANS_BLOCKS(old_dir->i_sb) +
 			 		EXT3_INDEX_EXTRA_TRANS_BLOCKS + 2);
 	if (IS_ERR(handle))
 		return PTR_ERR(handle);
@@ -2271,7 +2284,7 @@ static int ext3_rename (struct inode * old_dir, struct dentry *old_dentry,
 	 * Like most other Unix systems, set the ctime for inodes on a
 	 * rename.
 	 */
-	old_inode->i_ctime = CURRENT_TIME;
+	old_inode->i_ctime = CURRENT_TIME_SEC;
 	ext3_mark_inode_dirty(handle, old_inode);
 
 	/*
@@ -2304,9 +2317,9 @@ static int ext3_rename (struct inode * old_dir, struct dentry *old_dentry,
 
 	if (new_inode) {
 		new_inode->i_nlink--;
-		new_inode->i_ctime = CURRENT_TIME;
+		new_inode->i_ctime = CURRENT_TIME_SEC;
 	}
-	old_dir->i_ctime = old_dir->i_mtime = CURRENT_TIME;
+	old_dir->i_ctime = old_dir->i_mtime = CURRENT_TIME_SEC;
 	ext3_update_dx_flag(old_dir);
 	if (dir_bh) {
 		BUFFER_TRACE(dir_bh, "get_write_access");

@@ -128,6 +128,12 @@ struct gendisk {
 #endif
 };
 
+/* Structure for sysfs attributes on block devices */
+struct disk_attribute {
+	struct attribute attr;
+	ssize_t (*show)(struct gendisk *, char *);
+};
+
 /* 
  * Macros to operate on percpu disk statistics:
  *
@@ -135,14 +141,12 @@ struct gendisk {
  * variants disable/enable preemption.
  */
 #ifdef	CONFIG_SMP
-#define __disk_stat_add(gendiskp, field, addnd)			\
+#define __disk_stat_add(gendiskp, field, addnd) 	\
 do {								\
 	preempt_disable();					\
-	(per_cpu_ptr(gendiskp->dkstats,				\
-			smp_processor_id())->field += addnd);	\
+	(per_cpu_ptr(gendiskp->dkstats, smp_processor_id())->field += addnd);	\
 	preempt_enable();					\
 } while (0)
-
 
 #define disk_stat_read(gendiskp, field)					\
 ({									\
@@ -226,6 +230,7 @@ static inline void free_disk_stats(struct gendisk *disk)
 extern void disk_round_stats(struct gendisk *disk);
 
 /* drivers/block/genhd.c */
+extern int get_blkdev_list(char *, int);
 extern void add_disk(struct gendisk *disk);
 extern void del_gendisk(struct gendisk *gp);
 extern void unlink_gendisk(struct gendisk *gp);
@@ -404,6 +409,7 @@ extern int rescan_partitions(struct gendisk *disk, struct block_device *bdev);
 extern void add_partition(struct gendisk *, int, sector_t, sector_t);
 extern void delete_partition(struct gendisk *, int);
 
+extern struct gendisk *alloc_disk_node(int minors, int node_id);
 extern struct gendisk *alloc_disk(int minors);
 extern struct kobject *get_disk(struct gendisk *disk);
 extern void put_disk(struct gendisk *disk);

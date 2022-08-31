@@ -17,13 +17,23 @@ obj-$(CONFIG_SMP)		+= smp.o
 
 obj-$(CONFIG_S390_SUPPORT)	+= compat_linux.o compat_signal.o \
 					compat_ioctl.o compat_wrapper.o \
-					compat_exec.o compat_exec_domain.o
+					compat_exec_domain.o
 obj-$(CONFIG_BINFMT_ELF32)	+= binfmt_elf32.o
 
 obj-$(CONFIG_ARCH_S390_31)	+= entry.o reipl.o
 obj-$(CONFIG_ARCH_S390X)	+= entry64.o reipl64.o
 
 obj-$(CONFIG_VIRT_TIMER)	+= vtime.o
+
+# Kexec part
+S390_KEXEC_OBJS := machine_kexec.o crash.o
+ifeq ($(CONFIG_ARCH_S390X),y)
+S390_KEXEC_OBJS += relocate_kernel64.o
+else
+S390_KEXEC_OBJS += relocate_kernel.o
+endif
+obj-$(CONFIG_KEXEC) += $(S390_KEXEC_OBJS)
+
 
 #
 # This is just to get the dependencies...

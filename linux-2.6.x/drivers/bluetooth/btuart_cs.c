@@ -54,7 +54,6 @@
 #include <asm/system.h>
 #include <asm/io.h>
 
-#include <pcmcia/version.h>
 #include <pcmcia/cs_types.h>
 #include <pcmcia/cs.h>
 #include <pcmcia/cistpl.h>
@@ -69,13 +68,6 @@
 
 /* ======================== Module parameters ======================== */
 
-
-/* Bit map of interrupts to choose from */
-static unsigned int irq_mask = 0xffff;
-static int irq_list[4] = { -1 };
-
-module_param(irq_mask, uint, 0);
-module_param_array(irq_list, int, NULL, 0);
 
 MODULE_AUTHOR("Marcel Holtmann <marcel@holtmann.org>");
 MODULE_DESCRIPTION("Bluetooth driver for Bluetooth PCMCIA cards with HCI UART interface");
@@ -606,7 +598,7 @@ static dev_link_t *btuart_attach(void)
 	btuart_info_t *info;
 	client_reg_t client_reg;
 	dev_link_t *link;
-	int i, ret;
+	int ret;
 
 	/* Create new info device */
 	info = kmalloc(sizeof(*info), GFP_KERNEL);
@@ -620,13 +612,7 @@ static dev_link_t *btuart_attach(void)
 	link->io.Attributes1 = IO_DATA_PATH_WIDTH_8;
 	link->io.NumPorts1 = 8;
 	link->irq.Attributes = IRQ_TYPE_EXCLUSIVE | IRQ_HANDLE_PRESENT;
-	link->irq.IRQInfo1 = IRQ_INFO2_VALID | IRQ_LEVEL_ID;
-
-	if (irq_list[0] == -1)
-		link->irq.IRQInfo2 = irq_mask;
-	else
-		for (i = 0; i < 4; i++)
-			link->irq.IRQInfo2 |= 1 << irq_list[i];
+	link->irq.IRQInfo1 = IRQ_LEVEL_ID;
 
 	link->irq.Handler = btuart_interrupt;
 	link->irq.Instance = info;
@@ -639,12 +625,6 @@ static dev_link_t *btuart_attach(void)
 	link->next = dev_list;
 	dev_list = link;
 	client_reg.dev_info = &dev_info;
-	client_reg.Attributes = INFO_IO_CLIENT | INFO_CARD_SHARE;
-	client_reg.EventMask =
-		CS_EVENT_CARD_INSERTION | CS_EVENT_CARD_REMOVAL |
-		CS_EVENT_RESET_PHYSICAL | CS_EVENT_CARD_RESET |
-		CS_EVENT_PM_SUSPEND | CS_EVENT_PM_RESUME;
-	client_reg.event_handler = &btuart_event;
 	client_reg.Version = 0x0210;
 	client_reg.event_callback_args.client_data = link;
 
@@ -715,7 +695,7 @@ static int next_tuple(client_handle_t handle, tuple_t *tuple, cisparse_t *parse)
 
 static void btuart_config(dev_link_t *link)
 {
-	static ioaddr_t base[5] = { 0x3f8, 0x2f8, 0x3e8, 0x2e8, 0x0 };
+	static kio_addr_t base[5] = { 0x3f8, 0x2f8, 0x3e8, 0x2e8, 0x0 };
 	client_handle_t handle = link->handle;
 	btuart_info_t *info = link->priv;
 	tuple_t tuple;
@@ -880,13 +860,21 @@ static int btuart_event(event_t event, int priority, event_callback_args_t *args
 	return 0;
 }
 
+static struct pcmcia_device_id btuart_ids[] = {
+	/* don't use this driver. Use serial_cs + hci_uart instead */
+	PCMCIA_DEVICE_NULL
+};
+MODULE_DEVICE_TABLE(pcmcia, btuart_ids);
+
 static struct pcmcia_driver btuart_driver = {
 	.owner		= THIS_MODULE,
 	.drv		= {
 		.name	= "btuart_cs",
 	},
 	.attach		= btuart_attach,
+	.event		= btuart_event,
 	.detach		= btuart_detach,
+	.id_table	= btuart_ids,
 };
 
 static int __init init_btuart_cs(void)
@@ -898,10 +886,7 @@ static int __init init_btuart_cs(void)
 static void __exit exit_btuart_cs(void)
 {
 	pcmcia_unregister_driver(&btuart_driver);
-
-	/* XXX: this really needs to move into generic code.. */
-	while (dev_list != NULL)
-		btuart_detach(dev_list);
+	BUG_ON(dev_list != NULL);
 }
 
 module_init(init_btuart_cs);

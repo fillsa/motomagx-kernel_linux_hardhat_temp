@@ -50,8 +50,8 @@ static long snd_alloc_kmalloc;
 static long snd_alloc_vmalloc;
 static LIST_HEAD(snd_alloc_kmalloc_list);
 static LIST_HEAD(snd_alloc_vmalloc_list);
-static spinlock_t snd_alloc_kmalloc_lock = SPIN_LOCK_UNLOCKED;
-static spinlock_t snd_alloc_vmalloc_lock = SPIN_LOCK_UNLOCKED;
+static DEFINE_SPINLOCK(snd_alloc_kmalloc_lock);
+static DEFINE_SPINLOCK(snd_alloc_vmalloc_lock);
 #define KMALLOC_MAGIC 0x87654321
 #define VMALLOC_MAGIC 0x87654320
 static snd_info_entry_t *snd_memory_info_entry;
@@ -89,7 +89,7 @@ void snd_memory_done(void)
 	}
 }
 
-void *__snd_kmalloc(size_t size, int flags, void *caller)
+static void *__snd_kmalloc(size_t size, unsigned int __nocast flags, void *caller)
 {
 	unsigned long cpu_flags;
 	struct snd_alloc_track *t;
@@ -111,12 +111,12 @@ void *__snd_kmalloc(size_t size, int flags, void *caller)
 }
 
 #define _snd_kmalloc(size, flags) __snd_kmalloc((size), (flags), __builtin_return_address(0));
-void *snd_hidden_kmalloc(size_t size, int flags)
+void *snd_hidden_kmalloc(size_t size, unsigned int __nocast flags)
 {
 	return _snd_kmalloc(size, flags);
 }
 
-void *snd_hidden_kcalloc(size_t n, size_t size, int flags)
+void *snd_hidden_kcalloc(size_t n, size_t size, unsigned int __nocast flags)
 {
 	void *ret = NULL;
 	if (n != 0 && size > INT_MAX / n)
@@ -131,10 +131,8 @@ void snd_hidden_kfree(const void *obj)
 {
 	unsigned long flags;
 	struct snd_alloc_track *t;
-	if (obj == NULL) {
-		snd_printk(KERN_WARNING "null kfree (called from %p)\n", __builtin_return_address(0));
+	if (obj == NULL)
 		return;
-	}
 	t = snd_alloc_track_entry(obj);
 	if (t->magic != KMALLOC_MAGIC) {
 		snd_printk(KERN_WARNING "bad kfree (called from %p)\n", __builtin_return_address(0));
@@ -170,10 +168,8 @@ void *snd_hidden_vmalloc(unsigned long size)
 void snd_hidden_vfree(void *obj)
 {
 	struct snd_alloc_track *t;
-	if (obj == NULL) {
-		snd_printk(KERN_WARNING "null vfree (called from %p)\n", __builtin_return_address(0));
+	if (obj == NULL)
 		return;
-	}
 	t = snd_alloc_track_entry(obj);
 	if (t->magic != VMALLOC_MAGIC) {
 		snd_printk(KERN_ERR "bad vfree (called from %p)\n", __builtin_return_address(0));
@@ -186,6 +182,20 @@ void snd_hidden_vfree(void *obj)
 	snd_alloc_vmalloc -= t->size;
 	obj = t;
 	snd_wrapper_vfree(obj);
+}
+
+char *snd_hidden_kstrdup(const char *s, unsigned int __nocast flags)
+{
+	int len;
+	char *buf;
+
+	if (!s) return NULL;
+
+	len = strlen(s) + 1;
+	buf = _snd_kmalloc(len, flags);
+	if (buf)
+		memcpy(buf, s, len);
+	return buf;
 }
 
 static void snd_memory_info_read(snd_info_entry_t *entry, snd_info_buffer_t * buffer)
@@ -218,34 +228,7 @@ int __exit snd_memory_info_done(void)
 	return 0;
 }
 
-#else
-
-#define _snd_kmalloc kmalloc
-
 #endif /* CONFIG_SND_DEBUG_MEMORY */
-
-/**
- * snd_kmalloc_strdup - copy the string
- * @string: the original string
- * @flags: allocation conditions, GFP_XXX
- *
- * Allocates a memory chunk via kmalloc() and copies the string to it.
- *
- * Returns the pointer, or NULL if no enoguh memory.
- */
-char *snd_kmalloc_strdup(const char *string, int flags)
-{
-	size_t len;
-	char *ptr;
-
-	if (!string)
-		return NULL;
-	len = strlen(string) + 1;
-	ptr = _snd_kmalloc(len, flags);
-	if (ptr)
-		memcpy(ptr, string, len);
-	return ptr;
-}
 
 /**
  * copy_to_user_fromio - copy data from mmio-space to user-space
@@ -257,7 +240,7 @@ char *snd_kmalloc_strdup(const char *string, int flags)
  *
  * Returns zero if successful, or non-zero on failure.
  */
-int copy_to_user_fromio(void __user *dst, const void __iomem *src, size_t count)
+int copy_to_user_fromio(void __user *dst, const volatile void __iomem *src, size_t count)
 {
 #if defined(__i386__) || defined(CONFIG_SPARC32)
 	return copy_to_user(dst, (const void*)src, count) ? -EFAULT : 0;
@@ -267,7 +250,7 @@ int copy_to_user_fromio(void __user *dst, const void __iomem *src, size_t count)
 		size_t c = count;
 		if (c > sizeof(buf))
 			c = sizeof(buf);
-		memcpy_fromio(buf, src, c);
+		memcpy_fromio(buf, (void __iomem *)src, c);
 		if (copy_to_user(dst, buf, c))
 			return -EFAULT;
 		count -= c;
@@ -288,7 +271,7 @@ int copy_to_user_fromio(void __user *dst, const void __iomem *src, size_t count)
  *
  * Returns zero if successful, or non-zero on failure.
  */
-int copy_from_user_toio(void __iomem *dst, const void __user *src, size_t count)
+int copy_from_user_toio(volatile void __iomem *dst, const void __user *src, size_t count)
 {
 #if defined(__i386__) || defined(CONFIG_SPARC32)
 	return copy_from_user((void*)dst, src, count) ? -EFAULT : 0;

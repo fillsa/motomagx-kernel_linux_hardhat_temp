@@ -26,7 +26,6 @@
 
 #include <linux/netfilter_ipv4/ip_conntrack.h>
 #include <linux/netfilter_ipv4/ip_conntrack_protocol.h>
-#include <linux/netfilter_ipv4/lockhelp.h>
 
 #if 0
 #define DEBUGP(format, ...) printk(format, ## __VA_ARGS__)
@@ -35,7 +34,7 @@
 #endif
 
 /* Protects conntrack->proto.sctp */
-static DECLARE_RWLOCK(sctp_lock);
+static DEFINE_RWLOCK(sctp_lock);
 
 /* FIXME: Examine ipfilter's timeouts and conntrack transitions more
    closely.  They're more complex. --RR 
@@ -58,13 +57,13 @@ static const char *sctp_conntrack_names[] = {
 #define HOURS * 60 MINS
 #define DAYS  * 24 HOURS
 
-unsigned long ip_ct_sctp_timeout_closed            =  10 SECS;
-unsigned long ip_ct_sctp_timeout_cookie_wait       =   3 SECS;
-unsigned long ip_ct_sctp_timeout_cookie_echoed     =   3 SECS;
-unsigned long ip_ct_sctp_timeout_established       =   5 DAYS;
-unsigned long ip_ct_sctp_timeout_shutdown_sent     = 300 SECS / 1000;
-unsigned long ip_ct_sctp_timeout_shutdown_recd     = 300 SECS / 1000;
-unsigned long ip_ct_sctp_timeout_shutdown_ack_sent =   3 SECS;
+static unsigned long ip_ct_sctp_timeout_closed            =  10 SECS;
+static unsigned long ip_ct_sctp_timeout_cookie_wait       =   3 SECS;
+static unsigned long ip_ct_sctp_timeout_cookie_echoed     =   3 SECS;
+static unsigned long ip_ct_sctp_timeout_established       =   5 DAYS;
+static unsigned long ip_ct_sctp_timeout_shutdown_sent     = 300 SECS / 1000;
+static unsigned long ip_ct_sctp_timeout_shutdown_recd     = 300 SECS / 1000;
+static unsigned long ip_ct_sctp_timeout_shutdown_ack_sent =   3 SECS;
 
 static unsigned long * sctp_timeouts[]
 = { NULL,                                  /* SCTP_CONNTRACK_NONE  */
@@ -199,9 +198,9 @@ static int sctp_print_conntrack(struct seq_file *s,
 	DEBUGP(__FUNCTION__);
 	DEBUGP("\n");
 
-	READ_LOCK(&sctp_lock);
+	read_lock_bh(&sctp_lock);
 	state = conntrack->proto.sctp.state;
-	READ_UNLOCK(&sctp_lock);
+	read_unlock_bh(&sctp_lock);
 
 	return seq_printf(s, "%s ", sctp_conntrack_names[state]);
 }
@@ -343,13 +342,13 @@ static int sctp_packet(struct ip_conntrack *conntrack,
 
 	oldsctpstate = newconntrack = SCTP_CONNTRACK_MAX;
 	for_each_sctp_chunk (skb, sch, _sch, offset, count) {
-		WRITE_LOCK(&sctp_lock);
+		write_lock_bh(&sctp_lock);
 
 		/* Special cases of Verification tag check (Sec 8.5.1) */
 		if (sch->type == SCTP_CID_INIT) {
 			/* Sec 8.5.1 (A) */
 			if (sh->vtag != 0) {
-				WRITE_UNLOCK(&sctp_lock);
+				write_unlock_bh(&sctp_lock);
 				return -1;
 			}
 		} else if (sch->type == SCTP_CID_ABORT) {
@@ -357,7 +356,7 @@ static int sctp_packet(struct ip_conntrack *conntrack,
 			if (!(sh->vtag == conntrack->proto.sctp.vtag[CTINFO2DIR(ctinfo)])
 				&& !(sh->vtag == conntrack->proto.sctp.vtag
 							[1 - CTINFO2DIR(ctinfo)])) {
-				WRITE_UNLOCK(&sctp_lock);
+				write_unlock_bh(&sctp_lock);
 				return -1;
 			}
 		} else if (sch->type == SCTP_CID_SHUTDOWN_COMPLETE) {
@@ -366,13 +365,13 @@ static int sctp_packet(struct ip_conntrack *conntrack,
 				&& !(sh->vtag == conntrack->proto.sctp.vtag
 							[1 - CTINFO2DIR(ctinfo)] 
 					&& (sch->flags & 1))) {
-				WRITE_UNLOCK(&sctp_lock);
+				write_unlock_bh(&sctp_lock);
 				return -1;
 			}
 		} else if (sch->type == SCTP_CID_COOKIE_ECHO) {
 			/* Sec 8.5.1 (D) */
 			if (!(sh->vtag == conntrack->proto.sctp.vtag[CTINFO2DIR(ctinfo)])) {
-				WRITE_UNLOCK(&sctp_lock);
+				write_unlock_bh(&sctp_lock);
 				return -1;
 			}
 		}
@@ -384,7 +383,7 @@ static int sctp_packet(struct ip_conntrack *conntrack,
 		if (newconntrack == SCTP_CONNTRACK_MAX) {
 			DEBUGP("ip_conntrack_sctp: Invalid dir=%i ctype=%u conntrack=%u\n",
 			       CTINFO2DIR(ctinfo), sch->type, oldsctpstate);
-			WRITE_UNLOCK(&sctp_lock);
+			write_unlock_bh(&sctp_lock);
 			return -1;
 		}
 
@@ -396,16 +395,16 @@ static int sctp_packet(struct ip_conntrack *conntrack,
 			ih = skb_header_pointer(skb, offset + sizeof(sctp_chunkhdr_t),
 			                        sizeof(_inithdr), &_inithdr);
 			if (ih == NULL) {
-					WRITE_UNLOCK(&sctp_lock);
+					write_unlock_bh(&sctp_lock);
 					return -1;
 			}
 			DEBUGP("Setting vtag %x for dir %d\n", 
-					ih->init_tag, CTINFO2DIR(ctinfo));
-			conntrack->proto.sctp.vtag[IP_CT_DIR_ORIGINAL] = ih->init_tag;
+					ih->init_tag, !CTINFO2DIR(ctinfo));
+			conntrack->proto.sctp.vtag[!CTINFO2DIR(ctinfo)] = ih->init_tag;
 		}
 
 		conntrack->proto.sctp.state = newconntrack;
-		WRITE_UNLOCK(&sctp_lock);
+		write_unlock_bh(&sctp_lock);
 	}
 
 	ip_ct_refresh_acct(conntrack, ctinfo, skb, *sctp_timeouts[newconntrack]);
@@ -494,14 +493,7 @@ static int sctp_new(struct ip_conntrack *conntrack,
 	return 1;
 }
 
-static int sctp_exp_matches_pkt(struct ip_conntrack_expect *exp,
-				const struct sk_buff *skb)
-{
-	/* To be implemented */
-	return 0;
-}
-
-struct ip_conntrack_protocol ip_conntrack_protocol_sctp = { 
+static struct ip_conntrack_protocol ip_conntrack_protocol_sctp = { 
 	.proto 		 = IPPROTO_SCTP, 
 	.name 		 = "sctp",
 	.pkt_to_tuple 	 = sctp_pkt_to_tuple, 
@@ -511,7 +503,6 @@ struct ip_conntrack_protocol ip_conntrack_protocol_sctp = {
 	.packet 	 = sctp_packet, 
 	.new 		 = sctp_new, 
 	.destroy 	 = NULL, 
-	.exp_matches_pkt = sctp_exp_matches_pkt, 
 	.me 		 = THIS_MODULE 
 };
 
@@ -609,7 +600,7 @@ static ctl_table ip_ct_net_table[] = {
 static struct ctl_table_header *ip_ct_sysctl_header;
 #endif
 
-int __init init(void)
+static int __init init(void)
 {
 	int ret;
 
@@ -622,6 +613,7 @@ int __init init(void)
 #ifdef CONFIG_SYSCTL
 	ip_ct_sysctl_header = register_sysctl_table(ip_ct_net_table, 0);
 	if (ip_ct_sysctl_header == NULL) {
+		ret = -ENOMEM;
 		printk("ip_conntrack_proto_sctp: can't register to sysctl.\n");
 		goto cleanup;
 	}
@@ -639,7 +631,7 @@ int __init init(void)
 	return ret;
 }
 
-void __exit fini(void)
+static void __exit fini(void)
 {
 	ip_conntrack_protocol_unregister(&ip_conntrack_protocol_sctp);
 #ifdef CONFIG_SYSCTL

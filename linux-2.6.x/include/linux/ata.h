@@ -123,6 +123,8 @@ enum {
 	ATA_CMD_PIO_WRITE_EXT	= 0x34,
 	ATA_CMD_SET_FEATURES	= 0xEF,
 	ATA_CMD_PACKET		= 0xA0,
+	ATA_CMD_VERIFY		= 0x40,
+	ATA_CMD_VERIFY_EXT	= 0x42,
 
 	/* SETFEATURES stuff */
 	SETFEATURES_XFER	= 0x03,
@@ -222,6 +224,7 @@ struct ata_taskfile {
 };
 
 #define ata_id_is_ata(id)	(((id)[0] & (1 << 15)) == 0)
+#define ata_id_is_sata(id)	((id)[93] == 0)
 #define ata_id_rahead_enabled(id) ((id)[85] & (1 << 6))
 #define ata_id_wcache_enabled(id) ((id)[85] & (1 << 5))
 #define ata_id_has_flush(id) ((id)[83] & (1 << 12))

@@ -33,44 +33,33 @@ static inline void flush_cache_all(void)
 #define flush_cache_vmap(start, end)		flush_cache_all()
 #define flush_cache_vunmap(start, end)		flush_cache_all()
 
-/* The following value needs to be tuned and probably scaled with the
- * cache size.
- */
-
-#define FLUSH_THRESHOLD 0x80000
+extern int parisc_cache_flush_threshold;
+void parisc_setup_cache_timing(void);
 
 static inline void
 flush_user_dcache_range(unsigned long start, unsigned long end)
 {
-#ifdef CONFIG_SMP
-	flush_user_dcache_range_asm(start,end);
-#else
-	if ((end - start) < FLUSH_THRESHOLD)
+	if ((end - start) < parisc_cache_flush_threshold)
 		flush_user_dcache_range_asm(start,end);
 	else
 		flush_data_cache();
-#endif
 }
 
 static inline void
 flush_user_icache_range(unsigned long start, unsigned long end)
 {
-#ifdef CONFIG_SMP
-	flush_user_icache_range_asm(start,end);
-#else
-	if ((end - start) < FLUSH_THRESHOLD)
+	if ((end - start) < parisc_cache_flush_threshold)
 		flush_user_icache_range_asm(start,end);
 	else
 		flush_instruction_cache();
-#endif
 }
 
 extern void flush_dcache_page(struct page *page);
 
 #define flush_dcache_mmap_lock(mapping) \
-	spin_lock_irq(&(mapping)->tree_lock)
+	write_lock_irq(&(mapping)->tree_lock)
 #define flush_dcache_mmap_unlock(mapping) \
-	spin_unlock_irq(&(mapping)->tree_lock)
+	write_unlock_irq(&(mapping)->tree_lock)
 
 #define flush_icache_page(vma,page)	do { flush_kernel_dcache_page(page_address(page)); flush_kernel_icache_page(page_address(page)); } while (0)
 

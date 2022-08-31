@@ -17,6 +17,8 @@
 
 #define IPV6_MAX_ADDRESSES		16
 
+#include <linux/in6.h>
+
 struct prefix_info {
 	__u8			type;
 	__u8			length;
@@ -43,13 +45,13 @@ struct prefix_info {
 
 #ifdef __KERNEL__
 
-#include <linux/in6.h>
 #include <linux/netdevice.h>
 #include <net/if_inet6.h>
+#include <net/ipv6.h>
 
 #define IN6_ADDR_HSIZE		16
 
-extern void			addrconf_init(void);
+extern int			addrconf_init(void);
 extern void			addrconf_cleanup(void);
 
 extern int			addrconf_add_ifaddr(void __user *arg);
@@ -117,7 +119,6 @@ extern int inet6_ac_check(struct sock *sk, struct in6_addr *addr, int ifindex);
 
 extern int ipv6_dev_ac_inc(struct net_device *dev, struct in6_addr *addr);
 extern int __ipv6_dev_ac_dec(struct inet6_dev *idev, struct in6_addr *addr);
-extern int ipv6_dev_ac_dec(struct net_device *dev, struct in6_addr *addr);
 extern int ipv6_chk_acast_addr(struct net_device *dev, struct in6_addr *addr);
 
 

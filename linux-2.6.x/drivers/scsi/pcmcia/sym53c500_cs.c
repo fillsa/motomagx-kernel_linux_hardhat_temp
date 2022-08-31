@@ -92,19 +92,6 @@ static char *version =
 
 /* ================================================================== */
 
-/* Parameters that can be set with 'insmod' */
-
-/* Bit map of interrupts to choose from */
-static unsigned int irq_mask = 0xdeb8;	/* 3-5, 7, 9-12, 14, 15 */
-static int irq_list[4] = { -1 };
-
-module_param(irq_mask, int, 0);
-MODULE_PARM_DESC(irq_mask, "IRQ mask bits (default: 0xdeb8)");
-module_param_array(irq_list, int, NULL, 0);
-MODULE_PARM_DESC(irq_list, "Comma-separated list of up to 4 IRQs to try (default: auto select).");
-
-/* ================================================================== */
-
 #define SYNC_MODE 0 		/* Synchronous transfer mode */
 
 /* Default configuration */
@@ -640,7 +627,9 @@ SYM53C500_host_reset(struct scsi_cmnd *SCpnt)
 	int port_base = SCpnt->device->host->io_port;
 
 	DEB(printk("SYM53C500_host_reset called\n"));
+	spin_lock_irq(SCpnt->device->host->host_lock);
 	SYM53C500_int_host_reset(port_base);
+	spin_unlock_irq(SCpnt->device->host->host_lock);
 
 	return SUCCESS;
 }
@@ -965,7 +954,7 @@ SYM53C500_attach(void)
 	struct scsi_info_t *info;
 	client_reg_t client_reg;
 	dev_link_t *link;
-	int i, ret;
+	int ret;
 
 	DEBUG(0, "SYM53C500_attach()\n");
 
@@ -980,12 +969,7 @@ SYM53C500_attach(void)
 	link->io.Attributes1 = IO_DATA_PATH_WIDTH_AUTO;
 	link->io.IOAddrLines = 10;
 	link->irq.Attributes = IRQ_TYPE_EXCLUSIVE;
-	link->irq.IRQInfo1 = IRQ_INFO2_VALID | IRQ_LEVEL_ID;
-	if (irq_list[0] == -1)
-		link->irq.IRQInfo2 = irq_mask;
-	else
-		for (i = 0; i < 4; i++)
-			link->irq.IRQInfo2 |= 1 << irq_list[i];
+	link->irq.IRQInfo1 = IRQ_LEVEL_ID;
 	link->conf.Attributes = CONF_ENABLE_IRQ;
 	link->conf.Vcc = 50;
 	link->conf.IntType = INT_MEMORY_AND_IO;
@@ -995,11 +979,6 @@ SYM53C500_attach(void)
 	link->next = dev_list;
 	dev_list = link;
 	client_reg.dev_info = &dev_info;
-	client_reg.Attributes = INFO_IO_CLIENT | INFO_CARD_SHARE;
-	client_reg.event_handler = &SYM53C500_event;
-	client_reg.EventMask = CS_EVENT_RESET_REQUEST | CS_EVENT_CARD_RESET |
-	    CS_EVENT_CARD_INSERTION | CS_EVENT_CARD_REMOVAL |
-	    CS_EVENT_PM_SUSPEND | CS_EVENT_PM_RESUME;
 	client_reg.Version = 0x0210;
 	client_reg.event_callback_args.client_data = link;
 	ret = pcmcia_register_client(&link->handle, &client_reg);
@@ -1016,13 +995,23 @@ MODULE_AUTHOR("Bob Tracy <rct@frus.com>");
 MODULE_DESCRIPTION("SYM53C500 PCMCIA SCSI driver");
 MODULE_LICENSE("GPL");
 
+static struct pcmcia_device_id sym53c500_ids[] = {
+	PCMCIA_DEVICE_PROD_ID12("BASICS by New Media Corporation", "SCSI Sym53C500", 0x23c78a9d, 0x0099e7f7),
+	PCMCIA_DEVICE_PROD_ID12("New Media Corporation", "SCSI Bus Toaster Sym53C500", 0x085a850b, 0x45432eb8),
+	PCMCIA_DEVICE_PROD_ID2("SCSI9000", 0x21648f44),
+	PCMCIA_DEVICE_NULL,
+};
+MODULE_DEVICE_TABLE(pcmcia, sym53c500_ids);
+
 static struct pcmcia_driver sym53c500_cs_driver = {
 	.owner		= THIS_MODULE,
 	.drv		= {
 		.name	= "sym53c500_cs",
 	},
 	.attach		= SYM53C500_attach,
+	.event		= SYM53C500_event,
 	.detach		= SYM53C500_detach,
+	.id_table       = sym53c500_ids,
 };
 
 static int __init

@@ -7,7 +7,7 @@
  *
  * This code is covered by the GPL.
  *
- * $Id: cfi_util.c,v 1.7 2004/11/05 22:41:05 nico Exp $
+ * $Id: cfi_util.c,v 1.8 2004/12/14 19:55:56 nico Exp $
  *
  */
 
@@ -52,15 +52,11 @@ __xipram cfi_read_pri(struct map_info *map, __u16 adr, __u16 size, const char* n
 #endif
 
 	/* Switch it into Query Mode.*/
-
 	/* Address 0x555 for Spansion S29WS-N MirrorBit flash chips. */
-
 	if ((cfi->mfr == CFI_MFR_AMD) && (cfi->id == 0x227E))
-		cfi_send_gen_cmd(0x98, 0x555, base, map, cfi, cfi->device_type,
-				 NULL);
+		cfi_send_gen_cmd(0x98, 0x555, base, map, cfi, cfi->device_type, NULL);
 	else
-		cfi_send_gen_cmd(0x98, 0x55, base, map, cfi, cfi->device_type,
-				 NULL);
+		cfi_send_gen_cmd(0x98, 0x55, base, map, cfi, cfi->device_type, NULL);
 
 	/* Read in the Extended Query Table */
 	for (i=0; i<size; i++) {

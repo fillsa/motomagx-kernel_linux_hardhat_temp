@@ -30,9 +30,9 @@ struct thread_info {
 	struct task_struct	*task;		/* main task structure */
 	struct exec_domain	*exec_domain;	/* execution domain */
 	unsigned long		flags;		/* low level flags */
-
 	int			cpu;		/* cpu we're on */
-	int			preempt_count;
+	int			preempt_count;	/* 0 => preemptable,
+						   <0 => BUG */
 	int			softirq_count;
 	int			hardirq_count;
 
@@ -138,6 +138,7 @@ BTFIXUPDEF_CALL(void, free_thread_info, struct thread_info *)
 					 * this quantum (SMP) */
 #define TIF_POLLING_NRFLAG	9	/* true if poll_idle() is polling
 					 * TIF_NEED_RESCHED */
+#define TIF_MEMDIE		10
 
 /* as above, but as bit values */
 #define _TIF_SYSCALL_TRACE	(1<<TIF_SYSCALL_TRACE)

@@ -3,6 +3,7 @@
  *
  * Copyright (C) 1998-2003 Hewlett-Packard Co
  *	David Mosberger-Tang <davidm@hpl.hp.com>
+ * 04/11/17 Ashok Raj	<ashok.raj@intel.com> Added CPU Hotplug Support
  */
 #define __KERNEL_SYSCALLS__	/* see <asm/unistd.h> */
 #include <linux/config.h>
@@ -26,6 +27,7 @@
 #include <linux/efi.h>
 #include <linux/interrupt.h>
 #include <linux/delay.h>
+#include <linux/kprobes.h>
 
 #include <asm/cpu.h>
 #include <asm/delay.h>
@@ -40,6 +42,8 @@
 #include <asm/unwind.h>
 #include <asm/user.h>
 
+#include "entry.h"
+
 #ifdef CONFIG_PERFMON
 # include <asm/perfmon.h>
 #endif
@@ -47,7 +51,7 @@
 #include "sigframe.h"
 
 void (*ia64_mark_idle)(int);
-static cpumask_t cpu_idle_map;
+static DEFINE_PER_CPU(unsigned int, cpu_idle_state);
 
 unsigned long boot_option_idle_override = 0;
 EXPORT_SYMBOL(boot_option_idle_override);
@@ -170,13 +174,21 @@ do_notify_resume_user (sigset_t *oldset, struct sigscratch *scr, long in_syscall
 		ia64_do_signal(oldset, scr, in_syscall);
 }
 
-static int pal_halt = 1;
+static int pal_halt        = 1;
+static int can_do_pal_halt = 1;
+
 static int __init nohalt_setup(char * str)
 {
-	pal_halt = 0;
+	pal_halt = can_do_pal_halt = 0;
 	return 1;
 }
 __setup("nohalt", nohalt_setup);
+
+void
+update_pal_halt_status(int status)
+{
+	can_do_pal_halt = pal_halt && status;
+}
 
 /*
  * We use this if we don't have any better idle routine..
@@ -184,10 +196,9 @@ __setup("nohalt", nohalt_setup);
 void
 default_idle (void)
 {
-	unsigned long pmu_active = ia64_getreg(_IA64_REG_PSR) & (IA64_PSR_PP | IA64_PSR_UP);
-
+	local_irq_enable();
 	while (!need_resched())
-		if (pal_halt && !pmu_active)
+		if (can_do_pal_halt)
 			safe_halt();
 		else
 			cpu_relax();
@@ -198,27 +209,20 @@ default_idle (void)
 static inline void play_dead(void)
 {
 	extern void ia64_cpu_local_tick (void);
+	unsigned int this_cpu = smp_processor_id();
+
 	/* Ack it */
 	__get_cpu_var(cpu_state) = CPU_DEAD;
 
-	/* We shouldn't have to disable interrupts while dead, but
-	 * some interrupts just don't seem to go away, and this makes
-	 * it "work" for testing purposes. */
 	max_xtp();
 	local_irq_disable();
-	/* Death loop */
-	while (__get_cpu_var(cpu_state) != CPU_UP_PREPARE)
-		cpu_relax();
-
+	idle_task_exit();
+	ia64_jump_to_sal(&sal_boot_rendez_state[this_cpu]);
 	/*
-	 * Enable timer interrupts from now on
-	 * Not required if we put processor in SAL_BOOT_RENDEZ mode.
+	 * The above is a point of no-return, the processor is
+	 * expected to be in SAL loop now.
 	 */
-	local_flush_tlb_all();
-	cpu_set(smp_processor_id(), cpu_online_map);
-	wmb();
-	ia64_cpu_local_tick ();
-	local_irq_enable();
+	BUG();
 }
 #else
 static inline void play_dead(void)
@@ -227,28 +231,38 @@ static inline void play_dead(void)
 }
 #endif /* CONFIG_HOTPLUG_CPU */
 
-
 void cpu_idle_wait(void)
 {
-        int cpu;
-        cpumask_t map;
+	unsigned int cpu, this_cpu = get_cpu();
+	cpumask_t map;
 
-        for_each_online_cpu(cpu)
-                cpu_set(cpu, cpu_idle_map);
+	set_cpus_allowed(current, cpumask_of_cpu(this_cpu));
+	put_cpu();
 
-        wmb();
-        do {
-                ssleep(1);
-                cpus_and(map, cpu_idle_map, cpu_online_map);
-        } while (!cpus_empty(map));
+	cpus_clear(map);
+	for_each_online_cpu(cpu) {
+		per_cpu(cpu_idle_state, cpu) = 1;
+		cpu_set(cpu, map);
+	}
+
+	__get_cpu_var(cpu_idle_state) = 0;
+
+	wmb();
+	do {
+		ssleep(1);
+		for_each_online_cpu(cpu) {
+			if (cpu_isset(cpu, map) && !per_cpu(cpu_idle_state, cpu))
+				cpu_clear(cpu, map);
+		}
+		cpus_and(map, map, cpu_online_map);
+	} while (!cpus_empty(map));
 }
 EXPORT_SYMBOL_GPL(cpu_idle_wait);
 
 void __attribute__((noreturn))
-cpu_idle (void *unused)
+cpu_idle (void)
 {
 	void (*mark_idle)(int) = ia64_mark_idle;
-	int cpu = smp_processor_id();
 
 	/* endless idle loop with no priority at all */
 	while (1) {
@@ -259,12 +273,15 @@ cpu_idle (void *unused)
 		while (!need_resched()) {
 			void (*idle)(void);
 
+//mvl			if (cpu_isset(cpu, cpu_idle_map))
+//mvl				cpu_clear(cpu, cpu_idle_map);
+			if (__get_cpu_var(cpu_idle_state))
+				__get_cpu_var(cpu_idle_state) = 0;
+
+			rmb();
 			if (mark_idle)
 				(*mark_idle)(1);
 
-			if (cpu_isset(cpu, cpu_idle_map))
-				cpu_clear(cpu, cpu_idle_map);
-			rmb();
 			idle = pm_idle;
 			if (!idle)
 				idle = default_idle;
@@ -630,7 +647,7 @@ dump_fpu (struct pt_regs *pt, elf_fpregset_t dst)
 	return 1;	/* f0-f31 are always valid so we always return 1 */
 }
 
-asmlinkage long
+long
 sys_execve (char __user *filename, char __user * __user *argv, char __user * __user *envp,
 	    struct pt_regs *regs)
 {
@@ -667,7 +684,7 @@ kernel_thread (int (*fn)(void *), void *arg, unsigned long flags)
 	regs.pt.cr_ifs = 1UL << 63;		/* mark as valid, empty frame */
 	regs.sw.ar_fpsr = regs.pt.ar_fpsr = ia64_getreg(_IA64_REG_AR_FPSR);
 	regs.sw.ar_bspstore = (unsigned long) current + IA64_RBS_OFFSET;
-
+	regs.sw.pr = (1 << PRED_KERNEL_STACK);
 	return do_fork(flags | CLONE_VM | CLONE_UNTRACED, 0, &regs.pt, 0, NULL, NULL);
 }
 EXPORT_SYMBOL(kernel_thread);
@@ -694,6 +711,13 @@ kernel_thread_helper (int (*fn)(void *), void *arg)
 void
 flush_thread (void)
 {
+	/*
+	 * Remove function-return probe instances associated with this task
+	 * and put them back on the free list. Do not insert an exit probe for
+	 * this function, it will be disabled by kprobe_flush_task if you do.
+	 */
+	kprobe_flush_task(current);
+
 	/* drop floating-point and debug-register state if it exists: */
 	current->thread.flags &= ~(IA64_THREAD_FPH_VALID | IA64_THREAD_DBG_VALID);
 	ia64_drop_fpu(current);
@@ -708,6 +732,14 @@ flush_thread (void)
 void
 exit_thread (void)
 {
+
+	/*
+	 * Remove function-return probe instances associated with this task
+	 * and put them back on the free list. Do not insert an exit probe for
+	 * this function, it will be disabled by kprobe_flush_task if you do.
+	 */
+	kprobe_flush_task(current);
+
 	ia64_drop_fpu(current);
 #ifdef CONFIG_PERFMON
        /* if needed, stop monitoring and flush state to perfmon context */
@@ -777,15 +809,11 @@ machine_restart (char *restart_cmd)
 	(*efi.reset_system)(EFI_RESET_WARM, 0, 0, NULL);
 }
 
-EXPORT_SYMBOL(machine_restart);
-
 void
 machine_halt (void)
 {
 	cpu_halt();
 }
-
-EXPORT_SYMBOL(machine_halt);
 
 void
 machine_power_off (void)
@@ -795,4 +823,3 @@ machine_power_off (void)
 	machine_halt();
 }
 
-EXPORT_SYMBOL(machine_power_off);

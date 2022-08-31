@@ -150,28 +150,6 @@ int do_settimeofday(struct timespec *tv)
 
 EXPORT_SYMBOL(do_settimeofday);
 
-#ifndef CONFIG_ARCH_S390X
-
-static inline __u32
-__calculate_ticks(__u64 elapsed)
-{
-	register_pair rp;
-
-	rp.pair = elapsed >> 1;
-	asm ("dr %0,%1" : "+d" (rp) : "d" (CLK_TICKS_PER_JIFFY >> 1));
-	return rp.subreg.odd;
-}
-
-#else /* CONFIG_ARCH_S390X */
-
-static inline __u32
-__calculate_ticks(__u64 elapsed)
-{
-	return elapsed / CLK_TICKS_PER_JIFFY;
-}
-
-#endif /* CONFIG_ARCH_S390X */
-
 
 #ifdef CONFIG_PROFILING
 #define s390_do_profile(regs)	profile_tick(CPU_PROFILING, regs)
@@ -187,14 +165,23 @@ __calculate_ticks(__u64 elapsed)
 void account_ticks(struct pt_regs *regs)
 {
 	__u64 tmp;
-	__u32 ticks;
+	__u32 ticks, xticks;
 
 	/* Calculate how many ticks have passed. */
-	if (S390_lowcore.int_clock < S390_lowcore.jiffy_timer)
+	if (S390_lowcore.int_clock < S390_lowcore.jiffy_timer) {
+		/*
+		 * We have to program the clock comparator even if
+		 * no tick has passed. That happens if e.g. an i/o
+		 * interrupt wakes up an idle processor that has
+		 * switched off its hz timer.
+		 */
+		tmp = S390_lowcore.jiffy_timer + CPU_DEVIATION;
+		asm volatile ("SCKC %0" : : "m" (tmp));
 		return;
+	}
 	tmp = S390_lowcore.int_clock - S390_lowcore.jiffy_timer;
 	if (tmp >= 2*CLK_TICKS_PER_JIFFY) {  /* more than two ticks ? */
-		ticks = __calculate_ticks(tmp) + 1;
+		ticks = __div(tmp, CLK_TICKS_PER_JIFFY) + 1;
 		S390_lowcore.jiffy_timer +=
 			CLK_TICKS_PER_JIFFY * (__u64) ticks;
 	} else if (tmp >= CLK_TICKS_PER_JIFFY) {
@@ -216,11 +203,9 @@ void account_ticks(struct pt_regs *regs)
 	 */
 	write_seqlock(&xtime_lock);
 	if (S390_lowcore.jiffy_timer > xtime_cc) {
-		__u32 xticks;
-
 		tmp = S390_lowcore.jiffy_timer - xtime_cc;
 		if (tmp >= 2*CLK_TICKS_PER_JIFFY) {
-			xticks = __calculate_ticks(tmp);
+			xticks = __div(tmp, CLK_TICKS_PER_JIFFY);
 			xtime_cc += (__u64) xticks * CLK_TICKS_PER_JIFFY;
 		} else {
 			xticks = 1;
@@ -230,14 +215,18 @@ void account_ticks(struct pt_regs *regs)
 			do_timer(regs);
 	}
 	write_sequnlock(&xtime_lock);
+#else
+	for (xticks = ticks; xticks > 0; xticks--)
+		do_timer(regs);
+#endif
+
+#ifdef CONFIG_VIRT_CPU_ACCOUNTING
+	account_user_vtime(current);
+#else
 	while (ticks--)
 		update_process_times(user_mode(regs));
-#else
-	while (ticks--) {
-		do_timer(regs);
-		update_process_times(user_mode(regs));
-	}
 #endif
+
 	s390_do_profile(regs);
 }
 
@@ -255,7 +244,7 @@ int sysctl_hz_timer = 1;
  */
 static inline void stop_hz_timer(void)
 {
-	__u64 timer;
+	__u64 timer, todval;
 
 	if (sysctl_hz_timer != 0)
 		return;
@@ -276,8 +265,14 @@ static inline void stop_hz_timer(void)
 	 * for the next event.
 	 */
 	timer = (__u64) (next_timer_interrupt() - jiffies) + jiffies_64;
-	timer = jiffies_timer_cc + timer * CLK_TICKS_PER_JIFFY;
-	asm volatile ("SCKC %0" : : "m" (timer));
+	todval = -1ULL;
+	/* Be careful about overflows. */
+	if (timer < (-1ULL / CLK_TICKS_PER_JIFFY)) {
+		timer = jiffies_timer_cc + timer * CLK_TICKS_PER_JIFFY;
+		if (timer >= jiffies_timer_cc)
+			todval = timer;
+	}
+	asm volatile ("SCKC %0" : : "m" (todval));
 }
 
 /*

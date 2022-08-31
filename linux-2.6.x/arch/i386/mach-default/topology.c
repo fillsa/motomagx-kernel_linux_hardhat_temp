@@ -30,7 +30,38 @@
 #include <linux/nodemask.h>
 #include <asm/cpu.h>
 
-struct i386_cpu cpu_devices[NR_CPUS];
+static struct i386_cpu cpu_devices[NR_CPUS];
+
+int arch_register_cpu(int num){
+	struct node *parent = NULL;
+	
+#ifdef CONFIG_NUMA
+	int node = cpu_to_node(num);
+	if (node_online(node))
+		parent = &node_devices[node].node;
+#endif /* CONFIG_NUMA */
+
+	return register_cpu(&cpu_devices[num].cpu, num, parent);
+}
+
+#ifdef CONFIG_HOTPLUG_CPU
+
+void arch_unregister_cpu(int num) {
+	struct node *parent = NULL;
+
+#ifdef CONFIG_NUMA
+	int node = cpu_to_node(num);
+	if (node_online(node))
+		parent = &node_devices[node].node;
+#endif /* CONFIG_NUMA */
+
+	return unregister_cpu(&cpu_devices[num].cpu, parent);
+}
+EXPORT_SYMBOL(arch_register_cpu);
+EXPORT_SYMBOL(arch_unregister_cpu);
+#endif /*CONFIG_HOTPLUG_CPU*/
+
+
 
 #ifdef CONFIG_NUMA
 #include <linux/mmzone.h>
@@ -42,12 +73,11 @@ static int __init topology_init(void)
 {
 	int i;
 
-	for (i = 0; i < MAX_NUMNODES; i++) {
-		if (node_online(i))
-			arch_register_node(i);
-	}
-	for (i = 0; i < NR_CPUS; i++)
-		if (cpu_possible(i)) arch_register_cpu(i);
+	for_each_online_node(i)
+		arch_register_node(i);
+
+	for_each_cpu(i)
+		arch_register_cpu(i);
 	return 0;
 }
 
@@ -57,8 +87,8 @@ static int __init topology_init(void)
 {
 	int i;
 
-	for (i = 0; i < NR_CPUS; i++)
-		if (cpu_possible(i)) arch_register_cpu(i);
+	for_each_cpu(i)
+		arch_register_cpu(i);
 	return 0;
 }
 

@@ -22,7 +22,6 @@
 #define __ASM_AU1000_PCMCIA_H
 
 /* include the world */
-#include <pcmcia/version.h>
 #include <pcmcia/cs_types.h>
 #include <pcmcia/cs.h>
 #include <pcmcia/ss.h>
@@ -88,7 +87,7 @@ struct pcmcia_irqs {
 struct au1000_pcmcia_socket {
 	struct pcmcia_socket socket;
 
-	/* 
+	/*
 	 * Info from low level handler
 	 */
 	struct device		*dev;

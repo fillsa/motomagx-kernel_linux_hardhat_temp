@@ -61,12 +61,30 @@ extern void enable_irq(unsigned int irq);
  * Temporary defines for UP kernels, until all code gets fixed.
  */
 #ifndef CONFIG_SMP
-# define cli()			local_irq_disable()
-# define sti()			local_irq_enable()
-# define save_flags(x)		local_save_flags(x)
-# define restore_flags(x)	local_irq_restore(x)
-# define save_and_cli(x)	local_irq_save(x)
-#endif
+static inline void __deprecated cli(void)
+{
+	local_irq_disable();
+}
+static inline void __deprecated sti(void)
+{
+	local_irq_enable();
+}
+static inline void __deprecated save_flags(unsigned long *x)
+{
+	local_save_flags(*x);
+}
+#define save_flags(x) save_flags(&x);
+static inline void __deprecated restore_flags(unsigned long x)
+{
+	local_irq_restore(x);
+}
+
+static inline void __deprecated save_and_cli(unsigned long *x)
+{
+	local_irq_save(*x);
+}
+#define save_and_cli(x)	save_and_cli(&x)
+#endif /* CONFIG_SMP */
 
 #ifdef CONFIG_PREEMPT_RT
 # define local_bh_disable() do { } while (0)
@@ -74,12 +92,12 @@ extern void enable_irq(unsigned int irq);
 # define __local_bh_enable() do { } while (0)
 #else
 /* SoftIRQ primitives.  */
-#  define local_bh_disable() \
+#define local_bh_disable() \
 		do { add_preempt_count(SOFTIRQ_OFFSET); barrier(); } while (0)
-#  define __local_bh_enable() \
+#define __local_bh_enable() \
 		do { barrier(); sub_preempt_count(SOFTIRQ_OFFSET); } while (0)
 
-  extern void local_bh_enable(void);
+extern void local_bh_enable(void);
 #endif
 
 /* PLEASE, avoid to allocate new softirqs, if you need not _really_ high

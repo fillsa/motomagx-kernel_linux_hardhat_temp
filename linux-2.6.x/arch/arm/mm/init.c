@@ -87,7 +87,7 @@ void show_mem(void)
 	show_free_areas();
 	printk("Free swap:       %6ldkB\n", nr_swap_pages<<(PAGE_SHIFT-10));
 
-	for (node = 0; node < numnodes; node++) {
+	for_each_online_node(node) {
 		struct page *page, *end;
 
 		page = NODE_MEM_MAP(node);
@@ -124,14 +124,7 @@ struct node_info {
 };
 
 #define O_PFN_DOWN(x)	((x) >> PAGE_SHIFT)
-#define V_PFN_DOWN(x)	O_PFN_DOWN(__pa(x))
-
 #define O_PFN_UP(x)	(PAGE_ALIGN(x) >> PAGE_SHIFT)
-#define V_PFN_UP(x)	O_PFN_UP(__pa(x))
-
-#define PFN_SIZE(x)	((x) >> PAGE_SHIFT)
-#define PFN_RANGE(s,e)	PFN_SIZE(PAGE_ALIGN((unsigned long)(e)) - \
-				(((unsigned long)(s)) & PAGE_MASK))
 
 /*
  * FIXME: We really want to avoid allocating the bootmap bitmap
@@ -144,7 +137,7 @@ find_bootmap_pfn(int node, struct meminfo *mi, unsigned int bootmap_pages)
 {
 	unsigned int start_pfn, bank, bootmap_pfn;
 
-	start_pfn   = V_PFN_UP(&_end);
+	start_pfn   = O_PFN_UP(__pa(&_end));
 	bootmap_pfn = 0;
 
 	for (bank = 0; bank < mi->nr_banks; bank ++) {
@@ -153,9 +146,9 @@ find_bootmap_pfn(int node, struct meminfo *mi, unsigned int bootmap_pages)
 		if (mi->bank[bank].node != node)
 			continue;
 
-		start = O_PFN_UP(mi->bank[bank].start);
-		end   = O_PFN_DOWN(mi->bank[bank].size +
-				   mi->bank[bank].start);
+		start = mi->bank[bank].start >> PAGE_SHIFT;
+		end   = (mi->bank[bank].size +
+			 mi->bank[bank].start) >> PAGE_SHIFT;
 
 		if (end < start_pfn)
 			continue;
@@ -210,24 +203,20 @@ find_memend_and_nodes(struct meminfo *mi, struct node_info *np)
 
 		node = mi->bank[i].node;
 
-		if (node >= numnodes) {
-			numnodes = node + 1;
-
-			/*
-			 * Make sure we haven't exceeded the maximum number
-			 * of nodes that we have in this configuration.  If
-			 * we have, we're in trouble.  (maybe we ought to
-			 * limit, instead of bugging?)
-			 */
-			if (numnodes > MAX_NUMNODES)
-				BUG();
-		}
+		/*
+		 * Make sure we haven't exceeded the maximum number of nodes
+		 * that we have in this configuration.  If we have, we're in
+		 * trouble.  (maybe we ought to limit, instead of bugging?)
+		 */
+		if (node >= MAX_NUMNODES)
+			BUG();
+		node_set_online(node);
 
 		/*
 		 * Get the start and end pfns for this bank
 		 */
-		start = O_PFN_UP(mi->bank[i].start);
-		end   = O_PFN_DOWN(mi->bank[i].start + mi->bank[i].size);
+		start = mi->bank[i].start >> PAGE_SHIFT;
+		end   = (mi->bank[i].start + mi->bank[i].size) >> PAGE_SHIFT;
 
 		if (np[node].start > start)
 			np[node].start = start;
@@ -243,7 +232,7 @@ find_memend_and_nodes(struct meminfo *mi, struct node_info *np)
 	 * Calculate the number of pages we require to
 	 * store the bootmem bitmaps.
 	 */
-	for (i = 0; i < numnodes; i++) {
+	for_each_online_node(i) {
 		if (np[i].end == 0)
 			continue;
 
@@ -258,6 +247,9 @@ find_memend_and_nodes(struct meminfo *mi, struct node_info *np)
 	 * This doesn't seem to be used by the Linux memory
 	 * manager any more.  If we can get rid of it, we
 	 * also get rid of some of the stuff above as well.
+	 *
+	 * Note: max_low_pfn and max_pfn reflect the number
+	 * of _pages_ in the system, not the maximum PFN.
 	 */
 	max_low_pfn = memend_pfn - O_PFN_DOWN(PHYS_OFFSET);
 	max_pfn = memend_pfn - O_PFN_DOWN(PHYS_OFFSET);
@@ -459,13 +451,13 @@ static void __init bootmem_init(struct meminfo *mi)
 	 * (we could also do with rolling bootmem_init and paging_init
 	 * into one generic "memory_init" type function).
 	 */
-	np += numnodes - 1;
-	for (node = numnodes - 1; node >= 0; node--, np--) {
+	np += num_online_nodes() - 1;
+	for (node = num_online_nodes() - 1; node >= 0; node--, np--) {
 		/*
 		 * If there are no pages in this node, ignore it.
 		 * Note that node 0 must always have some pages.
 		 */
-		if (np->end == 0) {
+		if (np->end == 0 || !node_online(node)) {
 			if (node == 0)
 				BUG();
 			continue;
@@ -543,7 +535,7 @@ void __init paging_init(struct meminfo *mi, struct machine_desc *mdesc)
 	/*
 	 * initialise the zones within each node
 	 */
-	for (node = 0; node < numnodes; node++) {
+	for_each_online_node(node) {
 		unsigned long zone_size[MAX_NR_ZONES];
 		unsigned long zhole_size[MAX_NR_ZONES];
 		struct bootmem_data *bdata;
@@ -598,10 +590,6 @@ void __init paging_init(struct meminfo *mi, struct machine_desc *mdesc)
 				bdata->node_boot_start >> PAGE_SHIFT, zhole_size);
 	}
 
-#ifndef CONFIG_DISCONTIGMEM
-	mem_map = contig_page_data.node_mem_map;
-#endif
-
 	/*
 	 * finish off the bad pages once
 	 * the mem_map is initialised
@@ -625,6 +613,69 @@ static inline void free_area(unsigned long addr, unsigned long end, char *s)
 
 	if (size && s)
 		printk(KERN_INFO "Freeing %s memory: %dK\n", s, size);
+}
+
+static inline void
+free_memmap(int node, unsigned long start_pfn, unsigned long end_pfn)
+{
+	struct page *start_pg, *end_pg;
+	unsigned long pg, pgend;
+
+	/*
+	 * Convert start_pfn/end_pfn to a struct page pointer.
+	 */
+	start_pg = pfn_to_page(start_pfn);
+	end_pg = pfn_to_page(end_pfn);
+
+	/*
+	 * Convert to physical addresses, and
+	 * round start upwards and end downwards.
+	 */
+	pg = PAGE_ALIGN(__pa(start_pg));
+	pgend = __pa(end_pg) & PAGE_MASK;
+
+	/*
+	 * If there are free pages between these,
+	 * free the section of the memmap array.
+	 */
+	if (pg < pgend)
+		free_bootmem_node(NODE_DATA(node), pg, pgend - pg);
+}
+
+/*
+ * The mem_map array can get very big.  Free the unused area of the memory map.
+ */
+static void __init free_unused_memmap_node(int node, struct meminfo *mi)
+{
+	unsigned long bank_start, prev_bank_end = 0;
+	unsigned int i;
+
+	/*
+	 * [FIXME] This relies on each bank being in address order.  This
+	 * may not be the case, especially if the user has provided the
+	 * information on the command line.
+	 */
+	for (i = 0; i < mi->nr_banks; i++) {
+		if (mi->bank[i].size == 0 || mi->bank[i].node != node)
+			continue;
+
+		bank_start = mi->bank[i].start >> PAGE_SHIFT;
+		if (bank_start < prev_bank_end) {
+			printk(KERN_ERR "MEM: unordered memory banks.  "
+				"Not freeing memmap.\n");
+			break;
+		}
+
+		/*
+		 * If we had a previous bank, and there is a space
+		 * between the current bank and the previous, free it.
+		 */
+		if (prev_bank_end && prev_bank_end != bank_start)
+			free_memmap(node, prev_bank_end, bank_start);
+
+		prev_bank_end = (mi->bank[i].start +
+				 mi->bank[i].size) >> PAGE_SHIFT;
+	}
 }
 
 #ifdef CONFIG_MOT_FEAT_IPU_MEM_ADDR
@@ -671,15 +722,11 @@ void __init mem_init(void)
 	if (ipu_dynamic_pool)
 		reserve_bootmem(ipu_mem_addr, ipu_mem_size);
 #endif /* CONFIG_MOT_FEAT_IPU_MEM_ADDR */
-	/*
-	 * We may have non-contiguous memory.
-	 */
-	if (meminfo.nr_banks != 1)
-		create_memmap_holes(&meminfo);
-
 	/* this will put all unused low memory onto the freelists */
-	for (node = 0; node < numnodes; node++) {
+	for_each_online_node(node) {
 		pg_data_t *pgdat = NODE_DATA(node);
+
+		free_unused_memmap_node(node, &meminfo);
 
 		if (pgdat->node_spanned_pages != 0)
 			totalram_pages += free_all_bootmem_node(pgdat);

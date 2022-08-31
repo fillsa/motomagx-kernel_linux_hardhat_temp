@@ -303,14 +303,14 @@ void omap_map_io(void)
 		_omap_map_io();
 }
 
-static inline unsigned int omap_serial_in(struct uart_port *up,
+static inline unsigned int omap_serial_in(struct plat_serial8250_port *up,
 					  int offset)
 {
 	offset <<= up->regshift;
 	return (unsigned int)__raw_readb(up->membase + offset);
 }
 
-static inline void omap_serial_outp(struct uart_port *p, int offset,
+static inline void omap_serial_outp(struct plat_serial8250_port *p, int offset,
 				    int value)
 {
 	offset <<= p->regshift;
@@ -476,6 +476,12 @@ static const void *get_config(u16 tag, size_t len, int skip, size_t *len_out)
 			skip--;
 		}
 
+		if ((info->len & 0x03) != 0) {
+			/* We bail out to avoid an alignment fault */
+			printk(KERN_ERR "OMAP peripheral config: Length (%d) not word-aligned (tag %04x)\n",
+			       info->len, info->tag);
+			return NULL;
+		}
 		next = (u8 *) info + sizeof(*info) + info->len;
 		if (next >= omap_bootloader_tag + omap_bootloader_tag_len)
 			info = NULL;
@@ -485,10 +491,15 @@ static const void *get_config(u16 tag, size_t len, int skip, size_t *len_out)
 	if (info != NULL) {
 		/* Check the length as a lame attempt to check for
 		 * binary inconsistancy. */
-		if (len != NO_LENGTH_CHECK && info->len != len) {
-			printk(KERN_ERR "OMAP peripheral config: Length mismatch with tag %x (want %d, got %d)\n",
-			       tag, len, info->len);
-			return NULL;
+		if (len != NO_LENGTH_CHECK) {
+			/* Word-align len */
+			if (len & 0x03)
+				len = (len + 3) & ~0x03;
+			if (info->len != len) {
+				printk(KERN_ERR "OMAP peripheral config: Length mismatch with tag %x (want %d, got %d)\n",
+				       tag, len, info->len);
+				return NULL;
+			}
 		}
 		if (len_out != NULL)
 			*len_out = info->len;

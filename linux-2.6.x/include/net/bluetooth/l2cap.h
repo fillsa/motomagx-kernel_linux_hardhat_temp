@@ -1,5 +1,5 @@
 /* 
-   BlueZ - Bluetooth(R) protocol stack for Linux
+   BlueZ - Bluetooth protocol stack for Linux
    Copyright (C) 2000-2001 Qualcomm Incorporated
 
    Written 2000,2001 by Maxim Krasnyansky <maxk@qualcomm.com>
@@ -47,7 +47,6 @@
    2006-Dec-14  Motorola         Added L2CAPECHO ioctl
 */
 
-
 #ifndef __L2CAP_H
 #define __L2CAP_H
 
@@ -65,17 +64,19 @@ struct sockaddr_l2 {
 	bdaddr_t	l2_bdaddr;
 } __attribute__ ((packed));
 
-/* Socket options */
+/* L2CAP socket options */
 #define L2CAP_OPTIONS	0x01
 struct l2cap_options {
 	__u16 omtu;
 	__u16 imtu;
 	__u16 flush_to;
+	__u8  mode;
 } __attribute__ ((packed));
 
-#define L2CAP_CONNINFO  0x02
+#define L2CAP_CONNINFO	0x02
 struct l2cap_conninfo {
 	__u16 hci_handle;
+	__u8  dev_class[3];
 } __attribute__ ((packed));
 
 #define L2CAP_LM	0x03
@@ -85,20 +86,6 @@ struct l2cap_conninfo {
 #define L2CAP_LM_TRUSTED	0x0008
 #define L2CAP_LM_RELIABLE	0x0010
 #define L2CAP_LM_SECURE		0x0020
-
-#define L2CAP_QOS	0x04
-struct l2cap_qos {
-	__u16 service_type;
-	__u32 token_rate;
-	__u32 token_bucket_size;
-	__u32 peak_bandwidth;
-	__u32 latency;
-	__u32 delay_variation;
-};
-
-#define L2CAP_SERV_NO_TRAFFIC	0x00
-#define L2CAP_SERV_BEST_EFFORT	0x01
-#define L2CAP_SERV_GUARANTEED	0x02
 
 /* L2CAP command codes */
 #define L2CAP_COMMAND_REJ 0x01
@@ -183,6 +170,7 @@ struct l2cap_conf_opt {
 #define L2CAP_CONF_MTU		0x01
 #define L2CAP_CONF_FLUSH_TO	0x02
 #define L2CAP_CONF_QOS		0x03
+#define L2CAP_CONF_RFC		0x04
 
 #define L2CAP_CONF_MAX_SIZE	22
 
@@ -227,11 +215,11 @@ struct l2cap_conn {
 
 	bdaddr_t	*dst;
 	bdaddr_t	*src;
-	
+
 	unsigned int	mtu;
 
 	spinlock_t	lock;
-	
+
 	struct sk_buff *rx_skb;
 	__u32		rx_len;
 	__u8		rx_ident;
@@ -243,9 +231,10 @@ struct l2cap_conn {
 };
 
 /* ----- L2CAP channel and socket info ----- */
-#define l2cap_pi(sk)   ((struct l2cap_pinfo *)sk->sk_protinfo)
+#define l2cap_pi(sk) ((struct l2cap_pinfo *) sk)
 
 struct l2cap_pinfo {
+	struct bt_sock	bt;
 	__u16		psm;
 	__u16		dcid;
 	__u16		scid;
@@ -253,7 +242,7 @@ struct l2cap_pinfo {
 	__u16		imtu;
 	__u16		omtu;
 	__u16		flush_to;
-	
+
 	__u32		link_mode;
 
 	__u8		conf_state;

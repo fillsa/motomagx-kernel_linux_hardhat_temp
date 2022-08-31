@@ -58,7 +58,7 @@ struct radix_tree_path {
 #define RADIX_TREE_INDEX_BITS  (8 /* CHAR_BIT */ * sizeof(unsigned long))
 #define RADIX_TREE_MAX_PATH (RADIX_TREE_INDEX_BITS/RADIX_TREE_MAP_SHIFT + 2)
 
-static unsigned long height_to_maxindex[RADIX_TREE_MAX_PATH];
+static unsigned long height_to_maxindex[RADIX_TREE_MAX_PATH] __read_mostly;
 
 /*
  * Radix tree node cache.
@@ -135,7 +135,6 @@ int radix_tree_preload(int gfp_mask)
 out:
 	return ret;
 }
-
 #endif
 
 static inline void tag_set(struct radix_tree_node *node, int tag, int offset)

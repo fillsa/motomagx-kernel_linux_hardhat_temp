@@ -9,7 +9,7 @@
  *
  * For licensing information, see the file 'LICENCE' in this directory.
  *
- * $Id: wbuf.c,v 1.91 2005/03/18 09:58:06 dedekind Exp $
+ * $Id: wbuf.c,v 1.92 2005/04/05 12:51:54 dedekind Exp $
  *
  */
 

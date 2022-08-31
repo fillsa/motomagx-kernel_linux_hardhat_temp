@@ -111,7 +111,7 @@ int qdisc_restart(struct net_device *dev)
 		if (!nolock) {
 #ifdef CONFIG_PREEMPT_RT
 			spin_lock(&dev->xmit_lock);
-			dev->xmit_lock_owner = _smp_processor_id();
+			dev->xmit_lock_owner = raw_smp_processor_id();
 #else
 			if (!spin_trylock(&dev->xmit_lock)) {
 			collision:
@@ -122,18 +122,17 @@ int qdisc_restart(struct net_device *dev)
 				   it by checking xmit owner and drop the
 				   packet when deadloop is detected.
 				*/
-				if (dev->xmit_lock_owner == _smp_processor_id()) {
+				if (dev->xmit_lock_owner == raw_smp_processor_id()) {
 					kfree_skb(skb);
 					if (net_ratelimit())
 						printk(KERN_DEBUG "Dead loop on netdevice %s, fix it urgently!\n", dev->name);
-
 					return -1;
 				}
 				__get_cpu_var(netdev_rx_stat).cpu_collision++;
 				goto requeue;
 			}
 			/* Remember that the driver is grabbed by us. */
-			dev->xmit_lock_owner = _smp_processor_id();
+			dev->xmit_lock_owner = raw_smp_processor_id();
 #endif
 		}
 		
@@ -207,10 +206,9 @@ int qdisc_restart(struct net_device *dev)
 requeue:
 		q->ops->requeue(skb, q);
 		netif_schedule(dev);
-
 		return 1;
 	}
-
+	BUG_ON((int) q->q.qlen < 0);
 	return q->q.qlen;
 }
 
@@ -274,31 +272,27 @@ static void dev_watchdog_down(struct net_device *dev)
    cheaper.
  */
 
-static int
-noop_enqueue(struct sk_buff *skb, struct Qdisc * qdisc)
+static int noop_enqueue(struct sk_buff *skb, struct Qdisc * qdisc)
 {
 	kfree_skb(skb);
 	return NET_XMIT_CN;
 }
 
-static struct sk_buff *
-noop_dequeue(struct Qdisc * qdisc)
+static struct sk_buff *noop_dequeue(struct Qdisc * qdisc)
 {
 	return NULL;
 }
 
-static int
-noop_requeue(struct sk_buff *skb, struct Qdisc* qdisc)
+static int noop_requeue(struct sk_buff *skb, struct Qdisc* qdisc)
 {
 	if (net_ratelimit())
-		printk(KERN_DEBUG "%s deferred output. It is buggy.\n", skb->dev->name);
+		printk(KERN_DEBUG "%s deferred output. It is buggy.\n",
+		       skb->dev->name);
 	kfree_skb(skb);
 	return NET_XMIT_CN;
 }
 
 struct Qdisc_ops noop_qdisc_ops = {
-	.next		=	NULL,
-	.cl_ops		=	NULL,
 	.id		=	"noop",
 	.priv_size	=	0,
 	.enqueue	=	noop_enqueue,
@@ -315,9 +309,7 @@ struct Qdisc noop_qdisc = {
 	.list		=	LIST_HEAD_INIT(noop_qdisc.list),
 };
 
-struct Qdisc_ops noqueue_qdisc_ops = {
-	.next		=	NULL,
-	.cl_ops		=	NULL,
+static struct Qdisc_ops noqueue_qdisc_ops = {
 	.id		=	"noqueue",
 	.priv_size	=	0,
 	.enqueue	=	noop_enqueue,
@@ -326,7 +318,7 @@ struct Qdisc_ops noqueue_qdisc_ops = {
 	.owner		=	THIS_MODULE,
 };
 
-struct Qdisc noqueue_qdisc = {
+static struct Qdisc noqueue_qdisc = {
 	.enqueue	=	NULL,
 	.dequeue	=	noop_dequeue,
 	.flags		=	TCQ_F_BUILTIN,
@@ -342,97 +334,86 @@ static const u8 prio2band[TC_PRIO_MAX+1] =
    generic prio+fifo combination.
  */
 
-static int
-pfifo_fast_enqueue(struct sk_buff *skb, struct Qdisc* qdisc)
+#define PFIFO_FAST_BANDS 3
+
+static inline struct sk_buff_head *prio2list(struct sk_buff *skb,
+					     struct Qdisc *qdisc)
 {
 	struct sk_buff_head *list = qdisc_priv(qdisc);
-
-	list += prio2band[skb->priority&TC_PRIO_MAX];
-
-	if (list->qlen < qdisc->dev->tx_queue_len) {
-		__skb_queue_tail(list, skb);
-		qdisc->q.qlen++;
-		qdisc->bstats.bytes += skb->len;
-		qdisc->bstats.packets++;
-		return 0;
-	}
-	qdisc->qstats.drops++;
-	kfree_skb(skb);
-	return NET_XMIT_DROP;
+	return list + prio2band[skb->priority & TC_PRIO_MAX];
 }
 
-static struct sk_buff *
-pfifo_fast_dequeue(struct Qdisc* qdisc)
+static int pfifo_fast_enqueue(struct sk_buff *skb, struct Qdisc* qdisc)
+{
+	struct sk_buff_head *list = prio2list(skb, qdisc);
+
+	if (skb_queue_len(list) < qdisc->dev->tx_queue_len) {
+		qdisc->q.qlen++;
+		return __qdisc_enqueue_tail(skb, qdisc, list);
+	}
+
+	return qdisc_drop(skb, qdisc);
+}
+
+static struct sk_buff *pfifo_fast_dequeue(struct Qdisc* qdisc)
 {
 	int prio;
 	struct sk_buff_head *list = qdisc_priv(qdisc);
-	struct sk_buff *skb;
 
-	for (prio = 0; prio < 3; prio++, list++) {
-		skb = __skb_dequeue(list);
-		if (skb) {
+	for (prio = 0; prio < PFIFO_FAST_BANDS; prio++) {
+		if (!skb_queue_empty(list + prio)) {
 			qdisc->q.qlen--;
-			return skb;
+			return __qdisc_dequeue_head(qdisc, list + prio);
 		}
 	}
+
 	return NULL;
 }
 
-static int
-pfifo_fast_requeue(struct sk_buff *skb, struct Qdisc* qdisc)
+static int pfifo_fast_requeue(struct sk_buff *skb, struct Qdisc* qdisc)
 {
-	struct sk_buff_head *list = qdisc_priv(qdisc);
-
-	list += prio2band[skb->priority&TC_PRIO_MAX];
-
-	__skb_queue_head(list, skb);
 	qdisc->q.qlen++;
-	qdisc->qstats.requeues++;
-	return 0;
+	return __qdisc_requeue(skb, qdisc, prio2list(skb, qdisc));
 }
 
-static void
-pfifo_fast_reset(struct Qdisc* qdisc)
+static void pfifo_fast_reset(struct Qdisc* qdisc)
 {
 	int prio;
 	struct sk_buff_head *list = qdisc_priv(qdisc);
 
-	for (prio=0; prio < 3; prio++)
-		skb_queue_purge(list+prio);
+	for (prio = 0; prio < PFIFO_FAST_BANDS; prio++)
+		__qdisc_reset_queue(qdisc, list + prio);
+
+	qdisc->qstats.backlog = 0;
 	qdisc->q.qlen = 0;
 }
 
 static int pfifo_fast_dump(struct Qdisc *qdisc, struct sk_buff *skb)
 {
-	unsigned char	 *b = skb->tail;
-	struct tc_prio_qopt opt;
+	struct tc_prio_qopt opt = { .bands = PFIFO_FAST_BANDS };
 
-	opt.bands = 3; 
 	memcpy(&opt.priomap, prio2band, TC_PRIO_MAX+1);
 	RTA_PUT(skb, TCA_OPTIONS, sizeof(opt), &opt);
 	return skb->len;
 
 rtattr_failure:
-	skb_trim(skb, b - skb->data);
 	return -1;
 }
 
 static int pfifo_fast_init(struct Qdisc *qdisc, struct rtattr *opt)
 {
-	int i;
+	int prio;
 	struct sk_buff_head *list = qdisc_priv(qdisc);
 
-	for (i=0; i<3; i++)
-		skb_queue_head_init(list+i);
+	for (prio = 0; prio < PFIFO_FAST_BANDS; prio++)
+		skb_queue_head_init(list + prio);
 
 	return 0;
 }
 
 static struct Qdisc_ops pfifo_fast_ops = {
-	.next		=	NULL,
-	.cl_ops		=	NULL,
 	.id		=	"pfifo_fast",
-	.priv_size	=	3 * sizeof(struct sk_buff_head),
+	.priv_size	=	PFIFO_FAST_BANDS * sizeof(struct sk_buff_head),
 	.enqueue	=	pfifo_fast_enqueue,
 	.dequeue	=	pfifo_fast_dequeue,
 	.requeue	=	pfifo_fast_requeue,
@@ -442,24 +423,23 @@ static struct Qdisc_ops pfifo_fast_ops = {
 	.owner		=	THIS_MODULE,
 };
 
-struct Qdisc * qdisc_create_dflt(struct net_device *dev, struct Qdisc_ops *ops)
+struct Qdisc *qdisc_alloc(struct net_device *dev, struct Qdisc_ops *ops)
 {
 	void *p;
 	struct Qdisc *sch;
-	int size;
+	unsigned int size;
+	int err = -ENOBUFS;
 
 	/* ensure that the Qdisc and the private data are 32-byte aligned */
-	size = ((sizeof(*sch) + QDISC_ALIGN_CONST) & ~QDISC_ALIGN_CONST);
-	size += ops->priv_size + QDISC_ALIGN_CONST;
+	size = QDISC_ALIGN(sizeof(*sch));
+	size += ops->priv_size + (QDISC_ALIGNTO - 1);
 
 	p = kmalloc(size, GFP_KERNEL);
 	if (!p)
-		return NULL;
+		goto errout;
 	memset(p, 0, size);
-
-	sch = (struct Qdisc *)(((unsigned long)p + QDISC_ALIGN_CONST) 
-			       & ~QDISC_ALIGN_CONST);
-	sch->padded = (char *)sch - (char *)p;
+	sch = (struct Qdisc *) QDISC_ALIGN((unsigned long) p);
+	sch->padded = (char *) sch - (char *) p;
 
 	INIT_LIST_HEAD(&sch->list);
 	skb_queue_head_init(&sch->q);
@@ -470,11 +450,25 @@ struct Qdisc * qdisc_create_dflt(struct net_device *dev, struct Qdisc_ops *ops)
 	dev_hold(dev);
 	sch->stats_lock = &dev->queue_lock;
 	atomic_set(&sch->refcnt, 1);
+
+	return sch;
+errout:
+	return ERR_PTR(-err);
+}
+
+struct Qdisc * qdisc_create_dflt(struct net_device *dev, struct Qdisc_ops *ops)
+{
+	struct Qdisc *sch;
+	
+	sch = qdisc_alloc(dev, ops);
+	if (IS_ERR(sch))
+		goto errout;
+
 	if (!ops->init || ops->init(sch, NULL) == 0)
 		return sch;
 
-	dev_put(dev);
-	kfree(p);
+	qdisc_destroy(sch);
+errout:
 	return NULL;
 }
 
@@ -571,6 +565,10 @@ void dev_activate(struct net_device *dev)
 		write_unlock_bh(&qdisc_tree_lock);
 	}
 
+	if (!netif_carrier_ok(dev))
+		/* Delay activation until next carrier-on event */
+		return;
+
 	spin_lock_bh(&dev->queue_lock);
 	rcu_assign_pointer(dev->qdisc, dev->qdisc_sleeping);
 	if (dev->qdisc != &noqueue_qdisc) {
@@ -634,6 +632,7 @@ EXPORT_SYMBOL(__netdev_watchdog_up);
 EXPORT_SYMBOL(noop_qdisc);
 EXPORT_SYMBOL(noop_qdisc_ops);
 EXPORT_SYMBOL(qdisc_create_dflt);
+EXPORT_SYMBOL(qdisc_alloc);
 EXPORT_SYMBOL(qdisc_destroy);
 EXPORT_SYMBOL(qdisc_reset);
 EXPORT_SYMBOL(qdisc_restart);

@@ -267,7 +267,7 @@ void kobject_hotplug(struct kobject *kobj, enum kobject_action action)
 	int i = 0;
 	int retval;
 	char *kobj_path = NULL;
-	char *name = NULL;
+	const char *name = NULL;
 	char *action_string;
 #ifdef CONFIG_MOT_FEAT_HOTPLUG_FILTER
         char *filter = NULL;
@@ -319,7 +319,7 @@ void kobject_hotplug(struct kobject *kobj, enum kobject_action action)
 	if (hotplug_ops->name)
 		name = hotplug_ops->name(kset, kobj);
 	if (name == NULL)
-		name = kset->kobj.name;
+		name = kobject_name(&kset->kobj);
 
 #ifdef CONFIG_MOT_FEAT_HOTPLUG_FILTER
 	if (hotplug_filters) {
@@ -337,7 +337,7 @@ void kobject_hotplug(struct kobject *kobj, enum kobject_action action)
 #endif
 
 	argv [0] = hotplug_path;
-	argv [1] = name;
+	argv [1] = (char *)name; /* won't be changed but 'const' has to go */
 	argv [2] = NULL;
 
 	/* minimal command environment */

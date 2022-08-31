@@ -88,7 +88,7 @@ int dn_fib_rtm_delrule(struct sk_buff *skb, struct nlmsghdr *nlh, void *arg)
 #endif
 			(!rtm->rtm_type || rtm->rtm_type == r->r_action) &&
 			(!rta[RTA_PRIORITY-1] || memcmp(RTA_DATA(rta[RTA_PRIORITY-1]), &r->r_preference, 4) == 0) &&
-			(!rta[RTA_IIF-1] || strcmp(RTA_DATA(rta[RTA_IIF-1]), r->r_ifname) == 0) &&
+			(!rta[RTA_IIF-1] || rtattr_strcmp(rta[RTA_IIF-1], r->r_ifname) == 0) &&
 			(!rtm->rtm_table || (r && rtm->rtm_table == r->r_table))) {
 
 			err = -EPERM;
@@ -170,8 +170,7 @@ int dn_fib_rtm_newrule(struct sk_buff *skb, struct nlmsghdr *nlh, void *arg)
 	new_r->r_table = table_id;
 	if (rta[RTA_IIF-1]) {
 		struct net_device *dev;
-		memcpy(new_r->r_ifname, RTA_DATA(rta[RTA_IIF-1]), IFNAMSIZ);
-		new_r->r_ifname[IFNAMSIZ-1] = 0;
+		rtattr_strlcpy(new_r->r_ifname, rta[RTA_IIF-1], IFNAMSIZ);
 		new_r->r_ifindex = -1;
 		dev = dev_get_by_name(new_r->r_ifname);
 		if (dev) {
@@ -343,14 +342,15 @@ static struct notifier_block dn_fib_rules_notifier = {
 	.notifier_call =	dn_fib_rules_event,
 };
 
-static int dn_fib_fill_rule(struct sk_buff *skb, struct dn_fib_rule *r, struct netlink_callback *cb)
+static int dn_fib_fill_rule(struct sk_buff *skb, struct dn_fib_rule *r,
+			    struct netlink_callback *cb, unsigned int flags)
 {
 	struct rtmsg *rtm;
 	struct nlmsghdr *nlh;
 	unsigned char *b = skb->tail;
 
 
-	nlh = NLMSG_PUT(skb, NETLINK_CREDS(cb->skb)->pid, cb->nlh->nlmsg_seq, RTM_NEWRULE, sizeof(*rtm));
+	nlh = NLMSG_NEW_ANSWER(skb, cb, RTM_NEWRULE, sizeof(*rtm), flags);
 	rtm = NLMSG_DATA(nlh);
 	rtm->rtm_family = AF_DECnet;
 	rtm->rtm_dst_len = r->r_dst_len;
@@ -395,7 +395,7 @@ int dn_fib_dump_rules(struct sk_buff *skb, struct netlink_callback *cb)
 	for(r = dn_fib_rules, idx = 0; r; r = r->r_next, idx++) {
 		if (idx < s_idx)
 			continue;
-		if (dn_fib_fill_rule(skb, r, cb) < 0)
+		if (dn_fib_fill_rule(skb, r, cb, NLM_F_MULTI) < 0)
 			break;
 	}
 	read_unlock(&dn_fib_rules_lock);

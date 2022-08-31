@@ -1,7 +1,7 @@
 #
 # Automatically generated make config: don't edit
-# Linux kernel version: 2.6.10
-# Mon Dec 27 19:10:58 2004
+# Linux kernel version: 2.6.11-rc2
+# Wed Jan 26 02:49:06 2005
 #
 CONFIG_MIPS=y
 # CONFIG_MIPS64 is not set
@@ -126,6 +126,20 @@ CONFIG_PCI_NAMES=y
 CONFIG_MMU=y
 
 #
+# PCCARD (PCMCIA/CardBus) support
+#
+# CONFIG_PCCARD is not set
+
+#
+# PC-card bridges
+#
+
+#
+# PCI Hotplug Support
+#
+# CONFIG_HOTPLUG_PCI is not set
+
+#
 # Executable file formats
 #
 CONFIG_BINFMT_ELF=y
@@ -141,6 +155,7 @@ CONFIG_TRAD_SIGNALS=y
 #
 CONFIG_STANDALONE=y
 CONFIG_PREVENT_FIRMWARE_BUILD=y
+# CONFIG_FW_LOADER is not set
 
 #
 # Memory Technology Devices (MTD)
@@ -164,10 +179,12 @@ CONFIG_PREVENT_FIRMWARE_BUILD=y
 # CONFIG_BLK_CPQ_CISS_DA is not set
 # CONFIG_BLK_DEV_DAC960 is not set
 # CONFIG_BLK_DEV_UMEM is not set
+# CONFIG_BLK_DEV_COW_COMMON is not set
 # CONFIG_BLK_DEV_LOOP is not set
 # CONFIG_BLK_DEV_NBD is not set
 # CONFIG_BLK_DEV_SX8 is not set
 # CONFIG_BLK_DEV_RAM is not set
+CONFIG_BLK_DEV_RAM_COUNT=16
 CONFIG_BLK_DEV_RAM_COUNT=16
 CONFIG_INITRAMFS_SOURCE=""
 # CONFIG_LBD is not set
@@ -182,6 +199,7 @@ CONFIG_IOSCHED_NOOP=y
 CONFIG_IOSCHED_AS=y
 CONFIG_IOSCHED_DEADLINE=y
 CONFIG_IOSCHED_CFQ=y
+CONFIG_ATA_OVER_ETH=y
 
 #
 # ATA/ATAPI/MFM/RLL support
@@ -384,6 +402,7 @@ CONFIG_SERIO=y
 CONFIG_SERIO_SERPORT=y
 # CONFIG_SERIO_CT82C710 is not set
 # CONFIG_SERIO_PCIPS2 is not set
+# CONFIG_SERIO_LIBPS2 is not set
 CONFIG_SERIO_RAW=y
 
 #
@@ -409,6 +428,7 @@ CONFIG_SERIAL_NONSTANDARD=y
 # CONFIG_DIGI is not set
 # CONFIG_MOXA_INTELLIO is not set
 # CONFIG_MOXA_SMARTIO is not set
+# CONFIG_ISI is not set
 # CONFIG_SYNCLINK is not set
 # CONFIG_SYNCLINKMP is not set
 # CONFIG_N_HDLC is not set
@@ -483,6 +503,7 @@ CONFIG_LEGACY_PTY_COUNT=256
 # Graphics support
 #
 CONFIG_FB=y
+CONFIG_FB=y
 # CONFIG_FB_MODE_HELPERS is not set
 # CONFIG_FB_TILEBLITTING is not set
 # CONFIG_FB_CIRRUS is not set
@@ -517,6 +538,7 @@ CONFIG_DUMMY_CONSOLE=y
 # Logo configuration
 #
 # CONFIG_LOGO is not set
+# CONFIG_BACKLIGHT_LCD_SUPPORT is not set
 
 #
 # Sound
@@ -535,9 +557,23 @@ CONFIG_USB_ARCH_HAS_OHCI=y
 #
 
 #
+# NOTE: USB_STORAGE enables SCSI, and 'SCSI disk support' may also be needed; see USB_STORAGE Help for more information
+#
+
+#
 # USB Gadget Support
 #
 # CONFIG_USB_GADGET is not set
+
+#
+# MMC/SD Card support
+#
+# CONFIG_MMC is not set
+
+#
+# InfiniBand support
+#
+# CONFIG_INFINIBAND is not set
 
 #
 # MMC/SD Card support
@@ -638,6 +674,11 @@ CONFIG_MSDOS_PARTITION=y
 # CONFIG_PROFILING is not set
 
 #
+# Profiling support
+#
+# CONFIG_PROFILING is not set
+
+#
 # Kernel hacking
 #
 # CONFIG_DEBUG_KERNEL is not set
@@ -655,6 +696,10 @@ CONFIG_KEYS_DEBUG_PROC_KEYS=y
 # Cryptographic options
 #
 # CONFIG_CRYPTO is not set
+
+#
+# Hardware crypto devices
+#
 
 #
 # Library routines

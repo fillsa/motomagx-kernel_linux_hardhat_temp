@@ -162,7 +162,7 @@ config S390_TAPE_BLOCK
 	  devices using the block device interface.  This interface is similar
 	  to CD-ROM devices on other platforms.  The tapes can only be
 	  accessed read-only when using this interface.  Have a look at
-	  Documentation/s390/TAPE for further information about creating
+	  <file:Documentation/s390/TAPE> for further information about creating
 	  volumes for and using this interface.  It is safe to say "Y" here.
 
 comment "S/390 tape hardware support"
@@ -186,6 +186,13 @@ config VMLOGRDR
 	  by the z/VM recording system services, eg. from *LOGREC, *ACCOUNT or
 	  *SYMPTOM.
 	  This driver depends on the IUCV support driver.
+
+config VMCP
+	tristate "Support for the z/VM CP interface (VM only)"
+	help
+	  Select this option if you want to be able to interact with the control
+	  program on z/VM
+
 
 config MONREADER
 	tristate "API for reading z/VM monitor service records"

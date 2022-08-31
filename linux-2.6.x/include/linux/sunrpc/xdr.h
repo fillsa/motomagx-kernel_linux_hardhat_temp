@@ -95,7 +95,6 @@ u32 *	xdr_decode_string(u32 *p, char **sp, int *lenp, int maxlen);
 u32 *	xdr_decode_string_inplace(u32 *p, char **sp, int *lenp, int maxlen);
 u32 *	xdr_encode_netobj(u32 *p, const struct xdr_netobj *);
 u32 *	xdr_decode_netobj(u32 *p, struct xdr_netobj *);
-u32 *	xdr_decode_netobj_fixed(u32 *p, void *obj, unsigned int len);
 
 void	xdr_encode_pages(struct xdr_buf *, struct page **, unsigned int,
 			 unsigned int);
@@ -135,8 +134,6 @@ xdr_adjust_iovec(struct kvec *iov, u32 *p)
 	return iov->iov_len = ((u8 *) p - (u8 *) iov->iov_base);
 }
 
-void xdr_shift_iovec(struct kvec *, int, size_t);
-
 /*
  * Maximum number of iov's we use.
  */
@@ -145,14 +142,12 @@ void xdr_shift_iovec(struct kvec *, int, size_t);
 /*
  * XDR buffer helper functions
  */
-extern int xdr_kmap(struct kvec *, struct xdr_buf *, size_t);
-extern void xdr_kunmap(struct xdr_buf *, size_t);
 extern void xdr_shift_buf(struct xdr_buf *, size_t);
-extern void _copy_from_pages(char *, struct page **, size_t, size_t);
 extern void xdr_buf_from_iov(struct kvec *, struct xdr_buf *);
 extern int xdr_buf_subsegment(struct xdr_buf *, struct xdr_buf *, int, int);
 extern int xdr_buf_read_netobj(struct xdr_buf *, struct xdr_netobj *, int);
-extern int read_bytes_from_xdr_buf(struct xdr_buf *buf, int base, void *obj, int len);
+extern int read_bytes_from_xdr_buf(struct xdr_buf *, int, void *, int);
+extern int write_bytes_to_xdr_buf(struct xdr_buf *, int, void *, int);
 
 /*
  * Helper structure for copying from an sk_buff.
@@ -166,13 +161,30 @@ typedef struct {
 
 typedef size_t (*skb_read_actor_t)(skb_reader_t *desc, void *to, size_t len);
 
-extern void xdr_partial_copy_from_skb(struct xdr_buf *, unsigned int,
+extern ssize_t xdr_partial_copy_from_skb(struct xdr_buf *, unsigned int,
 		skb_reader_t *, skb_read_actor_t);
 
 struct socket;
 struct sockaddr;
 extern int xdr_sendpages(struct socket *, struct sockaddr *, int,
 		struct xdr_buf *, unsigned int, int);
+
+extern int xdr_encode_word(struct xdr_buf *, int, u32);
+extern int xdr_decode_word(struct xdr_buf *, int, u32 *);
+
+struct xdr_array2_desc;
+typedef int (*xdr_xcode_elem_t)(struct xdr_array2_desc *desc, void *elem);
+struct xdr_array2_desc {
+	unsigned int elem_size;
+	unsigned int array_len;
+	unsigned int array_maxlen;
+	xdr_xcode_elem_t xcode;
+};
+
+extern int xdr_decode_array2(struct xdr_buf *buf, unsigned int base,
+                             struct xdr_array2_desc *desc);
+extern int xdr_encode_array2(struct xdr_buf *buf, unsigned int base,
+			     struct xdr_array2_desc *desc);
 
 /*
  * Provide some simple tools for XDR buffer overflow-checking etc.

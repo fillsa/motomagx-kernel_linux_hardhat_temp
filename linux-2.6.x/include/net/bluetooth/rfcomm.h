@@ -1,5 +1,5 @@
-/*
-   RFCOMM implementation for Linux Bluetooth(R) stack (BlueZ).
+/* 
+   RFCOMM implementation for Linux Bluetooth stack (BlueZ).
 
    Portions of this file were based on linux-2.6.10/include/net/bluetooth/rfcomm.h
    from kernel.org found in the release of linux-2.6.10 here www.kernel.org/pub/linux/kernel/v2.6/
@@ -21,13 +21,13 @@
    OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
    FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT OF THIRD PARTY RIGHTS.
    IN NO EVENT SHALL THE COPYRIGHT HOLDER(S) AND AUTHOR(S) BE LIABLE FOR ANY
-   CLAIM, OR ANY SPECIAL INDIRECT OR CONSEQUENTIAL DAMAGES, OR ANY DAMAGES
-   WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN
-   ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF
+   CLAIM, OR ANY SPECIAL INDIRECT OR CONSEQUENTIAL DAMAGES, OR ANY DAMAGES 
+   WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN 
+   ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF 
    OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
 
-   ALL LIABILITY, INCLUDING LIABILITY FOR INFRINGEMENT OF ANY PATENTS,
-   COPYRIGHTS, TRADEMARKS OR OTHER RIGHTS, RELATING TO USE OF THIS
+   ALL LIABILITY, INCLUDING LIABILITY FOR INFRINGEMENT OF ANY PATENTS, 
+   COPYRIGHTS, TRADEMARKS OR OTHER RIGHTS, RELATING TO USE OF THIS 
    SOFTWARE IS DISCLAIMED.
 
    Copyright (C) 2005-2007 - Motorola
@@ -47,8 +47,6 @@
 
 */
 
-
-
 #ifndef __RFCOMM_H
 #define __RFCOMM_H
 
@@ -56,7 +54,7 @@
 
 #define RFCOMM_CONN_TIMEOUT (HZ * 60)
 #define RFCOMM_DISC_TIMEOUT (HZ * 20)
-#define RFCOMM_AUTHENTICATION_TIMEOUT (HZ * 60)
+#define RFCOMM_AUTHENTICATION_TIMEOUT (HZ * 60) //2.6.12	+#define RFCOMM_AUTH_TIMEOUT (HZ * 25)
 
 #define RFCOMM_SESSION_TIMEOUT_USED (HZ * 1)
 #define RFCOMM_SESSION_TIMEOUT_NEW  (HZ * 60)
@@ -236,7 +234,10 @@ struct rfcomm_dlc {
 #define RFCOMM_RX_THROTTLED 0
 #define RFCOMM_TX_THROTTLED 1
 #define RFCOMM_TIMED_OUT    2
-#define RFCOMM_MSC_PENDING  3
+#define RFCOMM_MSC_PENDING  3 
+/*2.6 #define RFCOMM_AUTH_PENDING 4
+#define RFCOMM_AUTH_ACCEPT  5
+#define RFCOMM_AUTH_REJECT  6*/
 #define RFCOMM_AUTHENTICATION_PENDING 4
 #define RFCOMM_AUTHENTICATION_ACCEPT  5
 #define RFCOMM_AUTHENTICATION_REJECT  6
@@ -345,19 +346,21 @@ struct rfcomm_conninfo {
 } __attribute__ ((packed));
 
 #define RFCOMM_LM	0x03
-#define RFCOMM_LM_MASTER        0x0001
-#define RFCOMM_LM_AUTHENTICATE  0x0002
-#define RFCOMM_LM_ENCRYPT       0x0004
-#define RFCOMM_LM_TRUSTED       0x0008
-#define RFCOMM_LM_RELIABLE      0x0010
-#define RFCOMM_LM_SECURE        0x0020
+#define RFCOMM_LM_MASTER	0x0001
+#define RFCOMM_LM_AUTHENTICATE  0x0002 //2.6.12	+#define RFCOMM_LM_AUTH		0x0002
+#define RFCOMM_LM_ENCRYPT	0x0004
+#define RFCOMM_LM_TRUSTED	0x0008
+#define RFCOMM_LM_RELIABLE	0x0010
+#define RFCOMM_LM_SECURE	0x0020
 #define RFCOMM_LM_AUTHORIZE     0x0040
 
 #define RFCOMM_FLOW_ON_TTY_OPEN 0x04
 
-#define rfcomm_pi(sk)   ((struct rfcomm_pinfo *)sk->sk_protinfo)
+#define rfcomm_pi(sk) ((struct rfcomm_pinfo *) sk)
+// do 2.6.12 #define rfcomm_pi(sk)   ((struct rfcomm_pinfo *)sk->sk_protinfo)
 
 struct rfcomm_pinfo {
+	struct bt_sock bt;
 	struct rfcomm_dlc   *dlc;
 	u8     channel;
 	u32    link_mode;
@@ -371,11 +374,11 @@ int  rfcomm_connect_ind(struct rfcomm_session *s, u8 channel, struct rfcomm_dlc 
 /* ---- RFCOMM TTY ---- */
 #define RFCOMM_MAX_DEV  256
 
-#define RFCOMMCREATEDEV         _IOW('R', 200, int)
-#define RFCOMMRELEASEDEV        _IOW('R', 201, int)
-#define RFCOMMGETDEVLIST        _IOR('R', 210, int)
-#define RFCOMMGETDEVINFO        _IOR('R', 211, int)
-#define RFCOMMSTEALDLC          _IOW('R', 220, int)
+#define RFCOMMCREATEDEV		_IOW('R', 200, int)
+#define RFCOMMRELEASEDEV	_IOW('R', 201, int)
+#define RFCOMMGETDEVLIST	_IOR('R', 210, int)
+#define RFCOMMGETDEVINFO	_IOR('R', 211, int)
+#define RFCOMMSTEALDLC		_IOW('R', 220, int)
 #define RFCOMMSETAUTHORIZATION  _IOW('R', 230, int)
 
 #define RFCOMM_REUSE_DLC      0
@@ -389,7 +392,7 @@ struct rfcomm_dev_req {
 	bdaddr_t src;
 	bdaddr_t dst;
 	u8       channel;
-
+	
 } __attribute__ ((packed));
 
 struct rfcomm_dev_info {

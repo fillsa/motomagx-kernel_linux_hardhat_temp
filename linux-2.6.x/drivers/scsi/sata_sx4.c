@@ -188,6 +188,7 @@ static Scsi_Host_Template pdc_sata_sht = {
 	.dma_boundary		= ATA_DMA_BOUNDARY,
 	.slave_configure	= ata_scsi_slave_config,
 	.bios_param		= ata_std_bios_param,
+	.ordered_flush		= 1,
 };
 
 static struct ata_port_operations pdc_20621_ops = {
@@ -244,6 +245,8 @@ static void pdc20621_host_stop(struct ata_host_set *host_set)
 
 	iounmap(dimm_mmio);
 	kfree(hpriv);
+
+	ata_host_stop(host_set);
 }
 
 static int pdc_port_start(struct ata_port *ap)
@@ -465,7 +468,7 @@ static void pdc20621_dma_prep(struct ata_queued_cmd *qc)
 	for (i = 0; i < last; i++) {
 		buf[idx++] = cpu_to_le32(sg_dma_address(&sg[i]));
 		buf[idx++] = cpu_to_le32(sg_dma_len(&sg[i]));
-		total_len += sg[i].length;
+		total_len += sg_dma_len(&sg[i]);
 	}
 	buf[idx - 1] |= cpu_to_le32(ATA_PRD_EOT);
 	sgt_len = idx * 4;
@@ -1366,6 +1369,7 @@ static int pdc_sata_init_one (struct pci_dev *pdev, const struct pci_device_id *
 	void *mmio_base, *dimm_mmio = NULL;
 	struct pdc_host_priv *hpriv = NULL;
 	unsigned int board_idx = (unsigned int) ent->driver_data;
+	int pci_dev_busy = 0;
 	int rc;
 
 	if (!printed_version++)
@@ -1380,8 +1384,10 @@ static int pdc_sata_init_one (struct pci_dev *pdev, const struct pci_device_id *
 		return rc;
 
 	rc = pci_request_regions(pdev, DRV_NAME);
-	if (rc)
+	if (rc) {
+		pci_dev_busy = 1;
 		goto err_out;
+	}
 
 	rc = pci_set_dma_mask(pdev, ATA_DMA_MASK);
 	if (rc)
@@ -1471,7 +1477,8 @@ err_out_free_ent:
 err_out_regions:
 	pci_release_regions(pdev);
 err_out:
-	pci_disable_device(pdev);
+	if (!pci_dev_busy)
+		pci_disable_device(pdev);
 	return rc;
 }
 

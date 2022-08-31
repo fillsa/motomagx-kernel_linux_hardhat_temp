@@ -457,7 +457,7 @@ static int catc_ctrl_msg(struct catc *catc, u8 dir, u8 request, u16 value, u16 i
 {
         int retval = usb_control_msg(catc->usbdev,
 		dir ? usb_rcvctrlpipe(catc->usbdev, 0) : usb_sndctrlpipe(catc->usbdev, 0),
-		 request, 0x40 | dir, value, index, buf, len, HZ);
+		 request, 0x40 | dir, value, index, buf, len, 1000);
         return retval < 0 ? retval : 0;
 }
 
@@ -664,7 +664,8 @@ static void catc_set_multicast_list(struct net_device *netdev)
 	}
 }
 
-void catc_get_drvinfo(struct net_device *dev, struct ethtool_drvinfo *info)
+static void catc_get_drvinfo(struct net_device *dev,
+			     struct ethtool_drvinfo *info)
 {
 	struct catc *catc = netdev_priv(dev);
 	strncpy(info->driver, driver_name, ETHTOOL_BUSINFO_LEN);
@@ -800,8 +801,9 @@ static int catc_probe(struct usb_interface *intf, const struct usb_device_id *id
 	}
 
 	/* The F5U011 has the same vendor/product as the netmate but a device version of 0x130 */
-	if (usbdev->descriptor.idVendor == 0x0423 && usbdev->descriptor.idProduct == 0xa &&
-	   catc->usbdev->descriptor.bcdDevice == 0x0130	) {
+	if (le16_to_cpu(usbdev->descriptor.idVendor) == 0x0423 && 
+	    le16_to_cpu(usbdev->descriptor.idProduct) == 0xa &&
+	    le16_to_cpu(catc->usbdev->descriptor.bcdDevice) == 0x0130) {
 		dbg("Testing for f5u011");
 		catc->is_f5u011 = 1;		
 		atomic_set(&catc->recq_sz, 0);

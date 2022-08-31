@@ -4,6 +4,10 @@
  * Copyright (c) 2001 Tony Luck <tony.luck@intel.com>
  * Copyright (c) 2002 NEC Corp.
  * Copyright (c) 2002 Kimio Suganuma <k-suganuma@da.jp.nec.com>
+ * Copyright (c) 2004 Silicon Graphics, Inc
+ *	Russ Anderson <rja@sgi.com>
+ *	Jesse Barnes <jbarnes@sgi.com>
+ *	Jack Steiner <steiner@sgi.com>
  */
 
 /*
@@ -39,142 +43,8 @@ struct early_node_data {
 	unsigned long max_pfn;
 };
 
-static struct early_node_data mem_data[NR_NODES] __initdata;
-
-/**
- * reassign_cpu_only_nodes - called from find_memory to move CPU-only nodes to a memory node
- *
- * This function will move nodes with only CPUs (no memory)
- * to a node with memory which is at the minimum numa_slit distance.
- * Any reassigments will result in the compression of the nodes
- * and renumbering the nid values where appropriate.
- * The static declarations below are to avoid large stack size which
- * makes the code not re-entrant.
- */
-static void __init reassign_cpu_only_nodes(void)
-{
-	struct node_memblk_s *p;
-	int i, j, k, nnode, nid, cpu, cpunid, pxm;
-	u8 cslit, slit;
-	static DECLARE_BITMAP(nodes_with_mem, NR_NODES) __initdata;
-	static u8 numa_slit_fix[MAX_NUMNODES * MAX_NUMNODES] __initdata;
-	static int node_flip[NR_NODES] __initdata;
-	static int old_nid_map[NR_CPUS] __initdata;
-
-	for (nnode = 0, p = &node_memblk[0]; p < &node_memblk[num_node_memblks]; p++)
-		if (!test_bit(p->nid, (void *) nodes_with_mem)) {
-			set_bit(p->nid, (void *) nodes_with_mem);
-			nnode++;
-		}
-
-	/*
-	 * All nids with memory.
-	 */
-	if (nnode == numnodes)
-		return;
-
-	/*
-	 * Change nids and attempt to migrate CPU-only nodes
-	 * to the best numa_slit (closest neighbor) possible.
-	 * For reassigned CPU nodes a nid can't be arrived at
-	 * until after this loop because the target nid's new
-	 * identity might not have been established yet. So
-	 * new nid values are fabricated above numnodes and
-	 * mapped back later to their true value.
-	 */
-	for (nid = 0, i = 0; i < numnodes; i++)  {
-		if (test_bit(i, (void *) nodes_with_mem)) {
-			/*
-			 * Save original nid value for numa_slit
-			 * fixup and node_cpuid reassignments.
-			 */
-			node_flip[nid] = i;
-
-			if (i == nid) {
-				nid++;
-				continue;
-			}
-
-			for (p = &node_memblk[0]; p < &node_memblk[num_node_memblks]; p++)
-				if (p->nid == i)
-					p->nid = nid;
-
-			cpunid = nid;
-			nid++;
-		} else
-			cpunid = numnodes;
-
-		for (cpu = 0; cpu < NR_CPUS; cpu++)
-			if (node_cpuid[cpu].nid == i) {
-				/*
-				 * For nodes not being reassigned just
-				 * fix the cpu's nid and reverse pxm map
-				 */
-				if (cpunid < numnodes) {
-					pxm = nid_to_pxm_map[i];
-					pxm_to_nid_map[pxm] =
-					          node_cpuid[cpu].nid = cpunid;
-					continue;
-				}
-
-				/*
-				 * For nodes being reassigned, find best node by
-				 * numa_slit information and then make a temporary
-				 * nid value based on current nid and numnodes.
-				 */
-				for (slit = 0xff, k = numnodes + numnodes, j = 0; j < numnodes; j++)
-					if (i == j)
-						continue;
-					else if (test_bit(j, (void *) nodes_with_mem)) {
-						cslit = numa_slit[i * numnodes + j];
-						if (cslit < slit) {
-							k = numnodes + j;
-							slit = cslit;
-						}
-					}
-
-				/* save old nid map so we can update the pxm */
-				old_nid_map[cpu] = node_cpuid[cpu].nid;
-				node_cpuid[cpu].nid = k;
-			}
-	}
-
-	/*
-	 * Fixup temporary nid values for CPU-only nodes.
-	 */
-	for (cpu = 0; cpu < NR_CPUS; cpu++)
-		if (node_cpuid[cpu].nid == (numnodes + numnodes)) {
-			pxm = nid_to_pxm_map[old_nid_map[cpu]];
-			pxm_to_nid_map[pxm] = node_cpuid[cpu].nid = nnode - 1;
-		} else {
-			for (i = 0; i < nnode; i++) {
-				if (node_flip[i] != (node_cpuid[cpu].nid - numnodes))
-					continue;
-
-				pxm = nid_to_pxm_map[old_nid_map[cpu]];
-				pxm_to_nid_map[pxm] = node_cpuid[cpu].nid = i;
-				break;
-			}
-		}
-
-	/*
-	 * Fix numa_slit by compressing from larger
-	 * nid array to reduced nid array.
-	 */
-	for (i = 0; i < nnode; i++)
-		for (j = 0; j < nnode; j++)
-			numa_slit_fix[i * nnode + j] =
-				numa_slit[node_flip[i] * numnodes + node_flip[j]];
-
-	memcpy(numa_slit, numa_slit_fix, sizeof (numa_slit));
-
-	for (i = nnode; i < numnodes; i++)
-		node_set_offline(i);
-
-	numnodes = nnode;
-
-	return;
-}
+static struct early_node_data mem_data[MAX_NUMNODES] __initdata;
+static nodemask_t memory_less_mask __initdata;
 
 /*
  * To prevent cache aliasing effects, align per-node structures so that they
@@ -225,9 +95,9 @@ static int __init build_node_maps(unsigned long start, unsigned long len,
  *
  * Count the number of cpus on @node.  We can't use nr_cpus_node() yet because
  * acpi_boot_init() (which builds the node_to_cpu_mask array) hasn't been
- * called yet.
+ * called yet.  Note that node 0 will also count all non-existent cpus.
  */
-static int early_nr_cpus_node(int node)
+static int __init early_nr_cpus_node(int node)
 {
 	int cpu, n = 0;
 
@@ -236,6 +106,85 @@ static int early_nr_cpus_node(int node)
 			n++;
 
 	return n;
+}
+
+/**
+ * compute_pernodesize - compute size of pernode data
+ * @node: the node id.
+ */
+static unsigned long __init compute_pernodesize(int node)
+{
+	unsigned long pernodesize = 0, cpus;
+
+	cpus = early_nr_cpus_node(node);
+	pernodesize += PERCPU_PAGE_SIZE * cpus;
+	pernodesize += node * L1_CACHE_BYTES;
+	pernodesize += L1_CACHE_ALIGN(sizeof(pg_data_t));
+	pernodesize += L1_CACHE_ALIGN(sizeof(struct ia64_node_data));
+	pernodesize = PAGE_ALIGN(pernodesize);
+	return pernodesize;
+}
+
+/**
+ * per_cpu_node_setup - setup per-cpu areas on each node
+ * @cpu_data: per-cpu area on this node
+ * @node: node to setup
+ *
+ * Copy the static per-cpu data into the region we just set aside and then
+ * setup __per_cpu_offset for each CPU on this node.  Return a pointer to
+ * the end of the area.
+ */
+static void *per_cpu_node_setup(void *cpu_data, int node)
+{
+#ifdef CONFIG_SMP
+	int cpu;
+
+	for (cpu = 0; cpu < NR_CPUS; cpu++) {
+		if (node == node_cpuid[cpu].nid) {
+			memcpy(__va(cpu_data), __phys_per_cpu_start,
+			       __per_cpu_end - __per_cpu_start);
+			__per_cpu_offset[cpu] = (char*)__va(cpu_data) -
+				__per_cpu_start;
+			cpu_data += PERCPU_PAGE_SIZE;
+		}
+	}
+#endif
+	return cpu_data;
+}
+
+/**
+ * fill_pernode - initialize pernode data.
+ * @node: the node id.
+ * @pernode: physical address of pernode data
+ * @pernodesize: size of the pernode data
+ */
+static void __init fill_pernode(int node, unsigned long pernode,
+	unsigned long pernodesize)
+{
+	void *cpu_data;
+	int cpus = early_nr_cpus_node(node);
+	struct bootmem_data *bdp = &mem_data[node].bootmem_data;
+
+	mem_data[node].pernode_addr = pernode;
+	mem_data[node].pernode_size = pernodesize;
+	memset(__va(pernode), 0, pernodesize);
+
+	cpu_data = (void *)pernode;
+	pernode += PERCPU_PAGE_SIZE * cpus;
+	pernode += node * L1_CACHE_BYTES;
+
+	mem_data[node].pgdat = __va(pernode);
+	pernode += L1_CACHE_ALIGN(sizeof(pg_data_t));
+
+	mem_data[node].node_data = __va(pernode);
+	pernode += L1_CACHE_ALIGN(sizeof(struct ia64_node_data));
+
+	mem_data[node].pgdat->bdata = bdp;
+	pernode += L1_CACHE_ALIGN(sizeof(pg_data_t));
+
+	cpu_data = per_cpu_node_setup(cpu_data, node);
+
+	return;
 }
 
 /**
@@ -252,7 +201,7 @@ static int early_nr_cpus_node(int node)
  *   |                        |
  *   |~~~~~~~~~~~~~~~~~~~~~~~~| <-- NODEDATA_ALIGN(start, node) for the first
  *   |    PERCPU_PAGE_SIZE *  |     start and length big enough
- *   |        NR_CPUS         |
+ *   |    cpus_on_this_node   | Node 0 will also have entries for all non-existent cpus.
  *   |------------------------|
  *   |   local pg_data_t *    |
  *   |------------------------|
@@ -269,9 +218,8 @@ static int early_nr_cpus_node(int node)
 static int __init find_pernode_space(unsigned long start, unsigned long len,
 				     int node)
 {
-	unsigned long epfn, cpu, cpus;
+	unsigned long epfn;
 	unsigned long pernodesize = 0, pernode, pages, mapsize;
-	void *cpu_data;
 	struct bootmem_data *bdp = &mem_data[node].bootmem_data;
 
 	epfn = (start + len) >> PAGE_SHIFT;
@@ -294,46 +242,12 @@ static int __init find_pernode_space(unsigned long start, unsigned long len,
 	 * Calculate total size needed, incl. what's necessary
 	 * for good alignment and alias prevention.
 	 */
-	cpus = early_nr_cpus_node(node);
-	pernodesize += PERCPU_PAGE_SIZE * cpus;
-	pernodesize += L1_CACHE_ALIGN(sizeof(pg_data_t));
-	pernodesize += L1_CACHE_ALIGN(sizeof(struct ia64_node_data));
-	pernodesize = PAGE_ALIGN(pernodesize);
+	pernodesize = compute_pernodesize(node);
 	pernode = NODEDATA_ALIGN(start, node);
 
 	/* Is this range big enough for what we want to store here? */
-	if (start + len > (pernode + pernodesize + mapsize)) {
-		mem_data[node].pernode_addr = pernode;
-		mem_data[node].pernode_size = pernodesize;
-		memset(__va(pernode), 0, pernodesize);
-
-		cpu_data = (void *)pernode;
-		pernode += PERCPU_PAGE_SIZE * cpus;
-
-		mem_data[node].pgdat = __va(pernode);
-		pernode += L1_CACHE_ALIGN(sizeof(pg_data_t));
-
-		mem_data[node].node_data = __va(pernode);
-		pernode += L1_CACHE_ALIGN(sizeof(struct ia64_node_data));
-
-		mem_data[node].pgdat->bdata = bdp;
-		pernode += L1_CACHE_ALIGN(sizeof(pg_data_t));
-
-		/*
-		 * Copy the static per-cpu data into the region we
-		 * just set aside and then setup __per_cpu_offset
-		 * for each CPU on this node.
-		 */
-		for (cpu = 0; cpu < NR_CPUS; cpu++) {
-			if (node == node_cpuid[cpu].nid) {
-				memcpy(__va(cpu_data), __phys_per_cpu_start,
-				       __per_cpu_end - __per_cpu_start);
-				__per_cpu_offset[cpu] = (char*)__va(cpu_data) -
-					__per_cpu_start;
-				cpu_data += PERCPU_PAGE_SIZE;
-			}
-		}
-	}
+	if (start + len > (pernode + pernodesize + mapsize))
+		fill_pernode(node, pernode, pernodesize);
 
 	return 0;
 }
@@ -370,8 +284,11 @@ static void __init reserve_pernode_space(void)
 	struct bootmem_data *bdp;
 	int node;
 
-	for (node = 0; node < numnodes; node++) {
+	for_each_online_node(node) {
 		pg_data_t *pdp = mem_data[node].pgdat;
+
+		if (node_isset(node, memory_less_mask))
+			continue;
 
 		bdp = pdp->bdata;
 
@@ -398,23 +315,110 @@ static void __init reserve_pernode_space(void)
  */
 static void __init initialize_pernode_data(void)
 {
+	pg_data_t *pgdat_list[MAX_NUMNODES];
 	int cpu, node;
-	pg_data_t *pgdat_list[NR_NODES];
 
-	for (node = 0; node < numnodes; node++)
+	for_each_online_node(node)
 		pgdat_list[node] = mem_data[node].pgdat;
 
 	/* Copy the pg_data_t list to each node and init the node field */
-	for (node = 0; node < numnodes; node++) {
+	for_each_online_node(node) {
 		memcpy(mem_data[node].node_data->pg_data_ptrs, pgdat_list,
 		       sizeof(pgdat_list));
 	}
-
+#ifdef CONFIG_SMP
 	/* Set the node_data pointer for each per-cpu struct */
 	for (cpu = 0; cpu < NR_CPUS; cpu++) {
 		node = node_cpuid[cpu].nid;
 		per_cpu(cpu_info, cpu).node_data = mem_data[node].node_data;
 	}
+#else
+	{
+		struct cpuinfo_ia64 *cpu0_cpu_info;
+		cpu = 0;
+		node = node_cpuid[cpu].nid;
+		cpu0_cpu_info = (struct cpuinfo_ia64 *)(__phys_per_cpu_start +
+			((char *)&per_cpu__cpu_info - __per_cpu_start));
+		cpu0_cpu_info->node_data = mem_data[node].node_data;
+	}
+#endif /* CONFIG_SMP */
+}
+
+/**
+ * memory_less_node_alloc - * attempt to allocate memory on the best NUMA slit
+ * 	node but fall back to any other node when __alloc_bootmem_node fails
+ *	for best.
+ * @nid: node id
+ * @pernodesize: size of this node's pernode data
+ * @align: alignment to use for this node's pernode data
+ */
+static void __init *memory_less_node_alloc(int nid, unsigned long pernodesize,
+	unsigned long align)
+{
+	void *ptr = NULL;
+	u8 best = 0xff;
+	int bestnode = -1, node;
+
+	for_each_online_node(node) {
+		if (node_isset(node, memory_less_mask))
+			continue;
+		else if (node_distance(nid, node) < best) {
+			best = node_distance(nid, node);
+			bestnode = node;
+		}
+	}
+
+	ptr = __alloc_bootmem_node(mem_data[bestnode].pgdat,
+		pernodesize, align, __pa(MAX_DMA_ADDRESS));
+
+	if (!ptr)
+		panic("NO memory for memory less node\n");
+	return ptr;
+}
+
+/**
+ * pgdat_insert - insert the pgdat into global pgdat_list
+ * @pgdat: the pgdat for a node.
+ */
+static void __init pgdat_insert(pg_data_t *pgdat)
+{
+	pg_data_t *prev = NULL, *next;
+
+	for_each_pgdat(next)
+		if (pgdat->node_id < next->node_id)
+			break;
+		else
+			prev = next;
+
+	if (prev) {
+		prev->pgdat_next = pgdat;
+		pgdat->pgdat_next = next;
+	} else {
+		pgdat->pgdat_next = pgdat_list;
+		pgdat_list = pgdat;
+	}
+
+	return;
+}
+
+/**
+ * memory_less_nodes - allocate and initialize CPU only nodes pernode
+ *	information.
+ */
+static void __init memory_less_nodes(void)
+{
+	unsigned long pernodesize;
+	void *pernode;
+	int node;
+
+	for_each_node_mask(node, memory_less_mask) {
+		pernodesize = compute_pernodesize(node);
+		pernode = memory_less_node_alloc(node, pernodesize,
+			(node) ? (node * PERCPU_PAGE_SIZE) : (1024*1024));
+		fill_pernode(node, __pa(pernode), pernodesize);
+	}
+
+	return;
 }
 
 /**
@@ -429,38 +433,41 @@ void __init find_memory(void)
 
 	reserve_memory();
 
-	if (numnodes == 0) {
+	if (num_online_nodes() == 0) {
 		printk(KERN_ERR "node info missing!\n");
-		numnodes = 1;
+		node_set_online(0);
 	}
 
+	nodes_or(memory_less_mask, memory_less_mask, node_online_map);
 	min_low_pfn = -1;
 	max_low_pfn = 0;
-
-	if (numnodes > 1)
-		reassign_cpu_only_nodes();
 
 	/* These actually end up getting called by call_pernode_memory() */
 	efi_memmap_walk(filter_rsvd_memory, build_node_maps);
 	efi_memmap_walk(filter_rsvd_memory, find_pernode_space);
 
+	for_each_online_node(node)
+		if (mem_data[node].bootmem_data.node_low_pfn) {
+			node_clear(node, memory_less_mask);
+			mem_data[node].min_pfn = ~0UL;
+		}
 	/*
 	 * Initialize the boot memory maps in reverse order since that's
 	 * what the bootmem allocator expects
 	 */
-	for (node = numnodes - 1; node >= 0; node--) {
+	for (node = MAX_NUMNODES - 1; node >= 0; node--) {
 		unsigned long pernode, pernodesize, map;
 		struct bootmem_data *bdp;
+
+		if (!node_online(node))
+			continue;
+		else if (node_isset(node, memory_less_mask))
+			continue;
 
 		bdp = &mem_data[node].bootmem_data;
 		pernode = mem_data[node].pernode_addr;
 		pernodesize = mem_data[node].pernode_size;
 		map = pernode + pernodesize;
-
-		/* Sanity check... */
-		if (!pernode)
-			panic("pernode space for node %d "
-			      "could not be allocated!", node);
 
 		init_bootmem_node(mem_data[node].pgdat,
 				  map>>PAGE_SHIFT,
@@ -471,6 +478,7 @@ void __init find_memory(void)
 	efi_memmap_walk(filter_rsvd_memory, free_node_bootmem);
 
 	reserve_pernode_space();
+	memory_less_nodes();
 	initialize_pernode_data();
 
 	max_pfn = max_low_pfn;
@@ -478,6 +486,7 @@ void __init find_memory(void)
 	find_initrd();
 }
 
+#ifdef CONFIG_SMP
 /**
  * per_cpu_init - setup per-cpu variables
  *
@@ -488,15 +497,15 @@ void *per_cpu_init(void)
 {
 	int cpu;
 
-	if (smp_processor_id() == 0) {
-		for (cpu = 0; cpu < NR_CPUS; cpu++) {
-			per_cpu(local_per_cpu_offset, cpu) =
-				__per_cpu_offset[cpu];
-		}
-	}
+	if (smp_processor_id() != 0)
+		return __per_cpu_start + __per_cpu_offset[smp_processor_id()];
+
+	for (cpu = 0; cpu < NR_CPUS; cpu++)
+		per_cpu(local_per_cpu_offset, cpu) = __per_cpu_offset[cpu];
 
 	return __per_cpu_start + __per_cpu_offset[smp_processor_id()];
 }
+#endif /* CONFIG_SMP */
 
 /**
  * show_mem - give short summary of memory stats
@@ -519,14 +528,15 @@ void show_mem(void)
 		int shared = 0, cached = 0, reserved = 0;
 		printk("Node ID: %d\n", pgdat->node_id);
 		for(i = 0; i < pgdat->node_spanned_pages; i++) {
+			struct page *page = pgdat_page_nr(pgdat, i);
 			if (!ia64_pfn_valid(pgdat->node_start_pfn+i))
 				continue;
-			if (PageReserved(pgdat->node_mem_map+i))
+			if (PageReserved(page))
 				reserved++;
-			else if (PageSwapCache(pgdat->node_mem_map+i))
+			else if (PageSwapCache(page))
 				cached++;
-			else if (page_count(pgdat->node_mem_map+i))
-				shared += page_count(pgdat->node_mem_map+i)-1;
+			else if (page_count(page))
+				shared += page_count(page)-1;
 		}
 		total_present += present;
 		total_reserved += reserved;
@@ -541,7 +551,8 @@ void show_mem(void)
 	printk("%d reserved pages\n", total_reserved);
 	printk("%d pages shared\n", total_shared);
 	printk("%d pages swap cached\n", total_cached);
-	printk("Total of %ld pages in page table cache\n", pgtable_cache_size);
+	printk("Total of %ld pages in page table cache\n",
+		pgtable_quicklist_total_size());
 	printk("%d free buffer pages\n", nr_free_buffer_pages());
 }
 
@@ -637,13 +648,14 @@ void __init paging_init(void)
 
 	max_dma = virt_to_phys((void *) MAX_DMA_ADDRESS) >> PAGE_SHIFT;
 
-	/* so min() will work in count_node_pages */
-	for (node = 0; node < numnodes; node++)
-		mem_data[node].min_pfn = ~0UL;
-
 	efi_memmap_walk(filter_rsvd_memory, count_node_pages);
 
-	for (node = 0; node < numnodes; node++) {
+	vmalloc_end -= PAGE_ALIGN(max_low_pfn * sizeof(struct page));
+	vmem_map = (struct page *) vmalloc_end;
+	efi_memmap_walk(create_mem_map_page_table, NULL);
+	printk("Virtual mem_map starts at 0x%p\n", vmem_map);
+
+	for_each_online_node(node) {
 		memset(zones_size, 0, sizeof(zones_size));
 		memset(zholes_size, 0, sizeof(zholes_size));
 
@@ -676,21 +688,18 @@ void __init paging_init(void)
 				 mem_data[node].num_dma_physpages);
 		}
 
-		if (node == 0) {
-			vmalloc_end -=
-				PAGE_ALIGN(max_low_pfn * sizeof(struct page));
-			vmem_map = (struct page *) vmalloc_end;
-
-			efi_memmap_walk(create_mem_map_page_table, NULL);
-			printk("Virtual mem_map starts at 0x%p\n", vmem_map);
-		}
-
 		pfn_offset = mem_data[node].min_pfn;
 
 		NODE_DATA(node)->node_mem_map = vmem_map + pfn_offset;
 		free_area_init_node(node, NODE_DATA(node), zones_size,
 				    pfn_offset, zholes_size);
 	}
+
+	/*
+	 * Make memory less nodes become a member of the known nodes.
+	 */
+	for_each_node_mask(node, memory_less_mask)
+		pgdat_insert(mem_data[node].pgdat);
 
 	zero_page_memmap_ptr = virt_to_page(ia64_imva(empty_zero_page));
 }

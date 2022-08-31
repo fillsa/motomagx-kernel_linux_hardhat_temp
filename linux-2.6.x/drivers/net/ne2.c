@@ -301,12 +301,7 @@ struct net_device * __init ne2_probe(int unit)
 	err = do_ne2_probe(dev);
 	if (err)
 		goto out;
-	err = register_netdev(dev);
-	if (err)
-		goto out1;
 	return dev;
-out1:
-	cleanup_card(dev);
 out:
 	free_netdev(dev);
 	return ERR_PTR(err);
@@ -517,7 +512,14 @@ static int __init ne2_probe1(struct net_device *dev, int slot)
 	dev->poll_controller = ei_poll;
 #endif
 	NS8390_init(dev, 0);
+
+	retval = register_netdev(dev);
+	if (retval)
+		goto out1;
 	return 0;
+out1:
+	mca_set_adapter_procfn( ei_status.priv, NULL, NULL);
+	free_irq(dev->irq, dev);
 out:
 	release_region(base_addr, NE_IO_EXTENT);
 	return retval;
@@ -776,9 +778,9 @@ static int irq[MAX_NE_CARDS];
 static int bad[MAX_NE_CARDS];	/* 0xbad = bad sig or no reset ack */
 MODULE_LICENSE("GPL");
 
-MODULE_PARM(io, "1-" __MODULE_STRING(MAX_NE_CARDS) "i");
-MODULE_PARM(irq, "1-" __MODULE_STRING(MAX_NE_CARDS) "i");
-MODULE_PARM(bad, "1-" __MODULE_STRING(MAX_NE_CARDS) "i");
+module_param_array(io, int, NULL, 0);
+module_param_array(irq, int, NULL, 0);
+module_param_array(bad, int, NULL, 0);
 MODULE_PARM_DESC(io, "(ignored)");
 MODULE_PARM_DESC(irq, "(ignored)");
 MODULE_PARM_DESC(bad, "(ignored)");
@@ -798,11 +800,8 @@ int init_module(void)
 		dev->mem_end = bad[this_dev];
 		dev->base_addr = io[this_dev];
 		if (do_ne2_probe(dev) == 0) {
-			if (register_netdev(dev) == 0) {
-				dev_ne[found++] = dev;
-				continue;
-			}
-			cleanup_card(dev);
+			dev_ne[found++] = dev;
+			continue;
 		}
 		free_netdev(dev);
 		break;

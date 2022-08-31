@@ -13,8 +13,8 @@
 ** This driver has only been tested with
 ** -- HP J2585B 10/100 Mbit/s PCI Busmaster
 ** -- HP J2585A 10/100 Mbit/s PCI 
-** -- HP J2970  10 Mbit/s PCI Combo 10base-T/BNC
-** -- HP J2973  10 Mbit/s PCI 10base-T
+** -- HP J2970A 10 Mbit/s PCI Combo 10base-T/BNC
+** -- HP J2973A 10 Mbit/s PCI 10base-T
 ** -- HP J2573  10/100 ISA
 ** -- Compex ReadyLink ENET100-VG4  10/100 Mbit/s PCI / EISA
 ** -- Compex FreedomLine 100/VG  10/100 Mbit/s ISA / EISA / PCI
@@ -106,6 +106,7 @@
 #include <linux/interrupt.h>
 #include <linux/eisa.h>
 #include <linux/pci.h>
+#include <linux/dma-mapping.h>
 #include <linux/spinlock.h>
 #include <linux/netdevice.h>
 #include <linux/etherdevice.h>
@@ -224,9 +225,9 @@ static int hp100_rx_ratio = HP100_DEFAULT_RX_RATIO;
 static int hp100_priority_tx = HP100_DEFAULT_PRIORITY_TX;
 static int hp100_mode = 1;
 
-MODULE_PARM(hp100_rx_ratio, "1i");
-MODULE_PARM(hp100_priority_tx, "1i");
-MODULE_PARM(hp100_mode, "1i");
+module_param(hp100_rx_ratio, int, 0);
+module_param(hp100_priority_tx, int, 0);
+module_param(hp100_mode, int, 0);
 
 /*
  *  prototypes
@@ -280,8 +281,14 @@ static void hp100_RegisterDump(struct net_device *dev);
  * address - Jean II */
 static inline dma_addr_t virt_to_whatever(struct net_device *dev, u32 * ptr)
 {
-	return ((u_long) ptr) +
-		((struct hp100_private *) (dev->priv))->whatever_offset;
+	struct hp100_private *lp = netdev_priv(dev);
+	return ((u_long) ptr) + lp->whatever_offset;
+}
+
+static inline u_int pdl_map_data(struct hp100_private *lp, void *data)
+{
+	return pci_map_single(lp->pci_dev, data, 
+			      MAX_ETHER_SIZE, PCI_DMA_FROMDEVICE);
 }
 
 /* TODO: This function should not really be needed in a good design... */
@@ -300,7 +307,7 @@ static void wait(void)
  * Read board id and convert to string.
  * Effectively same code as decode_eisa_sig
  */
-static __init const char *hp100_read_id(int ioaddr)
+static __devinit const char *hp100_read_id(int ioaddr)
 {
 	int i;
 	static char str[HP100_SIG_LEN];
@@ -411,20 +418,15 @@ struct net_device * __init hp100_probe(int unit)
 	if (err)
 		goto out;
 
-	err = register_netdev(dev);
-	if (err)
-		goto out1;
 	return dev;
- out1:
-	release_region(dev->base_addr, HP100_REGION_SIZE);
  out:
 	free_netdev(dev);
 	return ERR_PTR(err);
 }
 #endif
 
-static int __init hp100_probe1(struct net_device *dev, int ioaddr,
-			       u_char bus, struct pci_dev *pci_dev)
+static int __devinit hp100_probe1(struct net_device *dev, int ioaddr,
+				  u_char bus, struct pci_dev *pci_dev)
 {
 	int i;
 	int err = -ENODEV;
@@ -556,7 +558,7 @@ static int __init hp100_probe1(struct net_device *dev, int ioaddr,
 			 * Also, we can have EISA Busmaster cards (not tested),
 			 * so beware !!! - Jean II */
 			if((bus == HP100_BUS_PCI) &&
-			   (pci_set_dma_mask(pci_dev, 0xffffffff))) {
+			   (pci_set_dma_mask(pci_dev, DMA_32BIT_MASK))) {
 				/* Gracefully fallback to shared memory */
 				goto busmasterfail;
 			}
@@ -631,7 +633,7 @@ static int __init hp100_probe1(struct net_device *dev, int ioaddr,
 	}
 
 	/* Initialise the "private" data structure for this card. */
-	lp = (struct hp100_private *) dev->priv;
+	lp = netdev_priv(dev);
 
 	spin_lock_init(&lp->lock);
 	strlcpy(lp->id, eid, HP100_SIG_LEN);
@@ -770,18 +772,29 @@ static int __init hp100_probe1(struct net_device *dev, int ioaddr,
 		printk("Warning! Link down.\n");
 	}
 
+	err = register_netdev(dev);
+	if (err)
+		goto out3;
+
 	return 0;
+out3:
+	if (local_mode == 1)
+		pci_free_consistent(lp->pci_dev, MAX_RINGSIZE + 0x0f, 
+				    lp->page_vaddr_algn, 
+				    virt_to_whatever(dev, lp->page_vaddr_algn));
+	if (mem_ptr_virt)
+		iounmap(mem_ptr_virt);
 out2:
 	release_region(ioaddr, HP100_REGION_SIZE);
 out1:
-	return -ENODEV;
+	return err;
 }
 
 /* This procedure puts the card into a stable init state */
 static void hp100_hwinit(struct net_device *dev)
 {
 	int ioaddr = dev->base_addr;
-	struct hp100_private *lp = (struct hp100_private *) dev->priv;
+	struct hp100_private *lp = netdev_priv(dev);
 
 #ifdef HP100_DEBUG_B
 	hp100_outw(0x4202, TRACE);
@@ -875,7 +888,7 @@ static void hp100_hwinit(struct net_device *dev)
 static void hp100_mmuinit(struct net_device *dev)
 {
 	int ioaddr = dev->base_addr;
-	struct hp100_private *lp = (struct hp100_private *) dev->priv;
+	struct hp100_private *lp = netdev_priv(dev);
 	int i;
 
 #ifdef HP100_DEBUG_B
@@ -1053,7 +1066,7 @@ static void hp100_mmuinit(struct net_device *dev)
 
 static int hp100_open(struct net_device *dev)
 {
-	struct hp100_private *lp = (struct hp100_private *) dev->priv;
+	struct hp100_private *lp = netdev_priv(dev);
 #ifdef HP100_DEBUG_B
 	int ioaddr = dev->base_addr;
 #endif
@@ -1093,7 +1106,7 @@ static int hp100_open(struct net_device *dev)
 static int hp100_close(struct net_device *dev)
 {
 	int ioaddr = dev->base_addr;
-	struct hp100_private *lp = (struct hp100_private *) dev->priv;
+	struct hp100_private *lp = netdev_priv(dev);
 
 #ifdef HP100_DEBUG_B
 	hp100_outw(0x4205, TRACE);
@@ -1126,7 +1139,7 @@ static int hp100_close(struct net_device *dev)
  */
 static void hp100_init_pdls(struct net_device *dev)
 {
-	struct hp100_private *lp = (struct hp100_private *) dev->priv;
+	struct hp100_private *lp = netdev_priv(dev);
 	hp100_ring_t *ringptr;
 	u_int *pageptr;		/* Warning : increment by 4 - Jean II */
 	int i;
@@ -1273,7 +1286,8 @@ static int hp100_build_rx_pdl(hp100_ring_t * ringptr,
 		/* Conversion to new PCI API : map skbuf data to PCI bus.
 		 * Doc says it's OK for EISA as well - Jean II */
 		ringptr->pdl[0] = 0x00020000;	/* Write PDH */
-		ringptr->pdl[3] = ((u_int) pci_map_single(((struct hp100_private *) (dev->priv))->pci_dev, ringptr->skb->data, MAX_ETHER_SIZE, PCI_DMA_FROMDEVICE));
+		ringptr->pdl[3] = pdl_map_data(netdev_priv(dev), 
+					       ringptr->skb->data);
 		ringptr->pdl[4] = MAX_ETHER_SIZE;	/* Length of Data */
 
 #ifdef HP100_DEBUG_BM
@@ -1310,7 +1324,7 @@ static void hp100_rxfill(struct net_device *dev)
 {
 	int ioaddr = dev->base_addr;
 
-	struct hp100_private *lp = (struct hp100_private *) dev->priv;
+	struct hp100_private *lp = netdev_priv(dev);
 	hp100_ring_t *ringptr;
 
 #ifdef HP100_DEBUG_B
@@ -1351,7 +1365,7 @@ static void hp100_rxfill(struct net_device *dev)
 static void hp100_BM_shutdown(struct net_device *dev)
 {
 	int ioaddr = dev->base_addr;
-	struct hp100_private *lp = (struct hp100_private *) dev->priv;
+	struct hp100_private *lp = netdev_priv(dev);
 	unsigned long time;
 
 #ifdef HP100_DEBUG_B
@@ -1432,7 +1446,7 @@ static void hp100_BM_shutdown(struct net_device *dev)
 
 static int hp100_check_lan(struct net_device *dev)
 {
-	struct hp100_private *lp = (struct hp100_private *) dev->priv;
+	struct hp100_private *lp = netdev_priv(dev);
 
 	if (lp->lan_type < 0) {	/* no LAN type detected yet? */
 		hp100_stop_interface(dev);
@@ -1458,7 +1472,7 @@ static int hp100_start_xmit_bm(struct sk_buff *skb, struct net_device *dev)
 	unsigned long flags;
 	int i, ok_flag;
 	int ioaddr = dev->base_addr;
-	struct hp100_private *lp = (struct hp100_private *) dev->priv;
+	struct hp100_private *lp = netdev_priv(dev);
 	hp100_ring_t *ringptr;
 
 #ifdef HP100_DEBUG_B
@@ -1576,7 +1590,7 @@ static int hp100_start_xmit_bm(struct sk_buff *skb, struct net_device *dev)
  */
 static void hp100_clean_txring(struct net_device *dev)
 {
-	struct hp100_private *lp = (struct hp100_private *) dev->priv;
+	struct hp100_private *lp = netdev_priv(dev);
 	int ioaddr = dev->base_addr;
 	int donecount;
 
@@ -1615,7 +1629,7 @@ static int hp100_start_xmit(struct sk_buff *skb, struct net_device *dev)
 	int i, ok_flag;
 	int ioaddr = dev->base_addr;
 	u_short val;
-	struct hp100_private *lp = (struct hp100_private *) dev->priv;
+	struct hp100_private *lp = netdev_priv(dev);
 
 #ifdef HP100_DEBUG_B
 	hp100_outw(0x4212, TRACE);
@@ -1755,7 +1769,7 @@ static void hp100_rx(struct net_device *dev)
 {
 	int packets, pkt_len;
 	int ioaddr = dev->base_addr;
-	struct hp100_private *lp = (struct hp100_private *) dev->priv;
+	struct hp100_private *lp = netdev_priv(dev);
 	u_int header;
 	struct sk_buff *skb;
 
@@ -1864,7 +1878,7 @@ static void hp100_rx(struct net_device *dev)
 static void hp100_rx_bm(struct net_device *dev)
 {
 	int ioaddr = dev->base_addr;
-	struct hp100_private *lp = (struct hp100_private *) dev->priv;
+	struct hp100_private *lp = netdev_priv(dev);
 	hp100_ring_t *ptr;
 	u_int header;
 	int pkt_len;
@@ -1973,7 +1987,7 @@ static struct net_device_stats *hp100_get_stats(struct net_device *dev)
 {
 	unsigned long flags;
 	int ioaddr = dev->base_addr;
-	struct hp100_private *lp = (struct hp100_private *) dev->priv;
+	struct hp100_private *lp = netdev_priv(dev);
 
 #ifdef HP100_DEBUG_B
 	hp100_outw(0x4215, TRACE);
@@ -1991,7 +2005,7 @@ static void hp100_update_stats(struct net_device *dev)
 {
 	int ioaddr = dev->base_addr;
 	u_short val;
-	struct hp100_private *lp = (struct hp100_private *) dev->priv;
+	struct hp100_private *lp = netdev_priv(dev);
 
 #ifdef HP100_DEBUG_B
 	hp100_outw(0x4216, TRACE);
@@ -2017,7 +2031,7 @@ static void hp100_misc_interrupt(struct net_device *dev)
 #ifdef HP100_DEBUG_B
 	int ioaddr = dev->base_addr;
 #endif
-	struct hp100_private *lp = (struct hp100_private *) dev->priv;
+	struct hp100_private *lp = netdev_priv(dev);
 
 #ifdef HP100_DEBUG_B
 	int ioaddr = dev->base_addr;
@@ -2061,7 +2075,7 @@ static void hp100_set_multicast_list(struct net_device *dev)
 {
 	unsigned long flags;
 	int ioaddr = dev->base_addr;
-	struct hp100_private *lp = (struct hp100_private *) dev->priv;
+	struct hp100_private *lp = netdev_priv(dev);
 
 #ifdef HP100_DEBUG_B
 	hp100_outw(0x4218, TRACE);
@@ -2191,7 +2205,7 @@ static void hp100_set_multicast_list(struct net_device *dev)
 static irqreturn_t hp100_interrupt(int irq, void *dev_id, struct pt_regs *regs)
 {
 	struct net_device *dev = (struct net_device *) dev_id;
-	struct hp100_private *lp = (struct hp100_private *) dev->priv;
+	struct hp100_private *lp = netdev_priv(dev);
 
 	int ioaddr;
 	u_int val;
@@ -2322,7 +2336,7 @@ static void hp100_start_interface(struct net_device *dev)
 {
 	unsigned long flags;
 	int ioaddr = dev->base_addr;
-	struct hp100_private *lp = (struct hp100_private *) dev->priv;
+	struct hp100_private *lp = netdev_priv(dev);
 
 #ifdef HP100_DEBUG_B
 	hp100_outw(0x4220, TRACE);
@@ -2381,7 +2395,7 @@ static void hp100_start_interface(struct net_device *dev)
 
 static void hp100_stop_interface(struct net_device *dev)
 {
-	struct hp100_private *lp = (struct hp100_private *) dev->priv;
+	struct hp100_private *lp = netdev_priv(dev);
 	int ioaddr = dev->base_addr;
 	u_int val;
 
@@ -2442,7 +2456,7 @@ static int hp100_sense_lan(struct net_device *dev)
 {
 	int ioaddr = dev->base_addr;
 	u_short val_VG, val_10;
-	struct hp100_private *lp = (struct hp100_private *) dev->priv;
+	struct hp100_private *lp = netdev_priv(dev);
 
 #ifdef HP100_DEBUG_B
 	hp100_outw(0x4223, TRACE);
@@ -2488,7 +2502,7 @@ static int hp100_sense_lan(struct net_device *dev)
 
 static int hp100_down_vg_link(struct net_device *dev)
 {
-	struct hp100_private *lp = (struct hp100_private *) dev->priv;
+	struct hp100_private *lp = netdev_priv(dev);
 	int ioaddr = dev->base_addr;
 	unsigned long time;
 	long savelan, newlan;
@@ -2604,7 +2618,7 @@ static int hp100_down_vg_link(struct net_device *dev)
 static int hp100_login_to_vg_hub(struct net_device *dev, u_short force_relogin)
 {
 	int ioaddr = dev->base_addr;
-	struct hp100_private *lp = (struct hp100_private *) dev->priv;
+	struct hp100_private *lp = netdev_priv(dev);
 	u_short val = 0;
 	unsigned long time;
 	int startst;
@@ -2775,7 +2789,7 @@ static int hp100_login_to_vg_hub(struct net_device *dev, u_short force_relogin)
 static void hp100_cascade_reset(struct net_device *dev, u_short enable)
 {
 	int ioaddr = dev->base_addr;
-	struct hp100_private *lp = (struct hp100_private *) dev->priv;
+	struct hp100_private *lp = netdev_priv(dev);
 
 #ifdef HP100_DEBUG_B
 	hp100_outw(0x4226, TRACE);
@@ -2836,7 +2850,7 @@ void hp100_RegisterDump(struct net_device *dev)
 
 static void cleanup_dev(struct net_device *d)
 {
-	struct hp100_private *p = (struct hp100_private *) d->priv;
+	struct hp100_private *p = netdev_priv(d);
 
 	unregister_netdev(d);
 	release_region(d->base_addr, HP100_REGION_SIZE);
@@ -2868,18 +2882,12 @@ static int __init hp100_eisa_probe (struct device *gendev)
 	if (err)
 		goto out1;
 
-	err = register_netdev(dev);
-	if (err)
-		goto out2;
-	
 #ifdef HP100_DEBUG
 	printk("hp100: %s: EISA adapter found at 0x%x\n", dev->name, 
 	       dev->base_addr);
 #endif
 	gendev->driver_data = dev;
 	return 0;
- out2:
-	release_region(dev->base_addr, HP100_REGION_SIZE);
  out1:
 	free_netdev(dev);
 	return err;
@@ -2944,17 +2952,12 @@ static int __devinit hp100_pci_probe (struct pci_dev *pdev,
 	err = hp100_probe1(dev, ioaddr, HP100_BUS_PCI, pdev);
 	if (err) 
 		goto out1;
-	err = register_netdev(dev);
-	if (err)
-		goto out2;
 	
 #ifdef HP100_DEBUG
 	printk("hp100: %s: PCI adapter found at 0x%x\n", dev->name, ioaddr);
 #endif
 	pci_set_drvdata(pdev, dev);
 	return 0;
- out2:
-	release_region(dev->base_addr, HP100_REGION_SIZE);
  out1:
 	free_netdev(dev);
  out0:
@@ -2998,7 +3001,7 @@ MODULE_DESCRIPTION("HP CASCADE Architecture Driver for 100VG-AnyLan Network Adap
 #define HP100_DEVICES 5
 /* Parameters set by insmod */
 static int hp100_port[HP100_DEVICES] = { 0, [1 ... (HP100_DEVICES-1)] = -1 };
-MODULE_PARM(hp100_port, "1-" __MODULE_STRING(HP100_DEVICES) "i");
+module_param_array(hp100_port, int, NULL, 0);
 
 /* List of devices */
 static struct net_device *hp100_devlist[HP100_DEVICES];
@@ -3025,15 +3028,9 @@ static int __init hp100_isa_init(void)
 		SET_MODULE_OWNER(dev);
 
 		err = hp100_isa_probe(dev, hp100_port[i]);
-		if (!err) {
-			err = register_netdev(dev);
-			if (!err) 
-				hp100_devlist[cards++] = dev;
-			else
-				release_region(dev->base_addr, HP100_REGION_SIZE);
-		}
-
-		if (err)
+		if (!err)
+			hp100_devlist[cards++] = dev;
+		else
 			free_netdev(dev);
 	}
 

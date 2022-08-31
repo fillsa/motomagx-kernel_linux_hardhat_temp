@@ -207,7 +207,6 @@ static struct file_operations snmp6_seq_fops = {
 
 int snmp6_register_dev(struct inet6_dev *idev)
 {
-	int err = -ENOMEM;
 	struct proc_dir_entry *p;
 
 	if (!idev || !idev->dev)
@@ -216,44 +215,26 @@ int snmp6_register_dev(struct inet6_dev *idev)
 #ifdef CONFIG_IPV6_STATISTICS
 	if (snmp6_mib_init((void **)idev->stats.ipv6_statistics, sizeof(struct ipstats_mib),
 			   __alignof__(struct ipstats_mib)) < 0)
-		goto err_ip;
+		return -ENOENT;
 #endif
 
-	if (snmp6_mib_init((void **)idev->stats.icmpv6, sizeof(struct icmpv6_mib),
-			   __alignof__(struct icmpv6_mib)) < 0)
-		goto err_icmp;
-
+	if (!proc_net_devsnmp6)
+		return -ENOENT;
 #if 0
 	if (snmp6_mib_init((void **)idev->stats.udp_stats_in6, sizeof(struct udp_mib),
 			   __alignof__(struct udp_mib)) < 0)
-		goto err_udp;
+		return -ENOENT;
 #endif
 
-	if (!proc_net_devsnmp6) {
-		err = -ENOENT;
-		goto err_proc;
-	}
 	p = create_proc_entry(idev->dev->name, S_IRUGO, proc_net_devsnmp6);
 	if (!p)
-		goto err_proc;
+		return -ENOMEM;
+
 	p->data = idev;
 	p->proc_fops = &snmp6_seq_fops;
 
 	idev->stats.proc_dir_entry = p;
 	return 0;
-
-err_proc:
-#if 0
-	snmp6_mib_free((void **)idev->stats.udp_stats_in6);
-err_udp:
-#endif
-	snmp6_mib_free((void **)idev->stats.icmpv6);
-err_icmp:
-#ifdef CONFIG_IPV6_STATISTICS
-	snmp6_mib_free((void **)idev->stats.ipv6_statistics);
-err_ip:
-#endif
-	return err;
 }
 
 int snmp6_unregister_dev(struct inet6_dev *idev)
@@ -264,14 +245,6 @@ int snmp6_unregister_dev(struct inet6_dev *idev)
 		return -EINVAL;
 	remove_proc_entry(idev->stats.proc_dir_entry->name,
 			  proc_net_devsnmp6);
-#ifdef CONFIG_IPV6_STATISTICS
-	snmp6_mib_free((void **)idev->stats.ipv6_statistics);
-#endif
-	snmp6_mib_free((void **)idev->stats.icmpv6);
-#if 0
-	snmp6_mib_free((void **)idev->stats.udp_stats_in6);
-#endif
-
 	return 0;
 }
 
@@ -311,6 +284,18 @@ void ipv6_misc_proc_exit(void)
 
 
 int snmp6_register_dev(struct inet6_dev *idev)
+{
+	return 0;
+}
+
+int snmp6_free_dev(struct inet6_dev *idev)
+{
+//2.6	 	snmp6_mib_free((void **)idev->stats.icmpv6);
+	return 0;
+}
+#endif	/* CONFIG_PROC_FS */
+
+int snmp6_alloc_dev(struct inet6_dev *idev)
 {
 	int err = -ENOMEM;
 

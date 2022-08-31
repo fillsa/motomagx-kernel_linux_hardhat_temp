@@ -56,9 +56,10 @@ KERN_INFO DRV_NAME " PCI Ethernet driver v" DRV_VERSION " (" DRV_RELDATE ")\n";
 MODULE_AUTHOR("Jeff Garzik <jgarzik@pobox.com>");
 MODULE_DESCRIPTION("Intel/Digital 21040/1 series PCI Ethernet driver");
 MODULE_LICENSE("GPL");
+MODULE_VERSION(DRV_VERSION);
 
 static int debug = -1;
-MODULE_PARM (debug, "i");
+module_param (debug, int, 0);
 MODULE_PARM_DESC (debug, "de2104x bitmapped message enable number");
 
 /* Set the copy breakpoint for the copy-only-tiny-buffer Rx structure. */
@@ -69,7 +70,7 @@ static int rx_copybreak = 1518;
 #else
 static int rx_copybreak = 100;
 #endif
-MODULE_PARM (rx_copybreak, "i");
+module_param (rx_copybreak, int, 0);
 MODULE_PARM_DESC (rx_copybreak, "de2104x Breakpoint at which Rx packets are copied");
 
 #define PFX			DRV_NAME ": "
@@ -445,13 +446,13 @@ static void de_rx (struct de_private *de)
 
 			mapping =
 			de->rx_skb[rx_tail].mapping =
-				pci_map_single(de->pdev, copy_skb->tail,
+				pci_map_single(de->pdev, copy_skb->data,
 					       buflen, PCI_DMA_FROMDEVICE);
 			de->rx_skb[rx_tail].skb = copy_skb;
 		} else {
 			pci_dma_sync_single_for_cpu(de->pdev, mapping, len, PCI_DMA_FROMDEVICE);
 			skb_reserve(copy_skb, RX_OFFSET);
-			memcpy(skb_put(copy_skb, len), skb->tail, len);
+			memcpy(skb_put(copy_skb, len), skb->data, len);
 
 			pci_dma_sync_single_for_device(de->pdev, mapping, len, PCI_DMA_FROMDEVICE);
 
@@ -1268,7 +1269,7 @@ static int de_refill_rx (struct de_private *de)
 		skb->dev = de->dev;
 
 		de->rx_skb[i].mapping = pci_map_single(de->pdev,
-			skb->tail, de->rx_buf_sz, PCI_DMA_FROMDEVICE);
+			skb->data, de->rx_buf_sz, PCI_DMA_FROMDEVICE);
 		de->rx_skb[i].skb = skb;
 
 		de->rx_ring[i].opts1 = cpu_to_le32(DescOwn);
@@ -1702,6 +1703,7 @@ static void __init de21040_get_mac_address (struct de_private *de)
 			value = dr32(ROMCmd);
 		while (value < 0 && --boguscnt > 0);
 		de->dev->dev_addr[i] = value;
+		udelay(1);
 		if (boguscnt <= 0)
 			printk(KERN_WARNING PFX "timeout reading 21040 MAC address byte %u\n", i);
 	}
@@ -1925,7 +1927,7 @@ bad_srom:
 	goto fill_defaults;
 }
 
-static int __devinit de_init_one (struct pci_dev *pdev,
+static int __init de_init_one (struct pci_dev *pdev,
 				  const struct pci_device_id *ent)
 {
 	struct net_device *dev;
@@ -1957,8 +1959,6 @@ static int __devinit de_init_one (struct pci_dev *pdev,
 	dev->ethtool_ops = &de_ethtool_ops;
 	dev->tx_timeout = de_tx_timeout;
 	dev->watchdog_timeo = TX_TIMEOUT;
-
-	dev->irq = pdev->irq;
 
 	de = dev->priv;
 	de->de21040 = ent->driver_data == 0 ? 1 : 0;
@@ -1994,6 +1994,8 @@ static int __devinit de_init_one (struct pci_dev *pdev,
 		       pdev->irq, pci_name(pdev));
 		goto err_out_res;
 	}
+
+	dev->irq = pdev->irq;
 
 	/* obtain and check validity of PCI I/O address */
 	pciaddr = pci_resource_start(pdev, 1);
@@ -2100,7 +2102,7 @@ static void __exit de_remove_one (struct pci_dev *pdev)
 
 #ifdef CONFIG_PM
 
-static int de_suspend (struct pci_dev *pdev, u32 state)
+static int de_suspend (struct pci_dev *pdev, pm_message_t state)
 {
 	struct net_device *dev = pci_get_drvdata (pdev);
 	struct de_private *de = dev->priv;

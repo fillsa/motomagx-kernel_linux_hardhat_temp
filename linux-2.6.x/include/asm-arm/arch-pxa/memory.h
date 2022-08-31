@@ -59,14 +59,12 @@
 /*
  * Given a kernel address, find the home node of the underlying memory.
  */
-#define KVADDR_TO_NID(addr) \
-	(((unsigned long)(addr) - PAGE_OFFSET) >> NODE_MAX_MEM_SHIFT)
+#define KVADDR_TO_NID(addr) (((unsigned long)(addr) - PAGE_OFFSET) >> NODE_MAX_MEM_SHIFT)
 
 /*
  * Given a page frame number, convert it to a node id.
  */
-#define PFN_TO_NID(pfn)	\
-	(((pfn) - PHYS_PFN_OFFSET) >> (NODE_MAX_MEM_SHIFT - PAGE_SHIFT))
+#define PFN_TO_NID(pfn)		(((pfn) - PHYS_PFN_OFFSET) >> (NODE_MAX_MEM_SHIFT - PAGE_SHIFT))
 
 /*
  * Given a kaddr, ADDR_TO_MAPBASE finds the owning node of the memory
@@ -87,6 +85,7 @@
  */
 #define LOCAL_MAP_NR(addr) \
 	(((unsigned long)(addr) & (NODE_MAX_MEM_SIZE - 1)) >> PAGE_SHIFT)
+
 #else
 
 #define PFN_TO_NID(addr)	(0)

@@ -42,8 +42,8 @@
 #define _COMPONENT		ACPI_PCI_COMPONENT
 ACPI_MODULE_NAME		("pci_irq")
 
-struct acpi_prt_list		acpi_prt;
-
+static struct acpi_prt_list	acpi_prt;
+static DEFINE_SPINLOCK(acpi_prt_lock);
 
 /* --------------------------------------------------------------------------
                          PCI IRQ Routing Table (PRT) Support
@@ -68,18 +68,20 @@ acpi_pci_irq_find_prt_entry (
 	 * Parse through all PRT entries looking for a match on the specified
 	 * PCI device's segment, bus, device, and pin (don't care about func).
 	 *
-	 * TBD: Acquire/release lock
 	 */
+	spin_lock(&acpi_prt_lock);
 	list_for_each(node, &acpi_prt.entries) {
 		entry = list_entry(node, struct acpi_prt_entry, node);
 		if ((segment == entry->id.segment) 
 			&& (bus == entry->id.bus) 
 			&& (device == entry->id.device)
 			&& (pin == entry->pin)) {
+			spin_unlock(&acpi_prt_lock);
 			return_PTR(entry);
 		}
 	}
 
+	spin_unlock(&acpi_prt_lock);
 	return_PTR(NULL);
 }
 
@@ -141,11 +143,26 @@ acpi_pci_irq_add_entry (
 		entry->id.segment, entry->id.bus, entry->id.device, 
 		('A' + entry->pin), prt->source, entry->link.index));
 
-	/* TBD: Acquire/release lock */
+	spin_lock(&acpi_prt_lock);
 	list_add_tail(&entry->node, &acpi_prt.entries);
 	acpi_prt.count++;
+	spin_unlock(&acpi_prt_lock);
 
 	return_VALUE(0);
+}
+
+
+static void
+acpi_pci_irq_del_entry (
+	int				segment,
+	int				bus,
+	struct acpi_prt_entry		*entry)
+{
+	if (segment == entry->id.segment && bus == entry->id.bus){
+		acpi_prt.count--;
+		list_del(&entry->node);
+		kfree(entry);
+	}
 }
 
 
@@ -156,13 +173,18 @@ acpi_pci_irq_add_prt (
 	int			bus)
 {
 	acpi_status			status = AE_OK;
-	char				pathname[ACPI_PATHNAME_MAX] = {0};
+	char				*pathname = NULL;
 	struct acpi_buffer		buffer = {0, NULL};
 	struct acpi_pci_routing_table	*prt = NULL;
 	struct acpi_pci_routing_table	*entry = NULL;
 	static int			first_time = 1;
 
 	ACPI_FUNCTION_TRACE("acpi_pci_irq_add_prt");
+
+	pathname = (char *) kmalloc(ACPI_PATHNAME_MAX, GFP_KERNEL);
+	if(!pathname)
+		return_VALUE(-ENOMEM);
+	memset(pathname, 0, ACPI_PATHNAME_MAX);
 
 	if (first_time) {
 		acpi_prt.count = 0;
@@ -175,7 +197,7 @@ acpi_pci_irq_add_prt (
 	 *       (either a PCI root bridge or PCI-PCI bridge).
 	 */
 
-	buffer.length = sizeof(pathname);
+	buffer.length = ACPI_PATHNAME_MAX;
 	buffer.pointer = pathname;
 	acpi_get_name(handle, ACPI_FULL_PATHNAME, &buffer);
 
@@ -188,6 +210,7 @@ acpi_pci_irq_add_prt (
 
 	buffer.length = 0;
 	buffer.pointer = NULL;
+	kfree(pathname);
 	status = acpi_get_irq_routing_table(handle, &buffer);
 	if (status != AE_BUFFER_OVERFLOW) {
 		ACPI_DEBUG_PRINT((ACPI_DB_ERROR, "Error evaluating _PRT [%s]\n",
@@ -196,8 +219,9 @@ acpi_pci_irq_add_prt (
 	}
 
 	prt = kmalloc(buffer.length, GFP_KERNEL);
-	if (!prt)
+	if (!prt){
 		return_VALUE(-ENOMEM);
+	}
 	memset(prt, 0, buffer.length);
 	buffer.pointer = prt;
 
@@ -222,11 +246,74 @@ acpi_pci_irq_add_prt (
 	return_VALUE(0);
 }
 
+void
+acpi_pci_irq_del_prt (int segment, int bus)
+{
+	struct list_head        *node = NULL, *n = NULL;
+	struct acpi_prt_entry   *entry = NULL;
 
+	if (!acpi_prt.count)    {
+		return;
+	}
+
+	printk(KERN_DEBUG "ACPI: Delete PCI Interrupt Routing Table for %x:%x\n",
+		segment, bus);
+	spin_lock(&acpi_prt_lock);
+	list_for_each_safe(node, n, &acpi_prt.entries) {
+		entry = list_entry(node, struct acpi_prt_entry, node);
+
+		acpi_pci_irq_del_entry(segment, bus, entry);
+	}
+	spin_unlock(&acpi_prt_lock);
+}
 /* --------------------------------------------------------------------------
                           PCI Interrupt Routing Support
    -------------------------------------------------------------------------- */
+typedef int (*irq_lookup_func)(struct acpi_prt_entry *, int *, int *, char **);
 
+static int
+acpi_pci_allocate_irq(struct acpi_prt_entry *entry,
+	int	*edge_level,
+	int	*active_high_low,
+	char	**link)
+{
+	int	irq;
+
+	ACPI_FUNCTION_TRACE("acpi_pci_allocate_irq");
+
+	if (entry->link.handle) {
+		irq = acpi_pci_link_allocate_irq(entry->link.handle,
+			entry->link.index, edge_level, active_high_low, link);
+		if (irq < 0) {
+			ACPI_DEBUG_PRINT((ACPI_DB_WARN, "Invalid IRQ link routing entry\n"));
+			return_VALUE(-1);
+		}
+	} else {
+		irq = entry->link.index;
+		*edge_level = ACPI_LEVEL_SENSITIVE;
+		*active_high_low = ACPI_ACTIVE_LOW;
+	}
+
+	ACPI_DEBUG_PRINT((ACPI_DB_INFO, "Found IRQ %d\n", irq));
+	return_VALUE(irq);
+}
+
+static int
+acpi_pci_free_irq(struct acpi_prt_entry *entry,
+	int	*edge_level,
+	int	*active_high_low,
+	char	**link)
+{
+	int	irq;
+
+	ACPI_FUNCTION_TRACE("acpi_pci_free_irq");
+	if (entry->link.handle) {
+		irq = acpi_pci_link_free_irq(entry->link.handle);
+	} else {
+		irq = entry->link.index;
+	}
+	return_VALUE(irq);
+}
 /*
  * acpi_pci_irq_lookup
  * success: return IRQ >= 0
@@ -238,12 +325,14 @@ acpi_pci_irq_lookup (
 	int			device,
 	int			pin,
 	int			*edge_level,
-	int			*active_high_low)
+	int			*active_high_low,
+	char			**link,
+	irq_lookup_func		func)
 {
 	struct acpi_prt_entry	*entry = NULL;
 	int segment = pci_domain_nr(bus);
 	int bus_nr = bus->number;
-	int irq;
+	int ret;
 
 	ACPI_FUNCTION_TRACE("acpi_pci_irq_lookup");
 
@@ -257,21 +346,8 @@ acpi_pci_irq_lookup (
 		return_VALUE(-1);
 	}
 	
-	if (entry->link.handle) {
-		irq = acpi_pci_link_get_irq(entry->link.handle, entry->link.index, edge_level, active_high_low);
-		if (irq < 0) {
-			ACPI_DEBUG_PRINT((ACPI_DB_WARN, "Invalid IRQ link routing entry\n"));
-			return_VALUE(-1);
-		}
-	} else {
-		irq = entry->link.index;
-		*edge_level = ACPI_LEVEL_SENSITIVE;
-		*active_high_low = ACPI_ACTIVE_LOW;
-	}
-
-	ACPI_DEBUG_PRINT((ACPI_DB_INFO, "Found IRQ %d\n", irq));
-
-	return_VALUE(irq);
+	ret = func(entry, edge_level, active_high_low, link);
+	return_VALUE(ret);
 }
 
 /*
@@ -284,7 +360,9 @@ acpi_pci_irq_derive (
 	struct pci_dev		*dev,
 	int			pin,
 	int			*edge_level,
-	int			*active_high_low)
+	int			*active_high_low,
+	char			**link,
+	irq_lookup_func		func)
 {
 	struct pci_dev		*bridge = dev;
 	int			irq = -1;
@@ -317,7 +395,7 @@ acpi_pci_irq_derive (
 		}
 
 		irq = acpi_pci_irq_lookup(bridge->bus, PCI_SLOT(bridge->devfn),
-			pin, edge_level, active_high_low);
+			pin, edge_level, active_high_low, link, func);
 	}
 
 	if (irq < 0) {
@@ -345,6 +423,7 @@ acpi_pci_irq_enable (
 	u8			pin = 0;
 	int			edge_level = ACPI_LEVEL_SENSITIVE;
 	int			active_high_low = ACPI_ACTIVE_LOW;
+	char			*link = NULL;
 
 	ACPI_FUNCTION_TRACE("acpi_pci_irq_enable");
 
@@ -367,25 +446,28 @@ acpi_pci_irq_enable (
 	 * First we check the PCI IRQ routing table (PRT) for an IRQ.  PRT
 	 * values override any BIOS-assigned IRQs set during boot.
 	 */
- 	irq = acpi_pci_irq_lookup(dev->bus, PCI_SLOT(dev->devfn), pin, &edge_level, &active_high_low);
+ 	irq = acpi_pci_irq_lookup(dev->bus, PCI_SLOT(dev->devfn), pin,
+		&edge_level, &active_high_low, &link, acpi_pci_allocate_irq);
 
 	/*
 	 * If no PRT entry was found, we'll try to derive an IRQ from the
 	 * device's parent bridge.
 	 */
 	if (irq < 0)
- 		irq = acpi_pci_irq_derive(dev, pin, &edge_level, &active_high_low);
+ 		irq = acpi_pci_irq_derive(dev, pin, &edge_level,
+			&active_high_low, &link, acpi_pci_allocate_irq);
  
 	/*
 	 * No IRQ known to the ACPI subsystem - maybe the BIOS / 
 	 * driver reported one, then use it. Exit in any case.
 	 */
 	if (irq < 0) {
-		printk(KERN_WARNING PREFIX "PCI interrupt %s[%c]: no GSI",
+		printk(KERN_WARNING PREFIX "PCI Interrupt %s[%c]: no GSI",
 			pci_name(dev), ('A' + pin));
 		/* Interrupt Line values above 0xF are forbidden */
-		if (dev->irq >= 0 && (dev->irq <= 0xF)) {
+		if (dev->irq > 0 && (dev->irq <= 0xF)) {
 			printk(" - using IRQ %d\n", dev->irq);
+			acpi_register_gsi(dev->irq, ACPI_LEVEL_SENSITIVE, ACPI_ACTIVE_LOW);
 			return_VALUE(0);
 		}
 		else {
@@ -396,9 +478,13 @@ acpi_pci_irq_enable (
 
 	dev->irq = acpi_register_gsi(irq, edge_level, active_high_low);
 
-	printk(KERN_INFO PREFIX "PCI interrupt %s[%c] -> GSI %u "
-		"(%s, %s) -> IRQ %d\n",
-		pci_name(dev), 'A' + pin, irq,
+	printk(KERN_INFO PREFIX "PCI Interrupt %s[%c] -> ",
+		pci_name(dev), 'A' + pin);
+
+	if (link)
+		printk("Link [%s] -> ", link);
+
+	printk("GSI %u (%s, %s) -> IRQ %d\n", irq,
 		(edge_level == ACPI_LEVEL_SENSITIVE) ? "level" : "edge",
 		(active_high_low == ACPI_ACTIVE_LOW) ? "low" : "high",
 		dev->irq);
@@ -407,3 +493,56 @@ acpi_pci_irq_enable (
 }
 EXPORT_SYMBOL(acpi_pci_irq_enable);
 
+
+/* FIXME: implement x86/x86_64 version */
+void __attribute__((weak)) acpi_unregister_gsi(u32 i) {}
+
+void
+acpi_pci_irq_disable (
+	struct pci_dev		*dev)
+{
+	int			gsi = 0;
+	u8			pin = 0;
+	int			edge_level = ACPI_LEVEL_SENSITIVE;
+	int			active_high_low = ACPI_ACTIVE_LOW;
+
+	ACPI_FUNCTION_TRACE("acpi_pci_irq_disable");
+
+	if (!dev)
+		return_VOID;
+
+	pci_read_config_byte(dev, PCI_INTERRUPT_PIN, &pin);
+	if (!pin)
+		return_VOID;
+	pin--;
+
+	if (!dev->bus)
+		return_VOID;
+
+	/*
+	 * First we check the PCI IRQ routing table (PRT) for an IRQ.
+	 */
+ 	gsi = acpi_pci_irq_lookup(dev->bus, PCI_SLOT(dev->devfn), pin,
+			&edge_level, &active_high_low, NULL, acpi_pci_free_irq);
+	/*
+	 * If no PRT entry was found, we'll try to derive an IRQ from the
+	 * device's parent bridge.
+	 */
+	if (gsi < 0)
+ 		gsi = acpi_pci_irq_derive(dev, pin,
+			&edge_level, &active_high_low, NULL, acpi_pci_free_irq);
+	if (gsi < 0)
+		return_VOID;
+
+	/*
+	 * TBD: It might be worth clearing dev->irq by magic constant
+	 * (e.g. PCI_UNDEFINED_IRQ).
+	 */
+
+	printk(KERN_INFO PREFIX "PCI interrupt for device %s disabled\n",
+	       pci_name(dev));
+
+	acpi_unregister_gsi(gsi);
+
+	return_VOID;
+}

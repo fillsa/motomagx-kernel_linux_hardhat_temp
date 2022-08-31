@@ -1,5 +1,5 @@
 /*
-    $Id: bttv-risc.c,v 1.9 2004/10/13 10:39:00 kraxel Exp $
+    $Id: bttv-risc.c,v 1.10 2004/11/19 18:07:12 kraxel Exp $
 
     bttv-risc.c  --  interfaces to other kernel modules
 
@@ -109,7 +109,7 @@ bttv_risc_packed(struct bttv *btv, struct btcx_riscmem *risc,
 	return 0;
 }
 
-int
+static int
 bttv_risc_planar(struct bttv *btv, struct btcx_riscmem *risc,
 		 struct scatterlist *sglist,
 		 unsigned int yoffset,  unsigned int ybpl,
@@ -227,7 +227,7 @@ bttv_risc_planar(struct bttv *btv, struct btcx_riscmem *risc,
 	return 0;
 }
 
-int
+static int
 bttv_risc_overlay(struct bttv *btv, struct btcx_riscmem *risc,
 		  const struct bttv_format *fmt, struct bttv_overlay *ov,
 		  int skip_even, int skip_odd)
@@ -315,7 +315,7 @@ bttv_risc_overlay(struct bttv *btv, struct btcx_riscmem *risc,
 
 /* ---------------------------------------------------------- */
 
-void
+static void
 bttv_calc_geo(struct bttv *btv, struct bttv_geometry *geo,
 	      int width, int height, int interleaved, int norm)
 {
@@ -334,10 +334,6 @@ bttv_calc_geo(struct bttv *btv, struct bttv_geometry *geo,
 	}
 
 	vdelay = tvnorm->vdelay;
-#if 0 /* FIXME */
-	if (vdelay < btv->vbi.lines*2)
-		vdelay = btv->vbi.lines*2;
-#endif
 
         xsf = (width*scaledtwidth)/swidth;
         geo->hscale =  ((totalwidth*4096UL)/xsf-4096);
@@ -363,7 +359,7 @@ bttv_calc_geo(struct bttv *btv, struct bttv_geometry *geo,
         }
 }
 
-void
+static void
 bttv_apply_geo(struct bttv *btv, struct bttv_geometry *geo, int odd)
 {
         int off = odd ? 0x80 : 0x00;
@@ -776,13 +772,8 @@ bttv_overlay_risc(struct bttv *btv,
 		bttv_risc_overlay(btv, &buf->bottom, fmt, ov, 0, 0);
 		break;
 	case V4L2_FIELD_INTERLACED:
-#if 0
-		bttv_risc_overlay(btv, &buf->top,    fmt, ov, 1, 0);
-		bttv_risc_overlay(btv, &buf->bottom, fmt, ov, 0, 1);
-#else
 		bttv_risc_overlay(btv, &buf->top,    fmt, ov, 0, 1);
 		bttv_risc_overlay(btv, &buf->bottom, fmt, ov, 1, 0);
-#endif
 		break;
 	default:
 		BUG();

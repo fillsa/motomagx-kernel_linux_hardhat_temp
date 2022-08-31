@@ -31,15 +31,13 @@
 #include <asm/mach/flash.h>
 #include <asm/mach/map.h>
 
-#include <asm/arch/clocks.h>
-#include <asm/arch/gpio.h>
 #include <asm/arch/fpga.h>
+#include <asm/arch/gpio.h>
+#include <asm/arch/tc.h>
 #include <asm/arch/tc.h>
 #include <asm/arch/usb.h>
 
 #include "common.h"
-
-static int __initdata innovator_serial_ports[OMAP_MAX_NR_PORTS] = {1, 1, 1};
 
 static struct mtd_partition innovator_partitions[] = {
 	/* bootloader (U-Boot, etc) in first sector */
@@ -101,6 +99,8 @@ static struct platform_device innovator_flash_device = {
 	.num_resources	= 1,
 	.resource	= &innovator_flash_resource,
 };
+
+static int __initdata innovator_serial_ports[OMAP_MAX_NR_PORTS] = {1, 1, 1};
 
 #ifdef CONFIG_ARCH_OMAP1510
 

@@ -17,7 +17,7 @@
  *
  * This code is GPL
  *
- * $Id: cfi_cmdset_0002.c,v 1.117 2005/06/06 23:04:35 tpoynor Exp $
+ * $Id: cfi_cmdset_0002.c,v 1.118 2005/07/04 22:34:29 gleixner Exp $
  *
  */
 
@@ -1018,7 +1018,7 @@ static int __xipram do_write_oneword(struct map_info *map, struct flchip *chip, 
 			xip_enable(map, chip, adr);
 			printk(KERN_WARNING "MTD %s(): software timeout\n", __func__);
 			xip_disable(map, chip, adr);
-			break;
+                        break;
 		}
 
 		if (chip_ready(map, adr))

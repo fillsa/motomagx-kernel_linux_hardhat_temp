@@ -25,26 +25,21 @@
 static pte_t *get_one_pte_map_nested(struct mm_struct *mm, unsigned long addr)
 {
 	pgd_t *pgd;
+	pud_t *pud;
 	pmd_t *pmd;
 	pte_t *pte = NULL;
 
 	pgd = pgd_offset(mm, addr);
-	if (pgd_none(*pgd))
+	if (pgd_none_or_clear_bad(pgd))
 		goto end;
-	if (pgd_bad(*pgd)) {
-		pgd_ERROR(*pgd);
-		pgd_clear(pgd);
-		goto end;
-	}
 
-	pmd = pmd_offset(pgd, addr);
-	if (pmd_none(*pmd))
+	pud = pud_offset(pgd, addr);
+	if (pud_none_or_clear_bad(pud))
 		goto end;
-	if (pmd_bad(*pmd)) {
-		pmd_ERROR(*pmd);
-		pmd_clear(pmd);
+
+	pmd = pmd_offset(pud, addr);
+	if (pmd_none_or_clear_bad(pmd))
 		goto end;
-	}
 
 	pte = pte_offset_map_nested(pmd, addr);
 	if (pte_none(*pte)) {
@@ -58,23 +53,37 @@ end:
 static pte_t *get_one_pte_map(struct mm_struct *mm, unsigned long addr)
 {
 	pgd_t *pgd;
+	pud_t *pud;
 	pmd_t *pmd;
 
 	pgd = pgd_offset(mm, addr);
-	if (pgd_none(*pgd))
+	if (pgd_none_or_clear_bad(pgd))
 		return NULL;
-	pmd = pmd_offset(pgd, addr);
-	if (!pmd_present(*pmd))
+
+	pud = pud_offset(pgd, addr);
+	if (pud_none_or_clear_bad(pud))
 		return NULL;
+
+	pmd = pmd_offset(pud, addr);
+	if (pmd_none_or_clear_bad(pmd))
+		return NULL;
+
 	return pte_offset_map(pmd, addr);
 }
 
 static inline pte_t *alloc_one_pte_map(struct mm_struct *mm, unsigned long addr)
 {
+	pgd_t *pgd;
+	pud_t *pud;
 	pmd_t *pmd;
 	pte_t *pte = NULL;
 
-	pmd = pmd_alloc(mm, pgd_offset(mm, addr), addr);
+	pgd = pgd_offset(mm, addr);
+
+	pud = pud_alloc(mm, pgd, addr);
+	if (!pud)
+		return NULL;
+	pmd = pmd_alloc(mm, pud, addr);
 	if (pmd)
 		pte = pte_alloc_map(mm, pmd, addr);
 	return pte;
@@ -82,7 +91,7 @@ static inline pte_t *alloc_one_pte_map(struct mm_struct *mm, unsigned long addr)
 
 static int
 move_one_page(struct vm_area_struct *vma, unsigned long old_addr,
-		unsigned long new_addr)
+		struct vm_area_struct *new_vma, unsigned long new_addr)
 {
 	struct address_space *mapping = NULL;
 	struct mm_struct *mm = vma->vm_mm;
@@ -98,6 +107,9 @@ move_one_page(struct vm_area_struct *vma, unsigned long old_addr,
 		 */
 		mapping = vma->vm_file->f_mapping;
 		spin_lock(&mapping->i_mmap_lock);
+		if (new_vma->vm_truncate_count &&
+		    new_vma->vm_truncate_count != vma->vm_truncate_count)
+			new_vma->vm_truncate_count = 0;
 	}
 	spin_lock(&mm->page_table_lock);
 
@@ -129,7 +141,7 @@ move_one_page(struct vm_area_struct *vma, unsigned long old_addr,
 			if (dst) {
 				pte_t pte;
 				pte = ptep_clear_flush(vma, old_addr, src);
-				set_pte(dst, pte);
+				set_pte_at(mm, new_addr, dst, pte);
 			} else
 				error = -ENOMEM;
 			pte_unmap_nested(src);
@@ -144,8 +156,8 @@ move_one_page(struct vm_area_struct *vma, unsigned long old_addr,
 }
 
 static unsigned long move_page_tables(struct vm_area_struct *vma,
-		unsigned long new_addr, unsigned long old_addr,
-		unsigned long len)
+		unsigned long old_addr, struct vm_area_struct *new_vma,
+		unsigned long new_addr, unsigned long len)
 {
 	unsigned long offset;
 
@@ -157,7 +169,8 @@ static unsigned long move_page_tables(struct vm_area_struct *vma,
 	 * only a few pages.. This also makes error recovery easier.
 	 */
 	for (offset = 0; offset < len; offset += PAGE_SIZE) {
-		if (move_one_page(vma, old_addr+offset, new_addr+offset) < 0)
+		if (move_one_page(vma, old_addr + offset,
+				new_vma, new_addr + offset) < 0)
 			break;
 		cond_resched();
 	}
@@ -188,14 +201,14 @@ static unsigned long move_vma(struct vm_area_struct *vma,
 	if (!new_vma)
 		return -ENOMEM;
 
-	moved_len = move_page_tables(vma, new_addr, old_addr, old_len);
+	moved_len = move_page_tables(vma, old_addr, new_vma, new_addr, old_len);
 	if (moved_len < old_len) {
 		/*
 		 * On error, move entries back from new area to old,
 		 * which will succeed since page tables still there,
 		 * and then proceed to unmap new area instead of old.
 		 */
-		move_page_tables(new_vma, old_addr, new_addr, moved_len);
+		move_page_tables(new_vma, new_addr, vma, old_addr, moved_len);
 		vma = new_vma;
 		old_len = new_len;
 		old_addr = new_addr;
@@ -211,6 +224,13 @@ static unsigned long move_vma(struct vm_area_struct *vma,
 			split = 1;
 	}
 
+	/*
+	 * if we failed to move page tables we still do total_vm increment
+	 * since do_munmap() will decrement it by old_len == new_len
+	 */
+	mm->total_vm += new_len >> PAGE_SHIFT;
+	__vm_stat_account(mm, vma->vm_flags, vma->vm_file, new_len>>PAGE_SHIFT);
+
 	if (do_munmap(mm, old_addr, old_len) < 0) {
 		/* OOM: unable to split vma, just get accounts right */
 		vm_unacct_memory(excess >> PAGE_SHIFT);
@@ -224,8 +244,6 @@ static unsigned long move_vma(struct vm_area_struct *vma,
 			vma->vm_next->vm_flags |= VM_ACCOUNT;
 	}
 
-	mm->total_vm += new_len >> PAGE_SHIFT;
-	__vm_stat_account(mm, vma->vm_flags, vma->vm_file, new_len>>PAGE_SHIFT);
 	if (vm_flags & VM_LOCKED) {
 		mm->locked_vm += new_len >> PAGE_SHIFT;
 		if (new_len > old_len)
@@ -334,10 +352,10 @@ unsigned long do_mremap(unsigned long addr,
 		if (locked > lock_limit && !capable(CAP_IPC_LOCK))
 			goto out;
 	}
-	ret = -ENOMEM;
-	if ((current->mm->total_vm << PAGE_SHIFT) + (new_len - old_len)
-	    > current->signal->rlim[RLIMIT_AS].rlim_cur)
+	if (!may_expand_vm(current->mm, (new_len - old_len) >> PAGE_SHIFT)) {
+		ret = -ENOMEM;
 		goto out;
+	}
 
 	if (vma->vm_flags & VM_ACCOUNT) {
 		charged = (new_len - old_len) >> PAGE_SHIFT;

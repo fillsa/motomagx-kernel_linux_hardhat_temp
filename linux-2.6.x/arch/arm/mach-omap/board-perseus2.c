@@ -15,6 +15,7 @@
 #include <linux/init.h>
 #include <linux/device.h>
 #include <linux/delay.h>
+#include <linux/delay.h>
 #include <linux/mtd/mtd.h>
 #include <linux/mtd/partitions.h>
 #include <linux/nodemask.h>
@@ -26,7 +27,6 @@
 #include <asm/mach/flash.h>
 #include <asm/mach/map.h>
 
-#include <asm/arch/clocks.h>
 #include <asm/arch/gpio.h>
 #include <asm/arch/mux.h>
 #include <asm/arch/fpga.h>
@@ -103,6 +103,60 @@ static struct resource smc91x_resources[] = {
 
 static int __initdata p2_serial_ports[OMAP_MAX_NR_PORTS] = {1, 1, 0};
 
+static struct mtd_partition p2_partitions[] = {
+	/* bootloader (U-Boot, etc) in first sector */
+	{
+	      .name		= "bootloader",
+	      .offset		= 0,
+	      .size		= SZ_128K,
+	      .mask_flags	= MTD_WRITEABLE, /* force read-only */
+	},
+	/* bootloader params in the next sector */
+	{
+	      .name		= "params",
+	      .offset		= MTDPART_OFS_APPEND,
+	      .size		= SZ_128K,
+	      .mask_flags	= 0,
+	},
+	/* kernel */
+	{
+	      .name		= "kernel",
+	      .offset		= MTDPART_OFS_APPEND,
+	      .size		= SZ_2M,
+	      .mask_flags	= 0
+	},
+	/* rest of flash is a file system */
+	{
+	      .name		= "rootfs",
+	      .offset		= MTDPART_OFS_APPEND,
+	      .size		= MTDPART_SIZ_FULL,
+	      .mask_flags	= 0
+	},
+};
+
+static struct flash_platform_data p2_flash_data = {
+	.map_name	= "cfi_probe",
+	.width		= 2,
+	.parts		= p2_partitions,
+	.nr_parts	= ARRAY_SIZE(p2_partitions),
+};
+
+static struct resource p2_flash_resource = {
+	.start		= OMAP_FLASH_0_START,
+	.end		= OMAP_FLASH_0_START + OMAP_FLASH_0_SIZE - 1,
+	.flags		= IORESOURCE_MEM,
+};
+
+static struct platform_device p2_flash_device = {
+	.name		= "omapflash",
+	.id		= 0,
+	.dev		= {
+		.platform_data	= &p2_flash_data,
+	},
+	.num_resources	= 1,
+	.resource	= &p2_flash_resource,
+};
+
 static struct platform_device smc91x_device = {
 	.name		= "smc91x",
 	.id		= 0,
@@ -124,6 +178,22 @@ static struct platform_device *devices[] __initdata = {
 static void __init omap_perseus2_init(void)
 {
 	(void) platform_add_devices(devices, ARRAY_SIZE(devices));
+}
+
+static void __init perseus2_init_smc91x(void)
+{
+	fpga_write(1, H2P2_DBG_FPGA_LAN_RESET);
+	mdelay(50);
+	fpga_write(fpga_read(H2P2_DBG_FPGA_LAN_RESET) & ~1,
+		   H2P2_DBG_FPGA_LAN_RESET);
+	mdelay(50);
+}
+
+void omap_perseus2_init_irq(void)
+{
+	omap_init_irq();
+	omap_gpio_init();
+	perseus2_init_smc91x();
 }
 
 static void __init perseus2_init_smc91x(void)

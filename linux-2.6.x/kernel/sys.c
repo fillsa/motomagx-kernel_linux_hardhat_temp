@@ -22,13 +22,19 @@
 #include <linux/init.h>
 #include <linux/highuid.h>
 #include <linux/fs.h>
+#include <linux/kernel.h>
+#include <linux/kexec.h>
 #include <linux/workqueue.h>
 #include <linux/device.h>
 #include <linux/key.h>
 #include <linux/times.h>
+#include <linux/posix-timers.h>
 #include <linux/security.h>
 #include <linux/dcookies.h>
 #include <linux/suspend.h>
+#include <linux/tty.h>
+#include <linux/signal.h>
+
 #include <linux/compat.h>
 #include <linux/syscalls.h>
 
@@ -97,7 +103,7 @@ int cad_pid = 1;
  */
 
 static struct notifier_block *reboot_notifier_list;
-DEFINE_RWLOCK(notifier_lock);
+static DEFINE_RWLOCK(notifier_lock);
 
 /**
  *	notifier_chain_register	- Add notifier to a notifier chain
@@ -224,16 +230,17 @@ int unregister_reboot_notifier(struct notifier_block * nb)
 }
 
 EXPORT_SYMBOL(unregister_reboot_notifier);
+
 static int set_one_prio(struct task_struct *p, int niceval, int error)
 {
 	int no_nice;
 
 	if (p->uid != current->euid &&
-		p->uid != current->uid && !capable(CAP_SYS_NICE)) {
+		p->euid != current->euid && !capable(CAP_SYS_NICE)) {
 		error = -EPERM;
 		goto out;
 	}
-	if (niceval < task_nice(p) && !capable(CAP_SYS_NICE)) {
+	if (niceval < task_nice(p) && !can_nice(p, niceval)) {
 		error = -EACCES;
 		goto out;
 	}
@@ -364,6 +371,64 @@ out_unlock:
 	return retval;
 }
 
+void emergency_restart(void)
+{
+	machine_emergency_restart();
+}
+EXPORT_SYMBOL_GPL(emergency_restart);
+
+void kernel_restart(char *cmd)
+{
+	notifier_call_chain(&reboot_notifier_list, SYS_RESTART, cmd);
+	system_state = SYSTEM_RESTART;
+	device_shutdown();
+	if (!cmd) {
+		printk(KERN_EMERG "Restarting system.\n");
+	} else {
+		printk(KERN_EMERG "Restarting system with command '%s'.\n", cmd);
+	}
+	printk(".\n");
+	machine_restart(cmd);
+}
+EXPORT_SYMBOL_GPL(kernel_restart);
+
+void kernel_kexec(void)
+{
+#ifdef CONFIG_KEXEC
+	struct kimage *image;
+	image = xchg(&kexec_image, 0);
+	if (!image) {
+		return;
+	}
+	notifier_call_chain(&reboot_notifier_list, SYS_RESTART, NULL);
+	system_state = SYSTEM_RESTART;
+	device_shutdown();
+	printk(KERN_EMERG "Starting new kernel\n");
+	machine_shutdown();
+	machine_kexec(image);
+#endif
+}
+EXPORT_SYMBOL_GPL(kernel_kexec);
+
+void kernel_halt(void)
+{
+	notifier_call_chain(&reboot_notifier_list, SYS_HALT, NULL);
+	system_state = SYSTEM_HALT;
+	device_shutdown();
+	printk(KERN_EMERG "System halted.\n");
+	machine_halt();
+}
+EXPORT_SYMBOL_GPL(kernel_halt);
+
+void kernel_power_off(void)
+{
+	notifier_call_chain(&reboot_notifier_list, SYS_POWER_OFF, NULL);
+	system_state = SYSTEM_POWER_OFF;
+	device_shutdown();
+	printk(KERN_EMERG "Power down.\n");
+	machine_power_off();
+}
+EXPORT_SYMBOL_GPL(kernel_power_off);
 
 /*
  * Reboot system call: for obvious reasons only root may call it,
@@ -396,12 +461,10 @@ asmlinkage long sys_reboot(int magic1, int magic2, unsigned int cmd, void __user
 #ifdef CONFIG_KFI
 		kfi_dump_log(NULL);
 #endif
-		system_state = SYSTEM_RESTART;
-		device_shutdown();
 #ifndef CONFIG_MOT_WFN244
 		printk(KERN_EMERG "Restarting system.\n");
 #endif
-		machine_restart(NULL);
+		kernel_restart(NULL);
 		break;
 
 	case LINUX_REBOOT_CMD_CAD_ON:
@@ -413,31 +476,25 @@ asmlinkage long sys_reboot(int magic1, int magic2, unsigned int cmd, void __user
 		break;
 
 	case LINUX_REBOOT_CMD_HALT:
-		notifier_call_chain(&reboot_notifier_list, SYS_HALT, NULL);
 #ifdef CONFIG_KFI
 		kfi_dump_log(NULL);
 #endif
-		system_state = SYSTEM_HALT;
-		device_shutdown();
 #ifndef CONFIG_MOT_WFN244
 		printk(KERN_EMERG "System halted.\n");
 #endif
-		machine_halt();
+		kernel_halt();
 		unlock_kernel();
 		do_exit(0);
 		break;
 
 	case LINUX_REBOOT_CMD_POWER_OFF:
-		notifier_call_chain(&reboot_notifier_list, SYS_POWER_OFF, NULL);
 #ifdef CONFIG_KFI
 		kfi_dump_log(NULL);
 #endif
-		system_state = SYSTEM_POWER_OFF;
-		device_shutdown();
 #ifndef CONFIG_MOT_WFN244
 		printk(KERN_EMERG "Power down.\n");
 #endif
-		machine_power_off();
+		kernel_power_off();
 		unlock_kernel();
 		do_exit(0);
 		break;
@@ -448,18 +505,19 @@ asmlinkage long sys_reboot(int magic1, int magic2, unsigned int cmd, void __user
 			return -EFAULT;
 		}
 		buffer[sizeof(buffer) - 1] = '\0';
-
-		notifier_call_chain(&reboot_notifier_list, SYS_RESTART, buffer);
-		system_state = SYSTEM_RESTART;
-		device_shutdown();
 #ifndef CONFIG_MOT_WFN244
 		printk(KERN_EMERG "Restarting system with command '%s'.\n", buffer);
 #endif
 #ifdef CONFIG_KFI
 		kfi_dump_log(NULL);
 #endif
-		machine_restart(buffer);
+		kernel_restart(buffer);
 		break;
+
+	case LINUX_REBOOT_CMD_KEXEC:
+		kernel_kexec();
+		unlock_kernel();
+		return -EINVAL;
 
 #ifdef CONFIG_SOFTWARE_SUSPEND
 	case LINUX_REBOOT_CMD_SW_SUSPEND:
@@ -480,8 +538,7 @@ asmlinkage long sys_reboot(int magic1, int magic2, unsigned int cmd, void __user
 
 static void deferred_cad(void *dummy)
 {
-	notifier_call_chain(&reboot_notifier_list, SYS_RESTART, NULL);
-	machine_restart(NULL);
+	kernel_restart(NULL);
 }
 
 /*
@@ -550,8 +607,8 @@ asmlinkage long sys_setregid(gid_t rgid, gid_t egid)
 	}
 	if (new_egid != old_egid)
 	{
-		current->mm->dumpable = 0;
-		wmb();
+		current->mm->dumpable = suid_dumpable;
+		smp_wmb();
 	}
 	if (rgid != (gid_t) -1 ||
 	    (egid != (gid_t) -1 && egid != old_rgid))
@@ -581,8 +638,8 @@ asmlinkage long sys_setgid(gid_t gid)
 	{
 		if(old_egid != gid)
 		{
-			current->mm->dumpable=0;
-			wmb();
+			current->mm->dumpable = suid_dumpable;
+			smp_wmb();
 		}
 		current->gid = current->egid = current->sgid = current->fsgid = gid;
 	}
@@ -590,8 +647,8 @@ asmlinkage long sys_setgid(gid_t gid)
 	{
 		if(old_egid != gid)
 		{
-			current->mm->dumpable=0;
-			wmb();
+			current->mm->dumpable = suid_dumpable;
+			smp_wmb();
 		}
 		current->egid = current->fsgid = gid;
 	}
@@ -621,8 +678,8 @@ static int set_user(uid_t new_ruid, int dumpclear)
 
 	if(dumpclear)
 	{
-		current->mm->dumpable = 0;
-		wmb();
+		current->mm->dumpable = suid_dumpable;
+		smp_wmb();
 	}
 	current->uid = new_ruid;
 	return 0;
@@ -678,8 +735,8 @@ asmlinkage long sys_setreuid(uid_t ruid, uid_t euid)
 
 	if (new_euid != old_euid)
 	{
-		current->mm->dumpable=0;
-		wmb();
+		current->mm->dumpable = suid_dumpable;
+		smp_wmb();
 	}
 	current->fsuid = current->euid = new_euid;
 	if (ruid != (uid_t) -1 ||
@@ -728,8 +785,8 @@ asmlinkage long sys_setuid(uid_t uid)
 
 	if (old_euid != uid)
 	{
-		current->mm->dumpable = 0;
-		wmb();
+		current->mm->dumpable = suid_dumpable;
+		smp_wmb();
 	}
 	current->fsuid = current->euid = uid;
 	current->suid = new_suid;
@@ -773,8 +830,8 @@ asmlinkage long sys_setresuid(uid_t ruid, uid_t euid, uid_t suid)
 	if (euid != (uid_t) -1) {
 		if (euid != current->euid)
 		{
-			current->mm->dumpable = 0;
-			wmb();
+			current->mm->dumpable = suid_dumpable;
+			smp_wmb();
 		}
 		current->euid = euid;
 	}
@@ -823,8 +880,8 @@ asmlinkage long sys_setresgid(gid_t rgid, gid_t egid, gid_t sgid)
 	if (egid != (gid_t) -1) {
 		if (egid != current->egid)
 		{
-			current->mm->dumpable = 0;
-			wmb();
+			current->mm->dumpable = suid_dumpable;
+			smp_wmb();
 		}
 		current->egid = egid;
 	}
@@ -870,8 +927,8 @@ asmlinkage long sys_setfsuid(uid_t uid)
 	{
 		if (uid != old_fsuid)
 		{
-			current->mm->dumpable = 0;
-			wmb();
+			current->mm->dumpable = suid_dumpable;
+			smp_wmb();
 		}
 		current->fsuid = uid;
 	}
@@ -884,7 +941,7 @@ asmlinkage long sys_setfsuid(uid_t uid)
 }
 
 /*
- * Samma på svenska..
+ * Samma p\E5 svenska..
  */
 asmlinkage long sys_setfsgid(gid_t gid)
 {
@@ -900,8 +957,8 @@ asmlinkage long sys_setfsgid(gid_t gid)
 	{
 		if (gid != old_fsgid)
 		{
-			current->mm->dumpable = 0;
-			wmb();
+			current->mm->dumpable = suid_dumpable;
+			smp_wmb();
 		}
 		current->fsgid = gid;
 		key_fsgid_changed(current);
@@ -919,39 +976,73 @@ asmlinkage long sys_times(struct tms __user * tbuf)
 	 */
 	if (tbuf) {
 		struct tms tmp;
-		struct task_struct *tsk = current;
-		struct task_struct *t;
-		unsigned long utime, stime, cutime, cstime;
+		cputime_t utime, stime, cutime, cstime;
 
-		read_lock(&tasklist_lock);
-		utime = tsk->signal->utime;
-		stime = tsk->signal->stime;
-		t = tsk;
-		do {
-			utime += t->utime;
-			stime += t->stime;
-			t = next_thread(t);
-		} while (t != tsk);
+#ifdef CONFIG_SMP
+		if (thread_group_empty(current)) {
+			/*
+			 * Single thread case without the use of any locks.
+			 *
+			 * We may race with release_task if two threads are
+			 * executing. However, release task first adds up the
+			 * counters (__exit_signal) before  removing the task
+			 * from the process tasklist (__unhash_process).
+			 * __exit_signal also acquires and releases the
+			 * siglock which results in the proper memory ordering
+			 * so that the list modifications are always visible
+			 * after the counters have been updated.
+			 *
+			 * If the counters have been updated by the second thread
+			 * but the thread has not yet been removed from the list
+			 * then the other branch will be executing which will
+			 * block on tasklist_lock until the exit handling of the
+			 * other task is finished.
+			 *
+			 * This also implies that the sighand->siglock cannot
+			 * be held by another processor. So we can also
+			 * skip acquiring that lock.
+			 */
+			utime = cputime_add(current->signal->utime, current->utime);
+			stime = cputime_add(current->signal->utime, current->stime);
+			cutime = current->signal->cutime;
+			cstime = current->signal->cstime;
+		} else
+#endif
+		{
 
-		/*
-		 * While we have tasklist_lock read-locked, no dying thread
-		 * can be updating current->signal->[us]time.  Instead,
-		 * we got their counts included in the live thread loop.
-		 * However, another thread can come in right now and
-		 * do a wait call that updates current->signal->c[us]time.
-		 * To make sure we always see that pair updated atomically,
-		 * we take the siglock around fetching them.
-		 */
-		spin_lock_irq(&tsk->sighand->siglock);
-		cutime = tsk->signal->cutime;
-		cstime = tsk->signal->cstime;
-		spin_unlock_irq(&tsk->sighand->siglock);
-		read_unlock(&tasklist_lock);
+			/* Process with multiple threads */
+			struct task_struct *tsk = current;
+			struct task_struct *t;
 
-		tmp.tms_utime = jiffies_to_clock_t(utime);
-		tmp.tms_stime = jiffies_to_clock_t(stime);
-		tmp.tms_cutime = jiffies_to_clock_t(cutime);
-		tmp.tms_cstime = jiffies_to_clock_t(cstime);
+			read_lock(&tasklist_lock);
+			utime = tsk->signal->utime;
+			stime = tsk->signal->stime;
+			t = tsk;
+			do {
+				utime = cputime_add(utime, t->utime);
+				stime = cputime_add(stime, t->stime);
+				t = next_thread(t);
+			} while (t != tsk);
+
+			/*
+			 * While we have tasklist_lock read-locked, no dying thread
+			 * can be updating current->signal->[us]time.  Instead,
+			 * we got their counts included in the live thread loop.
+			 * However, another thread can come in right now and
+			 * do a wait call that updates current->signal->c[us]time.
+			 * To make sure we always see that pair updated atomically,
+			 * we take the siglock around fetching them.
+			 */
+			spin_lock_irq(&tsk->sighand->siglock);
+			cutime = tsk->signal->cutime;
+			cstime = tsk->signal->cstime;
+			spin_unlock_irq(&tsk->sighand->siglock);
+			read_unlock(&tasklist_lock);
+		}
+		tmp.tms_utime = cputime_to_clock_t(utime);
+		tmp.tms_stime = cputime_to_clock_t(stime);
+		tmp.tms_cutime = cputime_to_clock_t(cutime);
+		tmp.tms_cstime = cputime_to_clock_t(cstime);
 		if (copy_to_user(tbuf, &tmp, sizeof(struct tms)))
 			return -EFAULT;
 	}
@@ -1104,6 +1195,7 @@ asmlinkage long sys_setsid(void)
 	if (!thread_group_leader(current))
 		return -EINVAL;
 
+	down(&tty_sem);
 	write_lock_irq(&tasklist_lock);
 
 	pid = find_pid(PIDTYPE_PGID, current->pid);
@@ -1117,6 +1209,7 @@ asmlinkage long sys_setsid(void)
 	err = process_group(current);
 out:
 	write_unlock_irq(&tasklist_lock);
+	up(&tty_sem);
 	return err;
 }
 
@@ -1218,7 +1311,7 @@ static int groups_from_user(struct group_info *group_info,
 	return 0;
 }
 
-/* a simple shell-metzner sort */
+/* a simple Shell sort */
 static void groups_sort(struct group_info *group_info)
 {
 	int base, max, stride;
@@ -1248,7 +1341,7 @@ static void groups_sort(struct group_info *group_info)
 }
 
 /* a simple bsearch */
-static int groups_search(struct group_info *group_info, gid_t grp)
+int groups_search(struct group_info *group_info, gid_t grp)
 {
 	int left, right;
 
@@ -1527,6 +1620,20 @@ asmlinkage long sys_setrlimit(unsigned int resource, struct rlimit __user *rlim)
 	task_lock(current->group_leader);
 	*old_rlim = new_rlim;
 	task_unlock(current->group_leader);
+
+	if (resource == RLIMIT_CPU && new_rlim.rlim_cur != RLIM_INFINITY &&
+	    (cputime_eq(current->signal->it_prof_expires, cputime_zero) ||
+	     new_rlim.rlim_cur <= cputime_to_secs(
+		     current->signal->it_prof_expires))) {
+		cputime_t cputime = secs_to_cputime(new_rlim.rlim_cur);
+		read_lock(&tasklist_lock);
+		spin_lock_irq(&current->sighand->siglock);
+		set_process_cpu_timer(current, CPUCLOCK_PROF,
+				      &cputime, NULL);
+		spin_unlock_irq(&current->sighand->siglock);
+		read_unlock(&tasklist_lock);
+	}
+
 	return 0;
 }
 
@@ -1550,11 +1657,11 @@ asmlinkage long sys_setrlimit(unsigned int resource, struct rlimit __user *rlim)
  * given child after it's reaped, or none so this sample is before reaping.
  */
 
-void k_getrusage(struct task_struct *p, int who, struct rusage *r)
+static void k_getrusage(struct task_struct *p, int who, struct rusage *r)
 {
 	struct task_struct *t;
 	unsigned long flags;
-	unsigned long utime, stime;
+	cputime_t utime, stime;
 
 	memset((char *) r, 0, sizeof *r);
 
@@ -1571,12 +1678,12 @@ void k_getrusage(struct task_struct *p, int who, struct rusage *r)
 			r->ru_minflt = p->signal->cmin_flt;
 			r->ru_majflt = p->signal->cmaj_flt;
 			spin_unlock_irqrestore(&p->sighand->siglock, flags);
-			jiffies_to_timeval(utime, &r->ru_utime);
-			jiffies_to_timeval(stime, &r->ru_stime);
+			cputime_to_timeval(utime, &r->ru_utime);
+			cputime_to_timeval(stime, &r->ru_stime);
 			break;
 		case RUSAGE_SELF:
 			spin_lock_irqsave(&p->sighand->siglock, flags);
-			utime = stime = 0;
+			utime = stime = cputime_zero;
 			goto sum_group;
 		case RUSAGE_BOTH:
 			spin_lock_irqsave(&p->sighand->siglock, flags);
@@ -1587,16 +1694,16 @@ void k_getrusage(struct task_struct *p, int who, struct rusage *r)
 			r->ru_minflt = p->signal->cmin_flt;
 			r->ru_majflt = p->signal->cmaj_flt;
 		sum_group:
-			utime += p->signal->utime;
-			stime += p->signal->stime;
+			utime = cputime_add(utime, p->signal->utime);
+			stime = cputime_add(stime, p->signal->stime);
 			r->ru_nvcsw += p->signal->nvcsw;
 			r->ru_nivcsw += p->signal->nivcsw;
 			r->ru_minflt += p->signal->min_flt;
 			r->ru_majflt += p->signal->maj_flt;
 			t = p;
 			do {
-				utime += t->utime;
-				stime += t->stime;
+				utime = cputime_add(utime, t->utime);
+				stime = cputime_add(stime, t->stime);
 				r->ru_nvcsw += t->nvcsw;
 				r->ru_nivcsw += t->nivcsw;
 				r->ru_minflt += t->min_flt;
@@ -1604,8 +1711,8 @@ void k_getrusage(struct task_struct *p, int who, struct rusage *r)
 				t = next_thread(t);
 			} while (t != p);
 			spin_unlock_irqrestore(&p->sighand->siglock, flags);
-			jiffies_to_timeval(utime, &r->ru_utime);
-			jiffies_to_timeval(stime, &r->ru_stime);
+			cputime_to_timeval(utime, &r->ru_utime);
+			cputime_to_timeval(stime, &r->ru_stime);
 			break;
 		default:
 			BUG();
@@ -1647,7 +1754,7 @@ asmlinkage long sys_prctl(int option, unsigned long arg2, unsigned long arg3,
 	switch (option) {
 		case PR_SET_PDEATHSIG:
 			sig = arg2;
-			if (sig < 0 || sig > _NSIG) {
+			if (!valid_signal(sig)) {
 				error = -EINVAL;
 				break;
 			}
@@ -1661,7 +1768,7 @@ asmlinkage long sys_prctl(int option, unsigned long arg2, unsigned long arg3,
 				error = 1;
 			break;
 		case PR_SET_DUMPABLE:
-			if (arg2 != 0 && arg2 != 1) {
+			if (arg2 < 0 || arg2 > 2) {
 				error = -EINVAL;
 				break;
 			}
@@ -1716,6 +1823,15 @@ asmlinkage long sys_prctl(int option, unsigned long arg2, unsigned long arg3,
 						sizeof(me->comm)-1) < 0)
 				return -EFAULT;
 			set_task_comm(me, ncomm);
+			return 0;
+		}
+		case PR_GET_NAME: {
+			struct task_struct *me = current;
+			unsigned char tcomm[sizeof(me->comm)];
+
+			get_task_comm(tcomm, me);
+			if (copy_to_user((char __user *)arg2, tcomm, sizeof(tcomm)))
+				return -EFAULT;
 			return 0;
 		}
 		default:

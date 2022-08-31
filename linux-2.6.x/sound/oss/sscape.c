@@ -991,7 +991,6 @@ static void __init sscape_pnp_init_hw(sscape_info* devc)
 	unsigned i;
 	static	char code_file_name[23] = "/sndscape/sndscape.cox";
 	
-	int sscape_sb_enable		= 0;
 	int sscape_joystic_enable	= 0x7f;
 	int sscape_mic_enable		= 0;
 	int sscape_ext_midi		= 0;		
@@ -1015,14 +1014,9 @@ static void __init sscape_pnp_init_hw(sscape_info* devc)
 	sscape_write( devc, 2, devc->ic_type == IC_ODIE ? 0x70 : 0x40);
 	sscape_write( devc, 3, ( devc -> dma << 4) | 0x80);
 
-	if ( sscape_sb_enable )
-		sscape_write (devc, 4, 0xF0 | (sb_irq << 2) | midi_irq);
-	else	
-		sscape_write (devc, 4, 0xF0 | (midi_irq<<2) | midi_irq);
+	sscape_write (devc, 4, 0xF0 | (midi_irq<<2) | midi_irq);
 
 	i = 0x10; //sscape_read(devc, 9) & (devc->ic_type == IC_ODIE ? 0xf0 : 0xc0);
-	if ( sscape_sb_enable )
-		i |= devc->ic_type == IC_ODIE ? 0x05 : 0x07;	    
 	if (sscape_joystic_enable) i |= 8;
 	
 	sscape_write (devc, 9, i);
@@ -1393,20 +1387,20 @@ static struct address_info cfg;
 static struct address_info cfg_mpu;
 
 static int __initdata spea = -1;
-static int __initdata mss = 0;
+static int mss = 0;
 static int __initdata dma = -1;
 static int __initdata irq = -1;
 static int __initdata io = -1;
 static int __initdata mpu_irq = -1;
 static int __initdata mpu_io = -1;
 
-MODULE_PARM(dma, "i");
-MODULE_PARM(irq, "i");
-MODULE_PARM(io, "i");
-MODULE_PARM(spea, "i");		/* spea=0/1 set the old_hardware */
-MODULE_PARM(mpu_irq, "i");
-MODULE_PARM(mpu_io, "i");
-MODULE_PARM(mss, "i");
+module_param(dma, int, 0);
+module_param(irq, int, 0);
+module_param(io, int, 0);
+module_param(spea, int, 0);		/* spea=0/1 set the old_hardware */
+module_param(mpu_irq, int, 0);
+module_param(mpu_io, int, 0);
+module_param(mss, int, 0);
 
 static int __init init_sscape(void)
 {

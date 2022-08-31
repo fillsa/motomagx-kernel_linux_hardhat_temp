@@ -1,4 +1,4 @@
- /*
+/*
  *  linux/arch/arm/mach-pxa/mainstone.c
  *
  *  Support for the Intel HCDDBBVA0 Development Platform.
@@ -387,15 +387,15 @@ static void __init mainstone_map_io(void)
 	PWER  = 0xC0000002;
 	PRER  = 0x00000002;
 	PFER  = 0x00000002;
-	/*	for use I SRAM as framebuffer.	*/
-	PSLR |= 0xF04;
-	PCFR = 0x66;
-	/*	For Keypad wakeup.	*/
-	KPC &=~KPC_ASACT;
-	KPC |=KPC_AS;
-	PKWR  = 0x000FD000;
-	/*	Need read PKWR back after set it.	*/
-	PKWR;
+ 	/*	for use I SRAM as framebuffer.	*/
+ 	PSLR |= 0xF04;
+ 	PCFR = 0x66;
+ 	/*	For Keypad wakeup.	*/
+ 	KPC &=~KPC_ASACT;
+ 	KPC |=KPC_AS;
+ 	PKWR  = 0x000FD000;
+ 	/*	Need read PKWR back after set it.	*/
+ 	PKWR;
 }
 
 #ifdef CONFIG_DISCONTIGMEM
@@ -411,13 +411,15 @@ fixup_mainstone(struct machine_desc *desc, struct tag *tags,
 #endif
 
 MACHINE_START(MAINSTONE, "Intel HCDDBBVA0 Development Platform (aka Mainstone)")
-	MAINTAINER("MontaVista Software Inc.")
-	BOOT_MEM(0xa0000000, 0x40000000, io_p2v(0x40000000))
+	/* Maintainer: MontaVista Software Inc. */
+	.phys_ram	= 0xa0000000,
+	.phys_io	= 0x40000000,
+	.io_pg_offst	= (io_p2v(0x40000000) >> 18) & 0xfffc,
+	.map_io		= mainstone_map_io,
+	.init_irq	= mainstone_init_irq,
 #ifdef CONFIG_DISCONTIGMEM
 	FIXUP(fixup_mainstone)
 #endif
-	MAPIO(mainstone_map_io)
-	INITIRQ(mainstone_init_irq)
 	.timer		= &pxa_timer,
-	INIT_MACHINE(mainstone_init)
+	.init_machine	= mainstone_init,
 MACHINE_END

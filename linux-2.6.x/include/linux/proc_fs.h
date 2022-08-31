@@ -75,6 +75,13 @@ struct kcore_list {
 	size_t size;
 };
 
+struct vmcore {
+	struct list_head list;
+	unsigned long long paddr;
+	unsigned long size;
+	loff_t offset;
+};
+
 #ifdef CONFIG_PROC_FS
 
 extern struct proc_dir_entry proc_root;
@@ -232,13 +239,8 @@ extern struct proc_dir_entry proc_root;
 static inline void kclist_add(struct kcore_list *new, void *addr, size_t size)
 {
 }
-static inline struct kcore_list * kclist_del(void *addr)
-{
-	return NULL;
-}
 #else
 extern void kclist_add(struct kcore_list *, void *, size_t);
-extern struct kcore_list *kclist_del(void *);
 #endif
 
 struct proc_inode {

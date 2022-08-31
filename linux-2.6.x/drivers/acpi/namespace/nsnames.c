@@ -5,7 +5,7 @@
  ******************************************************************************/
 
 /*
- * Copyright (C) 2000 - 2004, R. Byron Moore
+ * Copyright (C) 2000 - 2005, R. Byron Moore
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -50,6 +50,14 @@
 #define _COMPONENT          ACPI_NAMESPACE
 	 ACPI_MODULE_NAME    ("nsnames")
 
+/* Local prototypes */
+
+static void
+acpi_ns_build_external_path (
+	struct acpi_namespace_node      *node,
+	acpi_size                       size,
+	char                            *name_buffer);
+
 
 /*******************************************************************************
  *
@@ -66,7 +74,7 @@
  *
  ******************************************************************************/
 
-void
+static void
 acpi_ns_build_external_path (
 	struct acpi_namespace_node      *node,
 	acpi_size                       size,
@@ -126,7 +134,7 @@ acpi_ns_build_external_path (
  *
  * FUNCTION:    acpi_ns_get_external_pathname
  *
- * PARAMETERS:  Node            - NS node whose pathname is needed
+ * PARAMETERS:  Node            - Namespace node whose pathname is needed
  *
  * RETURN:      Pointer to storage containing the fully qualified name of
  *              the node, In external format (name segments separated by path

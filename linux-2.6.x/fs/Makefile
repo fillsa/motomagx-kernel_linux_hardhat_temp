@@ -14,9 +14,10 @@ obj-y :=	open.o read_write.o file_table.o buffer.o  bio.o super.o \
 		block_dev.o char_dev.o stat.o exec.o pipe.o namei.o fcntl.o \
 		ioctl.o readdir.o select.o fifo.o locks.o dcache.o inode.o \
 		attr.o bad_inode.o file.o filesystems.o namespace.o aio.o \
-		seq_file.o xattr.o libfs.o fs-writeback.o mpage.o direct-io.o 
+		seq_file.o xattr.o libfs.o fs-writeback.o mpage.o direct-io.o \
+		ioprio.o
 
-
+obj-$(CONFIG_INOTIFY)		+= inotify.o
 obj-$(CONFIG_EPOLL)		+= eventpoll.o
 obj-$(CONFIG_COMPAT)		+= compat.o
 
@@ -31,11 +32,13 @@ obj-$(CONFIG_BINFMT_MISC)	+= binfmt_misc.o
 obj-y				+= binfmt_script.o
 
 obj-$(CONFIG_BINFMT_ELF)	+= binfmt_elf.o
+obj-$(CONFIG_BINFMT_ELF_FDPIC)	+= binfmt_elf_fdpic.o
 obj-$(CONFIG_BINFMT_SOM)	+= binfmt_som.o
 obj-$(CONFIG_BINFMT_FLAT)	+= binfmt_flat.o
 
 obj-$(CONFIG_FS_MBCACHE)	+= mbcache.o
 obj-$(CONFIG_FS_POSIX_ACL)	+= posix_acl.o xattr_acl.o
+obj-$(CONFIG_NFS_COMMON)	+= nfs_common/
 
 obj-$(CONFIG_QUOTA)		+= dquot.o
 obj-$(CONFIG_QFMT_V1)		+= quota_v1.o
@@ -67,7 +70,6 @@ obj-$(CONFIG_RELAYFS_FS)	+= relayfs/
 obj-$(CONFIG_CODA_FS)		+= coda/
 obj-$(CONFIG_MINIX_FS)		+= minix/
 obj-$(CONFIG_FAT_FS)		+= fat/
-obj-$(CONFIG_UMSDOS_FS)		+= umsdos/
 obj-$(CONFIG_MSDOS_FS)		+= msdos/
 obj-$(CONFIG_VFAT_FS)		+= vfat/
 obj-$(CONFIG_BFS_FS)		+= bfs/
@@ -105,6 +107,7 @@ obj-$(CONFIG_AFS_FS)		+= afs/
 obj-$(CONFIG_BEFS_FS)		+= befs/
 obj-$(CONFIG_HOSTFS)		+= hostfs/
 obj-$(CONFIG_HPPFS)		+= hppfs/
+obj-$(CONFIG_DEBUG_FS)		+= debugfs/
 obj-$(CONFIG_YAFFS_FS)		+= yaffs2/
 obj-$(CONFIG_YAFFS1_FS)		+= yaffs/
 obj-$(CONFIG_YAFFS2_FS_LP)	+= yaffs2_lp/

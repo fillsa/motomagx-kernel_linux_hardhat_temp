@@ -49,8 +49,6 @@ typedef struct __user_cap_data_struct {
 
 #include <linux/spinlock.h>
 
-extern spinlock_t task_capability_lock;
-
 /* #define STRICT_CAP_T_TYPECHECKS */
 
 #ifdef STRICT_CAP_T_TYPECHECKS
@@ -294,6 +292,10 @@ typedef __u32 kernel_cap_t;
 
 #define CAP_SECURE_CLOCK     29
 #endif /* CONFIG_MOT_FEAT_SECURE_CLOCK */
+
+#define CAP_AUDIT_WRITE      29
+
+#define CAP_AUDIT_CONTROL    30
 
 #ifdef __KERNEL__
 /* 

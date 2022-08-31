@@ -15,7 +15,6 @@
  * 06/19/2006   Motorola  Support for boardrev API
  *
  */
-
 #include <linux/module.h>
 #include <linux/string.h>
 #include <linux/delay.h>

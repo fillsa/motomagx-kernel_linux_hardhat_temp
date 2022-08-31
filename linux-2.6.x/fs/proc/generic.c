@@ -329,10 +329,10 @@ static void release_inode_number(unsigned int inum)
 	spin_unlock(&proc_inum_lock);
 }
 
-static int proc_follow_link(struct dentry *dentry, struct nameidata *nd)
+static void *proc_follow_link(struct dentry *dentry, struct nameidata *nd)
 {
 	nd_set_link(nd, PDE(dentry->d_inode)->data);
-	return 0;
+	return NULL;
 }
 
 static struct inode_operations proc_link_inode_operations = {
@@ -551,6 +551,11 @@ static struct proc_dir_entry *proc_create(struct proc_dir_entry **parent,
 
 	if (!(*parent) && xlate_proc_name(name, parent, &fn) != 0)
 		goto out;
+
+	/* At this point there must not be any '/' characters beyond *fn */
+	if (strchr(fn, '/'))
+		goto out;
+
 	len = strlen(fn);
 
 	ent = kmalloc(sizeof(struct proc_dir_entry) + len + 1, GFP_KERNEL);

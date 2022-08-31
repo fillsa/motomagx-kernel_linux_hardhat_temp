@@ -68,6 +68,20 @@
 
 static void amp_voyetra(cs46xx_t *chip, int change);
 
+#ifdef CONFIG_SND_CS46XX_NEW_DSP
+static snd_pcm_ops_t snd_cs46xx_playback_rear_ops;
+static snd_pcm_ops_t snd_cs46xx_playback_indirect_rear_ops;
+static snd_pcm_ops_t snd_cs46xx_playback_clfe_ops;
+static snd_pcm_ops_t snd_cs46xx_playback_indirect_clfe_ops;
+static snd_pcm_ops_t snd_cs46xx_playback_iec958_ops;
+static snd_pcm_ops_t snd_cs46xx_playback_indirect_iec958_ops;
+#endif
+
+static snd_pcm_ops_t snd_cs46xx_playback_ops;
+static snd_pcm_ops_t snd_cs46xx_playback_indirect_ops;
+static snd_pcm_ops_t snd_cs46xx_capture_ops;
+static snd_pcm_ops_t snd_cs46xx_capture_indirect_ops;
+
 static unsigned short snd_cs46xx_codec_read(cs46xx_t *chip,
 					    unsigned short reg,
 					    int codec_index)
@@ -99,7 +113,7 @@ static unsigned short snd_cs46xx_codec_read(cs46xx_t *chip,
 	if ((tmp & ACCTL_VFRM) == 0) {
 		snd_printk(KERN_WARNING  "cs46xx: ACCTL_VFRM not set 0x%x\n",tmp);
 		snd_cs46xx_pokeBA0(chip, BA0_ACCTL, (tmp & (~ACCTL_ESYN)) | ACCTL_VFRM );
-		mdelay(50);
+		msleep(50);
 		tmp = snd_cs46xx_peekBA0(chip, BA0_ACCTL + offset);
 		snd_cs46xx_pokeBA0(chip, BA0_ACCTL, tmp | ACCTL_ESYN | ACCTL_VFRM );
 
@@ -1203,9 +1217,7 @@ static irqreturn_t snd_cs46xx_interrupt(int irq, void *dev_id, struct pt_regs *r
 			c = snd_cs46xx_peekBA0(chip, BA0_MIDRP);
 			if ((chip->midcr & MIDCR_RIE) == 0)
 				continue;
-			spin_unlock(&chip->reg_lock);
 			snd_rawmidi_receive(chip->midi_input, &c, 1);
-			spin_lock(&chip->reg_lock);
 		}
 		while ((snd_cs46xx_peekBA0(chip, BA0_MIDSR) & MIDSR_TBF) == 0) {
 			if ((chip->midcr & MIDCR_TIE) == 0)
@@ -1283,8 +1295,7 @@ static snd_pcm_hw_constraint_list_t hw_constraints_period_sizes = {
 
 static void snd_cs46xx_pcm_free_substream(snd_pcm_runtime_t *runtime)
 {
-	cs46xx_pcm_t * cpcm = runtime->private_data;
-	kfree(cpcm);
+	kfree(runtime->private_data);
 }
 
 static int _cs46xx_playback_open_channel (snd_pcm_substream_t * substream,int pcm_channel_id)
@@ -1446,7 +1457,7 @@ static int snd_cs46xx_capture_close(snd_pcm_substream_t * substream)
 }
 
 #ifdef CONFIG_SND_CS46XX_NEW_DSP
-snd_pcm_ops_t snd_cs46xx_playback_rear_ops = {
+static snd_pcm_ops_t snd_cs46xx_playback_rear_ops = {
 	.open =			snd_cs46xx_playback_open_rear,
 	.close =		snd_cs46xx_playback_close,
 	.ioctl =		snd_pcm_lib_ioctl,
@@ -1457,7 +1468,7 @@ snd_pcm_ops_t snd_cs46xx_playback_rear_ops = {
 	.pointer =		snd_cs46xx_playback_direct_pointer,
 };
 
-snd_pcm_ops_t snd_cs46xx_playback_indirect_rear_ops = {
+static snd_pcm_ops_t snd_cs46xx_playback_indirect_rear_ops = {
 	.open =			snd_cs46xx_playback_open_rear,
 	.close =		snd_cs46xx_playback_close,
 	.ioctl =		snd_pcm_lib_ioctl,
@@ -1469,7 +1480,7 @@ snd_pcm_ops_t snd_cs46xx_playback_indirect_rear_ops = {
 	.ack =			snd_cs46xx_playback_transfer,
 };
 
-snd_pcm_ops_t snd_cs46xx_playback_clfe_ops = {
+static snd_pcm_ops_t snd_cs46xx_playback_clfe_ops = {
 	.open =			snd_cs46xx_playback_open_clfe,
 	.close =		snd_cs46xx_playback_close,
 	.ioctl =		snd_pcm_lib_ioctl,
@@ -1480,7 +1491,7 @@ snd_pcm_ops_t snd_cs46xx_playback_clfe_ops = {
 	.pointer =		snd_cs46xx_playback_direct_pointer,
 };
 
-snd_pcm_ops_t snd_cs46xx_playback_indirect_clfe_ops = {
+static snd_pcm_ops_t snd_cs46xx_playback_indirect_clfe_ops = {
 	.open =			snd_cs46xx_playback_open_clfe,
 	.close =		snd_cs46xx_playback_close,
 	.ioctl =		snd_pcm_lib_ioctl,
@@ -1492,7 +1503,7 @@ snd_pcm_ops_t snd_cs46xx_playback_indirect_clfe_ops = {
 	.ack =			snd_cs46xx_playback_transfer,
 };
 
-snd_pcm_ops_t snd_cs46xx_playback_iec958_ops = {
+static snd_pcm_ops_t snd_cs46xx_playback_iec958_ops = {
 	.open =			snd_cs46xx_playback_open_iec958,
 	.close =		snd_cs46xx_playback_close_iec958,
 	.ioctl =		snd_pcm_lib_ioctl,
@@ -1503,7 +1514,7 @@ snd_pcm_ops_t snd_cs46xx_playback_iec958_ops = {
 	.pointer =		snd_cs46xx_playback_direct_pointer,
 };
 
-snd_pcm_ops_t snd_cs46xx_playback_indirect_iec958_ops = {
+static snd_pcm_ops_t snd_cs46xx_playback_indirect_iec958_ops = {
 	.open =			snd_cs46xx_playback_open_iec958,
 	.close =		snd_cs46xx_playback_close_iec958,
 	.ioctl =		snd_pcm_lib_ioctl,
@@ -1517,7 +1528,7 @@ snd_pcm_ops_t snd_cs46xx_playback_indirect_iec958_ops = {
 
 #endif
 
-snd_pcm_ops_t snd_cs46xx_playback_ops = {
+static snd_pcm_ops_t snd_cs46xx_playback_ops = {
 	.open =			snd_cs46xx_playback_open,
 	.close =		snd_cs46xx_playback_close,
 	.ioctl =		snd_pcm_lib_ioctl,
@@ -1528,7 +1539,7 @@ snd_pcm_ops_t snd_cs46xx_playback_ops = {
 	.pointer =		snd_cs46xx_playback_direct_pointer,
 };
 
-snd_pcm_ops_t snd_cs46xx_playback_indirect_ops = {
+static snd_pcm_ops_t snd_cs46xx_playback_indirect_ops = {
 	.open =			snd_cs46xx_playback_open,
 	.close =		snd_cs46xx_playback_close,
 	.ioctl =		snd_pcm_lib_ioctl,
@@ -1540,7 +1551,7 @@ snd_pcm_ops_t snd_cs46xx_playback_indirect_ops = {
 	.ack =			snd_cs46xx_playback_transfer,
 };
 
-snd_pcm_ops_t snd_cs46xx_capture_ops = {
+static snd_pcm_ops_t snd_cs46xx_capture_ops = {
 	.open =			snd_cs46xx_capture_open,
 	.close =		snd_cs46xx_capture_close,
 	.ioctl =		snd_pcm_lib_ioctl,
@@ -1551,7 +1562,7 @@ snd_pcm_ops_t snd_cs46xx_capture_ops = {
 	.pointer =		snd_cs46xx_capture_direct_pointer,
 };
 
-snd_pcm_ops_t snd_cs46xx_capture_indirect_ops = {
+static snd_pcm_ops_t snd_cs46xx_capture_indirect_ops = {
 	.open =			snd_cs46xx_capture_open,
 	.close =		snd_cs46xx_capture_close,
 	.ioctl =		snd_pcm_lib_ioctl,
@@ -2305,6 +2316,36 @@ static snd_kcontrol_new_t snd_cs46xx_controls[] __devinitdata = {
 };
 
 #ifdef CONFIG_SND_CS46XX_NEW_DSP
+/* set primary cs4294 codec into Extended Audio Mode */
+static int snd_cs46xx_front_dup_get(snd_kcontrol_t *kcontrol, 
+				    snd_ctl_elem_value_t *ucontrol)
+{
+	cs46xx_t *chip = snd_kcontrol_chip(kcontrol);
+	unsigned short val;
+	val = snd_ac97_read(chip->ac97[CS46XX_PRIMARY_CODEC_INDEX], AC97_CSR_ACMODE);
+	ucontrol->value.integer.value[0] = (val & 0x200) ? 0 : 1;
+	return 0;
+}
+
+static int snd_cs46xx_front_dup_put(snd_kcontrol_t *kcontrol, 
+				    snd_ctl_elem_value_t *ucontrol)
+{
+	cs46xx_t *chip = snd_kcontrol_chip(kcontrol);
+	return snd_ac97_update_bits(chip->ac97[CS46XX_PRIMARY_CODEC_INDEX],
+				    AC97_CSR_ACMODE, 0x200,
+				    ucontrol->value.integer.value[0] ? 0 : 0x200);
+}
+
+static snd_kcontrol_new_t snd_cs46xx_front_dup_ctl = {
+	.iface = SNDRV_CTL_ELEM_IFACE_MIXER,
+	.name = "Duplicate Front",
+	.info = snd_mixer_boolean_info,
+	.get = snd_cs46xx_front_dup_get,
+	.put = snd_cs46xx_front_dup_put,
+};
+#endif
+
+#ifdef CONFIG_SND_CS46XX_NEW_DSP
 /* Only available on the Hercules Game Theater XP soundcard */
 static snd_kcontrol_new_t snd_hercules_controls[] __devinitdata = {
 {
@@ -2359,8 +2400,7 @@ static void snd_cs46xx_codec_reset (ac97_t * ac97)
 		if ((err = snd_ac97_read(ac97, AC97_REC_GAIN)) == 0x8a05)
 			return;
 
-		set_current_state(TASK_UNINTERRUPTIBLE);
-		schedule_timeout(HZ/100);
+		msleep(10);
 	} while (time_after_eq(end_time, jiffies));
 
 	snd_printk("CS46xx secondary codec dont respond!\n");  
@@ -2394,8 +2434,7 @@ static int __devinit cs46xx_detect_codec(cs46xx_t *chip, int codec)
 			err = snd_ac97_mixer(chip->ac97_bus, &ac97, &chip->ac97[codec]);
 			return err;
 		}
-		set_current_state(TASK_INTERRUPTIBLE);
-		schedule_timeout(HZ/100);
+		msleep(10);
 	}
 	snd_printdd("snd_cs46xx: codec %d detection timeout\n", codec);
 	return -ENXIO;
@@ -2451,10 +2490,11 @@ int __devinit snd_cs46xx_mixer(cs46xx_t *chip)
 	if (chip->nr_ac97_codecs == 1) {
 		unsigned int id2 = chip->ac97[CS46XX_PRIMARY_CODEC_INDEX]->id & 0xffff;
 		if (id2 == 0x592b || id2 == 0x592d) {
-			/* set primary cs4294 codec into Extended Audio Mode */
-			snd_printdd("setting EAM bit on cs4294 CODEC\n");
-			snd_cs46xx_codec_write(chip, AC97_CSR_ACMODE, 0x200,
-					       CS46XX_PRIMARY_CODEC_INDEX);
+			err = snd_ctl_add(card, snd_ctl_new1(&snd_cs46xx_front_dup_ctl, chip));
+			if (err < 0)
+				return err;
+			snd_ac97_write_cache(chip->ac97[CS46XX_PRIMARY_CODEC_INDEX],
+					     AC97_CSR_ACMODE, 0x200);
 		}
 	}
 	/* do soundcard specific mixer setup */
@@ -2645,37 +2685,28 @@ int __devinit snd_cs46xx_midi(cs46xx_t *chip, int device, snd_rawmidi_t **rrawmi
 
 #if defined(CONFIG_GAMEPORT) || (defined(MODULE) && defined(CONFIG_GAMEPORT_MODULE))
 
-typedef struct snd_cs46xx_gameport {
-	struct gameport info;
-	cs46xx_t *chip;
-} cs46xx_gameport_t;
-
 static void snd_cs46xx_gameport_trigger(struct gameport *gameport)
 {
-	cs46xx_gameport_t *gp = (cs46xx_gameport_t *)gameport;
-	cs46xx_t *chip;
-	snd_assert(gp, return);
-	chip = gp->chip;
+	cs46xx_t *chip = gameport_get_port_data(gameport);
+
+	snd_assert(chip, return);
 	snd_cs46xx_pokeBA0(chip, BA0_JSPT, 0xFF);  //outb(gameport->io, 0xFF);
 }
 
 static unsigned char snd_cs46xx_gameport_read(struct gameport *gameport)
 {
-	cs46xx_gameport_t *gp = (cs46xx_gameport_t *)gameport;
-	cs46xx_t *chip;
-	snd_assert(gp, return 0);
-	chip = gp->chip;
+	cs46xx_t *chip = gameport_get_port_data(gameport);
+
+	snd_assert(chip, return 0);
 	return snd_cs46xx_peekBA0(chip, BA0_JSPT); //inb(gameport->io);
 }
 
 static int snd_cs46xx_gameport_cooked_read(struct gameport *gameport, int *axes, int *buttons)
 {
-	cs46xx_gameport_t *gp = (cs46xx_gameport_t *)gameport;
-	cs46xx_t *chip;
+	cs46xx_t *chip = gameport_get_port_data(gameport);
 	unsigned js1, js2, jst;
-	
-	snd_assert(gp, return 0);
-	chip = gp->chip;
+
+	snd_assert(chip, return 0);
 
 	js1 = snd_cs46xx_peekBA0(chip, BA0_JSC1);
 	js2 = snd_cs46xx_peekBA0(chip, BA0_JSC2);
@@ -2706,33 +2737,44 @@ static int snd_cs46xx_gameport_open(struct gameport *gameport, int mode)
 	return 0;
 }
 
-void __devinit snd_cs46xx_gameport(cs46xx_t *chip)
+int __devinit snd_cs46xx_gameport(cs46xx_t *chip)
 {
-	cs46xx_gameport_t *gp;
-	gp = kmalloc(sizeof(*gp), GFP_KERNEL);
-	if (! gp) {
-		snd_printk("cannot allocate gameport area\n");
-		return;
+	struct gameport *gp;
+
+	chip->gameport = gp = gameport_allocate_port();
+	if (!gp) {
+		printk(KERN_ERR "cs46xx: cannot allocate memory for gameport\n");
+		return -ENOMEM;
 	}
-	memset(gp, 0, sizeof(*gp));
-	gp->info.open = snd_cs46xx_gameport_open;
-	gp->info.read = snd_cs46xx_gameport_read;
-	gp->info.trigger = snd_cs46xx_gameport_trigger;
-	gp->info.cooked_read = snd_cs46xx_gameport_cooked_read;
-	gp->chip = chip;
-	chip->gameport = gp;
+
+	gameport_set_name(gp, "CS46xx Gameport");
+	gameport_set_phys(gp, "pci%s/gameport0", pci_name(chip->pci));
+	gameport_set_dev_parent(gp, &chip->pci->dev);
+	gameport_set_port_data(gp, chip);
+
+	gp->open = snd_cs46xx_gameport_open;
+	gp->read = snd_cs46xx_gameport_read;
+	gp->trigger = snd_cs46xx_gameport_trigger;
+	gp->cooked_read = snd_cs46xx_gameport_cooked_read;
 
 	snd_cs46xx_pokeBA0(chip, BA0_JSIO, 0xFF); // ?
 	snd_cs46xx_pokeBA0(chip, BA0_JSCTL, JSCTL_SP_MEDIUM_SLOW);
-	gameport_register_port(&gp->info);
+
+	gameport_register_port(gp);
+
+	return 0;
 }
 
-#else
-
-void __devinit snd_cs46xx_gameport(cs46xx_t *chip)
+static inline void snd_cs46xx_remove_gameport(cs46xx_t *chip)
 {
+	if (chip->gameport) {
+		gameport_unregister_port(chip->gameport);
+		chip->gameport = NULL;
+	}
 }
-
+#else
+int __devinit snd_cs46xx_gameport(cs46xx_t *chip) { return -ENOSYS; }
+static inline void snd_cs46xx_remove_gameport(cs46xx_t *chip) { }
 #endif /* CONFIG_GAMEPORT */
 
 /*
@@ -2848,12 +2890,7 @@ static int snd_cs46xx_free(cs46xx_t *chip)
 	if (chip->active_ctrl)
 		chip->active_ctrl(chip, 1);
 
-#if defined(CONFIG_GAMEPORT) || (defined(MODULE) && defined(CONFIG_GAMEPORT_MODULE))
-	if (chip->gameport) {
-		gameport_unregister_port(&chip->gameport->info);
-		kfree(chip->gameport);
-	}
-#endif
+	snd_cs46xx_remove_gameport(chip);
 
 	if (chip->amplifier_ctrl)
 		chip->amplifier_ctrl(chip, -chip->amplifier); /* force to off */
@@ -2979,8 +3016,7 @@ static int snd_cs46xx_chip_init(cs46xx_t *chip)
 	/*
          *  Wait until the PLL has stabilized.
 	 */
-	set_current_state(TASK_UNINTERRUPTIBLE);
-	schedule_timeout(HZ/10); /* 100ms */
+	msleep(100);
 
 	/*
 	 *  Turn on clocking of the core so that we can setup the serial ports.
@@ -3033,8 +3069,7 @@ static int snd_cs46xx_chip_init(cs46xx_t *chip)
 		 */
 		if (snd_cs46xx_peekBA0(chip, BA0_ACSTS) & ACSTS_CRDY)
 			goto ok1;
-		set_current_state(TASK_UNINTERRUPTIBLE);
-		schedule_timeout((HZ+99)/100);
+		msleep(10);
 	}
 
 
@@ -3083,8 +3118,7 @@ static int snd_cs46xx_chip_init(cs46xx_t *chip)
 		 */
 		if ((snd_cs46xx_peekBA0(chip, BA0_ACISV) & (ACISV_ISV3 | ACISV_ISV4)) == (ACISV_ISV3 | ACISV_ISV4))
 			goto ok2;
-		set_current_state(TASK_UNINTERRUPTIBLE);
-		schedule_timeout((HZ+99)/100);
+		msleep(10);
 	}
 
 #ifndef CONFIG_SND_CS46XX_NEW_DSP
@@ -3659,7 +3693,7 @@ static struct cs_card_type __devinitdata cards[] = {
  * APM support
  */
 #ifdef CONFIG_PM
-static int snd_cs46xx_suspend(snd_card_t *card, unsigned int state)
+static int snd_cs46xx_suspend(snd_card_t *card, pm_message_t state)
 {
 	cs46xx_t *chip = card->pm_private_data;
 	int amp_saved;
@@ -3680,11 +3714,10 @@ static int snd_cs46xx_suspend(snd_card_t *card, unsigned int state)
 	chip->active_ctrl(chip, -chip->amplifier);
 	chip->amplifier = amp_saved; /* restore the status */
 	pci_disable_device(chip->pci);
-	snd_power_change_state(card, SNDRV_CTL_POWER_D3hot);
 	return 0;
 }
 
-static int snd_cs46xx_resume(snd_card_t *card, unsigned int state)
+static int snd_cs46xx_resume(snd_card_t *card)
 {
 	cs46xx_t *chip = card->pm_private_data;
 	int amp_saved;
@@ -3717,7 +3750,6 @@ static int snd_cs46xx_resume(snd_card_t *card, unsigned int state)
 	else
 		chip->active_ctrl(chip, -1); /* disable CLKRUN */
 	chip->amplifier = amp_saved;
-	snd_power_change_state(card, SNDRV_CTL_POWER_D0);
 	return 0;
 }
 #endif /* CONFIG_PM */
@@ -3866,15 +3898,15 @@ int __devinit snd_cs46xx_create(snd_card_t * card,
 		return err;
 	}
 
-	snd_cs46xx_proc_init(card, chip);
-
-	snd_card_set_pm_callback(card, snd_cs46xx_suspend, snd_cs46xx_resume, chip);
-
 	if ((err = snd_device_new(card, SNDRV_DEV_LOWLEVEL, chip, &ops)) < 0) {
 		snd_cs46xx_free(chip);
 		return err;
 	}
 	
+	snd_cs46xx_proc_init(card, chip);
+
+	snd_card_set_pm_callback(card, snd_cs46xx_suspend, snd_cs46xx_resume, chip);
+
 	chip->active_ctrl(chip, -1); /* disable CLKRUN */
 
 	snd_card_set_dev(card, &pci->dev);

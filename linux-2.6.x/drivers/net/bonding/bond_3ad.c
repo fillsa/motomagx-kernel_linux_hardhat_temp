@@ -130,7 +130,6 @@ static const int ad_delta_in_ticks = (AD_TIMER_INTERVAL * HZ) / 1000;
 static u16 __get_link_speed(struct port *port);
 static u8 __get_duplex(struct port *port);
 static inline void __initialize_port_locks(struct port *port);
-static inline void __deinitialize_port_locks(struct port *port);
 //conversions
 static void __ntohs_lacpdu(struct lacpdu *lacpdu);
 static u16 __ad_timer_to_ticks(u16 timer_type, u16 Par);
@@ -443,15 +442,6 @@ static inline void __initialize_port_locks(struct port *port)
 {
 	// make sure it isn't called twice
 	spin_lock_init(&(SLAVE_AD_INFO(port->slave).rx_machine_lock));
-}
-
-/**
- * __deinitialize_port_locks - deinitialize a port's RX machine spinlock
- * @port: the port we're looking at
- *
- */
-static inline void __deinitialize_port_locks(struct port *port)
-{
 }
 
 //conversions
@@ -2185,7 +2175,7 @@ out:
  * received frames (loopback). Since only the payload is given to this
  * function, it check for loopback.
  */
-void bond_3ad_rx_indication(struct lacpdu *lacpdu, struct slave *slave, u16 length)
+static void bond_3ad_rx_indication(struct lacpdu *lacpdu, struct slave *slave, u16 length)
 {
 	struct port *port;
 
@@ -2356,7 +2346,6 @@ int bond_3ad_xmit_xor(struct sk_buff *skb, struct net_device *dev)
 {
 	struct slave *slave, *start_at;
 	struct bonding *bond = dev->priv;
-	struct ethhdr *data = (struct ethhdr *)skb->data;
 	int slave_agg_no;
 	int slaves_in_agg;
 	int agg_id;
@@ -2387,7 +2376,7 @@ int bond_3ad_xmit_xor(struct sk_buff *skb, struct net_device *dev)
 		goto out;
 	}
 
-	slave_agg_no = (data->h_dest[5]^bond->dev->dev_addr[5]) % slaves_in_agg;
+	slave_agg_no = bond->xmit_hash_policy(skb, dev, slaves_in_agg);
 
 	bond_for_each_slave(bond, slave, i) {
 		struct aggregator *agg = SLAVE_AD_INFO(slave).port.aggregator;

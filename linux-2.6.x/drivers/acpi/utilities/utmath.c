@@ -5,7 +5,7 @@
  ******************************************************************************/
 
 /*
- * Copyright (C) 2000 - 2004, R. Byron Moore
+ * Copyright (C) 2000 - 2005, R. Byron Moore
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -258,6 +258,8 @@ acpi_ut_divide (
 /*******************************************************************************
  *
  * FUNCTION:    acpi_ut_short_divide, acpi_ut_divide
+ *
+ * PARAMETERS:  See function headers above
  *
  * DESCRIPTION: Native versions of the ut_divide functions. Use these if either
  *              1) The target is a 64-bit platform and therefore 64-bit

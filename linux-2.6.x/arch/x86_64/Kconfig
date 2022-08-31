@@ -34,6 +34,18 @@ config ISA
 config SBUS
 	bool
 
+config RWSEM_GENERIC_SPINLOCK
+	bool
+	depends on !PREEMPT_RT
+	default y
+
+config RWSEM_XCHGADD_ALGORITHM
+	bool
+
+config GENERIC_CALIBRATE_DELAY
+	bool
+	default y
+
 config X86_CMPXCHG
 	bool
 	default y
@@ -41,32 +53,6 @@ config X86_CMPXCHG
 config EARLY_PRINTK
 	bool
 	default y
-	help
-	  Write kernel log output directly into the VGA buffer or to a serial
-	  port.
-
-	  This is useful for kernel debugging when your machine crashes very
-	  early before the console code is initialized. For normal operation
-	  it is not recommended because it looks ugly and doesn't cooperate
-	  with klogd/syslogd or the X server. You should normally N here,
-	  unless you want to debug such a crash.
-
-config HPET_TIMER
-	bool
-	default y
-	help
-	  Use the IA-PC HPET (High Precision Event Timer) to manage
-	  time in preference to the PIT and RTC, if a HPET is
-	  present.  The HPET provides a stable time base on SMP
-	  systems, unlike the RTC, but it is more expensive to access,
-	  as it is off-chip.  You can find the HPET spec at
-	  <http://www.intel.com/labs/platcomp/hpet/hpetspec.htm>.
-
-	  If unsure, say Y.
-
-config HPET_EMULATE_RTC
-	bool "Provide RTC interrupt"
-	depends on HPET_TIMER && RTC=y
 
 config GENERIC_ISA_DMA
 	bool
@@ -91,10 +77,11 @@ config MK8
 	  Optimize for AMD Opteron/Athlon64/Hammer/K8 CPUs.
 
 config MPSC
-       bool "Intel x86-64"
+       bool "Intel EM64T"
        help
-	  Optimize for Intel IA32 with 64bit extension CPUs
-	  (Prescott/Nocona/Potomac)
+	  Optimize for Intel Pentium 4 and Xeon CPUs with Intel
+	  Extended Memory 64 Technology(EM64T). For details see
+	  <http://www.intel.com/technology/64bitextensions/>.
 
 config GENERIC_CPU
 	bool "Generic-x86-64"
@@ -224,22 +211,16 @@ config SMP
 config SCHED_SMT
 	bool "SMT (Hyperthreading) scheduler support"
 	depends on SMP
-	default off
+	default n
 	help
 	  SMT scheduler support improves the CPU scheduler's decision making
 	  when dealing with Intel Pentium 4 chips with HyperThreading at a
 	  cost of slightly increased overhead in some places. If unsure say
 	  N here.
 
+source "kernel/Kconfig.preempt"
+
 source "lib/Kconfig.RT"
-
-config RWSEM_GENERIC_SPINLOCK
-	bool
-	depends on !PREEMPT_RT
-	default y
-
-config RWSEM_XCHGADD_ALGORITHM
-	bool
 
 config K8_NUMA
        bool "K8 NUMA support"
@@ -262,7 +243,7 @@ config NUMA_EMU
 	  into virtual nodes when booted with "numa=fake=N", where N is the
 	  number of nodes. This is only useful for debugging.
 
-config DISCONTIGMEM
+config ARCH_DISCONTIGMEM_ENABLE
        bool
        depends on NUMA
        default y
@@ -271,34 +252,95 @@ config NUMA
        bool
        default n
 
+config ARCH_DISCONTIGMEM_ENABLE
+	def_bool y
+	depends on NUMA
+
+config ARCH_DISCONTIGMEM_DEFAULT
+	def_bool y
+	depends on NUMA
+
+config ARCH_SPARSEMEM_ENABLE
+	def_bool y
+	depends on NUMA
+
+config ARCH_FLATMEM_ENABLE
+	def_bool y
+	depends on !NUMA
+
+source "mm/Kconfig"
+
+config HAVE_ARCH_EARLY_PFN_TO_NID
+	def_bool y
+
 config HAVE_DEC_LOCK
 	bool
 	depends on SMP
 	default y
 
-# actually 64 maximum, but you need to fix the APIC code first
-# to use clustered mode or whatever your big iron needs
 config NR_CPUS
-	int "Maximum number of CPUs (2-8)"
-	range 2 8
+	int "Maximum number of CPUs (2-256)"
+	range 2 256
 	depends on SMP
 	default "8"
 	help
 	  This allows you to specify the maximum number of CPUs which this
-	  kernel will support.  The maximum supported value is 32 and the
-	  minimum value which makes sense is 2.
+	  kernel will support. Current maximum is 256 CPUs due to
+	  APIC addressing limits. Less depending on the hardware.
 
 	  This is purely to save memory - each supported CPU requires
 	  memory in the static kernel configuration.
 
+config HOTPLUG_CPU
+	bool "Support for hot-pluggable CPUs (EXPERIMENTAL)"
+	depends on SMP && HOTPLUG && EXPERIMENTAL
+	help
+		Say Y here to experiment with turning CPUs off and on.  CPUs
+		can be controlled through /sys/devices/system/cpu/cpu#.
+		Say N if you want to disable CPU hotplug.
+
+
+config HPET_TIMER
+	bool
+	default y
+	help
+	  Use the IA-PC HPET (High Precision Event Timer) to manage
+	  time in preference to the PIT and RTC, if a HPET is
+	  present.  The HPET provides a stable time base on SMP
+	  systems, unlike the TSC, but it is more expensive to access,
+	  as it is off-chip.  You can find the HPET spec at
+	  <http://www.intel.com/labs/platcomp/hpet/hpetspec.htm>.
+
+config X86_PM_TIMER
+	bool "PM timer"
+	depends on ACPI
+	default y
+	help
+	  Support the ACPI PM timer for time keeping. This is slow,
+	  but is useful on some chipsets without HPET on systems with more
+	  than one CPU. On a single processor or single socket multi core
+	  system it is normally not required.
+	  When the PM timer is active 64bit vsyscalls are disabled
+	  and should not be enabled (/proc/sys/kernel/vsyscall64 should
+	  not be changed).
+	  The kernel selects the PM timer only as a last resort, so it is
+	  useful to enable just in case.
+
+config HPET_EMULATE_RTC
+	bool "Provide RTC interrupt"
+	depends on HPET_TIMER && RTC=y
+
 config GART_IOMMU
 	bool "IOMMU support"
+	default y
 	depends on PCI
 	help
-	  Support the K8 IOMMU. Needed to run systems with more than 4GB of memory
+	  Support the IOMMU. Needed to run systems with more than 3GB of memory
 	  properly with 32-bit PCI devices that do not support DAC (Double Address
 	  Cycle). The IOMMU can be turned off at runtime with the iommu=off parameter.
 	  Normally the kernel will take the right choice by itself.
+	  This option includes a driver for the AMD Opteron/Athlon64 IOMMU
+	  and a software emulation used on some other systems.
 	  If unsure, say Y.
 
 # need this always enabled with GART_IOMMU for the VIA workaround
@@ -325,6 +367,61 @@ config X86_MCE
 	   machine check error logs. See
 	   ftp://ftp.x86-64.org/pub/linux/tools/mcelog
 
+config X86_MCE_INTEL
+	bool "Intel MCE features"
+	depends on X86_MCE && X86_LOCAL_APIC
+	default y
+	help
+	   Additional support for intel specific MCE features such as
+	   the thermal monitor.
+
+config PHYSICAL_START
+	hex "Physical address where the kernel is loaded" if EMBEDDED
+	default "0x100000"
+	help
+	  This gives the physical address where the kernel is loaded.
+	  Primarily used in the case of kexec on panic where the
+	  fail safe kernel needs to run at a different address than
+	  the panic-ed kernel.
+
+	  Don't change this unless you know what you are doing.
+
+config KEXEC
+	bool "kexec system call (EXPERIMENTAL)"
+	depends on EXPERIMENTAL
+	help
+	  kexec is a system call that implements the ability to shutdown your
+	  current kernel, and to start another kernel.  It is like a reboot
+	  but it is indepedent of the system firmware.   And like a reboot
+	  you can start any kernel with it, not just Linux.
+
+	  The name comes from the similiarity to the exec system call.
+
+	  It is an ongoing process to be certain the hardware in a machine
+	  is properly shutdown, so do not be surprised if this code does not
+	  initially work for you.  It may help to enable device hotplugging
+	  support.  As of this writing the exact hardware interface is
+	  strongly in flux, so no good recommendation can be made.
+
+config SECCOMP
+	bool "Enable seccomp to safely compute untrusted bytecode"
+	depends on PROC_FS
+	default y
+	help
+	  This kernel feature is useful for number crunching applications
+	  that may need to compute untrusted bytecode during their
+	  execution. By using pipes or other transports made available to
+	  the process as file descriptors supporting the read/write
+	  syscalls, it's possible to isolate those applications in
+	  their own address space using seccomp. Once seccomp is
+	  enabled via /proc/<pid>/seccomp, it cannot be disabled
+	  and the task is only allowed to execute a few safe syscalls
+	  defined by each seccomp mode.
+
+	  If unsure, say Y. Only embedded should say N here.
+
+source kernel/Kconfig.hz
+
 endmenu
 
 #
@@ -335,6 +432,11 @@ config GENERIC_HARDIRQS
 	default y
 
 config GENERIC_IRQ_PROBE
+	bool
+	default y
+
+# we have no ISA slots, but we do have ISA-style DMA.
+config ISA_DMA_API
 	bool
 	default y
 
@@ -361,7 +463,7 @@ config PCI_DIRECT
 
 config PCI_MMCONFIG
 	bool "Support mmconfig PCI config space access"
-	depends on PCI
+	depends on PCI && ACPI
 	select ACPI_BOOT
 
 config UNORDERED_IO
@@ -373,6 +475,8 @@ config UNORDERED_IO
 	 work with this option, but it makes the drivers behave differently
 	 from i386. Requires that the driver writer used memory barriers
 	 properly.
+
+source "drivers/pci/pcie/Kconfig"
 
 source "drivers/pci/Kconfig"
 
@@ -416,6 +520,8 @@ config UID16
 	default y
 
 endmenu
+
+source "net/Kconfig"
 
 source drivers/Kconfig
 

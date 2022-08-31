@@ -73,8 +73,6 @@ static unsigned char misc_minors[DYNAMIC_MINORS / 8];
 extern int rtc_DP8570A_init(void);
 extern int rtc_MK48T08_init(void);
 extern int pmu_device_init(void);
-extern int tosh_init(void);
-extern int i8k_init(void);
 
 #ifdef CONFIG_PROC_FS
 static void *misc_seq_start(struct seq_file *seq, loff_t *pos)
@@ -184,10 +182,10 @@ fail:
 
 /* 
  * TODO for 2.7:
- *  - add a struct class_device to struct miscdevice and make all usages of
+ *  - add a struct kref to struct miscdevice and make all usages of
  *    them dynamic.
  */
-static struct class_simple *misc_class;
+static struct class *misc_class;
 
 static struct file_operations misc_fops = {
 	.owner		= THIS_MODULE,
@@ -214,12 +212,12 @@ static struct file_operations misc_fops = {
 int misc_register(struct miscdevice * misc)
 {
 	struct miscdevice *c;
-#ifndef CONFIG_MOT_FEAT_INOTIFY
-	struct class_device *class;
+#ifndef CONFIG_MOT_FEAT_INOTIFY // >2.6.11
+	struct class_device *class; // >2.6.11
 #endif
 	dev_t dev;
 	int err;
-	
+
 	down(&misc_sem);
 	list_for_each_entry(c, &misc_list, list) {
 		if (c->minor == misc->minor) {
@@ -233,8 +231,7 @@ int misc_register(struct miscdevice * misc)
 		while (--i >= 0)
 			if ( (misc_minors[i>>3] & (1 << (i&7))) == 0)
 				break;
-		if (i<0)
-		{
+		if (i<0) {
 			up(&misc_sem);
 			return -EBUSY;
 		}
@@ -249,15 +246,15 @@ int misc_register(struct miscdevice * misc)
 	}
 	dev = MKDEV(MISC_MAJOR, misc->minor);
 
-#ifdef CONFIG_MOT_FEAT_INOTIFY
-	misc->class = class_simple_device_add(misc_class, dev,
-					      misc->dev, misc->name);
+#ifdef CONFIG_MOT_FEAT_INOTIFY //2.6.12
+	misc->class = class_device_create(misc_class, dev, misc->dev,
+					  "%s", misc->name);
 	if (IS_ERR(misc->class)) {
 		err = PTR_ERR(misc->class);
 
-#else
-	class = class_simple_device_add(misc_class, dev,
-					misc->dev, misc->name);
+#else //2.6.10
+	class = class_device_create(misc_class, dev, misc->dev,
+					  "%s", misc->name);
 	if (IS_ERR(class)) {
 		err = PTR_ERR(class);
 #endif
@@ -267,7 +264,7 @@ int misc_register(struct miscdevice * misc)
 	err = devfs_mk_cdev(dev, S_IFCHR|S_IRUSR|S_IWUSR|S_IRGRP, 
 			    misc->devfs_name);
 	if (err) {
-		class_simple_device_remove(dev);
+		class_device_destroy(misc_class, dev);
 		goto out;
 	}
 
@@ -300,7 +297,7 @@ int misc_deregister(struct miscdevice * misc)
 
 	down(&misc_sem);
 	list_del(&misc->list);
-	class_simple_device_remove(MKDEV(MISC_MAJOR, misc->minor));
+	class_device_destroy(misc_class, MKDEV(MISC_MAJOR, misc->minor));
 	devfs_remove(misc->devfs_name);
 	if (i < DYNAMIC_MINORS && i>0) {
 		misc_minors[i>>3] &= ~(1 << (misc->minor & 7));
@@ -321,7 +318,7 @@ static int __init misc_init(void)
 	if (ent)
 		ent->proc_fops = &misc_proc_fops;
 #endif
-	misc_class = class_simple_create(THIS_MODULE, "misc");
+	misc_class = class_create(THIS_MODULE, "misc");
 	if (IS_ERR(misc_class))
 		return PTR_ERR(misc_class);
 #ifdef CONFIG_MVME16x
@@ -330,19 +327,10 @@ static int __init misc_init(void)
 #ifdef CONFIG_BVME6000
 	rtc_DP8570A_init();
 #endif
-#ifdef CONFIG_PMAC_PBOOK
-	pmu_device_init();
-#endif
-#ifdef CONFIG_TOSHIBA
-	tosh_init();
-#endif
-#ifdef CONFIG_I8K
-	i8k_init();
-#endif
 	if (register_chrdev(MISC_MAJOR,"misc",&misc_fops)) {
 		printk("unable to get major %d for misc devices\n",
 		       MISC_MAJOR);
-		class_simple_destroy(misc_class);
+		class_destroy(misc_class);
 		return -EIO;
 	}
 	return 0;

@@ -18,9 +18,9 @@
 #include <linux/file.h>
 #include <linux/uio.h>
 #include <linux/smp_lock.h>
-#ifdef CONFIG_MOT_FEAT_INOTIFY
+#ifdef CONFIG_MOT_FEAT_INOTIFY // < 2.6.13
 #include <linux/fsnotify.h>
-#else
+#else // do 2.6.13
 #include <linux/dnotify.h>
 #endif
 #include <linux/security.h>
@@ -239,6 +239,16 @@ Einval:
 	return -EINVAL;
 }
 
+static void wait_on_retry_sync_kiocb(struct kiocb *iocb)
+{
+	set_current_state(TASK_UNINTERRUPTIBLE);
+	if (!kiocbIsKicked(iocb))
+		schedule();
+	else
+		kiocbClearKicked(iocb);
+	__set_current_state(TASK_RUNNING);
+}
+
 ssize_t do_sync_read(struct file *filp, char __user *buf, size_t len, loff_t *ppos)
 {
 	struct kiocb kiocb;
@@ -246,7 +256,10 @@ ssize_t do_sync_read(struct file *filp, char __user *buf, size_t len, loff_t *pp
 
 	init_sync_kiocb(&kiocb, filp);
 	kiocb.ki_pos = *ppos;
-	ret = filp->f_op->aio_read(&kiocb, buf, len, kiocb.ki_pos);
+	while (-EIOCBRETRY ==
+		(ret = filp->f_op->aio_read(&kiocb, buf, len, kiocb.ki_pos)))
+		wait_on_retry_sync_kiocb(&kiocb);
+
 	if (-EIOCBQUEUED == ret)
 		ret = wait_on_sync_kiocb(&kiocb);
 	*ppos = kiocb.ki_pos;
@@ -278,9 +291,7 @@ ssize_t vfs_read(struct file *file, char __user *buf, size_t count, loff_t *pos)
 			if (ret > 0)
 #ifdef CONFIG_MOT_FEAT_INOTIFY
 			{
-				struct dentry *dentry = file->f_dentry;
-				fsnotify_access(dentry, dentry->d_inode,
-						dentry->d_name.name);
+				fsnotify_access(file->f_dentry);
 			}
 
 #else
@@ -301,7 +312,10 @@ ssize_t do_sync_write(struct file *filp, const char __user *buf, size_t len, lof
 
 	init_sync_kiocb(&kiocb, filp);
 	kiocb.ki_pos = *ppos;
-	ret = filp->f_op->aio_write(&kiocb, buf, len, kiocb.ki_pos);
+	while (-EIOCBRETRY ==
+	       (ret = filp->f_op->aio_write(&kiocb, buf, len, kiocb.ki_pos)))
+		wait_on_retry_sync_kiocb(&kiocb);
+
 	if (-EIOCBQUEUED == ret)
 		ret = wait_on_sync_kiocb(&kiocb);
 	*ppos = kiocb.ki_pos;
@@ -333,9 +347,7 @@ ssize_t vfs_write(struct file *file, const char __user *buf, size_t count, loff_
 			if (ret > 0)
 #ifdef CONFIG_MOT_FEAT_INOTIFY
 			{
-				struct dentry *dentry = file->f_dentry;
-				fsnotify_modify(dentry, dentry->d_inode,
-						dentry->d_name.name);
+				fsnotify_modify(file->f_dentry);
 			}
 #else
 				dnotify_parent(file->f_dentry, DN_MODIFY);
@@ -535,10 +547,10 @@ static ssize_t do_readv_writev(int type, struct file *file,
 		void __user *buf = iov[seg].iov_base;
 		ssize_t len = (ssize_t)iov[seg].iov_len;
 
-		if (unlikely(!access_ok(vrfy_dir(type), buf, len)))
-			goto Efault;
 		if (len < 0)	/* size_t not fitting an ssize_t .. */
 			goto out;
+		if (unlikely(!access_ok(vrfy_dir(type), buf, len)))
+			goto Efault;
 		tot_len += len;
 		if ((ssize_t)tot_len < 0) /* maths overflow on the ssize_t */
 			goto out;
@@ -591,21 +603,22 @@ static ssize_t do_readv_writev(int type, struct file *file,
 out:
 	if (iov != iovstack)
 		kfree(iov);
-	if ((ret + (type == READ)) > 0)
+	if ((ret + (type == READ)) > 0) {
 #ifdef CONFIG_MOT_FEAT_INOTIFY
 	{
 		struct dentry *dentry = file->f_dentry;
 		struct inode *inode = dentry->d_inode;
 
 		if (type == READ)
-			fsnotify_access(dentry, inode, dentry->d_name.name);
+			fsnotify_access(file->f_dentry);
 		else
-			fsnotify_modify(dentry, inode, dentry->d_name.name);
-}
+			fsnotify_modify(file->f_dentry);
+	}
 #else
 		dnotify_parent(file->f_dentry,
 				(type == READ) ? DN_ACCESS : DN_MODIFY);
 #endif
+}
 	return ret;
 Efault:
 	ret = -EFAULT;
@@ -657,6 +670,9 @@ sys_readv(unsigned long fd, const struct iovec __user *vec, unsigned long vlen)
 		fput_light(file, fput_needed);
 	}
 
+	if (ret > 0)
+		current->rchar += ret;
+	current->syscr++;
 	return ret;
 }
 
@@ -679,6 +695,9 @@ sys_writev(unsigned long fd, const struct iovec __user *vec, unsigned long vlen)
 		fput_light(file, fput_needed);
 	}
 
+	if (ret > 0)
+		current->wchar += ret;
+	current->syscw++;
 	return ret;
 }
 
@@ -758,6 +777,13 @@ static ssize_t do_sendfile(int out_fd, int in_fd, loff_t *ppos,
 	}
 
 	retval = in_file->f_op->sendfile(in_file, ppos, count, file_send_actor, out_file);
+
+	if (retval > 0) {
+		current->rchar += retval;
+		current->wchar += retval;
+	}
+	current->syscr++;
+	current->syscw++;
 
 	if (*ppos > max)
 		retval = -EOVERFLOW;

@@ -316,6 +316,7 @@ struct xfrm_algo_desc *xfrm_aalg_get_byid(int alg_id)
 	}
 	return NULL;
 }
+EXPORT_SYMBOL_GPL(xfrm_aalg_get_byid);
 
 struct xfrm_algo_desc *xfrm_ealg_get_byid(int alg_id)
 {
@@ -331,6 +332,7 @@ struct xfrm_algo_desc *xfrm_ealg_get_byid(int alg_id)
 	}
 	return NULL;
 }
+EXPORT_SYMBOL_GPL(xfrm_ealg_get_byid);
 
 struct xfrm_algo_desc *xfrm_calg_get_byid(int alg_id)
 {
@@ -346,6 +348,7 @@ struct xfrm_algo_desc *xfrm_calg_get_byid(int alg_id)
 	}
 	return NULL;
 }
+// in exportt.h EXPORT_SYMBOL_GPL(xfrm_calg_get_byid);
 
 static struct xfrm_algo_desc *xfrm_get_byname(struct xfrm_algo_desc *list,
 					      int entries, char *name,
@@ -380,16 +383,19 @@ struct xfrm_algo_desc *xfrm_aalg_get_byname(char *name, int probe)
 {
 	return xfrm_get_byname(aalg_list, aalg_entries(), name, probe);
 }
+// in exportt.h EXPORT_SYMBOL_GPL(xfrm_aalg_get_byname);
 
 struct xfrm_algo_desc *xfrm_ealg_get_byname(char *name, int probe)
 {
 	return xfrm_get_byname(ealg_list, ealg_entries(), name, probe);
 }
+// in exportt.h EXPORT_SYMBOL_GPL(xfrm_ealg_get_byname);
 
 struct xfrm_algo_desc *xfrm_calg_get_byname(char *name, int probe)
 {
 	return xfrm_get_byname(calg_list, calg_entries(), name, probe);
 }
+// in exportt.h EXPORT_SYMBOL_GPL(xfrm_calg_get_byname);
 
 struct xfrm_algo_desc *xfrm_aalg_get_byidx(unsigned int idx)
 {
@@ -398,6 +404,7 @@ struct xfrm_algo_desc *xfrm_aalg_get_byidx(unsigned int idx)
 
 	return &aalg_list[idx];
 }
+EXPORT_SYMBOL_GPL(xfrm_aalg_get_byidx);
 
 struct xfrm_algo_desc *xfrm_ealg_get_byidx(unsigned int idx)
 {
@@ -406,14 +413,7 @@ struct xfrm_algo_desc *xfrm_ealg_get_byidx(unsigned int idx)
 
 	return &ealg_list[idx];
 }
-
-struct xfrm_algo_desc *xfrm_calg_get_byidx(unsigned int idx)
-{
-	if (idx >= calg_entries())
-		return NULL;
-
-	return &calg_list[idx];
-}
+EXPORT_SYMBOL_GPL(xfrm_ealg_get_byidx);
 
 /*
  * Probe for the availability of crypto algorithms, and set the available
@@ -446,6 +446,7 @@ void xfrm_probe_algs(void)
 	}
 #endif
 }
+EXPORT_SYMBOL_GPL(xfrm_probe_algs);
 
 int xfrm_count_auth_supported(void)
 {
@@ -456,6 +457,7 @@ int xfrm_count_auth_supported(void)
 			n++;
 	return n;
 }
+EXPORT_SYMBOL_GPL(xfrm_count_auth_supported);
 
 int xfrm_count_enc_supported(void)
 {
@@ -466,6 +468,7 @@ int xfrm_count_enc_supported(void)
 			n++;
 	return n;
 }
+EXPORT_SYMBOL_GPL(xfrm_count_enc_supported);
 
 /* Move to common area: it is shared with AH. */
 
@@ -540,6 +543,7 @@ void skb_icv_walk(const struct sk_buff *skb, struct crypto_tfm *tfm,
 	if (len)
 		BUG();
 }
+EXPORT_SYMBOL_GPL(skb_icv_walk);
 
 #if defined(CONFIG_INET_ESP) || defined(CONFIG_INET_ESP_MODULE) || defined(CONFIG_INET6_ESP) || defined(CONFIG_INET6_ESP_MODULE)
 

@@ -21,7 +21,6 @@
 #include <asm/io.h>
 #include <asm/system.h>
 
-#include <pcmcia/version.h>
 #include <pcmcia/cs_types.h>
 #include <pcmcia/cs.h>
 #include <pcmcia/cistpl.h>
@@ -41,7 +40,7 @@ MODULE_LICENSE("GPL");
 */
 #ifdef PCMCIA_DEBUG
 static int pc_debug = PCMCIA_DEBUG;
-MODULE_PARM(pc_debug, "i");
+module_param(pc_debug, int, 0);
 #define DEBUG(n, args...) if (pc_debug>(n)) printk(KERN_DEBUG args);
 static char *version =
 "avma1_cs.c 1.00 1998/01/23 10:00:00 (Carsten Paeth)";
@@ -53,12 +52,9 @@ static char *version =
 
 /* Parameters that can be set with 'insmod' */
 
-static int default_irq_list[11] = { 15, 13, 12, 11, 10, 9, 7, 5, 4, 3, -1 };
-static int irq_list[11] = { -1 };
 static int isdnprot = 2;
 
-MODULE_PARM(irq_list, "1-11i");
-MODULE_PARM(isdnprot, "1-4i");
+module_param(isdnprot, int, 0);
 
 /*====================================================================*/
 
@@ -143,7 +139,7 @@ static dev_link_t *avma1cs_attach(void)
     client_reg_t client_reg;
     dev_link_t *link;
     local_info_t *local;
-    int ret, i;
+    int ret;
     
     DEBUG(0, "avma1cs_attach()\n");
 
@@ -173,15 +169,8 @@ static dev_link_t *avma1cs_attach(void)
     link->irq.Attributes = IRQ_TYPE_EXCLUSIVE;
     link->irq.Attributes = IRQ_TYPE_DYNAMIC_SHARING|IRQ_FIRST_SHARED;
 
-    link->irq.IRQInfo1 = IRQ_INFO2_VALID|IRQ_LEVEL_ID;
-    if (irq_list[0] != -1) {
-	    for (i = 0; i < 10 && irq_list[i] > 0; i++)
-	       link->irq.IRQInfo2 |= 1 << irq_list[i];
-    } else {
-	    for (i = 0; i < 10 && default_irq_list[i] > 0; i++)
-	       link->irq.IRQInfo2 |= 1 << default_irq_list[i];
-    }
-    
+    link->irq.IRQInfo1 = IRQ_LEVEL_ID;
+
     /* General socket configuration */
     link->conf.Attributes = CONF_ENABLE_IRQ;
     link->conf.Vcc = 50;
@@ -193,12 +182,6 @@ static dev_link_t *avma1cs_attach(void)
     link->next = dev_list;
     dev_list = link;
     client_reg.dev_info = &dev_info;
-    client_reg.Attributes = INFO_IO_CLIENT | INFO_CARD_SHARE;
-    client_reg.EventMask =
-	CS_EVENT_CARD_INSERTION | CS_EVENT_CARD_REMOVAL |
-	CS_EVENT_RESET_PHYSICAL | CS_EVENT_CARD_RESET |
-	CS_EVENT_PM_SUSPEND | CS_EVENT_PM_RESUME;
-    client_reg.event_handler = &avma1cs_event;
     client_reg.Version = 0x0210;
     client_reg.event_callback_args.client_data = link;
     ret = pcmcia_register_client(&link->handle, &client_reg);
@@ -512,13 +495,22 @@ static int avma1cs_event(event_t event, int priority,
     return 0;
 } /* avma1cs_event */
 
+static struct pcmcia_device_id avma1cs_ids[] = {
+	PCMCIA_DEVICE_PROD_ID12("AVM", "ISDN A", 0x95d42008, 0xadc9d4bb),
+	PCMCIA_DEVICE_PROD_ID12("ISDN", "CARD", 0x8d9761c8, 0x01c5aa7b),
+	PCMCIA_DEVICE_NULL
+};
+MODULE_DEVICE_TABLE(pcmcia, avma1cs_ids);
+
 static struct pcmcia_driver avma1cs_driver = {
 	.owner		= THIS_MODULE,
 	.drv		= {
 		.name	= "avma1_cs",
 	},
 	.attach		= avma1cs_attach,
+	.event		= avma1cs_event,
 	.detach		= avma1cs_detach,
+	.id_table	= avma1cs_ids,
 };
  
 /*====================================================================*/
@@ -531,13 +523,7 @@ static int __init init_avma1_cs(void)
 static void __exit exit_avma1_cs(void)
 {
 	pcmcia_unregister_driver(&avma1cs_driver);
-
-	/* XXX: this really needs to move into generic code.. */
-	while (dev_list != NULL) {
-		if (dev_list->state & DEV_CONFIG)
-			avma1cs_release(dev_list);
-		avma1cs_detach(dev_list);
-	}
+	BUG_ON(dev_list != NULL);
 }
 
 module_init(init_avma1_cs);

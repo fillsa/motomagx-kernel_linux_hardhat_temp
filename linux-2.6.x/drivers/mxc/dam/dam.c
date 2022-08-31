@@ -48,7 +48,7 @@
 #endif
 
 #define DAM_NAME   "dam"
-static struct class_simple *mxc_dam_class;
+static struct class *mxc_dam_class;
 
 EXPORT_SYMBOL(dam_select_mode);
 EXPORT_SYMBOL(dam_select_RxClk_direction);
@@ -498,22 +498,22 @@ static int __init dam_init(void)
 		return major_dam;
 	}
 
-	mxc_dam_class = class_simple_create(THIS_MODULE, DAM_NAME);
+	mxc_dam_class = class_create(THIS_MODULE, DAM_NAME);
 	if (IS_ERR(mxc_dam_class)) {
 		printk(KERN_ERR "Error creating dam class.\n");
 		devfs_remove(DAM_NAME);
-		class_simple_device_remove(MKDEV(major_dam, 0));
+		class_device_destroy(mxc_dam_class, MKDEV(major_dam, 0));
 		unregister_chrdev(major_dam, DAM_NAME);
 		return PTR_ERR(mxc_dam_class);
 	}
 
-	temp_class = class_simple_device_add(mxc_dam_class, MKDEV(major_dam, 0),
+	temp_class = class_device_create(mxc_dam_class, MKDEV(major_dam, 0),
 					     NULL, DAM_NAME);
 	if (IS_ERR(temp_class)) {
 		printk(KERN_ERR "Error creating dam class device.\n");
 		devfs_remove(DAM_NAME);
-		class_simple_device_remove(MKDEV(major_dam, 0));
-		class_simple_destroy(mxc_dam_class);
+		class_device_destroy(mxc_dam_class, MKDEV(major_dam, 0));
+		class_destroy(mxc_dam_class);
 		unregister_chrdev(major_dam, DAM_NAME);
 		return -1;
 	}
@@ -534,8 +534,8 @@ static void __exit dam_exit(void)
 {
 #ifdef TEST_DAM
 	devfs_remove(DAM_NAME);
-	class_simple_device_remove(MKDEV(major_dam, 0));
-	class_simple_destroy(mxc_dam_class);
+	class_device_destroy(mxc_dam_class, MKDEV(major_dam, 0));
+	class_destroy(mxc_dam_class);
 	unregister_chrdev(major_dam, DAM_NAME);
 	printk(KERN_DEBUG "dam : successfully unloaded\n");
 #endif

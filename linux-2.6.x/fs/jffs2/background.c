@@ -7,7 +7,7 @@
  *
  * For licensing information, see the file 'LICENCE' in this directory.
  *
- * $Id: background.c,v 1.56 2005/06/30 12:15:56 bjd Exp $
+ * $Id: background.c,v 1.54 2005/05/20 21:37:12 gleixner Exp $
  *
  */
 
@@ -95,12 +95,8 @@ static int jffs2_garbage_collect_thread(void *_c)
 			schedule();
 		}
 
-		if (current->flags & PF_FREEZE) {
-			refrigerator(0);
-			/* refrigerator() should recalc sigpending for us
-			   but doesn't. No matter - allow_signal() will. */
+		if (try_to_freeze())
 			continue;
-		}
 
 		cond_resched();
 

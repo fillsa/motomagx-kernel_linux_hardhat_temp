@@ -5,7 +5,7 @@
  *****************************************************************************/
 
 /*
- * Copyright (C) 2000 - 2004, R. Byron Moore
+ * Copyright (C) 2000 - 2005, R. Byron Moore
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -56,7 +56,7 @@
  *
  * PARAMETERS:  Type                - Type of node to be searched for
  *              parent_node         - Parent node whose children we are
- *                                     getting
+ *                                    getting
  *              child_node          - Previous child that was found.
  *                                    The NEXT child will be returned
  *

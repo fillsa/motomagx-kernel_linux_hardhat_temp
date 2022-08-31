@@ -4,11 +4,13 @@
 #include <linux/device.h>
 #include <linux/list.h>
 #include <linux/types.h>
+#include <linux/workqueue.h>
 
 struct block_device;
 struct module;
 struct scsi_cmnd;
 struct scsi_device;
+struct scsi_target;
 struct Scsi_Host;
 struct scsi_host_cmd_pool;
 struct scsi_transport_template;
@@ -71,7 +73,18 @@ struct scsi_host_template {
 	 * Status: OPTIONAL
 	 */
 	int (* ioctl)(struct scsi_device *dev, int cmd, void __user *arg);
-	
+
+
+#ifdef CONFIG_COMPAT
+	/* 
+	 * Compat handler. Handle 32bit ABI.
+	 * When unknown ioctl is passed return -ENOIOCTLCMD.
+	 *
+	 * Status: OPTIONAL
+	 */
+	int (* compat_ioctl)(struct scsi_device *dev, int cmd, void __user *arg);
+#endif
+
 	/*
 	 * The queuecommand function is used to queue up a scsi
 	 * command block to the LLDD.  When the driver finished
@@ -216,13 +229,59 @@ struct scsi_host_template {
 	void (* slave_destroy)(struct scsi_device *);
 
 	/*
+	 * Before the mid layer attempts to scan for a new device attached
+	 * to a target where no target currently exists, it will call this
+	 * entry in your driver.  Should your driver need to allocate any
+	 * structs or perform any other init items in order to send commands
+	 * to a currently unused target, then this is where you can perform
+	 * those allocations.
+	 *
+	 * Return values: 0 on success, non-0 on failure
+	 *
+	 * Status: OPTIONAL
+	 */
+	int (* target_alloc)(struct scsi_target *);
+
+	/*
+	 * Immediately prior to deallocating the target structure, and
+	 * after all activity to attached scsi devices has ceased, the
+	 * midlayer calls this point so that the driver may deallocate
+	 * and terminate any references to the target.
+	 *
+	 * Status: OPTIONAL
+	 */
+	void (* target_destroy)(struct scsi_target *);
+
+	/*
+	 * fill in this function to allow the queue depth of this host
+	 * to be changeable (on a per device basis).  returns either
+	 * the current queue depth setting (may be different from what
+	 * was passed in) or an error.  An error should only be
+	 * returned if the requested depth is legal but the driver was
+	 * unable to set it.  If the requested depth is illegal, the
+	 * driver should set and return the closest legal queue depth.
+	 *
+	 */
+	int (* change_queue_depth)(struct scsi_device *, int);
+
+	/*
+	 * fill in this function to allow the changing of tag types
+	 * (this also allows the enabling/disabling of tag command
+	 * queueing).  An error should only be returned if something
+	 * went wrong in the driver while trying to set the tag type.
+	 * If the driver doesn't support the requested tag type, then
+	 * it should set the closest type it does support without
+	 * returning an error.  Returns the actual tag type set.
+	 */
+	int (* change_queue_type)(struct scsi_device *, int);
+
+	/*
 	 * This function determines the bios parameters for a given
 	 * harddisk.  These tend to be numbers that are made up by
 	 * the host adapter.  Parameters:
 	 * size, device, list (heads, sectors, cylinders)
 	 *
-	 * Status: OPTIONAL
-	 */
+	 * Status: OPTIONAL */
 	int (* bios_param)(struct scsi_device *, struct block_device *,
 			sector_t, int []);
 
@@ -330,6 +389,12 @@ struct scsi_host_template {
 	unsigned skip_settle_delay:1;
 
 	/*
+	 * ordered write support
+	 */
+	unsigned ordered_flush:1;
+	unsigned ordered_tag:1;
+
+	/*
 	 * Countdown for host blocking with no commands outstanding
 	 */
 	unsigned int max_host_blocked;
@@ -383,6 +448,7 @@ struct Scsi_Host {
 	 * access this list directly from a driver.
 	 */
 	struct list_head	__devices;
+	struct list_head	__targets;
 	
 	struct scsi_host_cmd_pool *cmd_pool;
 	spinlock_t		free_list_lock;
@@ -400,15 +466,21 @@ struct Scsi_Host {
 					      on this. */
 	struct completion     * eh_notify; /* wait for eh to begin or end */
 	struct compat_semaphore * eh_action; /* Wait for specific actions on 
-						the host. */
+                                         the host. */
 	unsigned int            eh_active:1; /* Indicates the eh thread is awake and active if
                                           this is true. */
 	unsigned int            eh_kill:1; /* set when killing the eh thread */
 	wait_queue_head_t       host_wait;
 	struct scsi_host_template *hostt;
 	struct scsi_transport_template *transportt;
-	volatile unsigned short host_busy;   /* commands actually active on low-level */
-	volatile unsigned short host_failed; /* commands that failed. */
+
+	/*
+	 * The following two fields are protected with host_lock;
+	 * however, eh routines can safely access during eh processing
+	 * without acquiring the lock.
+	 */
+	unsigned int host_busy;		   /* commands actually active on low-level */
+	unsigned int host_failed;	   /* commands that failed. */
     
 	unsigned short host_no;  /* Used for IOCTL_GET_IDLUN, /proc/scsi et al. */
 	int resetting; /* if set, it means that last_reset is a valid value */
@@ -450,7 +522,12 @@ struct Scsi_Host {
 	short unsigned int sg_tablesize;
 	short unsigned int max_sectors;
 	unsigned long dma_boundary;
-
+	/* 
+	 * Used to assign serial numbers to the cmds.
+	 * Protected by the host lock.
+	 */
+	unsigned long cmd_serial_number, cmd_pid; 
+	
 	unsigned unchecked_isa_dma:1;
 	unsigned use_clustering:1;
 	unsigned use_blk_tcq:1;
@@ -467,6 +544,18 @@ struct Scsi_Host {
 	 * the spec ;)
 	 */
 	unsigned reverse_ordering:1;
+
+	/*
+	 * ordered write support
+	 */
+	unsigned ordered_flush:1;
+	unsigned ordered_tag:1;
+
+	/*
+	 * Optional work queue to be utilized by the transport
+	 */
+	char work_q_name[KOBJ_NAME_LEN];
+	struct workqueue_struct *work_q;
 
 	/*
 	 * Host has rejected a command because it was busy.
@@ -506,7 +595,6 @@ struct Scsi_Host {
 	 * separately
 	 */
 	void *shost_data;
-	struct class_device transport_classdev;
 
 	/*
 	 * We should ensure that this is aligned, both for better performance
@@ -516,17 +604,31 @@ struct Scsi_Host {
 	unsigned long hostdata[0]  /* Used for storage of host specific stuff */
 		__attribute__ ((aligned (sizeof(unsigned long))));
 };
-#define		dev_to_shost(d)		\
-	container_of(d, struct Scsi_Host, shost_gendev)
+
 #define		class_to_shost(d)	\
 	container_of(d, struct Scsi_Host, shost_classdev)
-#define		transport_class_to_shost(class_dev) \
-	container_of(class_dev, struct Scsi_Host, transport_classdev)
 
+int scsi_is_host_device(const struct device *);
+
+static inline struct Scsi_Host *dev_to_shost(struct device *dev)
+{
+	while (!scsi_is_host_device(dev)) {
+		if (!dev->parent)
+			return NULL;
+		dev = dev->parent;
+	}
+	return container_of(dev, struct Scsi_Host, shost_gendev);
+}
+
+extern int scsi_queue_work(struct Scsi_Host *, struct work_struct *);
+extern void scsi_flush_work(struct Scsi_Host *);
 
 extern struct Scsi_Host *scsi_host_alloc(struct scsi_host_template *, int);
 extern int __must_check scsi_add_host(struct Scsi_Host *, struct device *);
 extern void scsi_scan_host(struct Scsi_Host *);
+extern void scsi_scan_single_target(struct Scsi_Host *, unsigned int,
+	unsigned int);
+extern void scsi_rescan_device(struct device *);
 extern void scsi_remove_host(struct Scsi_Host *);
 extern struct Scsi_Host *scsi_host_get(struct Scsi_Host *);
 extern void scsi_host_put(struct Scsi_Host *t);
@@ -539,12 +641,6 @@ static inline void scsi_assign_lock(struct Scsi_Host *shost, spinlock_t *lock)
 	shost->host_lock = lock;
 }
 
-static inline void scsi_set_device(struct Scsi_Host *shost,
-                                   struct device *dev)
-{
-        shost->shost_gendev.parent = dev;
-}
-
 static inline struct device *scsi_get_device(struct Scsi_Host *shost)
 {
         return shost->shost_gendev.parent;
@@ -553,6 +649,7 @@ static inline struct device *scsi_get_device(struct Scsi_Host *shost)
 extern void scsi_unblock_requests(struct Scsi_Host *);
 extern void scsi_block_requests(struct Scsi_Host *);
 
+struct class_container;
 /*
  * These two functions are used to allocate and free a pseudo device
  * which will connect to the host adapter itself rather than any

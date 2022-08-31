@@ -6,7 +6,7 @@
  *                     Steven J. Hill <sjhill@realitydiluted.com>
  *		       Thomas Gleixner <tglx@linutronix.de>
  *
- * $Id: nand.h,v 1.72 2005/05/27 08:31:33 gleixner Exp $
+ * $Id: nand.h,v 1.73 2005/05/31 19:39:17 gleixner Exp $
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 as
@@ -284,6 +284,7 @@ typedef enum {
 	FL_RDDIST_FIXING,
 #endif
 } nand_state_t;
+#define NAND_MFR_HYNIX          0xad
 
 /* Keep gcc happy */
 struct nand_chip;

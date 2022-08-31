@@ -1,7 +1,7 @@
 /* 
  * Direct MTD block device access
  *
- * $Id: mtdblock.c,v 1.65 2004/11/16 18:28:59 dwmw2 Exp $
+ * $Id: mtdblock.c,v 1.66 2004/11/25 13:52:52 joern Exp $
  *
  * Copyright (C) 2006 - 2007  Motorola, Inc.
  * (C) 2000-2003 Nicolas Pitre <nico@cam.org>

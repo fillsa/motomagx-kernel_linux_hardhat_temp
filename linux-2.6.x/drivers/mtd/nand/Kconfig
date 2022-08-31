@@ -87,20 +87,6 @@ config MTD_NAND_OMAP_HW
 config MTD_NAND_IDS
 	tristate
 
-config MTD_NAND_TX4925NDFMC
-	tristate "SmartMedia Card on Toshiba RBTX4925 reference board"
-	depends on TOSHIBA_RBTX4925 && MTD_NAND && TOSHIBA_RBTX4925_MPLEX_NAND
-	help
-	  This enables the driver for the NAND flash device found on the
-	  Toshiba RBTX4925 reference board, which is a SmartMediaCard.
-
-config MTD_NAND_TX4938NDFMC
-	tristate "NAND Flash device on Toshiba RBTX4938 reference board"
-	depends on TOSHIBA_RBTX4938 && MTD_NAND && TOSHIBA_RBTX4938_MPLEX_NAND 
-	help
-	  This enables the driver for the NAND flash device found on the
-	  Toshiba RBTX4938 reference board.
-
 config MTD_NAND_AU1550
 	tristate "Au1550 NAND support"
 	depends on SOC_AU1550 && MTD_NAND
@@ -222,13 +208,14 @@ config MTD_NAND_DISKONCHIP_BBTWRITE
 	  load time (assuming you build diskonchip as a module) with the module
 	  parameter "inftl_bbt_write=1".
 	  
-config MTD_NAND_SHARPSL
+ config MTD_NAND_SHARPSL
  	bool "Support for NAND Flash on Sharp SL Series (C7xx + others)"
  	depends on MTD_NAND	&& ARCH_PXA
  
-config MTD_NAND_NANDSIM
-	tristate "Support for NAND Flash Simulator"
-	depends on m && MTD_NAND && MTD_PARTITIONS
+ config MTD_NAND_NANDSIM
+ 	tristate "Support for NAND Flash Simulator"
+ 	depends on m && MTD_NAND && MTD_PARTITIONS
+
 	help
 	  The simulator may simulate verious NAND flash chips for the
 	  MTD nand layer.
@@ -359,4 +346,5 @@ config MTD_NAND_BBM_DBG
 	depends on MTD_NAND && MTD_NAND_BBM
 	help
 	  This is for Bad Block Management development only
+ 
 endmenu

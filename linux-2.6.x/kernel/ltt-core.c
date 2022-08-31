@@ -554,7 +554,7 @@ static void do_waiting_async_tasks(unsigned int trace_handle, u8 cpu_id)
 static void check_waiting_async_tasks(unsigned long data)
 {
 	int i;
-	int cpu = _smp_processor_id();
+	int cpu = raw_smp_processor_id();
 
 	for (i = 0; i < NR_TRACES; i++) {
 		if (atomic_read(&waiting_for_cpu_async(i, cpu)) != 0)
@@ -571,7 +571,7 @@ static void check_waiting_async_tasks(unsigned long data)
  */
 void _init_percpu_timer(void * dummy)
 {
-	int cpu = _smp_processor_id();
+	int cpu = raw_smp_processor_id();
 
 	init_timer(&percpu_timer[cpu]);
 	percpu_timer[cpu].function = check_waiting_async_tasks;
@@ -1105,7 +1105,7 @@ static int ltt_ioctl(int rchan_id,
 		retval = _ltt_log_event(trace,
 					LTT_EV_CHANGE_MASK,
 					&trace_mask,
-					_smp_processor_id());
+					raw_smp_processor_id());
 
 		memcpy(&trace->traced_events, &(trace_mask.mask), sizeof(trace_mask.mask));
 
@@ -2249,7 +2249,7 @@ int ltt_log_event(u8 event_id,
 	int i, j, handle;
 	static int err[NR_TRACES];
 	struct ltt_trace_struct *trace;
-	u32 cpu = _smp_processor_id();
+	u32 cpu = raw_smp_processor_id();
 
 	for (i = 0; i < NR_TRACES; i++) {
 		trace = current_traces[i].active;

@@ -63,7 +63,7 @@ struct mq_attr;
 #include <linux/quota.h>
 #include <linux/key.h>
 
-asmlinkage long sys_time(int __user *tloc);
+asmlinkage long sys_time(time_t __user *tloc);
 asmlinkage long sys_stime(time_t __user *tptr);
 asmlinkage long sys_gettimeofday(struct timeval __user *tv,
 				struct timezone __user *tz);
@@ -159,8 +159,9 @@ asmlinkage long sys_shutdown(int, int);
 asmlinkage long sys_reboot(int magic1, int magic2, unsigned int cmd,
 				void __user *arg);
 asmlinkage long sys_restart_syscall(void);
-asmlinkage long sys_kexec_load(void *entry, unsigned long nr_segments,
-			struct kexec_segment *segments, unsigned long flags);
+asmlinkage long sys_kexec_load(unsigned long entry, unsigned long nr_segments,
+				struct kexec_segment __user *segments,
+				unsigned long flags);
 
 asmlinkage long sys_exit(int error_code);
 asmlinkage void sys_exit_group(int error_code);
@@ -456,8 +457,7 @@ asmlinkage long sys_semctl(int semid, int semnum, int cmd, union semun arg);
 asmlinkage long sys_semtimedop(int semid, struct sembuf __user *sops,
 				unsigned nsops,
 				const struct timespec __user *timeout);
-asmlinkage long sys_shmat(int shmid, char __user *shmaddr,
-				int shmflg, unsigned long __user *addr);
+asmlinkage long sys_shmat(int shmid, char __user *shmaddr, int shmflg);
 asmlinkage long sys_shmget(key_t key, size_t size, int flag);
 asmlinkage long sys_shmdt(char __user *shmaddr);
 asmlinkage long sys_shmctl(int shmid, int cmd, struct shmid_ds __user *buf);
@@ -535,5 +535,8 @@ asmlinkage long compat_sys_get_mempolicy(int __user *policy,
 					 compat_ulong_t flags);
 #endif /* COMPAT */
 #endif /* NUMA */
+
+asmlinkage long sys_ioprio_set(int which, int who, int ioprio);
+asmlinkage long sys_ioprio_get(int which, int who);
 
 #endif

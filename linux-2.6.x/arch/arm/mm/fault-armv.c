@@ -77,7 +77,7 @@ no_pmd:
 }
 
 static void
-make_coherent(struct address_space *mapping, struct vm_area_struct *vma, unsigned long addr, struct page *page)
+make_coherent(struct address_space *mapping, struct vm_area_struct *vma, unsigned long addr, unsigned long pfn)
 {
 	struct mm_struct *mm = vma->vm_mm;
 	struct vm_area_struct *mpnt;
@@ -111,7 +111,7 @@ make_coherent(struct address_space *mapping, struct vm_area_struct *vma, unsigne
 	if (aliases)
 		adjust_pte(vma, addr);
 	else
-		flush_cache_page(vma, addr, page_to_pfn(page));
+		flush_cache_page(vma, addr, pfn);
 }
 
 void __flush_dcache_page(struct address_space *mapping, struct page *page);

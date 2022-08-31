@@ -9,7 +9,6 @@
 #include <linux/errno.h>	/* error codes */
 #include <linux/slab.h>
 
-#include <pcmcia/version.h>
 #include <pcmcia/cs_types.h>
 #include <pcmcia/cs.h>
 #include <pcmcia/cistpl.h>
@@ -69,12 +68,6 @@ static dev_link_t *ixj_attach(void)
 	link->next = dev_list;
 	dev_list = link;
 	client_reg.dev_info = &dev_info;
-	client_reg.Attributes = INFO_IO_CLIENT | INFO_CARD_SHARE;
-	client_reg.EventMask =
-	    CS_EVENT_CARD_INSERTION | CS_EVENT_CARD_REMOVAL |
-	    CS_EVENT_RESET_PHYSICAL | CS_EVENT_CARD_RESET |
-	    CS_EVENT_PM_SUSPEND | CS_EVENT_PM_RESUME;
-	client_reg.event_handler = &ixj_event;
 	client_reg.Version = 0x0210;
 	client_reg.event_callback_args.client_data = link;
 	ret = pcmcia_register_client(&link->handle, &client_reg);
@@ -296,13 +289,21 @@ static int ixj_event(event_t event, int priority, event_callback_args_t * args)
 	return 0;
 }
 
+static struct pcmcia_device_id ixj_ids[] = {
+	PCMCIA_DEVICE_MANF_CARD(0x0257, 0x0600),
+	PCMCIA_DEVICE_NULL
+};
+MODULE_DEVICE_TABLE(pcmcia, ixj_ids);
+
 static struct pcmcia_driver ixj_driver = {
 	.owner		= THIS_MODULE,
 	.drv		= {
 		.name	= "ixj_cs",
 	},
 	.attach		= ixj_attach,
+	.event		= ixj_event,
 	.detach		= ixj_detach,
+	.id_table	= ixj_ids,
 };
 
 static int __init ixj_pcmcia_init(void)
@@ -313,10 +314,7 @@ static int __init ixj_pcmcia_init(void)
 static void ixj_pcmcia_exit(void)
 {
 	pcmcia_unregister_driver(&ixj_driver);
-
-	/* XXX: this really needs to move into generic code.. */
-	while (dev_list != NULL)
-		ixj_detach(dev_list);
+	BUG_ON(dev_list != NULL);
 }
 
 module_init(ixj_pcmcia_init);

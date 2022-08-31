@@ -24,6 +24,7 @@
 #include <asm/pgalloc.h>
 #include <asm/pgtable.h>
 #include <asm/sections.h>
+#include <asm/mca.h>
 
 #ifdef CONFIG_VIRTUAL_MEM_MAP
 static unsigned long num_dma_physpages;
@@ -60,7 +61,8 @@ show_mem (void)
 	printk("%d reserved pages\n", reserved);
 	printk("%d pages shared\n", shared);
 	printk("%d pages swap cached\n", cached);
-	printk("%ld pages in page table cache\n", pgtable_cache_size);
+	printk("%ld pages in page table cache\n",
+		pgtable_quicklist_total_size());
 }
 
 /* physical address where the bootmem map is located */
@@ -214,8 +216,8 @@ count_dma_pages (u64 start, u64 end, void *arg)
 {
 	unsigned long *count = arg;
 
-	if (end <= MAX_DMA_ADDRESS)
-		*count += (end - start) >> PAGE_SHIFT;
+	if (start < MAX_DMA_ADDRESS)
+		*count += (min(end, MAX_DMA_ADDRESS) - start) >> PAGE_SHIFT;
 	return 0;
 }
 #endif
@@ -279,7 +281,7 @@ paging_init (void)
 		vmem_map = (struct page *) vmalloc_end;
 		efi_memmap_walk(create_mem_map_page_table, NULL);
 
-		mem_map = contig_page_data.node_mem_map = vmem_map;
+		NODE_DATA(0)->node_mem_map = vmem_map;
 		free_area_init_node(0, &contig_page_data, zones_size,
 				    0, zholes_size);
 

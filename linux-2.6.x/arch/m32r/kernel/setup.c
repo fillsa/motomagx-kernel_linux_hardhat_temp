@@ -7,8 +7,6 @@
  *                            Hitoshi Yamamoto
  */
 
-/* $Id$ */
-
 #include <linux/config.h>
 #include <linux/init.h>
 #include <linux/stddef.h>
@@ -24,6 +22,9 @@
 #include <linux/seq_file.h>
 #include <linux/timex.h>
 #include <linux/tty.h>
+#include <linux/cpu.h>
+#include <linux/nodemask.h>
+
 #include <asm/processor.h>
 #include <asm/pgtable.h>
 #include <asm/io.h>
@@ -52,7 +53,7 @@ struct cpuinfo_m32r boot_cpu_data;
 #ifdef CONFIG_BLK_DEV_RAM
 extern int rd_doload;	/* 1 = load ramdisk, 0 = don't load */
 extern int rd_prompt;	/* 1 = prompt for ramdisk, 0 = don't prompt */
-extern int rd_image_start;  /* starting block # of image */
+extern int rd_image_start;	/* starting block # of image */
 #endif
 
 #if defined(CONFIG_VGA_CONSOLE)
@@ -251,7 +252,9 @@ void __init setup_arch(char **cmdline_p)
 #endif
 
 #ifdef CONFIG_DISCONTIGMEM
-	numnodes = 2;
+	nodes_clear(node_online_map);
+	node_set_online(0);
+	node_set_online(1);
 #endif	/* CONFIG_DISCONTIGMEM */
 
 	init_mm.start_code = (unsigned long) _text;
@@ -271,6 +274,21 @@ void __init setup_arch(char **cmdline_p)
 	paging_init();
 }
 
+static struct cpu cpu[NR_CPUS];
+
+static int __init topology_init(void)
+{
+	int cpu_id;
+
+	for (cpu_id = 0; cpu_id < NR_CPUS; cpu_id++)
+		if (cpu_possible(cpu_id))
+			register_cpu(&cpu[cpu_id], cpu_id, NULL);
+
+	return 0;
+}
+
+subsys_initcall(topology_init);
+
 #ifdef CONFIG_PROC_FS
 /*
  *	Get CPU information for use by the procfs.
@@ -283,7 +301,7 @@ static int show_cpuinfo(struct seq_file *m, void *v)
 #ifdef CONFIG_SMP
 	if (!cpu_online(cpu))
 		return 0;
-#endif  /* CONFIG_SMP */
+#endif	/* CONFIG_SMP */
 
 	seq_printf(m, "processor\t: %ld\n", cpu);
 
@@ -312,6 +330,8 @@ static int show_cpuinfo(struct seq_file *m, void *v)
 	seq_printf(m, "Machine\t\t: Mappi Evaluation board\n");
 #elif CONFIG_PLAT_MAPPI2
 	seq_printf(m, "Machine\t\t: Mappi-II Evaluation board\n");
+#elif CONFIG_PLAT_MAPPI3
+	seq_printf(m, "Machine\t\t: Mappi-III Evaluation board\n");
 #elif  CONFIG_PLAT_M32700UT
 	seq_printf(m, "Machine\t\t: M32700UT Evaluation board\n");
 #elif  CONFIG_PLAT_OPSPUT
@@ -357,7 +377,7 @@ struct seq_operations cpuinfo_op = {
 	stop:	c_stop,
 	show:	show_cpuinfo,
 };
-#endif  /* CONFIG_PROC_FS */
+#endif	/* CONFIG_PROC_FS */
 
 unsigned long cpu_initialized __initdata = 0;
 
@@ -389,7 +409,7 @@ void __init cpu_init (void)
 
 	/* Force FPU initialization */
 	current_thread_info()->status = 0;
-	current->used_math = 0;
+	clear_used_math();
 
 #ifdef CONFIG_MMU
 	/* Set up MMU */
@@ -397,7 +417,6 @@ void __init cpu_init (void)
 #endif
 
 	/* Set up ICUIMASK */
-	outl(0x00070000, M32R_ICU_IMASK_PORTL);   /* imask=111 */
+	outl(0x00070000, M32R_ICU_IMASK_PORTL);		/* imask=111 */
 }
-#endif  /* defined(CONFIG_CHIP_VDEC2) ... */
-
+#endif	/* defined(CONFIG_CHIP_VDEC2) ... */

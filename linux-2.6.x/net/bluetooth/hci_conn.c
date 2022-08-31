@@ -41,7 +41,6 @@
 #include <linux/types.h>
 #include <linux/errno.h>
 #include <linux/kernel.h>
-#include <linux/major.h>
 #include <linux/sched.h>
 #include <linux/slab.h>
 #include <linux/poll.h>
@@ -64,7 +63,7 @@
 #define BT_DBG(D...)
 #endif
 
-void hci_acl_connect(struct hci_conn *conn)
+static void hci_acl_connect(struct hci_conn *conn)
 {
 	struct hci_dev *hdev = conn->hdev;
 	struct inquiry_entry *ie;
@@ -237,7 +236,7 @@ struct hci_dev *hci_get_route(bdaddr_t *dst, bdaddr_t *src)
 	list_for_each(p, &hci_dev_list) {
 		struct hci_dev *d = list_entry(p, struct hci_dev, list);
 
-		if (!test_bit(HCI_UP, &d->flags))
+		if (!test_bit(HCI_UP, &d->flags) || test_bit(HCI_RAW, &d->flags))
 			continue;
 
 		/* Simple routing: 
@@ -358,6 +357,24 @@ int hci_conn_change_link_key(struct hci_conn *conn)
 	return 0;
 }
 EXPORT_SYMBOL(hci_conn_change_link_key);
+
+/* Switch role */
+int hci_conn_switch_role(struct hci_conn *conn, uint8_t role)
+{
+	BT_DBG("conn %p", conn);
+
+	if (!role && conn->link_mode & HCI_LM_MASTER)
+		return 1;
+
+	if (!test_and_set_bit(HCI_CONN_RSWITCH_PEND, &conn->pend)) {
+		struct hci_cp_switch_role cp;
+		bacpy(&cp.bdaddr, &conn->dst);
+		cp.role = role;
+		hci_send_cmd(conn->hdev, OGF_LINK_POLICY, OCF_SWITCH_ROLE, sizeof(cp), &cp);
+	}
+	return 0;
+}
+EXPORT_SYMBOL(hci_conn_switch_role);
 
 /* Drop all connection on the device */
 void hci_conn_hash_flush(struct hci_dev *hdev)

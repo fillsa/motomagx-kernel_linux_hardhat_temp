@@ -37,7 +37,6 @@
 #include <linux/netdevice.h>
 #include "../8390.h"
 
-#include <pcmcia/version.h>
 #include <pcmcia/cs_types.h>
 #include <pcmcia/cs.h>
 #include <pcmcia/cistpl.h>
@@ -73,14 +72,9 @@ MODULE_AUTHOR("David Hinds <dahinds@users.sourceforge.net>");
 MODULE_DESCRIPTION("Asix AX88190 PCMCIA ethernet driver");
 MODULE_LICENSE("GPL");
 
-#define INT_MODULE_PARM(n, v) static int n = v; MODULE_PARM(n, "i")
-
-/* Bit map of interrupts to choose from */
-INT_MODULE_PARM(irq_mask,	0xdeb8);
-static int irq_list[4] = { -1 };
-MODULE_PARM(irq_list, "1-4i");
-
 #ifdef PCMCIA_DEBUG
+#define INT_MODULE_PARM(n, v) static int n = v; module_param(n, int, 0)
+
 INT_MODULE_PARM(pc_debug, PCMCIA_DEBUG);
 #define DEBUG(n, args...) if (pc_debug>(n)) printk(KERN_DEBUG args)
 static char *version =
@@ -103,8 +97,8 @@ static irqreturn_t ei_irq_wrapper(int irq, void *dev_id, struct pt_regs *regs);
 static void ei_watchdog(u_long arg);
 static void axnet_reset_8390(struct net_device *dev);
 
-static int mdio_read(ioaddr_t addr, int phy_id, int loc);
-static void mdio_write(ioaddr_t addr, int phy_id, int loc, int value);
+static int mdio_read(kio_addr_t addr, int phy_id, int loc);
+static void mdio_write(kio_addr_t addr, int phy_id, int loc, int value);
 
 static void get_8390_hdr(struct net_device *,
 			 struct e8390_pkt_hdr *, int);
@@ -159,7 +153,7 @@ static dev_link_t *axnet_attach(void)
     dev_link_t *link;
     struct net_device *dev;
     client_reg_t client_reg;
-    int i, ret;
+    int ret;
 
     DEBUG(0, "axnet_attach()\n");
 
@@ -173,12 +167,7 @@ static dev_link_t *axnet_attach(void)
     link = &info->link;
     link->priv = dev;
     link->irq.Attributes = IRQ_TYPE_EXCLUSIVE;
-    link->irq.IRQInfo1 = IRQ_INFO2_VALID|IRQ_LEVEL_ID;
-    if (irq_list[0] == -1)
-	link->irq.IRQInfo2 = irq_mask;
-    else
-	for (i = 0; i < 4; i++)
-	    link->irq.IRQInfo2 |= 1 << irq_list[i];
+    link->irq.IRQInfo1 = IRQ_LEVEL_ID;
     link->conf.Attributes = CONF_ENABLE_IRQ;
     link->conf.IntType = INT_MEMORY_AND_IO;
 
@@ -191,12 +180,6 @@ static dev_link_t *axnet_attach(void)
     link->next = dev_list;
     dev_list = link;
     client_reg.dev_info = &dev_info;
-    client_reg.Attributes = INFO_IO_CLIENT | INFO_CARD_SHARE;
-    client_reg.EventMask =
-	CS_EVENT_CARD_INSERTION | CS_EVENT_CARD_REMOVAL |
-	CS_EVENT_RESET_PHYSICAL | CS_EVENT_CARD_RESET |
-	CS_EVENT_PM_SUSPEND | CS_EVENT_PM_RESUME;
-    client_reg.event_handler = &axnet_event;
     client_reg.Version = 0x0210;
     client_reg.event_callback_args.client_data = link;
     ret = pcmcia_register_client(&link->handle, &client_reg);
@@ -254,7 +237,7 @@ static void axnet_detach(dev_link_t *link)
 static int get_prom(dev_link_t *link)
 {
     struct net_device *dev = link->priv;
-    ioaddr_t ioaddr = dev->base_addr;
+    kio_addr_t ioaddr = dev->base_addr;
     int i, j;
 
     /* This is based on drivers/net/ne.c */
@@ -458,6 +441,7 @@ static void axnet_config(dev_link_t *link)
     info->phy_id = (i < 32) ? i : -1;
     link->dev = &info->node;
     link->state &= ~DEV_CONFIG_PENDING;
+    SET_NETDEV_DEV(dev, &handle_to_dev(handle));
 
     if (register_netdev(dev) != 0) {
 	printk(KERN_NOTICE "axnet_cs: register_netdev() failed\n");
@@ -573,7 +557,7 @@ static int axnet_event(event_t event, int priority,
 #define MDIO_MASK		0x0f
 #define MDIO_ENB_IN		0x02
 
-static void mdio_sync(ioaddr_t addr)
+static void mdio_sync(kio_addr_t addr)
 {
     int bits;
     for (bits = 0; bits < 32; bits++) {
@@ -582,7 +566,7 @@ static void mdio_sync(ioaddr_t addr)
     }
 }
 
-static int mdio_read(ioaddr_t addr, int phy_id, int loc)
+static int mdio_read(kio_addr_t addr, int phy_id, int loc)
 {
     u_int cmd = (0xf6<<10)|(phy_id<<5)|loc;
     int i, retval = 0;
@@ -601,7 +585,7 @@ static int mdio_read(ioaddr_t addr, int phy_id, int loc)
     return (retval>>1) & 0xffff;
 }
 
-static void mdio_write(ioaddr_t addr, int phy_id, int loc, int value)
+static void mdio_write(kio_addr_t addr, int phy_id, int loc, int value)
 {
     u_int cmd = (0x05<<28)|(phy_id<<23)|(loc<<18)|(1<<17)|value;
     int i;
@@ -672,7 +656,7 @@ static int axnet_close(struct net_device *dev)
 
 static void axnet_reset_8390(struct net_device *dev)
 {
-    ioaddr_t nic_base = dev->base_addr;
+    kio_addr_t nic_base = dev->base_addr;
     int i;
 
     ei_status.txing = ei_status.dmaing = 0;
@@ -707,8 +691,8 @@ static void ei_watchdog(u_long arg)
 {
     struct net_device *dev = (struct net_device *)(arg);
     axnet_dev_t *info = PRIV(dev);
-    ioaddr_t nic_base = dev->base_addr;
-    ioaddr_t mii_addr = nic_base + AXNET_MII_EEP;
+    kio_addr_t nic_base = dev->base_addr;
+    kio_addr_t mii_addr = nic_base + AXNET_MII_EEP;
     u_short link;
 
     if (!netif_device_present(dev)) goto reschedule;
@@ -778,7 +762,7 @@ static int axnet_ioctl(struct net_device *dev, struct ifreq *rq, int cmd)
 {
     axnet_dev_t *info = PRIV(dev);
     u16 *data = (u16 *)&rq->ifr_ifru;
-    ioaddr_t mii_addr = dev->base_addr + AXNET_MII_EEP;
+    kio_addr_t mii_addr = dev->base_addr + AXNET_MII_EEP;
     switch (cmd) {
     case SIOCGMIIPHY:
 	data[0] = info->phy_id;
@@ -800,7 +784,7 @@ static void get_8390_hdr(struct net_device *dev,
 			 struct e8390_pkt_hdr *hdr,
 			 int ring_page)
 {
-    ioaddr_t nic_base = dev->base_addr;
+    kio_addr_t nic_base = dev->base_addr;
 
     outb_p(0, nic_base + EN0_RSARLO);		/* On page boundary */
     outb_p(ring_page, nic_base + EN0_RSARHI);
@@ -818,7 +802,7 @@ static void get_8390_hdr(struct net_device *dev,
 static void block_input(struct net_device *dev, int count,
 			struct sk_buff *skb, int ring_offset)
 {
-    ioaddr_t nic_base = dev->base_addr;
+    kio_addr_t nic_base = dev->base_addr;
     int xfer_count = count;
     char *buf = skb->data;
 
@@ -841,7 +825,7 @@ static void block_input(struct net_device *dev, int count,
 static void block_output(struct net_device *dev, int count,
 			 const u_char *buf, const int start_page)
 {
-    ioaddr_t nic_base = dev->base_addr;
+    kio_addr_t nic_base = dev->base_addr;
 
 #ifdef PCMCIA_DEBUG
     if (ei_debug > 4)
@@ -860,13 +844,43 @@ static void block_output(struct net_device *dev, int count,
     outsw(nic_base + AXNET_DATAPORT, buf, count>>1);
 }
 
+static struct pcmcia_device_id axnet_ids[] = {
+	PCMCIA_PFC_DEVICE_MANF_CARD(0, 0x016c, 0x0081),
+	PCMCIA_DEVICE_MANF_CARD(0x018a, 0x0301),
+	PCMCIA_DEVICE_MANF_CARD(0x026f, 0x0301),
+	PCMCIA_DEVICE_MANF_CARD(0x026f, 0x0303),
+	PCMCIA_DEVICE_MANF_CARD(0x026f, 0x0309),
+	PCMCIA_DEVICE_MANF_CARD(0x0274, 0x1106),
+	PCMCIA_DEVICE_MANF_CARD(0x8a01, 0xc1ab),
+	PCMCIA_DEVICE_PROD_ID124("Fast Ethernet", "16-bit PC Card", "AX88190", 0xb4be14e3, 0x9a12eb6a, 0xab9be5ef),
+	PCMCIA_DEVICE_PROD_ID12("ASIX", "AX88190", 0x0959823b, 0xab9be5ef),
+	PCMCIA_DEVICE_PROD_ID12("Billionton", "LNA-100B", 0x552ab682, 0xbc3b87e1),
+	PCMCIA_DEVICE_PROD_ID12("CHEETAH ETHERCARD", "EN2228", 0x00fa7bc8, 0x00e990cc),
+	PCMCIA_DEVICE_PROD_ID12("CNet", "CNF301", 0xbc477dde, 0x78c5f40b),
+	PCMCIA_DEVICE_PROD_ID12("corega K.K.", "corega FEther PCC-TXD", 0x5261440f, 0x436768c5),
+	PCMCIA_DEVICE_PROD_ID12("corega K.K.", "corega FEtherII PCC-TXD", 0x5261440f, 0x730df72e),
+	PCMCIA_DEVICE_PROD_ID12("Dynalink", "L100C16", 0x55632fd5, 0x66bc2a90),
+	PCMCIA_DEVICE_PROD_ID12("Linksys", "EtherFast 10/100 PC Card (PCMPC100 V3)", 0x0733cc81, 0x232019a8),
+	PCMCIA_DEVICE_PROD_ID12("MELCO", "LPC3-TX", 0x481e0094, 0xf91af609),
+	PCMCIA_DEVICE_PROD_ID12("PCMCIA", "100BASE", 0x281f1c5d, 0x7c2add04),
+	PCMCIA_DEVICE_PROD_ID12("PCMCIA", "FastEtherCard", 0x281f1c5d, 0x7ef26116),
+	PCMCIA_DEVICE_PROD_ID12("PCMCIA", "FEP501", 0x281f1c5d, 0x2e272058),
+	PCMCIA_DEVICE_PROD_ID14("Network Everywhere", "AX88190", 0x820a67b6,  0xab9be5ef),
+	/* this is not specific enough */
+	/* PCMCIA_DEVICE_MANF_CARD(0x021b, 0x0202), */
+	PCMCIA_DEVICE_NULL,
+};
+MODULE_DEVICE_TABLE(pcmcia, axnet_ids);
+
 static struct pcmcia_driver axnet_cs_driver = {
 	.owner		= THIS_MODULE,
 	.drv		= {
 		.name	= "axnet_cs",
 	},
 	.attach		= axnet_attach,
+	.event		= axnet_event,
 	.detach		= axnet_detach,
+	.id_table       = axnet_ids,
 };
 
 static int __init init_axnet_cs(void)
@@ -877,8 +891,7 @@ static int __init init_axnet_cs(void)
 static void __exit exit_axnet_cs(void)
 {
 	pcmcia_unregister_driver(&axnet_cs_driver);
-	while (dev_list != NULL)
-		axnet_detach(dev_list);
+	BUG_ON(dev_list != NULL);
 }
 
 module_init(init_axnet_cs);

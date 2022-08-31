@@ -132,7 +132,7 @@ out:
 
 EXPORT_SYMBOL(krb5_decrypt);
 
-void
+static void
 buf_to_sg(struct scatterlist *sg, char *ptr, int len) {
 	sg->page = virt_to_page(ptr);
 	sg->offset = offset_in_page(ptr);
@@ -185,9 +185,7 @@ make_checksum(s32 cksumtype, char *header, int hdrlen, struct xdr_buf *body,
 			sg->page = body->pages[i];
 			sg->offset = offset;
 			sg->length = thislen;
-			kmap(sg->page); /* XXX kmap_atomic? */
 			crypto_digest_update(tfm, sg, 1);
-			kunmap(sg->page);
 			len -= thislen;
 			i++;
 			offset = 0;

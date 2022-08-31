@@ -612,7 +612,7 @@ static void source_sink_complete (struct usb_ep *ep, struct usb_request *req)
 }
 
 static struct usb_request *
-source_sink_start_ep (struct usb_ep *ep, int gfp_flags)
+source_sink_start_ep (struct usb_ep *ep, unsigned gfp_flags)
 {
 	struct usb_request	*req;
 	int			status;
@@ -640,7 +640,7 @@ source_sink_start_ep (struct usb_ep *ep, int gfp_flags)
 }
 
 static int
-set_source_sink_config (struct zero_dev *dev, int gfp_flags)
+set_source_sink_config (struct zero_dev *dev, unsigned gfp_flags)
 {
 	int			result = 0;
 	struct usb_ep		*ep;
@@ -744,7 +744,7 @@ static void loopback_complete (struct usb_ep *ep, struct usb_request *req)
 }
 
 static int
-set_loopback_config (struct zero_dev *dev, int gfp_flags)
+set_loopback_config (struct zero_dev *dev, unsigned gfp_flags)
 {
 	int			result = 0;
 	struct usb_ep		*ep;
@@ -845,7 +845,7 @@ static void zero_reset_config (struct zero_dev *dev)
  * by limiting configuration choices (like the pxa2xx).
  */
 static int
-zero_set_config (struct zero_dev *dev, unsigned number, int gfp_flags)
+zero_set_config (struct zero_dev *dev, unsigned number, unsigned gfp_flags)
 {
 	int			result = 0;
 	struct usb_gadget	*gadget = dev->gadget;
@@ -935,14 +935,14 @@ zero_setup (struct usb_gadget *gadget, const struct usb_ctrlrequest *ctrl)
 		switch (wValue >> 8) {
 
 		case USB_DT_DEVICE:
-			value = min (wLength, (u16) sizeof device_desc);
+			value = min (w_length, (u16) sizeof device_desc);
 			memcpy (req->buf, &device_desc, value);
 			break;
 #ifdef CONFIG_USB_GADGET_DUALSPEED
 		case USB_DT_DEVICE_QUALIFIER:
 			if (!gadget->is_dualspeed)
 				break;
-			value = min (wLength, (u16) sizeof dev_qualifier);
+			value = min (w_length, (u16) sizeof dev_qualifier);
 			memcpy (req->buf, &dev_qualifier, value);
 			break;
 
@@ -956,7 +956,7 @@ zero_setup (struct usb_gadget *gadget, const struct usb_ctrlrequest *ctrl)
 					wValue >> 8,
 					wValue & 0xff);
 			if (value >= 0)
-				value = min (wLength, (u16) value);
+				value = min (w_length, (u16) value);
 			break;
 
 		case USB_DT_STRING:
@@ -968,7 +968,7 @@ zero_setup (struct usb_gadget *gadget, const struct usb_ctrlrequest *ctrl)
 			value = usb_gadget_get_string (&stringtab,
 					wValue & 0xff, req->buf);
 			if (value >= 0)
-				value = min (wLength, (u16) value);
+				value = min (w_length, (u16) value);
 			break;
 		}
 		break;
@@ -991,7 +991,7 @@ zero_setup (struct usb_gadget *gadget, const struct usb_ctrlrequest *ctrl)
 		if (ctrl->bRequestType != USB_DIR_IN)
 			goto unknown;
 		*(u8 *)req->buf = dev->config;
-		value = min (wLength, (u16) 1);
+		value = min (w_length, (u16) 1);
 		break;
 
 	/* until we add altsetting support, or other interfaces,
@@ -1028,7 +1028,7 @@ zero_setup (struct usb_gadget *gadget, const struct usb_ctrlrequest *ctrl)
 			break;
 		}
 		*(u8 *)req->buf = 0;
-		value = min (wLength, (u16) 1);
+		value = min (w_length, (u16) 1);
 		break;
 
 	/*
@@ -1042,9 +1042,9 @@ zero_setup (struct usb_gadget *gadget, const struct usb_ctrlrequest *ctrl)
 		if (wValue || wIndex)
 			break;
 		/* just read that many bytes into the buffer */
-		if (wLength > USB_BUFSIZ)
+		if (w_length > USB_BUFSIZ)
 			break;
-		value = wLength;
+		value = w_length;
 		break;
 	case 0x5c:	/* control READ test -- return the buffer */
 		if (ctrl->bRequestType != (USB_DIR_IN|USB_TYPE_VENDOR))
@@ -1052,10 +1052,10 @@ zero_setup (struct usb_gadget *gadget, const struct usb_ctrlrequest *ctrl)
 		if (wValue || wIndex)
 			break;
 		/* expect those bytes are still in the buffer; send back */
-		if (wLength > USB_BUFSIZ
-				|| wLength != req->length)
+		if (w_length > USB_BUFSIZ
+				|| w_length != req->length)
 			break;
-		value = wLength;
+		value = w_length;
 		break;
 
 	default:
@@ -1063,14 +1063,13 @@ unknown:
 		VDBG (dev,
 			"unknown control req%02x.%02x v%04x i%04x l%d\n",
 			ctrl->bRequestType, ctrl->bRequest,
-			wValue, wIndex, wLength);
+			wValue, wIndex, w_length);
 	}
 
 	/* respond with data transfer before status phase? */
 	if (value >= 0) {
 		req->length = value;
-		req->zero = value < wLength
-				&& (value % gadget->ep0->maxpacket) == 0;
+		req->zero = value < w_length;
 		value = usb_ep_queue (gadget->ep0, req, GFP_ATOMIC);
 		if (value < 0) {
 			DBG (dev, "ep_queue --> %d\n", value);
@@ -1170,9 +1169,17 @@ autoconf_fail:
 	ep->driver_data = ep;	/* claim */
 
 	gcnum = usb_gadget_controller_number (gadget);
-	if (gcnum >= 0)
+	if (gcnum >= 0) {
 		device_desc.bcdDevice = cpu_to_le16 (0x0200 + gcnum);
-	else {
+/* ori 2.6.12
+ 	} else if (gadget_is_pxa27x(gadget)) {
+ 		device_desc.bcdDevice = __constant_cpu_to_le16 (0x0211);
+	} else if (gadget_is_s3c2410(gadget)) {
+		device_desc.bcdDevice = __constant_cpu_to_le16 (0x0212);
+	} else if (gadget_is_at91(gadget)) {
+		device_desc.bcdDevice = __constant_cpu_to_le16 (0x0213);
+*/
+	} else {
 		/* gadget zero is so simple (for now, no altsettings) that
 		 * it SHOULD NOT have problems with bulk-capable hardware.
 		 * so warn about unrcognized controllers, don't panic.

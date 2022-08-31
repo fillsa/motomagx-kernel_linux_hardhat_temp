@@ -34,9 +34,9 @@
  
 static LIST_HEAD(dying_tasks);
 static LIST_HEAD(dead_tasks);
-cpumask_t marked_cpus = CPU_MASK_NONE;
+static cpumask_t marked_cpus = CPU_MASK_NONE;
 static DEFINE_SPINLOCK(task_mortuary);
-void process_task_mortuary(void);
+static void process_task_mortuary(void);
 
 
 /* Take ownership of the task struct and place it on the
@@ -46,7 +46,7 @@ void process_task_mortuary(void);
  */
 static int task_free_notify(struct notifier_block * self, unsigned long val, void * data)
 {
-	struct task_struct * task = (struct task_struct *)data;
+	struct task_struct * task = data;
 	spin_lock(&task_mortuary);
 	list_add(&task->tasks, &dying_tasks);
 	spin_unlock(&task_mortuary);
@@ -62,7 +62,7 @@ static int task_exit_notify(struct notifier_block * self, unsigned long val, voi
 	/* To avoid latency problems, we only process the current CPU,
 	 * hoping that most samples for the task are on this CPU
 	 */
-	sync_buffer(smp_processor_id());
+	sync_buffer(raw_smp_processor_id());
   	return 0;
 }
 
@@ -86,7 +86,7 @@ static int munmap_notify(struct notifier_block * self, unsigned long val, void *
 		/* To avoid latency problems, we only process the current CPU,
 		 * hoping that most samples for the task are on this CPU
 		 */
-		sync_buffer(smp_processor_id());
+		sync_buffer(raw_smp_processor_id());
 		return 0;
 	}
 
@@ -206,7 +206,7 @@ static inline unsigned long fast_get_dcookie(struct dentry * dentry,
  */
 static unsigned long get_exec_dcookie(struct mm_struct * mm)
 {
-	unsigned long cookie = 0;
+	unsigned long cookie = NO_COOKIE;
 	struct vm_area_struct * vma;
  
 	if (!mm)
@@ -234,35 +234,42 @@ out:
  */
 static unsigned long lookup_dcookie(struct mm_struct * mm, unsigned long addr, off_t * offset)
 {
-	unsigned long cookie = 0;
+	unsigned long cookie = NO_COOKIE;
 	struct vm_area_struct * vma;
 
 	for (vma = find_vma(mm, addr); vma; vma = vma->vm_next) {
  
-		if (!vma->vm_file)
-			continue;
-
 		if (addr < vma->vm_start || addr >= vma->vm_end)
 			continue;
 
-		cookie = fast_get_dcookie(vma->vm_file->f_dentry,
-			vma->vm_file->f_vfsmnt);
-		*offset = (vma->vm_pgoff << PAGE_SHIFT) + addr - vma->vm_start; 
+		if (vma->vm_file) {
+			cookie = fast_get_dcookie(vma->vm_file->f_dentry,
+				vma->vm_file->f_vfsmnt);
+			*offset = (vma->vm_pgoff << PAGE_SHIFT) + addr -
+				vma->vm_start;
+		} else {
+			/* must be an anonymous map */
+			*offset = addr;
+		}
+
 		break;
 	}
+
+	if (!vma)
+		cookie = INVALID_COOKIE;
 
 	return cookie;
 }
 
 
-static unsigned long last_cookie = ~0UL;
+static unsigned long last_cookie = INVALID_COOKIE;
  
 static void add_cpu_switch(int i)
 {
 	add_event_entry(ESCAPE_CODE);
 	add_event_entry(CPU_SWITCH_CODE);
 	add_event_entry(i);
-	last_cookie = ~0UL;
+	last_cookie = INVALID_COOKIE;
 }
 
 static void add_kernel_ctx_switch(unsigned int in_kernel)
@@ -296,6 +303,13 @@ static void add_cookie_switch(unsigned long cookie)
 }
 
  
+static void add_trace_begin(void)
+{
+	add_event_entry(ESCAPE_CODE);
+	add_event_entry(TRACE_BEGIN_CODE);
+}
+
+
 static void add_sample_entry(unsigned long offset, unsigned long event)
 {
 	add_event_entry(offset);
@@ -303,16 +317,16 @@ static void add_sample_entry(unsigned long offset, unsigned long event)
 }
 
 
-static void add_us_sample(struct mm_struct * mm, struct op_sample * s)
+static int add_us_sample(struct mm_struct * mm, struct op_sample * s)
 {
 	unsigned long cookie;
 	off_t offset;
  
  	cookie = lookup_dcookie(mm, s->eip, &offset);
  
-	if (!cookie) {
+	if (cookie == INVALID_COOKIE) {
 		atomic_inc(&oprofile_stats.sample_lost_no_mapping);
-		return;
+		return 0;
 	}
 
 	if (cookie != last_cookie) {
@@ -321,6 +335,8 @@ static void add_us_sample(struct mm_struct * mm, struct op_sample * s)
 	}
 
 	add_sample_entry(offset, s->event);
+
+	return 1;
 }
 
  
@@ -328,15 +344,18 @@ static void add_us_sample(struct mm_struct * mm, struct op_sample * s)
  * sample is converted into a persistent dentry/offset pair
  * for later lookup from userspace.
  */
-static void add_sample(struct mm_struct * mm, struct op_sample * s, int in_kernel)
+static int
+add_sample(struct mm_struct * mm, struct op_sample * s, int in_kernel)
 {
 	if (in_kernel) {
 		add_sample_entry(s->eip, s->event);
+		return 1;
 	} else if (mm) {
-		add_us_sample(mm, s);
+		return add_us_sample(mm, s);
 	} else {
 		atomic_inc(&oprofile_stats.sample_lost_no_mm);
 	}
+	return 0;
 }
  
 
@@ -358,9 +377,9 @@ static struct mm_struct * take_tasks_mm(struct task_struct * task)
 }
 
 
-static inline int is_ctx_switch(unsigned long val)
+static inline int is_code(unsigned long val)
 {
-	return val == ~0UL;
+	return val == ESCAPE_CODE;
 }
  
 
@@ -397,7 +416,7 @@ static void increment_tail(struct oprofile_cpu_buffer * b)
 
 	rmb();
 
-	if (new_tail < (b->buffer_size))
+	if (new_tail < b->buffer_size)
 		b->tail_pos = new_tail;
 	else
 		b->tail_pos = 0;
@@ -410,7 +429,7 @@ static void increment_tail(struct oprofile_cpu_buffer * b)
  * and to have reached the list, it must have gone through
  * one full sync already.
  */
-void process_task_mortuary(void)
+static void process_task_mortuary(void)
 {
 	struct list_head * pos;
 	struct list_head * pos2;
@@ -454,6 +473,17 @@ static void mark_done(int cpu)
 }
 
 
+/* FIXME: this is not sufficient if we implement syscall barrier backtrace
+ * traversal, the code switch to sb_sample_start at first kernel enter/exit
+ * switch so we need a fifth state and some special handling in sync_buffer()
+ */
+typedef enum {
+	sb_bt_ignore = -2,
+	sb_buffer_start,
+	sb_bt_start,
+	sb_sample_start,
+} sync_buffer_state;
+
 /* Sync one of the CPU's buffers into the global event buffer.
  * Here we need to go through each batch of samples punctuated
  * by context switch notes, taking the task's mmap_sem and doing
@@ -468,6 +498,7 @@ void sync_buffer(int cpu)
 	unsigned long cookie = 0;
 	int in_kernel = 1;
 	unsigned int i;
+	sync_buffer_state state = sb_buffer_start;
 	unsigned long available;
 
 	down(&buffer_sem);
@@ -478,14 +509,19 @@ void sync_buffer(int cpu)
 
 	available = get_slots(cpu_buf);
 
-	for (i=0; i < available; ++i) {
+	for (i = 0; i < available; ++i) {
 		struct op_sample * s = &cpu_buf->buffer[cpu_buf->tail_pos];
  
-		if (is_ctx_switch(s->eip)) {
-			if (s->event <= 1) {
+		if (is_code(s->eip)) {
+			if (s->event <= CPU_IS_KERNEL) {
 				/* kernel/userspace switch */
 				in_kernel = s->event;
+				if (state == sb_buffer_start)
+					state = sb_sample_start;
 				add_kernel_ctx_switch(s->event);
+			} else if (s->event == CPU_TRACE_BEGIN) {
+				state = sb_bt_start;
+				add_trace_begin();
 			} else {
 				struct mm_struct * oldmm = mm;
 
@@ -499,7 +535,13 @@ void sync_buffer(int cpu)
 				add_user_ctx_switch(new, cookie);
 			}
 		} else {
-			add_sample(mm, s, in_kernel);
+			if (state >= sb_bt_start &&
+			    !add_sample(mm, s, in_kernel)) {
+				if (state == sb_bt_start) {
+					state = sb_bt_ignore;
+					atomic_inc(&oprofile_stats.bt_lost_no_mapping);
+				}
+			}
 		}
 
 		increment_tail(cpu_buf);

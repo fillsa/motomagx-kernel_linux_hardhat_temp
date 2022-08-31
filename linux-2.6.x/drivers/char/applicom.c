@@ -79,10 +79,6 @@ MODULE_DEVICE_TABLE(pci, applicom_pci_tbl);
 MODULE_AUTHOR("David Woodhouse & Applicom International");
 MODULE_DESCRIPTION("Driver for Applicom Profibus card");
 MODULE_LICENSE("GPL");
-MODULE_PARM(irq, "i");
-MODULE_PARM_DESC(irq, "IRQ of the Applicom board");
-MODULE_PARM(mem, "i");
-MODULE_PARM_DESC(mem, "Shared Memory Address of Applicom board");
 
 MODULE_SUPPORTED_DEVICE("ac");
 
@@ -97,6 +93,11 @@ static struct applicom_board {
 
 static unsigned int irq = 0;	/* interrupt number IRQ       */
 static unsigned long mem = 0;	/* physical segment of board  */
+
+module_param(irq, uint, 0);
+MODULE_PARM_DESC(irq, "IRQ of the Applicom board");
+module_param(mem, ulong, 0);
+MODULE_PARM_DESC(mem, "Shared Memory Address of Applicom board");
 
 static unsigned int numboards;	/* number of installed boards */
 static volatile unsigned char Dummy;
@@ -598,7 +599,7 @@ static ssize_t ac_read (struct file *filp, char __user *buf, size_t count, loff_
 
 #ifdef DEBUG
 		if (loopcount++ > 2) {
-			printk("Looping in ac_read. loopcount %d\n", loopcount);
+			printk(KERN_DEBUG "Looping in ac_read. loopcount %d\n", loopcount);
 		}
 #endif
 	} 

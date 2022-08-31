@@ -8,6 +8,8 @@
 #include <linux/list.h>
 #include <linux/compiler.h>
 
+///mvl typedef struct spinlock_t in include/linux/rt_lock.h
+ 
 #define SPINLOCK_MAGIC	0xdead4ead
 
 #ifdef CONFIG_DEBUG_SPINLOCK
@@ -28,9 +30,9 @@
  * We make no fairness assumptions. They have a cost.
  */
 
-#define __raw_spin_is_locked(x)	(*(volatile signed char *)(&(x)->lock) <= 0)
-#define __raw_spin_unlock_wait(x) \
-	do { barrier(); } while(__raw_spin_is_locked(x))
+//2.6	+#define spin_is_locked(x)	(*(volatile signed char *)(&(x)->slock) <= 0)
+#define __raw_spin_is_locked(x)	(*(volatile signed char *)(&(x)->slock) <= 0)
+#define __raw_spin_unlock_wait(x)	do { barrier(); } while(__raw_spin_is_locked(x))
 
 #define spin_lock_string \
 	"\n1:\t" \
@@ -64,12 +66,12 @@
  * (except on PPro SMP or if we are using OOSTORE)
  * (PPro errata 66, 92)
  */
- 
+
 #if !defined(CONFIG_X86_OOSTORE) && !defined(CONFIG_X86_PPRO_FENCE)
 
 #define spin_unlock_string \
 	"movb $1,%0" \
-		:"=m" (lock->lock) : : "memory"
+		:"=m" (lock->slock) : : "memory"
 
 
 static inline void __raw_spin_unlock(raw_spinlock_t *lock)
@@ -87,7 +89,7 @@ static inline void __raw_spin_unlock(raw_spinlock_t *lock)
 
 #define spin_unlock_string \
 	"xchgb %b0, %1" \
-		:"=q" (oldval), "=m" (lock->lock) \
+		:"=q" (oldval), "=m" (lock->slock) \
 		:"0" (oldval) : "memory"
 
 static inline void __raw_spin_unlock(raw_spinlock_t *lock)
@@ -109,7 +111,7 @@ static inline int __raw_spin_trylock(raw_spinlock_t *lock)
 	char oldval;
 	__asm__ __volatile__(
 		"xchgb %b0,%1"
-		:"=q" (oldval), "=m" (lock->lock)
+		:"=q" (oldval), "=m" (lock->slock)
 		:"0" (0) : "memory");
 	return oldval > 0;
 }
@@ -124,7 +126,7 @@ static inline void __raw_spin_lock(raw_spinlock_t *lock)
 #endif
 	__asm__ __volatile__(
 		spin_lock_string
-		:"=m" (lock->lock) : : "memory");
+		:"=m" (lock->slock) : : "memory");
 }
 
 static inline void __raw_spin_lock_flags (raw_spinlock_t *lock, unsigned long flags)
@@ -137,8 +139,10 @@ static inline void __raw_spin_lock_flags (raw_spinlock_t *lock, unsigned long fl
 #endif
 	__asm__ __volatile__(
 		spin_lock_string_flags
-		:"=m" (lock->lock) : "r" (flags) : "memory");
+		:"=m" (lock->slock) : "r" (flags) : "memory");
 }
+
+///mvl typedef struct rwlock_t in include/linux/rt_lock.h
 
 #define RWLOCK_MAGIC	0xdeaf1eed
 
@@ -150,6 +154,7 @@ static inline void __raw_spin_lock_flags (raw_spinlock_t *lock, unsigned long fl
 
 #define __RAW_RW_LOCK_UNLOCKED { RW_LOCK_BIAS RWLOCK_MAGIC_INIT }
 #define RAW_RW_LOCK_UNLOCKED (raw_rwlock_t) { RW_LOCK_BIAS RWLOCK_MAGIC_INIT }
+//2.6	#define rwlock_init(x)	do { *(x) = RW_LOCK_UNLOCKED; } while(0)
 #define __raw_rwlock_init(x) do { *(x) = RAW_RW_LOCK_UNLOCKED; } while(0)
 #define __raw_rwlock_is_locked(x) ((x)->lock != RW_LOCK_BIAS)
 
@@ -157,12 +162,14 @@ static inline void __raw_spin_lock_flags (raw_spinlock_t *lock, unsigned long fl
  * read_can_lock - would read_trylock() succeed?
  * @lock: the rwlock in question.
  */
+//2.6.12	+#define read_can_lock(x) ((int)(x)->lock > 0)
 #define __raw_read_can_lock(x) ((int)(x)->lock > 0)
 
 /**
  * write_can_lock - would write_trylock() succeed?
  * @lock: the rwlock in question.
  */
+//2.6.12	+#define write_can_lock(x) ((x)->lock == RW_LOCK_BIAS)
 #define __raw_write_can_lock(x) ((x)->lock == RW_LOCK_BIAS)
 
 /*
@@ -198,10 +205,9 @@ static inline void __raw_write_lock(raw_rwlock_t *rw)
 static inline int __raw_read_trylock(raw_rwlock_t *lock)
 {
 	atomic_t *count = (atomic_t *)lock;
-	atomic_dec(count);
-	if (atomic_read(count) >= 0)
+	if (atomic_sub_and_test(RW_LOCK_BIAS, count))
 		return 1;
-	atomic_inc(count);
+	atomic_add(RW_LOCK_BIAS, count);
 	return 0;
 }
 

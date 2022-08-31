@@ -15,6 +15,7 @@
 #include <linux/module.h>
 #include <linux/security.h>
 #include <linux/ptrace.h>
+#include <linux/signal.h>
 
 #include <asm/poll.h>
 #include <asm/siginfo.h>
@@ -39,38 +40,6 @@ static inline int get_close_on_exec(unsigned int fd)
 	res = FD_ISSET(fd, files->close_on_exec);
 	spin_unlock(&files->file_lock);
 	return res;
-}
-
-
-/* Expand files.  Return <0 on error; 0 nothing done; 1 files expanded,
- * we may have blocked. 
- *
- * Should be called with the files->file_lock spinlock held for write.
- */
-static int expand_files(struct files_struct *files, int nr)
-{
-	int err, expand = 0;
-#ifdef FDSET_DEBUG	
-	printk (KERN_ERR "%s %d: nr = %d\n", __FUNCTION__, current->pid, nr);
-#endif
-	
-	if (nr >= files->max_fdset) {
-		expand = 1;
-		if ((err = expand_fdset(files, nr)))
-			goto out;
-	}
-	if (nr >= files->max_fds) {
-		expand = 1;
-		if ((err = expand_fd_array(files, nr)))
-			goto out;
-	}
-	err = expand;
- out:
-#ifdef FDSET_DEBUG	
-	if (err)
-		printk (KERN_ERR "%s %d: return %d\n", __FUNCTION__, current->pid, err);
-#endif
-	return err;
 }
 
 /*
@@ -319,7 +288,7 @@ static long do_fcntl(int fd, unsigned int cmd, unsigned long arg,
 		break;
 	case F_SETLK:
 	case F_SETLKW:
-		err = fcntl_setlk(filp, cmd, (struct flock __user *) arg);
+		err = fcntl_setlk(fd, filp, cmd, (struct flock __user *) arg);
 		break;
 	case F_GETOWN:
 		/*
@@ -340,7 +309,7 @@ static long do_fcntl(int fd, unsigned int cmd, unsigned long arg,
 		break;
 	case F_SETSIG:
 		/* arg == 0 restores default behaviour. */
-		if (arg < 0 || arg > _NSIG) {
+		if (!valid_signal(arg)) {
 			break;
 		}
 		err = 0;
@@ -407,7 +376,8 @@ asmlinkage long sys_fcntl64(unsigned int fd, unsigned int cmd, unsigned long arg
 			break;
 		case F_SETLK64:
 		case F_SETLKW64:
-			err = fcntl_setlk64(filp, cmd, (struct flock64 __user *) arg);
+			err = fcntl_setlk64(fd, filp, cmd,
+					(struct flock64 __user *) arg);
 			break;
 		default:
 			err = do_fcntl(fd, cmd, arg, filp);
@@ -469,7 +439,7 @@ static void send_sigio_to_task(struct task_struct *p,
 			else
 				si.si_band = band_table[reason - POLL_IN];
 			si.si_fd    = fd;
-			if (!send_sig_info(fown->signum, &si, p))
+			if (!send_group_sig_info(fown->signum, &si, p))
 				break;
 		/* fall-through: fall back on the old plain SIGIO signal */
 		case 0:

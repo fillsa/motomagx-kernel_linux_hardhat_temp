@@ -8,7 +8,8 @@
  * 
  *  X86-64 port
  *	Andi Kleen.
- * 
+ *
+ *	CPU hotplug support - ashok.raj@intel.com
  *  $Id: process.c,v 1.38 2002/01/15 10:08:03 ak Exp $
  */
 
@@ -18,6 +19,7 @@
 
 #include <stdarg.h>
 
+#include <linux/cpu.h>
 #include <linux/errno.h>
 #include <linux/sched.h>
 #include <linux/kernel.h>
@@ -32,7 +34,9 @@
 #include <linux/delay.h>
 #include <linux/irq.h>
 #include <linux/ptrace.h>
-#include <linux/version.h>
+#include <linux/utsname.h>
+#include <linux/random.h>
+#include <linux/kprobes.h>
 
 #include <asm/uaccess.h>
 #include <asm/pgtable.h>
@@ -52,7 +56,7 @@ asmlinkage extern void ret_from_fork(void);
 
 unsigned long kernel_thread_flags = CLONE_VM | CLONE_UNTRACED;
 
-atomic_t hlt_counter = ATOMIC_INIT(0);
+static atomic_t hlt_counter = ATOMIC_INIT(0);
 
 unsigned long boot_option_idle_override = 0;
 EXPORT_SYMBOL(boot_option_idle_override);
@@ -61,7 +65,7 @@ EXPORT_SYMBOL(boot_option_idle_override);
  * Powermanagement idle function, if any..
  */
 void (*pm_idle)(void);
-static cpumask_t cpu_idle_map;
+static DEFINE_PER_CPU(unsigned int, cpu_idle_state);
 
 void disable_hlt(void)
 {
@@ -125,22 +129,56 @@ static void poll_idle (void)
 	}
 }
 
-
 void cpu_idle_wait(void)
 {
-        int cpu;
-        cpumask_t map;
+	unsigned int cpu, this_cpu = get_cpu();
+	cpumask_t map;
 
-        for_each_online_cpu(cpu)
-                cpu_set(cpu, cpu_idle_map);
+	set_cpus_allowed(current, cpumask_of_cpu(this_cpu));
+	put_cpu();
 
-        wmb();
-        do {
-                ssleep(1);
-                cpus_and(map, cpu_idle_map, cpu_online_map);
-        } while (!cpus_empty(map));
+	cpus_clear(map);
+	for_each_online_cpu(cpu) {
+		per_cpu(cpu_idle_state, cpu) = 1;
+		cpu_set(cpu, map);
+	}
+
+	__get_cpu_var(cpu_idle_state) = 0;
+
+	wmb();
+	do {
+		ssleep(1);
+		for_each_online_cpu(cpu) {
+			if (cpu_isset(cpu, map) && !per_cpu(cpu_idle_state, cpu))
+				cpu_clear(cpu, map);
+		}
+		cpus_and(map, map, cpu_online_map);
+	} while (!cpus_empty(map));
 }
 EXPORT_SYMBOL_GPL(cpu_idle_wait);
+
+#ifdef CONFIG_HOTPLUG_CPU
+DECLARE_PER_CPU(int, cpu_state);
+
+#include <asm/nmi.h>
+/* We don't actually take CPU down, just spin without interrupts. */
+static inline void play_dead(void)
+{
+	idle_task_exit();
+	wbinvd();
+	mb();
+	/* Ack it */
+	__get_cpu_var(cpu_state) = CPU_DEAD;
+
+	while (1)
+		safe_halt();
+}
+#else
+static inline void play_dead(void)
+{
+	BUG();
+}
+#endif /* CONFIG_HOTPLUG_CPU */
 
 /*
  * The idle thread. There's no useful work to be
@@ -150,22 +188,26 @@ EXPORT_SYMBOL_GPL(cpu_idle_wait);
  */
 void cpu_idle (void)
 {
-	int cpu = smp_processor_id();
-
 	/* endless idle loop with no priority at all */
 	while (1) {
 		while (!need_resched()) {
 			void (*idle)(void);
 
-			if (cpu_isset(cpu, cpu_idle_map))
-				cpu_clear(cpu, cpu_idle_map);
+			if (__get_cpu_var(cpu_idle_state))
+				__get_cpu_var(cpu_idle_state) = 0;
+//mvl			if (cpu_isset(cpu, cpu_idle_map))
+//mvl				cpu_clear(cpu, cpu_idle_map);
+
 			rmb();
 			idle = pm_idle;
 			if (!idle)
 				idle = default_idle;
++			if (cpu_is_offline(smp_processor_id()))
++				play_dead();
 			stop_critical_timing();
 			idle();
 		}
+
 		__schedule();
 	}
 }
@@ -193,7 +235,7 @@ static void mwait_idle(void)
 	}
 }
 
-void __init select_idle_routine(const struct cpuinfo_x86 *c)
+void __cpuinit select_idle_routine(const struct cpuinfo_x86 *c)
 {
 	static int printed;
 	if (cpu_has(c, X86_FEATURE_MWAIT)) {
@@ -234,7 +276,7 @@ void __show_regs(struct pt_regs * regs)
 	printk("\n");
 	print_modules();
 	printk("Pid: %d, comm: %.20s %s %s\n", 
-	       current->pid, current->comm, print_tainted(), UTS_RELEASE);
+	       current->pid, current->comm, print_tainted(), system_utsname.release);
 	printk("RIP: %04lx:[<%016lx>] ", regs->cs & 0xffff, regs->rip);
 	printk_address(regs->rip); 
 	printk("\nRSP: %04lx:%016lx  EFLAGS: %08lx\n", regs->ss, regs->rsp, regs->eflags);
@@ -283,6 +325,14 @@ void exit_thread(void)
 {
 	struct task_struct *me = current;
 	struct thread_struct *t = &me->thread;
+
+	/*
+	 * Remove function-return probe instances associated with this task
+	 * and put them back on the free list. Do not insert an exit probe for
+	 * this function, it will be disabled by kprobe_flush_task if you do.
+	 */
+	kprobe_flush_task(me);
+
 	if (me->thread.io_bitmap_ptr) { 
 		struct tss_struct *tss;
 
@@ -303,6 +353,13 @@ void flush_thread(void)
 	struct task_struct *tsk = current;
 	struct thread_info *t = current_thread_info();
 
+	/*
+	 * Remove function-return probe instances associated with this task
+	 * and put them back on the free list. Do not insert an exit probe for
+	 * this function, it will be disabled by kprobe_flush_task if you do.
+	 */
+	kprobe_flush_task(tsk);
+
 	if (t->flags & _TIF_ABI_PENDING)
 		t->flags ^= (_TIF_ABI_PENDING | _TIF_IA32);
 
@@ -317,7 +374,7 @@ void flush_thread(void)
 	 * Forget coprocessor state..
 	 */
 	clear_fpu(tsk);
-	tsk->used_math = 0;
+	clear_used_math();
 }
 
 void release_thread(struct task_struct *dead_task)
@@ -393,10 +450,10 @@ int copy_thread(int nr, unsigned long clone_flags, unsigned long rsp,
 	p->thread.fs = me->thread.fs;
 	p->thread.gs = me->thread.gs;
 
-	asm("movl %%gs,%0" : "=m" (p->thread.gsindex));
-	asm("movl %%fs,%0" : "=m" (p->thread.fsindex));
-	asm("movl %%es,%0" : "=m" (p->thread.es));
-	asm("movl %%ds,%0" : "=m" (p->thread.ds));
+	asm("mov %%gs,%0" : "=m" (p->thread.gsindex));
+	asm("mov %%fs,%0" : "=m" (p->thread.fsindex));
+	asm("mov %%es,%0" : "=m" (p->thread.es));
+	asm("mov %%ds,%0" : "=m" (p->thread.ds));
 
 	if (unlikely(me->thread.io_bitmap_ptr != NULL)) { 
 		p->thread.io_bitmap_ptr = kmalloc(IO_BITMAP_BYTES, GFP_KERNEL);
@@ -430,6 +487,33 @@ out:
 }
 
 /*
+ * This function selects if the context switch from prev to next
+ * has to tweak the TSC disable bit in the cr4.
+ */
+static inline void disable_tsc(struct task_struct *prev_p,
+			       struct task_struct *next_p)
+{
+	struct thread_info *prev, *next;
+
+	/*
+	 * gcc should eliminate the ->thread_info dereference if
+	 * has_secure_computing returns 0 at compile time (SECCOMP=n).
+	 */
+	prev = prev_p->thread_info;
+	next = next_p->thread_info;
+
+	if (has_secure_computing(prev) || has_secure_computing(next)) {
+		/* slow path here */
+		if (has_secure_computing(prev) &&
+		    !has_secure_computing(next)) {
+			write_cr4(read_cr4() & ~X86_CR4_TSD);
+		} else if (!has_secure_computing(prev) &&
+			   has_secure_computing(next))
+			write_cr4(read_cr4() | X86_CR4_TSD);
+	}
+}
+
+/*
  * This special macro can be used to load a debugging register
  */
 #define loaddebug(thread,r) set_debug(thread->debugreg ## r, r)
@@ -459,11 +543,11 @@ struct task_struct *__switch_to(struct task_struct *prev_p, struct task_struct *
 	 * Switch DS and ES.
 	 * This won't pick up thread selector changes, but I guess that is ok.
 	 */
-	asm volatile("movl %%es,%0" : "=m" (prev->es)); 
+	asm volatile("mov %%es,%0" : "=m" (prev->es));
 	if (unlikely(next->es | prev->es))
 		loadsegment(es, next->es); 
 	
-	asm volatile ("movl %%ds,%0" : "=m" (prev->ds)); 
+	asm volatile ("mov %%ds,%0" : "=m" (prev->ds));
 	if (unlikely(next->ds | prev->ds))
 		loadsegment(ds, next->ds);
 
@@ -474,7 +558,7 @@ struct task_struct *__switch_to(struct task_struct *prev_p, struct task_struct *
 	 */
 	{ 
 		unsigned fsindex;
-		asm volatile("movl %%fs,%0" : "=g" (fsindex)); 
+		asm volatile("movl %%fs,%0" : "=r" (fsindex)); 
 		/* segment register != 0 always requires a reload. 
 		   also reload when it has changed. 
 		   when prev process used 64bit base always reload
@@ -495,7 +579,7 @@ struct task_struct *__switch_to(struct task_struct *prev_p, struct task_struct *
 	}
 	{ 
 		unsigned gsindex;
-		asm volatile("movl %%gs,%0" : "=g" (gsindex)); 
+		asm volatile("movl %%gs,%0" : "=r" (gsindex)); 
 		if (unlikely(gsindex | next->gsindex | prev->gs)) {
 			load_gs_index(next->gsindex);
 			if (gsindex)
@@ -547,6 +631,8 @@ struct task_struct *__switch_to(struct task_struct *prev_p, struct task_struct *
 		}
 	}
 
+	disable_tsc(prev_p, next_p);
+
 	return prev_p;
 }
 
@@ -580,6 +666,12 @@ void set_personality_64bit(void)
 
 	/* Make sure to be in 64bit mode */
 	clear_thread_flag(TIF_IA32); 
+
+	/* TBD: overwrites user setup. Should have two bits.
+	   But 64bit processes have always behaved this way,
+	   so it's not too bad. The main problem is just that
+   	   32bit childs are affected again. */
+	current->personality &= ~READ_IMPLIES_EXEC;
 }
 
 asmlinkage long sys_fork(struct pt_regs *regs)
@@ -641,7 +733,7 @@ long do_arch_prctl(struct task_struct *task, int code, unsigned long addr)
 
 	switch (code) { 
 	case ARCH_SET_GS:
-		if (addr >= TASK_SIZE) 
+		if (addr >= TASK_SIZE_OF(task))
 			return -EPERM; 
 		cpu = get_cpu();
 		/* handle small bases via the GDT because that's faster to 
@@ -667,7 +759,7 @@ long do_arch_prctl(struct task_struct *task, int code, unsigned long addr)
 	case ARCH_SET_FS:
 		/* Not strictly needed for fs, but do it for symmetry
 		   with gs */
-		if (addr >= TASK_SIZE)
+		if (addr >= TASK_SIZE_OF(task))
 			return -EPERM; 
 		cpu = get_cpu();
 		/* handle small bases via the GDT because that's faster to 
@@ -745,4 +837,11 @@ int dump_task_regs(struct task_struct *tsk, elf_gregset_t *regs)
 	elf_core_copy_regs(regs, &ptregs);
  
 	return 1;
+}
+
+unsigned long arch_align_stack(unsigned long sp)
+{
+	if (randomize_va_space)
+		sp -= get_random_int() % 8192;
+	return sp & ~0xf;
 }

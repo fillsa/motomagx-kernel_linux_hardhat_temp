@@ -82,14 +82,14 @@ static int num=0x5a;
  * would be interpreted. -- REW */
 
 #define NP FS_NR_FREE_POOLS
-int rx_buf_sizes[NP]  = {128,  256,  512, 1024, 2048, 4096, 16384, 65520};
+static int rx_buf_sizes[NP]  = {128,  256,  512, 1024, 2048, 4096, 16384, 65520};
 /* log2:                 7     8     9    10    11    12    14     16 */
 
 #if 0
-int rx_pool_sizes[NP] = {1024, 1024, 512, 256,  128,  64,   32,    32};
+static int rx_pool_sizes[NP] = {1024, 1024, 512, 256,  128,  64,   32,    32};
 #else
 /* debug */
-int rx_pool_sizes[NP] = {128,  128,  128, 64,   64,   64,   32,    32};
+static int rx_pool_sizes[NP] = {128,  128,  128, 64,   64,   64,   32,    32};
 #endif
 /* log2:                 10    10    9    8     7     6     5      5  */
 /* sumlog2:              17    18    18   18    18    18    19     21 */
@@ -250,7 +250,7 @@ struct reginit_item {
 };
 
 
-struct reginit_item PHY_NTC_INIT[] __devinitdata = {
+static struct reginit_item PHY_NTC_INIT[] __devinitdata = {
 	{ PHY_CLEARALL, 0x40 }, 
 	{ 0x12,  0x0001 },
 	{ 0x13,  0x7605 },
@@ -334,7 +334,7 @@ module_param(fs_keystream, int, 0);
 #define func_exit()  fs_dprintk (FS_DEBUG_FLOW, "fs: exit  %s\n", __FUNCTION__)
 
 
-struct fs_dev *fs_boards = NULL;
+static struct fs_dev *fs_boards = NULL;
 
 #ifdef DEBUG
 
@@ -1374,7 +1374,8 @@ static void reset_chip (struct fs_dev *dev)
 	}
 }
 
-static void __devinit *aligned_kmalloc (int size, int flags, int alignment)
+static void __devinit *aligned_kmalloc (int size, unsigned int __nocast flags,
+					int alignment)
 {
 	void  *t;
 
@@ -1464,7 +1465,8 @@ static inline int nr_buffers_in_freepool (struct fs_dev *dev, struct freepool *f
    does. I've seen "receive abort: no buffers" and things started
    working again after that...  -- REW */
 
-static void top_off_fp (struct fs_dev *dev, struct freepool *fp, int gfp_flags)
+static void top_off_fp (struct fs_dev *dev, struct freepool *fp,
+			unsigned int __nocast gfp_flags)
 {
 	struct FS_BPENTRY *qe, *ne;
 	struct sk_buff *skb;
@@ -1921,7 +1923,7 @@ static int __devinit firestream_init_one (struct pci_dev *pci_dev,
 	return -ENODEV;
 }
 
-void __devexit firestream_remove_one (struct pci_dev *pdev)
+static void __devexit firestream_remove_one (struct pci_dev *pdev)
 {
 	int i;
 	struct fs_dev *dev, *nxtdev;
@@ -2034,7 +2036,7 @@ static int __init firestream_init_module (void)
 	int error;
 
 	func_enter ();
-	error = pci_module_init(&firestream_driver);
+	error = pci_register_driver(&firestream_driver);
 	func_exit ();
 	return error;
 }

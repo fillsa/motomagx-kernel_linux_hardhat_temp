@@ -42,6 +42,9 @@
 
 #define MAX_KMALLOC_SIZE	131072
 
+static struct sctp_ssnmap *sctp_ssnmap_init(struct sctp_ssnmap *map, __u16 in,
+					    __u16 out);
+
 /* Storage size needed for map includes 2 headers and then the
  * specific needs of in or out streams.
  */
@@ -54,7 +57,8 @@ static inline size_t sctp_ssnmap_size(__u16 in, __u16 out)
 /* Create a new sctp_ssnmap.
  * Allocate room to store at least 'len' contiguous TSNs.
  */
-struct sctp_ssnmap *sctp_ssnmap_new(__u16 in, __u16 out, int gfp)
+struct sctp_ssnmap *sctp_ssnmap_new(__u16 in, __u16 out,
+				    unsigned int __nocast gfp)
 {
 	struct sctp_ssnmap *retval;
 	int size;
@@ -87,8 +91,8 @@ fail:
 
 
 /* Initialize a block of memory as a ssnmap.  */
-struct sctp_ssnmap *sctp_ssnmap_init(struct sctp_ssnmap *map, __u16 in,
-				     __u16 out)
+static struct sctp_ssnmap *sctp_ssnmap_init(struct sctp_ssnmap *map, __u16 in,
+					    __u16 out)
 {
 	memset(map, 0x00, sctp_ssnmap_size(in, out));
 

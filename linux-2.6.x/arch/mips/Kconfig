@@ -122,10 +122,6 @@ config TANBAC_TB0229
 	  The TANBAC TB0229 (VR4131DIMM) is a MIPS-based platform manufactured by TANBAC.
 	  Please refer to <http://www.tanbac.co.jp/> about VR4131DIMM.
 
-config TANBAC_TB0219
-	bool "Added TANBAC TB0219 Base board support"
-	depends on TANBAC_TB0229
-
 config VICTOR_MPC30X
 	bool "Support for Victor MP-C303/304"
 	select DMA_NONCOHERENT
@@ -294,11 +290,11 @@ config MIPS_MALTA
 	select BOOT_ELF32
 	select HAVE_STD_PC_SERIAL_PORT
 	select DMA_NONCOHERENT
+	select GENERIC_ISA_DMA
 	select HW_HAS_PCI
 	select I8259
 	select MIPS_GT64120
 	select SWAP_IO_SPACE
-	select GENERIC_ISA_DMA
 	select NO_SPINLOCK
 	help
 	  This enables support for the VR5000-based MIPS Malta evaluation
@@ -498,7 +494,7 @@ config SGI_SN0_N_MODE
 	  which allows for more memory.  Your system is most probably
 	  running in M-Mode, so you should say N here.
 
-config DISCONTIGMEM
+config ARCH_DISCONTIGMEM_ENABLE
 	bool
 	default y if SGI_IP27
 	help
@@ -905,6 +901,7 @@ config TOSHIBA_RBTX4927
 	bool "Support for Toshiba TBTX49[23]7 board"
 	depends on MIPS32
 	select DMA_NONCOHERENT
+	select HAS_TXX9_SERIAL
 	select HW_HAS_PCI
 	select I8259
 	select ISA
@@ -939,6 +936,10 @@ config RWSEM_XCHGADD_ALGORITHM
 config ASM_SEMAPHORES
 	bool
 	depends on !PREEMPT_RT
+	default y
+
+config GENERIC_CALIBRATE_DELAY
+	bool
 	default y
 
 config HAVE_DEC_LOCK
@@ -1044,6 +1045,7 @@ config MIPS_GT64120
 config MIPS_TX3927
 	bool
 	depends on TOSHIBA_JMR3927
+	select HAS_TXX9_SERIAL
 	default y
 
 config PCI_MARVELL
@@ -1079,9 +1081,6 @@ config SYSCLK_100
 
 endchoice
 
-config ARC32
-	bool
-
 config AU1X00_USB_DEVICE
 	bool
 	depends on MIPS_PB1500 || MIPS_PB1100 || MIPS_PB1000
@@ -1109,6 +1108,9 @@ config MIPS_L1_CACHE_SHIFT
 	default "4" if MACH_DECSTATION
 	default "7" if SGI_IP27
 	default "5"
+
+config ARC32
+	bool
 
 config HAVE_STD_PC_SERIAL_PORT
 	bool
@@ -1401,6 +1403,12 @@ config HIGHMEM
 	bool "High Memory Support"
 	depends on MIPS32 && (CPU_R3000 || CPU_SB1 || CPU_R7000 || CPU_RM9000 || CPU_R10000) && !(MACH_DECSTATION || MOMENCO_JAGUAR_ATX)
 
+config ARCH_FLATMEM_ENABLE
+	def_bool y
+	depends on !NUMA
+
+source "mm/Kconfig"
+
 config SMP
 	bool "Multi-Processing support"
 	depends on CPU_RM9000 || (SIBYTE_SB1250 && !SIBYTE_STANDALONE) || SGI_IP27
@@ -1638,6 +1646,8 @@ config PM
 
 endmenu
 
+source "net/Kconfig"
+
 source "drivers/Kconfig"
 
 source "fs/Kconfig"
@@ -1662,5 +1672,9 @@ config GENERIC_HARDIRQS
 	default y
 
 config GENERIC_IRQ_PROBE
+	bool
+	default y
+
+config ISA_DMA_API
 	bool
 	default y

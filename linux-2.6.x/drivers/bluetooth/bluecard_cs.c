@@ -46,11 +46,11 @@
 #include <linux/ioport.h>
 #include <linux/spinlock.h>
 #include <linux/moduleparam.h>
+#include <linux/wait.h>
 
 #include <linux/skbuff.h>
 #include <asm/io.h>
 
-#include <pcmcia/version.h>
 #include <pcmcia/cs_types.h>
 #include <pcmcia/cs.h>
 #include <pcmcia/cistpl.h>
@@ -65,13 +65,6 @@
 
 /* ======================== Module parameters ======================== */
 
-
-/* Bit map of interrupts to choose from */
-static unsigned int irq_mask = 0x86bc;
-static int irq_list[4] = { -1 };
-
-module_param(irq_mask, uint, 0);
-module_param_array(irq_list, int, NULL, 0);
 
 MODULE_AUTHOR("Marcel Holtmann <marcel@holtmann.org>");
 MODULE_DESCRIPTION("Bluetooth driver for the Anycom BlueCard (LSE039/LSE041)");
@@ -307,8 +300,9 @@ static void bluecard_write_wakeup(bluecard_info_t *info)
 		clear_bit(ready_bit, &(info->tx_state));
 
 		if (skb->pkt_type & 0x80) {
+			DECLARE_WAIT_QUEUE_HEAD(wq);
+			DEFINE_WAIT(wait);
 
-			wait_queue_head_t wait;
 			unsigned char baud_reg;
 
 			switch (skb->pkt_type) {
@@ -329,8 +323,9 @@ static void bluecard_write_wakeup(bluecard_info_t *info)
 			}
 
 			/* Wait until the command reaches the baseband */
-			init_waitqueue_head(&wait);
-			interruptible_sleep_on_timeout(&wait, HZ / 10);
+			prepare_to_wait(&wq, &wait, TASK_INTERRUPTIBLE);
+			schedule_timeout(HZ/10);
+			finish_wait(&wq, &wait);
 
 			/* Set baud on baseband */
 			info->ctrl_reg &= ~0x03;
@@ -342,8 +337,9 @@ static void bluecard_write_wakeup(bluecard_info_t *info)
 			outb(info->ctrl_reg, iobase + REG_CONTROL);
 
 			/* Wait before the next HCI packet can be send */
-			interruptible_sleep_on_timeout(&wait, HZ);
-
+			prepare_to_wait(&wq, &wait, TASK_INTERRUPTIBLE);
+			schedule_timeout(HZ);
+			finish_wait(&wq, &wait);
 		}
 
 		if (len == skb->len) {
@@ -882,7 +878,7 @@ static dev_link_t *bluecard_attach(void)
 	bluecard_info_t *info;
 	client_reg_t client_reg;
 	dev_link_t *link;
-	int i, ret;
+	int ret;
 
 	/* Create new info device */
 	info = kmalloc(sizeof(*info), GFP_KERNEL);
@@ -896,13 +892,7 @@ static dev_link_t *bluecard_attach(void)
 	link->io.Attributes1 = IO_DATA_PATH_WIDTH_8;
 	link->io.NumPorts1 = 8;
 	link->irq.Attributes = IRQ_TYPE_EXCLUSIVE | IRQ_HANDLE_PRESENT;
-	link->irq.IRQInfo1 = IRQ_INFO2_VALID | IRQ_LEVEL_ID;
-
-	if (irq_list[0] == -1)
-		link->irq.IRQInfo2 = irq_mask;
-	else
-		for (i = 0; i < 4; i++)
-			link->irq.IRQInfo2 |= 1 << irq_list[i];
+	link->irq.IRQInfo1 = IRQ_LEVEL_ID;
 
 	link->irq.Handler = bluecard_interrupt;
 	link->irq.Instance = info;
@@ -915,12 +905,6 @@ static dev_link_t *bluecard_attach(void)
 	link->next = dev_list;
 	dev_list = link;
 	client_reg.dev_info = &dev_info;
-	client_reg.Attributes = INFO_IO_CLIENT | INFO_CARD_SHARE;
-	client_reg.EventMask =
-		CS_EVENT_CARD_INSERTION | CS_EVENT_CARD_REMOVAL |
-		CS_EVENT_RESET_PHYSICAL | CS_EVENT_CARD_RESET |
-		CS_EVENT_PM_SUSPEND | CS_EVENT_PM_RESUME;
-	client_reg.event_handler = &bluecard_event;
 	client_reg.Version = 0x0210;
 	client_reg.event_callback_args.client_data = link;
 
@@ -1110,13 +1094,23 @@ static int bluecard_event(event_t event, int priority, event_callback_args_t *ar
 	return 0;
 }
 
+static struct pcmcia_device_id bluecard_ids[] = {
+	PCMCIA_DEVICE_PROD_ID12("BlueCard", "LSE041", 0xbaf16fbf, 0x657cc15e),
+	PCMCIA_DEVICE_PROD_ID12("BTCFCARD", "LSE139", 0xe3987764, 0x2524b59c),
+	PCMCIA_DEVICE_PROD_ID12("WSS", "LSE039", 0x0a0736ec, 0x24e6dfab),
+	PCMCIA_DEVICE_NULL
+};
+MODULE_DEVICE_TABLE(pcmcia, bluecard_ids);
+
 static struct pcmcia_driver bluecard_driver = {
 	.owner		= THIS_MODULE,
 	.drv		= {
 		.name	= "bluecard_cs",
 	},
 	.attach		= bluecard_attach,
+	.event		= bluecard_event,
 	.detach		= bluecard_detach,
+	.id_table	= bluecard_ids,
 };
 
 static int __init init_bluecard_cs(void)
@@ -1128,10 +1122,7 @@ static int __init init_bluecard_cs(void)
 static void __exit exit_bluecard_cs(void)
 {
 	pcmcia_unregister_driver(&bluecard_driver);
-
-	/* XXX: this really needs to move into generic code.. */
-	while (dev_list != NULL)
-		bluecard_detach(dev_list);
+	BUG_ON(dev_list != NULL);
 }
 
 module_init(init_bluecard_cs);

@@ -7,6 +7,7 @@
  * Graphics DMA and LCD DMA graphics tranformations
  * by Imre Deak <imre.deak@nokia.com>
  * Some functions based on earlier dma-omap.c Copyright (C) 2001 RidgeRun, Inc.
+ * Some functions based on earlier dma-omap.c Copyright (C) 2001 RidgeRun, Inc.
  *
  * Support functions for the OMAP internal DMA channels.
  *
@@ -494,7 +495,7 @@ int omap_request_dma(int dev_id, const char *dev_name,
 	chan->data = data;
 	chan->enabled_irqs = OMAP_DMA_TOUT_IRQ | OMAP_DMA_DROP_IRQ | OMAP_DMA_BLOCK_IRQ;
 
-	if (cpu_is_omap16xx() || cpu_is_omap730()) {
+	if (cpu_is_omap16xx()) {
 		/* If the sync device is set, configure it dynamically. */
 		if (dev_id != 0) {
 			set_gdma_dev(free_ch + 1, dev_id);
@@ -972,6 +973,50 @@ dma_addr_t omap_get_dma_dst_pos(int lch)
 			     (OMAP_DMA_CDSA_U(lch) << 16));
 }
 
+/*
+ * Clears any DMA state so the DMA engine is ready to restart with new buffers
+ * through omap_start_dma(). Any buffers in flight are discarded.
+ */
+void omap_clear_dma(int lch)
+{
+	unsigned long flags;
+	int status;
+
+	local_irq_save(flags);
+	omap_writew(omap_readw(OMAP_DMA_CCR(lch)) & ~OMAP_DMA_CCR_EN,
+		    OMAP_DMA_CCR(lch));
+	status = OMAP_DMA_CSR(lch);	/* clear pending interrupts */
+	local_irq_restore(flags);
+}
+
+/*
+ * Returns current physical source address for the given DMA channel.
+ * If the channel is running the caller must disable interrupts prior calling
+ * this function and process the returned value before re-enabling interrupt to
+ * prevent races with the interrupt handler. Note that in continuous mode there
+ * is a chance for CSSA_L register overflow inbetween the two reads resulting
+ * in incorrect return value.
+ */
+dma_addr_t omap_get_dma_src_pos(int lch)
+{
+	return (dma_addr_t) (OMAP_DMA_CSSA_L(lch) |
+			     (OMAP_DMA_CSSA_U(lch) << 16));
+}
+
+/*
+ * Returns current physical destination address for the given DMA channel.
+ * If the channel is running the caller must disable interrupts prior calling
+ * this function and process the returned value before re-enabling interrupt to
+ * prevent races with the interrupt handler. Note that in continuous mode there
+ * is a chance for CDSA_L register overflow inbetween the two reads resulting
+ * in incorrect return value.
+ */
+dma_addr_t omap_get_dma_dst_pos(int lch)
+{
+	return (dma_addr_t) (OMAP_DMA_CDSA_L(lch) |
+			     (OMAP_DMA_CDSA_U(lch) << 16));
+}
+
 static int __init omap_init_dma(void)
 {
 	int ch, r;
@@ -1041,9 +1086,13 @@ static int __init omap_init_dma(void)
 	return 0;
 }
 
+
 arch_initcall(omap_init_dma);
 
 
+EXPORT_SYMBOL(omap_get_dma_src_pos);
+EXPORT_SYMBOL(omap_get_dma_dst_pos);
+EXPORT_SYMBOL(omap_clear_dma);
 EXPORT_SYMBOL(omap_get_dma_src_pos);
 EXPORT_SYMBOL(omap_get_dma_dst_pos);
 EXPORT_SYMBOL(omap_clear_dma);

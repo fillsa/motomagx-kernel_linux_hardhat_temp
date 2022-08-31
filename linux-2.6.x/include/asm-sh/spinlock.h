@@ -51,9 +51,7 @@ static inline void _raw_spin_lock(spinlock_t *lock)
 
 static inline void _raw_spin_unlock(spinlock_t *lock)
 {
-#ifdef CONFIG_DEBUG_SPINLOCK
-	BUG_ON(!spin_is_locked(lock));
-#endif
+	assert_spin_locked(lock);
 
 	lock->lock = 0;
 }
@@ -79,7 +77,7 @@ typedef struct {
 #define RW_LOCK_BIAS		0x01000000
 #define RW_LOCK_UNLOCKED	(rwlock_t) { { 0 }, { RW_LOCK_BIAS } }
 #define rwlock_init(x)		do { *(x) = RW_LOCK_UNLOCKED; } while (0)
-#define rwlock_is_locked(x)	(atomic_read(&(x)->counter) != RW_LOCK_BIAS)
+//del 2.6.11	#define rwlock_is_locked(x)	(atomic_read(&(x)->counter) != RW_LOCK_BIAS)
 
 static inline void _raw_read_lock(rwlock_t *rw)
 {

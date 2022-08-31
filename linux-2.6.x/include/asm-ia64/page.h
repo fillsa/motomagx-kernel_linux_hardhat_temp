@@ -75,6 +75,17 @@ do {						\
 	flush_dcache_page(page);		\
 } while (0)
 
+
+#define alloc_zeroed_user_highpage(vma, vaddr) \
+({						\
+	struct page *page = alloc_page_vma(GFP_HIGHUSER | __GFP_ZERO, vma, vaddr); \
+	if (page)				\
+ 		flush_dcache_page(page);	\
+	page;					\
+})
+
+#define __HAVE_ARCH_ALLOC_ZEROED_USER_HIGHPAGE
+
 #define virt_addr_valid(kaddr)	pfn_valid(__pa(kaddr) >> PAGE_SHIFT)
 
 #ifdef CONFIG_VIRTUAL_MEM_MAP
@@ -126,9 +137,9 @@ typedef union ia64_va {
 # define htlbpage_to_page(x)	(((unsigned long) REGION_NUMBER(x) << 61)			\
 				 | (REGION_OFFSET(x) >> (HPAGE_SHIFT-PAGE_SHIFT)))
 # define HUGETLB_PAGE_ORDER	(HPAGE_SHIFT - PAGE_SHIFT)
-# define is_hugepage_only_range(addr, len)		\
+# define is_hugepage_only_range(mm, addr, len)		\
 	 (REGION_NUMBER(addr) == REGION_HPAGE &&	\
-	  REGION_NUMBER((addr)+(len)) == REGION_HPAGE)
+	  REGION_NUMBER((addr)+(len)-1) == REGION_HPAGE)
 extern unsigned int hpage_shift;
 #endif
 

@@ -88,24 +88,13 @@ static unsigned short zf_readw(unsigned char port)
 	return inw(DATA_W);
 }
 
-static unsigned short zf_readb(unsigned char port)
-{
-	outb(port, INDEX);
-	return inb(DATA_B);
-}
-
 
 MODULE_AUTHOR("Fernando Fuganti <fuganti@conectiva.com.br>");
 MODULE_DESCRIPTION("MachZ ZF-Logic Watchdog driver");
 MODULE_LICENSE("GPL");
 MODULE_ALIAS_MISCDEV(WATCHDOG_MINOR);
 
-#ifdef CONFIG_WATCHDOG_NOWAYOUT
-static int nowayout = 1;
-#else
-static int nowayout = 0;
-#endif
-
+static int nowayout = WATCHDOG_NOWAYOUT;
 module_param(nowayout, int, 0);
 MODULE_PARM_DESC(nowayout, "Watchdog cannot be stopped once started (default=CONFIG_WATCHDOG_NOWAYOUT)");
 
@@ -155,13 +144,6 @@ static unsigned long next_heartbeat = 0;
 #endif
 
 
-/* STATUS register functions */
-
-static inline unsigned char zf_get_status(void)
-{
-	return zf_readb(STATUS);
-}
-
 static inline void zf_set_status(unsigned char new)
 {
 	zf_writeb(STATUS, new);
@@ -182,22 +164,6 @@ static inline void zf_set_control(unsigned short new)
 
 
 /* WD#? counter functions */
-/*
- *	Just get current counter value
- */
-
-static inline unsigned short zf_get_timer(unsigned char n)
-{
-	switch(n){
-		case WD1:
-			return zf_readw(COUNTER_1);
-		case WD2:
-			return zf_readb(COUNTER_2);
-		default:
-			return 0;
-	}
-}
-
 /*
  *	Just set counter value
  */
@@ -517,7 +483,7 @@ out:
 }
 
 
-void __exit zf_exit(void)
+static void __exit zf_exit(void)
 {
 	zf_timer_off();
 

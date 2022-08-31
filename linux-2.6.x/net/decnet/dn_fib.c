@@ -60,7 +60,6 @@ extern int dn_cache_dump(struct sk_buff *skb, struct netlink_callback *cb);
 static DEFINE_SPINLOCK(dn_fib_multipath_lock);
 static struct dn_fib_info *dn_fib_info_list;
 static DEFINE_RWLOCK(dn_fib_info_lock);
-int dn_fib_info_cnt;
 
 static struct
 {
@@ -93,7 +92,6 @@ void dn_fib_free_info(struct dn_fib_info *fi)
 			dev_put(nh->nh_dev);
 		nh->nh_dev = NULL;
 	} endfor_nexthops(fi);
-	dn_fib_info_cnt--;
 	kfree(fi);
 }
 
@@ -388,7 +386,6 @@ link_it:
 	if (dn_fib_info_list)
 		dn_fib_info_list->fib_prev = fi;
 	dn_fib_info_list = fi;
-	dn_fib_info_cnt++;
 	write_unlock(&dn_fib_info_lock);
 	return fi;
 
@@ -486,18 +483,6 @@ void dn_fib_select_multipath(const struct flowi *fl, struct dn_fib_res *res)
 }
 
 
-/*
- * Punt to user via netlink for example, but for now
- * we just drop it.
- */
-int dn_fib_rt_message(struct sk_buff *skb)
-{
-	kfree_skb(skb);
-
-	return 0;
-}
-
-
 static int dn_fib_check_attr(struct rtmsg *r, struct rtattr **rta)
 {
 	int i;
@@ -566,7 +551,8 @@ int dn_fib_dump(struct sk_buff *skb, struct netlink_callback *cb)
 		if (t < s_t)
 			continue;
 		if (t > s_t)
-			memset(&cb->args[1], 0, sizeof(cb->args)-sizeof(int));
+			memset(&cb->args[1], 0,
+			       sizeof(cb->args) - sizeof(cb->args[0]));
 		tb = dn_fib_get_table(t, 0);
 		if (tb == NULL)
 			continue;

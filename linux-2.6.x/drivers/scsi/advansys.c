@@ -714,7 +714,7 @@
      Tom Rini <trini@kernel.crashing.org> provided the CONFIG_ISA
      patch and helped with PowerPC wide and narrow board support.
 
-     Philip Blundell <philip.blundell@pobox.com> provided an
+     Philip Blundell <philb@gnu.org> provided an
      advansys_interrupts_enabled patch.
 
      Dave Jones <dave@denial.force9.co.uk> reported the compiler
@@ -4322,12 +4322,12 @@ advansys_detect(struct scsi_host_template *tpnt)
     int                 ioport = 0;
     int                 share_irq = FALSE;
     int                 iolen = 0;
+    struct device	*dev = NULL;
 #ifdef CONFIG_PCI
     int                 pci_init_search = 0;
     struct pci_dev      *pci_devicep[ASC_NUM_BOARD_SUPPORTED];
     int                 pci_card_cnt_max = 0;
     int                 pci_card_cnt = 0;
-    struct device	*dev = NULL;
     struct pci_dev      *pci_devp = NULL;
     int                 pci_device_id_cnt = 0;
     unsigned int        pci_device_id[ASC_PCI_DEVICE_ID_CNT] = {
@@ -4555,8 +4555,6 @@ advansys_detect(struct scsi_host_template *tpnt)
             if (shp == NULL) {
                 continue;
             }
-
-	    scsi_set_device(shp, dev);
 
             /* Save a pointer to the Scsi_Host of each board found. */
             asc_host[asc_board_count++] = shp;
@@ -8944,7 +8942,7 @@ DvcAdvWritePCIConfigByte(
 #ifdef CONFIG_PCI
     pci_write_config_byte(to_pci_dev(asc_dvc->cfg->dev), offset, byte_data);
 #else /* CONFIG_PCI */
-    return 0;
+    return;
 #endif /* CONFIG_PCI */
 }
 
@@ -9194,19 +9192,16 @@ asc_prt_scsi_cmnd(struct scsi_cmnd *s)
         s->sc_data_direction, s->resid);
 
     printk(
-" use_sg %u, sglist_len %u, abort_reason 0x%x\n",
-        s->use_sg, s->sglist_len, s->abort_reason);
+" use_sg %u, sglist_len %u\n",
+        s->use_sg, s->sglist_len);
 
     printk(
-" serial_number 0x%x, serial_number_at_timeout 0x%x, retries %d, allowed %d\n",
-        (unsigned) s->serial_number, (unsigned) s->serial_number_at_timeout,
-         s->retries, s->allowed);
+" serial_number 0x%x, retries %d, allowed %d\n",
+        (unsigned) s->serial_number, s->retries, s->allowed);
 
     printk(
 " timeout_per_command %d, timeout_total %d, timeout %d\n",
         s->timeout_per_command, s->timeout_total, s->timeout);
-
-    printk(" internal_timeout %u\n", s->internal_timeout);
 
     printk(
 " scsi_done 0x%lx, done 0x%lx, host_scribble 0x%lx, result 0x%x\n",
@@ -12014,13 +12009,13 @@ AscInitFromAscDvcVar(
     PortAddr            iop_base;
     ushort              cfg_msw;
     ushort              warn_code;
-    ushort              pci_device_id;
+    ushort              pci_device_id = 0;
 
     iop_base = asc_dvc->iop_base;
+#ifdef CONFIG_PCI
     if (asc_dvc->cfg->dev)
         pci_device_id = to_pci_dev(asc_dvc->cfg->dev)->device;
-    else
-	pci_device_id = 0;
+#endif
     warn_code = 0;
     cfg_msw = AscGetChipCfgMsw(iop_base);
     if ((cfg_msw & ASC_CFG_MSW_CLR_MASK) != 0) {

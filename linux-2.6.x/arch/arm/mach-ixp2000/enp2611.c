@@ -6,7 +6,7 @@
  * Created 2004 by Lennert Buytenhek from the ixdp2x01 code.  The
  * original version carries the following notices:
  *
- * Original Author: Andrzej Mialwoski <andrzej.mialwoski@intel.com>
+ * Original Author: Andrzej Mialkowski <andrzej.mialkowski@intel.com>
  * Maintainer: Deepak Saxena <dsaxena@plexity.net>
  *
  * Copyright (C) 2002-2003 Intel Corp.
@@ -124,19 +124,27 @@ static int __init enp2611_pci_map_irq(struct pci_dev *dev, u8 slot, u8 pin)
 {
 	int irq;
 
-	if (dev->bus->number == 0x00 && PCI_SLOT(dev->devfn) == 0x01) {
+	if (dev->bus->number == 0 && PCI_SLOT(dev->devfn) == 0) {
+		/* IXP2400. */
+		irq = IRQ_IXP2000_PCIA;
+	} else if (dev->bus->number == 0 && PCI_SLOT(dev->devfn) == 1) {
 		/* 21555 non-transparent bridge.  */
 		irq = IRQ_IXP2000_PCIB;
-	} else if (dev->bus->number == 0x01 && PCI_SLOT(dev->devfn) == 0x00) {
+	} else if (dev->bus->number == 0 && PCI_SLOT(dev->devfn) == 4) {
+		/* PCI2050B transparent bridge.  */
+		irq = -1;
+	} else if (dev->bus->number == 1 && PCI_SLOT(dev->devfn) == 0) {
 		/* 82559 ethernet.  */
 		irq = IRQ_IXP2000_PCIA;
+	} else if (dev->bus->number == 1 && PCI_SLOT(dev->devfn) == 1) {
+		/* SPI-3 option board.  */
+		irq = IRQ_IXP2000_PCIB;
 	} else {
-		printk(KERN_INFO "enp2611_pci_map_irq for unknown device\n");
-		irq = IRQ_IXP2000_PCI;
+		printk(KERN_ERR "enp2611_pci_map_irq() called for unknown "
+				"device PCI:%d:%d:%d\n", dev->bus->number,
+				PCI_SLOT(dev->devfn), PCI_FUNC(dev->devfn));
+		irq = -1;
 	}
-
-	printk(KERN_INFO "Assigned IRQ %d to PCI:%d:%d:%d\n", irq,
-		dev->bus->number, PCI_SLOT(dev->devfn), PCI_FUNC(dev->devfn));
 
 	return irq;
 }
@@ -151,7 +159,9 @@ struct hw_pci enp2611_pci __initdata = {
 
 int __init enp2611_pci_init(void)
 {
-	pci_common_init(&enp2611_pci);
+	if (machine_is_enp2611())
+		pci_common_init(&enp2611_pci);
+
 	return 0;
 }
 
@@ -187,26 +197,42 @@ static struct platform_device enp2611_flash = {
 	.resource	= &enp2611_flash_resource,
 };
 
+static struct ixp2000_i2c_pins enp2611_i2c_gpio_pins = {
+	.sda_pin	= ENP2611_GPIO_SDA,
+	.scl_pin	= ENP2611_GPIO_SCL,
+};
+
+static struct platform_device enp2611_i2c_controller = {
+	.name		= "IXP2000-I2C",
+	.id		= 0,
+	.dev		= {
+		.platform_data = &enp2611_i2c_gpio_pins
+	},
+	.num_resources	= 0
+};
+
 static struct platform_device *enp2611_devices[] __initdata = {
-	&enp2611_flash
+	&enp2611_flash,
+	&enp2611_i2c_controller
 };
 
 static void __init enp2611_init_machine(void)
 {
 	platform_add_devices(enp2611_devices, ARRAY_SIZE(enp2611_devices));
+	ixp2000_uart_init();
 }
 
 
-#ifdef CONFIG_ARCH_ENP2611
 MACHINE_START(ENP2611, "Radisys ENP-2611 PCI network processor board")
-	MAINTAINER("Lennert Buytenhek <buytenh@wantstofly.org>")
-	BOOT_MEM(0x00000000, IXP2000_UART_PHYS_BASE, IXP2000_UART_VIRT_BASE)
-	BOOT_PARAMS(0x00000100)
-	MAPIO(ixp2000_map_io)
-	INITIRQ(ixp2000_init_irq)
+	/* Maintainer: Lennert Buytenhek <buytenh@wantstofly.org> */
+	.phys_ram	= 0x00000000,
+	.phys_io	= IXP2000_UART_PHYS_BASE,
+	.io_pg_offst	= ((IXP2000_UART_VIRT_BASE) >> 18) & 0xfffc,
+	.boot_params	= 0x00000100,
+	.map_io		= ixp2000_map_io,
+	.init_irq	= ixp2000_init_irq,
 	.timer		= &enp2611_timer,
-	INIT_MACHINE(enp2611_init_machine)
+	.init_machine	= enp2611_init_machine,
 MACHINE_END
-#endif
 
 

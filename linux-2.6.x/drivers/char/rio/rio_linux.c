@@ -32,11 +32,6 @@
  *
  * */
 
-
-#define RCS_ID "$Id: rio.c,v 1.1 1999/07/11 10:13:54 wolff Exp wolff $"
-#define RCS_REV "$Revision: 1.1 $"
-
-
 #include <linux/module.h>
 #include <linux/config.h> 
 #include <linux/kdev_t.h>
@@ -198,7 +193,7 @@ static int rio_fw_ioctl (struct inode *inode, struct file *filp,
 		         unsigned int cmd, unsigned long arg);
 static int rio_init_drivers(void);
 
-void my_hd (void *addr, int len);
+static void my_hd (void *addr, int len);
 
 static struct tty_driver *rio_driver, *rio_driver2;
 
@@ -206,11 +201,6 @@ static struct tty_driver *rio_driver, *rio_driver2;
 sources use all over the place. */
 struct rio_info *p;
 
-/* struct rio_board boards[RIO_HOSTS]; */
-struct rio_port *rio_ports;
-
-int rio_initialized;
-int rio_nports;
 int rio_debug;
 
 
@@ -218,12 +208,12 @@ int rio_debug;
     - Set rio_poll to 1 to poll every timer tick (10ms on Intel). 
       This is used when the card cannot use an interrupt for some reason.
 */
-int rio_poll = 1;
+static int rio_poll = 1;
 
 
 /* These are the only open spaces in my computer. Yours may have more
    or less.... */
-int rio_probe_addrs[]= {0xc0000, 0xd0000, 0xe0000};
+static int rio_probe_addrs[]= {0xc0000, 0xd0000, 0xe0000};
 
 #define NR_RIO_ADDRS (sizeof(rio_probe_addrs)/sizeof (int))
 
@@ -231,7 +221,7 @@ int rio_probe_addrs[]= {0xc0000, 0xd0000, 0xe0000};
 /* Set the mask to all-ones. This alas, only supports 32 interrupts. 
    Some architectures may need more. -- Changed to LONG to
    support up to 64 bits on 64bit architectures. -- REW 20/06/99 */
-long rio_irqmask = -1;
+static long rio_irqmask = -1;
 
 MODULE_AUTHOR("Rogier Wolff <R.E.Wolff@bitwizard.nl>, Patrick van de Lageweg <patrick@bitwizard.nl>");
 MODULE_DESCRIPTION("RIO driver");
@@ -264,7 +254,7 @@ static struct file_operations rio_fw_fops = {
 	.ioctl		= rio_fw_ioctl,
 };
 
-struct miscdevice rio_fw_device = {
+static struct miscdevice rio_fw_device = {
 	RIOCTL_MISC_MINOR, "rioctl", &rio_fw_fops
 };
 
@@ -302,7 +292,7 @@ static inline int rio_paranoia_check(struct rio_port const * port,
 
 
 #ifdef DEBUG
-void my_hd (void *ad, int len)
+static void my_hd (void *ad, int len)
 {
   int i, j, ch;
   unsigned char *addr = ad;
@@ -364,11 +354,6 @@ int rio_ismodem(struct tty_struct *tty)
 }
 
 
-void rio_udelay (int usecs)
-{
-  udelay (usecs);
-}
-
 static int rio_set_real_termios (void *ptr)
 {
   int rv, modem;
@@ -387,7 +372,7 @@ static int rio_set_real_termios (void *ptr)
 }
 
 
-void rio_reset_interrupt (struct Host *HostP)
+static void rio_reset_interrupt (struct Host *HostP)
 {
   func_enter();
 
@@ -691,8 +676,9 @@ static int rio_ioctl (struct tty_struct * tty, struct file * filp,
     }
     break;
   case TIOCGSERIAL:
-    if ((rc = verify_area(VERIFY_WRITE, (void *) arg,
-                          sizeof(struct serial_struct))) == 0)
+    rc = -EFAULT;
+    if (access_ok(VERIFY_WRITE, (void *) arg,
+                          sizeof(struct serial_struct)))
       rc = gs_getserial(&PortP->gs, (struct serial_struct *) arg);
     break;
   case TCSBRK:
@@ -721,8 +707,9 @@ static int rio_ioctl (struct tty_struct * tty, struct file * filp,
     }
     break;
   case TIOCSSERIAL:
-    if ((rc = verify_area(VERIFY_READ, (void *) arg,
-                          sizeof(struct serial_struct))) == 0)
+    rc = -EFAULT;
+    if (access_ok(VERIFY_READ, (void *) arg,
+                          sizeof(struct serial_struct)))
       rc = gs_setserial(&PortP->gs, (struct serial_struct *) arg);
     break;
 #if 0
@@ -732,8 +719,10 @@ static int rio_ioctl (struct tty_struct * tty, struct file * filp,
    * #if 0 disablement predates this comment.
    */
   case TIOCMGET:
-    if ((rc = verify_area(VERIFY_WRITE, (void *) arg,
-                          sizeof(unsigned int))) == 0) {
+    rc = -EFAULT;
+    if (access_ok(VERIFY_WRITE, (void *) arg,
+                          sizeof(unsigned int))) {
+      rc = 0;
       ival = rio_getsignals(port);
       put_user(ival, (unsigned int *) arg);
     }
@@ -824,7 +813,7 @@ static void rio_unthrottle (struct tty_struct * tty)
  * ********************************************************************** */
 
 
-struct vpd_prom *get_VPD_PROM (struct Host *hp)
+static struct vpd_prom *get_VPD_PROM (struct Host *hp)
 {
   static struct vpd_prom vpdp;
   char *p;
@@ -1045,7 +1034,7 @@ static void  __exit rio_release_drivers(void)
    EEprom.  As the bit is read/write for the CPU, we can fix it here,
    if we detect that it isn't set correctly. -- REW */
 
-void fix_rio_pci (struct pci_dev *pdev)
+static void fix_rio_pci (struct pci_dev *pdev)
 {
   unsigned int hwbase;
   unsigned long rebase;
@@ -1106,7 +1095,7 @@ static int __init rio_init(void)
 
 #ifdef CONFIG_PCI
     /* First look for the JET devices: */
-    while ((pdev = pci_find_device (PCI_VENDOR_ID_SPECIALIX, 
+    while ((pdev = pci_get_device (PCI_VENDOR_ID_SPECIALIX,
                                     PCI_DEVICE_ID_SPECIALIX_SX_XIO_IO8, 
                                     pdev))) {
        if (pci_enable_device(pdev)) continue;
@@ -1180,7 +1169,7 @@ static int __init rio_init(void)
   */
 
     /* Then look for the older RIO/PCI devices: */
-    while ((pdev = pci_find_device (PCI_VENDOR_ID_SPECIALIX, 
+    while ((pdev = pci_get_device (PCI_VENDOR_ID_SPECIALIX,
                                     PCI_DEVICE_ID_SPECIALIX_RIO, 
                                     pdev))) {
        if (pci_enable_device(pdev)) continue;

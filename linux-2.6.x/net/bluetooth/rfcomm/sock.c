@@ -1,5 +1,5 @@
 /* 
-   RFCOMM implementation for Linux Bluetooth(R) stack (BlueZ).
+   RFCOMM implementation for Linux Bluetooth stack (BlueZ).
 
    Portions of this file were based on $Id: sock.c,v 1.24 2002/10/03 01:00:34 maxk Exp $
    from kernel.org found in the release of linux-2.6.10 here www.kernel.org/pub/linux/kernel/v2.6/
@@ -17,7 +17,7 @@
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License version 2 as
    published by the Free Software Foundation;
-   
+
    THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS
    OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
    FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT OF THIRD PARTY RIGHTS.
@@ -50,7 +50,6 @@
  *
  * $Id: sock.c,v 1.24 2002/10/03 01:00:34 maxk Exp $
  */
-
 
 #include <linux/config.h>
 #ifdef MODKCONFIG
@@ -139,7 +138,7 @@ static void rfcomm_sk_state_change(struct rfcomm_dlc *d, int err)
 	parent = bt_sk(sk)->parent;
 	if (parent) {
 		if (d->state == BT_CLOSED) {
-			sk->sk_zapped =1;
+			sock_set_flag(sk, SOCK_ZAPPED);
 			bt_accept_unlink(sk);
 		}
 		parent->sk_data_ready(parent, 0);
@@ -151,7 +150,7 @@ static void rfcomm_sk_state_change(struct rfcomm_dlc *d, int err)
 
 	bh_unlock_sock(sk);
 
-	if (parent && sk->sk_zapped) {
+	if (parent && sock_flag(sk, SOCK_ZAPPED)) {
 		/* We have to drop DLC lock here, otherwise
 		 * rfcomm_sock_destruct() will dead lock. */
 		rfcomm_dlc_unlock(d);
@@ -230,9 +229,6 @@ static void rfcomm_sock_destruct(struct sock *sk)
 	rfcomm_dlc_unlock(d);
 
 	rfcomm_dlc_put(d);
-
-	if (sk->sk_protinfo)
-		kfree(sk->sk_protinfo);
 }
 
 static void rfcomm_sock_cleanup_listen(struct sock *parent)
@@ -248,7 +244,7 @@ static void rfcomm_sock_cleanup_listen(struct sock *parent)
 	}
 
 	parent->sk_state  = BT_CLOSED;
-	parent->sk_zapped = 1;
+	sock_set_flag(parent, SOCK_ZAPPED);
 }
 
 /* Kill socket (only if zapped and orphan)
@@ -256,7 +252,7 @@ static void rfcomm_sock_cleanup_listen(struct sock *parent)
  */
 static void rfcomm_sock_kill(struct sock *sk)
 {
-	if (!sk->sk_zapped || sk->sk_socket)
+	if (!sock_flag(sk, SOCK_ZAPPED) || sk->sk_socket)
 		return;
 
 	BT_DBG("sk %p state %d refcnt %d", sk, sk->sk_state, atomic_read(&sk->sk_refcnt));
@@ -286,7 +282,7 @@ static void __rfcomm_sock_close(struct sock *sk)
 		rfcomm_dlc_close(d, 0);
 
 	default:
-		sk->sk_zapped = 1;	
+		sock_set_flag(sk, SOCK_ZAPPED);
 		break;
 	}
 }
@@ -317,13 +313,18 @@ static void rfcomm_sock_init(struct sock *sk, struct sock *parent)
 	pi->dlc->link_mode = pi->link_mode;
 }
 
+static struct proto rfcomm_proto = {
+	.name		= "RFCOMM",
+	.owner		= THIS_MODULE,
+	.obj_size	= sizeof(struct rfcomm_pinfo)
+};
+
 static struct sock *rfcomm_sock_alloc(struct socket *sock, int proto, int prio)
 {
 	struct rfcomm_dlc *d;
 	struct sock *sk;
 
-
-	sk = bt_sock_alloc(sock, BTPROTO_RFCOMM, sizeof(struct rfcomm_pinfo), prio);
+	sk = sk_alloc(PF_BLUETOOTH, prio, &rfcomm_proto, 1);
 	if (!sk)
 		return NULL;
 
@@ -350,6 +351,8 @@ static struct sock *rfcomm_sock_alloc(struct socket *sock, int proto, int prio)
 
 	sk->sk_zapped = 0;
 
+	sock_reset_flag(sk, SOCK_ZAPPED);
+
 	sk->sk_protocol = proto;
 	sk->sk_state	= BT_OPEN;
 
@@ -358,7 +361,6 @@ static struct sock *rfcomm_sock_alloc(struct socket *sock, int proto, int prio)
 	BT_DBG("sk %p", sk);
 	return sk;
 }
-
 
 static int rfcomm_sock_create(struct socket *sock, int protocol)
 {
@@ -781,7 +783,7 @@ static int rfcomm_sock_setsockopt(struct socket *sock, int level, int optname, c
 		}
 		break;
 		
-        default:
+	default:
 		err = -ENOPROTOOPT;
 		break;
 	}
@@ -826,7 +828,7 @@ static int rfcomm_sock_getsockopt(struct socket *sock, int level, int optname, c
 			err = -EFAULT;
 
 		break;
-		
+
 	case RFCOMM_FLOW_ON_TTY_OPEN:
 		if (put_user(test_bit(RFCOMM_START_THROTTLED, &rfcomm_pi(sk)->dlc->flags), (u32 __user *) optval))
 			err = -EFAULT;
@@ -1084,11 +1086,13 @@ static struct net_proto_family rfcomm_sock_family_ops = {
 	.create		= rfcomm_sock_create
 };
 
-
 int  __init rfcomm_init_sockets(void)
 {
-
 	int err;
+	
+//2,6,12+	err = proto_register(&rfcomm_proto, 0);
+//2,6,12+	if (err < 0)
+//2,6,12 		return err;
 
 	err = bt_sock_register(BTPROTO_RFCOMM, &rfcomm_sock_family_ops);
 	if (err < 0)
@@ -1102,9 +1106,9 @@ int  __init rfcomm_init_sockets(void)
 
 error:
 	BT_ERR("RFCOMM socket layer registration failed");
+//2,6,12+	proto_unregister(&rfcomm_proto);
 	return err;
 }
-
 
 void __exit rfcomm_cleanup_sockets(void)
 {
@@ -1113,4 +1117,5 @@ void __exit rfcomm_cleanup_sockets(void)
 	if (bt_sock_unregister(BTPROTO_RFCOMM) < 0)
 		BT_ERR("RFCOMM socket layer unregistration failed");
 
+//2,6,12+		proto_unregister(&rfcomm_proto);
 }

@@ -199,6 +199,7 @@ enum xfrm_attr_type_t {
 	XFRMA_ALG_COMP,		/* struct xfrm_algo */
 	XFRMA_ENCAP,		/* struct xfrm_algo + struct xfrm_encap_tmpl */
 	XFRMA_TMPL,		/* 1 or more struct xfrm_user_tmpl */
+	XFRMA_SA,
 	XFRMA_POLICY,		/* 1 or more struct xfrm_userpolicy_id */
 	XFRMA_ADDR,		/* xfrm_address_t */
 	__XFRMA_MAX
@@ -221,6 +222,7 @@ struct xfrm_usersa_info {
 	__u8				flags;
 #define XFRM_STATE_NOECN	1
 #define XFRM_STATE_DECAP_DSCP	2
+#define XFRM_STATE_NOPMTUDISC	4
 #define XFRM_STATE_WILDRECV	2
 };
 
@@ -318,5 +320,7 @@ struct xfrm_user_mip6notify {
 #define XFRMGRP_ACQUIRE		1
 #define XFRMGRP_EXPIRE		2
 #define XFRMGRP_NOTIFY		3
+#define XFRMGRP_SA		4
+#define XFRMGRP_POLICY		8
 
 #endif /* _LINUX_XFRM_H */

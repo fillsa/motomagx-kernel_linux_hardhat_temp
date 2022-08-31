@@ -10,8 +10,9 @@
 
 #include <linux/config.h>
 
+#ifdef CONFIG_BUG
 #ifdef CONFIG_DEBUG_BUGVERBOSE
-extern volatile void __bug(const char *file, int line, void *data);
+extern void __bug(const char *file, int line, void *data) __attribute__((noreturn));
 
 /* give file/line information */
 #define BUG()		__bug(__FILE__, __LINE__, NULL)
@@ -35,14 +36,17 @@ extern volatile void __bug(const char *file, int line, void *data);
 		printk("%s/%d: BUG in %s at %s:%d\n", current->comm, current->pid,__FUNCTION__, "FILE", __LINE__); \
 	}\
 } while (0)
-
 #endif
+
 #endif
 
 #define HAVE_ARCH_BUG
+#endif /* CONFIG_BUG */
+
 #ifdef CONFIG_MOT_FEAT_CHKSUM
 #define HAVE_ARCH_WARN_ON
 #endif
+
 #include <asm-generic/bug.h>
 
 #endif

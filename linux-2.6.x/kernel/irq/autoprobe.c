@@ -7,9 +7,9 @@
  */
 
 #include <linux/irq.h>
-#include <linux/delay.h>
 #include <linux/module.h>
 #include <linux/interrupt.h>
+#include <linux/delay.h>
 
 /*
  * Autodetection depends on the fact that any interrupt that
@@ -48,7 +48,7 @@ unsigned long probe_irq_on(void)
 	/*
 	 * Wait for longstanding interrupts to trigger, 20 msec delay:
 	 */
-	msleep(HZ/50);
+	msleep(20);
 
 	/*
 	 * enable any unassigned irqs
@@ -70,7 +70,7 @@ unsigned long probe_irq_on(void)
 	/*
 	 * Wait for spurious interrupts to trigger, 100 msec delay:
 	 */
-	msleep(HZ/10);
+	msleep(100);
 
 	/*
 	 * Now filter out any obviously spurious interrupts

@@ -1,35 +1,36 @@
 /* i915_dma.c -- DMA support for the I915 -*- linux-c -*-
  */
 /**************************************************************************
- * 
+ *
  * Copyright 2003 Tungsten Graphics, Inc., Cedar Park, Texas.
  * All Rights Reserved.
- * 
+ *
+ * Permission is hereby granted, free of charge, to any person obtaining a
+ * copy of this software and associated documentation files (the
+ * "Software"), to deal in the Software without restriction, including
+ * without limitation the rights to use, copy, modify, merge, publish,
+ * distribute, sub license, and/or sell copies of the Software, and to
+ * permit persons to whom the Software is furnished to do so, subject to
+ * the following conditions:
+ *
+ * The above copyright notice and this permission notice (including the
+ * next paragraph) shall be included in all copies or substantial portions
+ * of the Software.
+ *
+ * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS
+ * OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
+ * MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NON-INFRINGEMENT.
+ * IN NO EVENT SHALL TUNGSTEN GRAPHICS AND/OR ITS SUPPLIERS BE LIABLE FOR
+ * ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT,
+ * TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE
+ * SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+ *
  **************************************************************************/
 
-#include "i915.h"
 #include "drmP.h"
 #include "drm.h"
 #include "i915_drm.h"
 #include "i915_drv.h"
-
-static inline void i915_print_status_page(drm_device_t * dev)
-{
-	drm_i915_private_t *dev_priv = dev->dev_private;
-	u32 *temp = dev_priv->hw_status_page;
-
-	if (!temp) {
-		DRM_DEBUG("no status page\n");
-		return;
-	}
-
-	DRM_DEBUG("hw_status: Interrupt Status : %x\n", temp[0]);
-	DRM_DEBUG("hw_status: LpRing Head ptr : %x\n", temp[1]);
-	DRM_DEBUG("hw_status: IRing Head ptr : %x\n", temp[2]);
-	DRM_DEBUG("hw_status: Reserved : %x\n", temp[3]);
-	DRM_DEBUG("hw_status: Driver Counter : %d\n", temp[5]);
-
-}
 
 /* Really want an OS-independent resettable timer.  Would like to have
  * this loop run for (eg) 3 sec, but have the timer reset every time
@@ -77,14 +78,14 @@ void i915_kernel_lost_context(drm_device_t * dev)
 		dev_priv->sarea_priv->perf_boxes |= I915_BOX_RING_EMPTY;
 }
 
-int i915_dma_cleanup(drm_device_t * dev)
+static int i915_dma_cleanup(drm_device_t * dev)
 {
 	/* Make sure interrupts are disabled here because the uninstall ioctl
 	 * may not have been called from userspace and after dev_private
 	 * is freed, it's too late.
 	 */
 	if (dev->irq)
-		DRM(irq_uninstall) (dev);
+		drm_irq_uninstall (dev);
 
 	if (dev->dev_private) {
 		drm_i915_private_t *dev_priv =
@@ -95,14 +96,13 @@ int i915_dma_cleanup(drm_device_t * dev)
 		}
 
 		if (dev_priv->hw_status_page) {
-			pci_free_consistent(dev->pdev, PAGE_SIZE,
-					    dev_priv->hw_status_page,
-					    dev_priv->dma_status_page);
+			drm_pci_free(dev, PAGE_SIZE, dev_priv->hw_status_page,
+				     dev_priv->dma_status_page);
 			/* Need to rewrite hardware status page */
 			I915_WRITE(0x02080, 0x1ffff000);
 		}
 
-		DRM(free) (dev->dev_private, sizeof(drm_i915_private_t),
+		drm_free (dev->dev_private, sizeof(drm_i915_private_t),
 			   DRM_MEM_DRIVER);
 
 		dev->dev_private = NULL;
@@ -174,9 +174,9 @@ static int i915_initialize(drm_device_t * dev,
 	dev_priv->allow_batchbuffer = 1;
 
 	/* Program Hardware Status Page */
-	dev_priv->hw_status_page =
-	    pci_alloc_consistent(dev->pdev, PAGE_SIZE,
-				 &dev_priv->dma_status_page);
+	dev_priv->hw_status_page = drm_pci_alloc(dev, PAGE_SIZE, PAGE_SIZE,
+						 0xffffffff, 
+						 &dev_priv->dma_status_page);
 
 	if (!dev_priv->hw_status_page) {
 		dev->dev_private = (void *)dev_priv;
@@ -230,7 +230,7 @@ static int i915_resume(drm_device_t * dev)
 	return 0;
 }
 
-int i915_dma_init(DRM_IOCTL_ARGS)
+static int i915_dma_init(DRM_IOCTL_ARGS)
 {
 	DRM_DEVICE;
 	drm_i915_private_t *dev_priv;
@@ -242,7 +242,7 @@ int i915_dma_init(DRM_IOCTL_ARGS)
 
 	switch (init.func) {
 	case I915_INIT_DMA:
-		dev_priv = DRM(alloc) (sizeof(drm_i915_private_t),
+		dev_priv = drm_alloc (sizeof(drm_i915_private_t),
 				       DRM_MEM_DRIVER);
 		if (dev_priv == NULL)
 			return DRM_ERR(ENOMEM);
@@ -541,19 +541,16 @@ static int i915_quiescent(drm_device_t * dev)
 	return i915_wait_ring(dev, dev_priv->ring.Size - 8, __FUNCTION__);
 }
 
-int i915_flush_ioctl(DRM_IOCTL_ARGS)
+static int i915_flush_ioctl(DRM_IOCTL_ARGS)
 {
 	DRM_DEVICE;
 
-	if (!_DRM_LOCK_IS_HELD(dev->lock.hw_lock->lock)) {
-		DRM_ERROR("i915_flush_ioctl called without lock held\n");
-		return DRM_ERR(EINVAL);
-	}
+	LOCK_TEST_WITH_RETURN(dev, filp);
 
 	return i915_quiescent(dev);
 }
 
-int i915_batchbuffer(DRM_IOCTL_ARGS)
+static int i915_batchbuffer(DRM_IOCTL_ARGS)
 {
 	DRM_DEVICE;
 	drm_i915_private_t *dev_priv = (drm_i915_private_t *) dev->dev_private;
@@ -574,10 +571,7 @@ int i915_batchbuffer(DRM_IOCTL_ARGS)
 	DRM_DEBUG("i915 batchbuffer, start %x used %d cliprects %d\n",
 		  batch.start, batch.used, batch.num_cliprects);
 
-	if (!_DRM_LOCK_IS_HELD(dev->lock.hw_lock->lock)) {
-		DRM_ERROR("i915_batchbuffer called without lock held\n");
-		return DRM_ERR(EINVAL);
-	}
+	LOCK_TEST_WITH_RETURN(dev, filp);
 
 	if (batch.num_cliprects && DRM_VERIFYAREA_READ(batch.cliprects,
 						       batch.num_cliprects *
@@ -590,7 +584,7 @@ int i915_batchbuffer(DRM_IOCTL_ARGS)
 	return ret;
 }
 
-int i915_cmdbuffer(DRM_IOCTL_ARGS)
+static int i915_cmdbuffer(DRM_IOCTL_ARGS)
 {
 	DRM_DEVICE;
 	drm_i915_private_t *dev_priv = (drm_i915_private_t *) dev->dev_private;
@@ -606,10 +600,7 @@ int i915_cmdbuffer(DRM_IOCTL_ARGS)
 	DRM_DEBUG("i915 cmdbuffer, buf %p sz %d cliprects %d\n",
 		  cmdbuf.buf, cmdbuf.sz, cmdbuf.num_cliprects);
 
-	if (!_DRM_LOCK_IS_HELD(dev->lock.hw_lock->lock)) {
-		DRM_ERROR("i915_cmdbuffer called without lock held\n");
-		return DRM_ERR(EINVAL);
-	}
+	LOCK_TEST_WITH_RETURN(dev, filp);
 
 	if (cmdbuf.num_cliprects &&
 	    DRM_VERIFYAREA_READ(cmdbuf.cliprects,
@@ -629,31 +620,18 @@ int i915_cmdbuffer(DRM_IOCTL_ARGS)
 	return 0;
 }
 
-int i915_do_cleanup_pageflip(drm_device_t * dev)
-{
-	drm_i915_private_t *dev_priv = dev->dev_private;
-
-	DRM_DEBUG("%s\n", __FUNCTION__);
-	if (dev_priv->current_page != 0)
-		i915_dispatch_flip(dev);
-
-	return 0;
-}
-
-int i915_flip_bufs(DRM_IOCTL_ARGS)
+static int i915_flip_bufs(DRM_IOCTL_ARGS)
 {
 	DRM_DEVICE;
 
 	DRM_DEBUG("%s\n", __FUNCTION__);
-	if (!_DRM_LOCK_IS_HELD(dev->lock.hw_lock->lock)) {
-		DRM_ERROR("i915_flip_buf called without lock held\n");
-		return DRM_ERR(EINVAL);
-	}
+
+	LOCK_TEST_WITH_RETURN(dev, filp);
 
 	return i915_dispatch_flip(dev);
 }
 
-int i915_getparam(DRM_IOCTL_ARGS)
+static int i915_getparam(DRM_IOCTL_ARGS)
 {
 	DRM_DEVICE;
 	drm_i915_private_t *dev_priv = dev->dev_private;
@@ -688,7 +666,7 @@ int i915_getparam(DRM_IOCTL_ARGS)
 	return 0;
 }
 
-int i915_setparam(DRM_IOCTL_ARGS)
+static int i915_setparam(DRM_IOCTL_ARGS)
 {
 	DRM_DEVICE;
 	drm_i915_private_t *dev_priv = dev->dev_private;
@@ -720,7 +698,7 @@ int i915_setparam(DRM_IOCTL_ARGS)
 	return 0;
 }
 
-static void i915_driver_pretakedown(drm_device_t *dev)
+void i915_driver_pretakedown(drm_device_t *dev)
 {
 	if ( dev->dev_private ) {
 		drm_i915_private_t *dev_priv = dev->dev_private;
@@ -729,7 +707,7 @@ static void i915_driver_pretakedown(drm_device_t *dev)
 	i915_dma_cleanup( dev );
 }
 
-static void i915_driver_prerelease(drm_device_t *dev, DRMFILE filp)
+void i915_driver_prerelease(drm_device_t *dev, DRMFILE filp)
 {
 	if ( dev->dev_private ) {
 		drm_i915_private_t *dev_priv = dev->dev_private;
@@ -737,19 +715,19 @@ static void i915_driver_prerelease(drm_device_t *dev, DRMFILE filp)
 	}
 }
 
-void i915_driver_register_fns(drm_device_t *dev)
-{
-	dev->driver_features = DRIVER_USE_AGP | DRIVER_REQUIRE_AGP | DRIVER_USE_MTRR | DRIVER_HAVE_IRQ | DRIVER_IRQ_SHARED;
-	dev->fn_tbl.pretakedown = i915_driver_pretakedown;
-	dev->fn_tbl.prerelease = i915_driver_prerelease;
-	dev->fn_tbl.irq_preinstall = i915_driver_irq_preinstall;
-	dev->fn_tbl.irq_postinstall = i915_driver_irq_postinstall;
-	dev->fn_tbl.irq_uninstall = i915_driver_irq_uninstall;
-	dev->fn_tbl.irq_handler = i915_driver_irq_handler;
-	
-	dev->counters += 4;
-	dev->types[6] = _DRM_STAT_IRQ;
-	dev->types[7] = _DRM_STAT_PRIMARY;
-	dev->types[8] = _DRM_STAT_SECONDARY;
-	dev->types[9] = _DRM_STAT_DMA;
-}
+drm_ioctl_desc_t i915_ioctls[] = {
+	[DRM_IOCTL_NR(DRM_I915_INIT)] = {i915_dma_init, 1, 1},
+	[DRM_IOCTL_NR(DRM_I915_FLUSH)] = {i915_flush_ioctl, 1, 0},
+	[DRM_IOCTL_NR(DRM_I915_FLIP)] = {i915_flip_bufs, 1, 0},
+	[DRM_IOCTL_NR(DRM_I915_BATCHBUFFER)] = {i915_batchbuffer, 1, 0},
+	[DRM_IOCTL_NR(DRM_I915_IRQ_EMIT)] = {i915_irq_emit, 1, 0},
+	[DRM_IOCTL_NR(DRM_I915_IRQ_WAIT)] = {i915_irq_wait, 1, 0},
+	[DRM_IOCTL_NR(DRM_I915_GETPARAM)] = {i915_getparam, 1, 0},
+	[DRM_IOCTL_NR(DRM_I915_SETPARAM)] = {i915_setparam, 1, 1},
+	[DRM_IOCTL_NR(DRM_I915_ALLOC)] = {i915_mem_alloc, 1, 0},
+	[DRM_IOCTL_NR(DRM_I915_FREE)] = {i915_mem_free, 1, 0},
+	[DRM_IOCTL_NR(DRM_I915_INIT_HEAP)] = {i915_mem_init_heap, 1, 1},
+	[DRM_IOCTL_NR(DRM_I915_CMDBUFFER)] = {i915_cmdbuffer, 1, 0}
+};
+
+int i915_max_ioctl = DRM_ARRAY_SIZE(i915_ioctls);

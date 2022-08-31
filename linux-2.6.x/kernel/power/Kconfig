@@ -27,8 +27,8 @@ config PM_DEBUG
 	like suspend support.
 
 config SOFTWARE_SUSPEND
-	bool "Software Suspend (EXPERIMENTAL)"
-	depends on EXPERIMENTAL && PM && SWAP
+	bool "Software Suspend"
+	depends on EXPERIMENTAL && PM && SWAP && ((X86 && SMP) || ((FVR || PPC32 || X86) && !SMP))
 	---help---
 	  Enable the possibility of suspending the machine.
 	  It doesn't need APM.
@@ -48,7 +48,7 @@ config SOFTWARE_SUSPEND
 	  involved in suspending. Also in this case there is a risk that buffers
 	  on disk won't match with saved ones.
 
-	  For more information take a look at Documentation/power/swsusp.txt.
+	  For more information take a look at <file:Documentation/power/swsusp.txt>.
 
 config PM_STD_PARTITION
 	string "Default resume partition"
@@ -72,6 +72,10 @@ config PM_STD_PARTITION
 	  suspended image to. It will simply pick the first available swap 
 	  device.
 
+config SUSPEND_SMP
+	bool
+	depends on HOTPLUG_CPU && X86 && PM
+	default y
 config SUSPEND_REMOUNTFS
 	bool "Remount filesystem read-only during suspend"
 	depends on PM

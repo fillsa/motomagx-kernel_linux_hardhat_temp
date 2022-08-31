@@ -62,7 +62,7 @@ SCTP_DBG_OBJCNT(datamsg);
 /* An array to make it easy to pretty print the debug information
  * to the proc fs.
  */
-sctp_dbg_objcnt_entry_t sctp_dbg_objcnt[] = {
+static sctp_dbg_objcnt_entry_t sctp_dbg_objcnt[] = {
 	SCTP_DBG_OBJCNT_ENTRY(sock),
 	SCTP_DBG_OBJCNT_ENTRY(ep),
 	SCTP_DBG_OBJCNT_ENTRY(assoc),
@@ -127,8 +127,12 @@ done:
 /* Initialize the objcount in the proc filesystem.  */
 void sctp_dbg_objcnt_init(void)
 {
-	create_proc_read_entry("sctp_dbg_objcnt", 0, proc_net_sctp,
+	struct proc_dir_entry *ent;
+	ent = create_proc_read_entry("sctp_dbg_objcnt", 0, proc_net_sctp,
 			       sctp_dbg_objcnt_read, NULL);
+	if (!ent)
+		printk(KERN_WARNING 
+			"sctp_dbg_objcnt: Unable to create /proc entry.\n");
 }
 
 /* Cleanup the objcount entry in the proc filesystem.  */

@@ -28,11 +28,12 @@
 #include <linux/delay.h>
 #include <linux/spinlock.h>
 #include "sound_config.h"
+
+static int nm256_debug;
+static int force_load;
+
 #include "nm256.h"
 #include "nm256_coeff.h"
-
-int nm256_debug;
-static int force_load;
 
 /* 
  * The size of the playback reserve.  When the playback buffer has less
@@ -138,7 +139,7 @@ static int usecache;
 static int buffertop;
 
 /* Check to see if we're using the bank of cached coefficients. */
-int
+static int
 nm256_cachedCoefficients (struct nm256_info *card)
 {
     return usecache;
@@ -157,7 +158,7 @@ static int samplerates[9] = {
  * attempted.
  */
 
-int
+static int
 nm256_setInfo (int dev, struct nm256_info *card)
 {
     int x;
@@ -1047,7 +1048,7 @@ nm256_peek_for_sig (struct nm256_info *card)
  * VERSTR is a human-readable version string.
  */
 
-static int __init
+static int __devinit
 nm256_install(struct pci_dev *pcidev, enum nm256rev rev, char *verstr)
 {
     struct nm256_info *card;
@@ -1673,17 +1674,17 @@ MODULE_DEVICE_TABLE(pci, nm256_pci_tbl);
 MODULE_LICENSE("GPL");
 
 
-struct pci_driver nm256_pci_driver = {
+static struct pci_driver nm256_pci_driver = {
 	.name		= "nm256_audio",
 	.id_table	= nm256_pci_tbl,
 	.probe		= nm256_probe,
 	.remove		= nm256_remove,
 };
 
-MODULE_PARM (usecache, "i");
-MODULE_PARM (buffertop, "i");
-MODULE_PARM (nm256_debug, "i");
-MODULE_PARM (force_load, "i");
+module_param(usecache, bool, 0);
+module_param(buffertop, int, 0);
+module_param(nm256_debug, bool, 0644);
+module_param(force_load, bool, 0);
 
 static int __init do_init_nm256(void)
 {

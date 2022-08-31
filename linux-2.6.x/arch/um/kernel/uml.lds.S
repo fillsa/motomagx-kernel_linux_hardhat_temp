@@ -7,22 +7,21 @@ jiffies = jiffies_64;
 
 SECTIONS
 {
+  /*This must contain the right address - not quite the default ELF one.*/
+  PROVIDE (__executable_start = START);
   . = START + SIZEOF_HEADERS;
 
+  /* Used in arch/um/kernel/mem.c. Any memory between START and __binary_start
+   * is remapped.*/
   __binary_start = .;
+
 #ifdef MODE_TT
-  .thread_private : {
-    __start_thread_private = .;
-    errno = .;
-    . += 4;
-    arch/um/kernel/tt/unmap_fin.o (.data)
-    __end_thread_private = .;
-  }
-  . = ALIGN(4096);
-  .remap : { arch/um/kernel/tt/unmap_fin.o (.text) }
-#endif
+  .remap_data : { UNMAP_PATH (.data .bss) }
+  .remap : { UNMAP_PATH (.text) }
 
   . = ALIGN(4096);		/* Init code and data */
+#endif
+
   _stext = .;
   __init_begin = .;
   .init.text : {
@@ -31,6 +30,7 @@ SECTIONS
 	_einittext = .;
   }
   . = ALIGN(4096);
+
   .text      :
   {
     *(.text)
@@ -40,6 +40,12 @@ SECTIONS
     /* .gnu.warning sections are handled specially by elf32.em.  */
     *(.gnu.warning)
     *(.gnu.linkonce.t*)
+
+    . = ALIGN(4096);
+    __syscall_stub_start = .;
+    *(.__syscall_stub*)
+    __syscall_stub_end = .;
+    . = ALIGN(4096);
   }
 
   #include "asm/common.lds.S"
@@ -65,6 +71,8 @@ SECTIONS
 
   .got           : { *(.got.plt) *(.got) }
   .dynamic       : { *(.dynamic) }
+  .tdata	  : { *(.tdata .tdata.* .gnu.linkonce.td.*) }
+  .tbss		  : { *(.tbss .tbss.* .gnu.linkonce.tb.*) *(.tcommon) }
   /* We want the small data sections together, so single-instruction offsets
      can access them all, and initialized data all before uninitialized, so
      we can shorten the on-disk segment size.  */

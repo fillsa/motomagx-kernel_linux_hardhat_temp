@@ -23,7 +23,7 @@ struct thread_info {
 	struct exec_domain *exec_domain;	/* execution domain */
 	unsigned long	   flags;		/* low level flags */
 	int		   cpu;			/* cpu we're on */
-	int		   preempt_count;	/* 0 => preemptable, <0 => BUG*/
+	int		   preempt_count;	/* 0 => preemptable, <0 => BUG */
 	struct restart_block restart_block;
 };
 
@@ -93,6 +93,7 @@ static inline struct thread_info *current_thread_info(void)
 #define TIF_NEED_RESCHED	3	/* rescheduling necessary */
 #define TIF_POLLING_NRFLAG	4	/* true if poll_idle() is polling
 					   TIF_NEED_RESCHED */
+#define TIF_MEMDIE		5
 
 /* as above, but as bit values */
 #define _TIF_SYSCALL_TRACE	(1<<TIF_SYSCALL_TRACE)

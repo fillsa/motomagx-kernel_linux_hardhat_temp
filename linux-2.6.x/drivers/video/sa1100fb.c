@@ -598,7 +598,7 @@ sa1100fb_setcolreg(u_int regno, u_int red, u_int green, u_int blue,
  *    requests for the LCD controller.  If we hit this, it means we're
  *    doing nothing but LCD DMA.
  */
-static unsigned int sa1100fb_display_dma_period(struct fb_var_screeninfo *var)
+static inline unsigned int sa1100fb_display_dma_period(struct fb_var_screeninfo *var)
 {
 	/*
 	 * Period = pixclock * bits_per_byte * bytes_per_transfer
@@ -836,7 +836,7 @@ static int sa1100fb_mmap(struct fb_info *info, struct file *file,
 	vma->vm_pgoff = off >> PAGE_SHIFT;
 	vma->vm_flags |= VM_IO;
 	vma->vm_page_prot = pgprot_noncached(vma->vm_page_prot);
-	return io_remap_page_range(vma, vma->vm_start, off,
+	return io_remap_pfn_range(vma, vma->vm_start, off >> PAGE_SHIFT,
 				   vma->vm_end - vma->vm_start,
 				   vma->vm_page_prot);
 }
@@ -1072,8 +1072,8 @@ static void sa1100fb_disable_controller(struct sa1100fb_info *fbi)
 		GPCR |= SHANNON_GPIO_DISP_EN;
 	}	
 
-	add_wait_queue(&fbi->ctrlr_wait, &wait);
 	set_current_state(TASK_UNINTERRUPTIBLE);
+	add_wait_queue(&fbi->ctrlr_wait, &wait);
 
 	LCSR = 0xffffffff;	/* Clear LCD Status Register */
 	LCCR0 &= ~LCCR0_LDM;	/* Enable LCD Disable Done Interrupt */
@@ -1307,7 +1307,7 @@ sa1100fb_freq_policy(struct notifier_block *nb, unsigned long val,
  * Power management hooks.  Note that we won't be called from IRQ context,
  * unlike the blank functions above, so we may sleep.
  */
-static int sa1100fb_suspend(struct device *dev, u32 state, u32 level)
+static int sa1100fb_suspend(struct device *dev, pm_message_t state, u32 level)
 {
 	struct sa1100fb_info *fbi = dev_get_drvdata(dev);
 
@@ -1507,8 +1507,7 @@ static int __init sa1100fb_probe(struct device *dev)
 
 failed:
 	dev_set_drvdata(dev, NULL);
-	if (fbi)
-		kfree(fbi);
+	kfree(fbi);
 	release_mem_region(0xb0100000, 0x10000);
 	return ret;
 }

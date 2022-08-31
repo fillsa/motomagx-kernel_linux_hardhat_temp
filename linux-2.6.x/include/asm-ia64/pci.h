@@ -47,7 +47,7 @@ pcibios_set_master (struct pci_dev *dev)
 }
 
 static inline void
-pcibios_penalize_isa_irq (int irq)
+pcibios_penalize_isa_irq (int irq, int active)
 {
 	/* We don't do dynamic PCI IRQ allocation */
 }
@@ -82,9 +82,42 @@ extern int pcibios_prep_mwi (struct pci_dev *);
 #define sg_dma_len(sg)		((sg)->dma_length)
 #define sg_dma_address(sg)	((sg)->dma_address)
 
+#ifdef CONFIG_PCI
+static inline void pci_dma_burst_advice(struct pci_dev *pdev,
+					enum pci_dma_burst_strategy *strat,
+					unsigned long *strategy_parameter)
+{
+	unsigned long cacheline_size;
+	u8 byte;
+
+	pci_read_config_byte(pdev, PCI_CACHE_LINE_SIZE, &byte);
+	if (byte == 0)
+		cacheline_size = 1024;
+	else
+		cacheline_size = (int) byte * 4;
+
+	*strat = PCI_DMA_BURST_MULTIPLE;
+	*strategy_parameter = cacheline_size;
+}
+#endif
+
 #define HAVE_PCI_MMAP
 extern int pci_mmap_page_range (struct pci_dev *dev, struct vm_area_struct *vma,
 				enum pci_mmap_state mmap_state, int write_combine);
+#define HAVE_PCI_LEGACY
+extern int pci_mmap_legacy_page_range(struct pci_bus *bus,
+				      struct vm_area_struct *vma);
+extern ssize_t pci_read_legacy_io(struct kobject *kobj, char *buf, loff_t off,
+				  size_t count);
+extern ssize_t pci_write_legacy_io(struct kobject *kobj, char *buf, loff_t off,
+				   size_t count);
+extern int pci_mmap_legacy_mem(struct kobject *kobj,
+			       struct bin_attribute *attr,
+			       struct vm_area_struct *vma);
+
+#define pci_get_legacy_mem platform_pci_get_legacy_mem
+#define pci_legacy_read platform_pci_legacy_read
+#define pci_legacy_write platform_pci_legacy_write
 
 struct pci_window {
 	struct resource resource;
@@ -95,6 +128,7 @@ struct pci_controller {
 	void *acpi_handle;
 	void *iommu;
 	int segment;
+	int node;		/* nearest node with memory or -1 for global allocation */
 
 	unsigned int windows;
 	struct pci_window *window;
@@ -107,14 +141,9 @@ struct pci_controller {
 
 extern struct pci_ops pci_root_ops;
 
-static inline int pci_name_bus(char *name, struct pci_bus *bus)
+static inline int pci_proc_domain(struct pci_bus *bus)
 {
-	if (pci_domain_nr(bus) == 0) {
-		sprintf(name, "%02x", bus->number);
-	} else {
-		sprintf(name, "%04x:%02x", pci_domain_nr(bus), bus->number);
-	}
-	return 0;
+	return (pci_domain_nr(bus) != 0);
 }
 
 static inline void pcibios_add_platform_entries(struct pci_dev *dev)

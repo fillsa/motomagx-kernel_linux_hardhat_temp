@@ -49,7 +49,6 @@
 #include <linux/ioport.h>
 #include <linux/crc32.h>
 
-#include <pcmcia/version.h>
 #include <pcmcia/cs_types.h>
 #include <pcmcia/cs.h>
 #include <pcmcia/cistpl.h>
@@ -67,13 +66,7 @@
 MODULE_DESCRIPTION("fmvj18x and compatible PCMCIA ethernet driver");
 MODULE_LICENSE("GPL");
 
-#define INT_MODULE_PARM(n, v) static int n = v; MODULE_PARM(n, "i")
-
-/* Bit map of interrupts to choose from */
-/* This means pick from 15, 14, 12, 11, 10, 9, 7, 5, 4, and 3 */
-INT_MODULE_PARM(irq_mask, 0xdeb8);
-static int irq_list[4] = { -1 };
-MODULE_PARM(irq_list, "1-4i");
+#define INT_MODULE_PARM(n, v) static int n = v; module_param(n, int, 0)
 
 /* SRAM configuration */
 /* 0:4KB*2 TX buffer   else:8KB*2 TX buffer */
@@ -248,7 +241,7 @@ static dev_link_t *fmvj18x_attach(void)
     dev_link_t *link;
     struct net_device *dev;
     client_reg_t client_reg;
-    int i, ret;
+    int ret;
     
     DEBUG(0, "fmvj18x_attach()\n");
 
@@ -267,12 +260,7 @@ static dev_link_t *fmvj18x_attach(void)
 
     /* Interrupt setup */
     link->irq.Attributes = IRQ_TYPE_EXCLUSIVE | IRQ_HANDLE_PRESENT;
-    link->irq.IRQInfo1 = IRQ_INFO2_VALID|IRQ_LEVEL_ID;
-    if (irq_list[0] == -1)
-	link->irq.IRQInfo2 = irq_mask;
-    else
-	for (i = 0; i < 4; i++)
-	    link->irq.IRQInfo2 |= 1 << irq_list[i];
+    link->irq.IRQInfo1 = IRQ_LEVEL_ID;
     link->irq.Handler = &fjn_interrupt;
     link->irq.Instance = dev;
     
@@ -299,12 +287,6 @@ static dev_link_t *fmvj18x_attach(void)
     link->next = dev_list;
     dev_list = link;
     client_reg.dev_info = &dev_info;
-    client_reg.Attributes = INFO_IO_CLIENT | INFO_CARD_SHARE;
-    client_reg.EventMask =
-	CS_EVENT_CARD_INSERTION | CS_EVENT_CARD_REMOVAL |
-	CS_EVENT_RESET_PHYSICAL | CS_EVENT_CARD_RESET |
-	CS_EVENT_PM_SUSPEND | CS_EVENT_PM_RESUME;
-    client_reg.event_handler = &fmvj18x_event;
     client_reg.Version = 0x0210;
     client_reg.event_callback_args.client_data = link;
     ret = pcmcia_register_client(&link->handle, &client_reg);
@@ -355,7 +337,7 @@ do { last_fn = (fn); if ((last_ret = (ret)) != 0) goto cs_failed; } while (0)
 static int mfc_try_io_port(dev_link_t *link)
 {
     int i, ret;
-    static ioaddr_t serial_base[5] = { 0x3f8, 0x2f8, 0x3e8, 0x2e8, 0x0 };
+    static kio_addr_t serial_base[5] = { 0x3f8, 0x2f8, 0x3e8, 0x2e8, 0x0 };
 
     for (i = 0; i < 5; i++) {
 	link->io.BasePort2 = serial_base[i];
@@ -373,7 +355,7 @@ static int mfc_try_io_port(dev_link_t *link)
 static int ungermann_try_io_port(dev_link_t *link)
 {
     int ret;
-    ioaddr_t ioaddr;
+    kio_addr_t ioaddr;
     /*
 	Ungermann-Bass Access/CARD accepts 0x300,0x320,0x340,0x360
 	0x380,0x3c0 only for ioport.
@@ -400,7 +382,7 @@ static void fmvj18x_config(dev_link_t *link)
     cisparse_t parse;
     u_short buf[32];
     int i, last_fn, last_ret, ret;
-    ioaddr_t ioaddr;
+    kio_addr_t ioaddr;
     cardtype_t cardtype;
     char *card_name = "unknown";
     u_char *node_id;
@@ -447,7 +429,9 @@ static void fmvj18x_config(dev_link_t *link)
 		pcmcia_get_status(handle, &status);
 		if (status.CardState & CS_EVENT_3VCARD)
 		    link->conf.Vcc = 33; /* inserted in 3.3V slot */
-	    } else if (le16_to_cpu(buf[1]) == PRODID_TDK_GN3410) {
+	    } else if (le16_to_cpu(buf[1]) == PRODID_TDK_GN3410
+			|| le16_to_cpu(buf[1]) == PRODID_TDK_NP9610
+			|| le16_to_cpu(buf[1]) == PRODID_TDK_MN3200) {
 		/* MultiFunction Card */
 		link->conf.ConfigBase = 0x800;
 		link->conf.ConfigIndex = 0x47;
@@ -591,6 +575,7 @@ static void fmvj18x_config(dev_link_t *link)
     lp->cardtype = cardtype;
     link->dev = &lp->node;
     link->state &= ~DEV_CONFIG_PENDING;
+    SET_NETDEV_DEV(dev, &handle_to_dev(handle));
 
     if (register_netdev(dev) != 0) {
 	printk(KERN_NOTICE "fmvj18x_cs: register_netdev() failed\n");
@@ -623,7 +608,7 @@ static int fmvj18x_get_hwinfo(dev_link_t *link, u_char *node_id)
 {
     win_req_t req;
     memreq_t mem;
-    u_char *base;
+    u_char __iomem *base;
     int i, j;
 
     /* Allocate a small memory window */
@@ -676,10 +661,10 @@ static int fmvj18x_setup_mfc(dev_link_t *link)
 {
     win_req_t req;
     memreq_t mem;
-    u_char *base;
+    u_char __iomem *base;
     int i, j;
     struct net_device *dev = link->priv;
-    ioaddr_t ioaddr;
+    kio_addr_t ioaddr;
 
     /* Allocate a small memory window */
     req.Attributes = WIN_DATA_WIDTH_8|WIN_MEMORY_TYPE_AM|WIN_ENABLE;
@@ -775,13 +760,40 @@ static int fmvj18x_event(event_t event, int priority,
     return 0;
 } /* fmvj18x_event */
 
+static struct pcmcia_device_id fmvj18x_ids[] = {
+	PCMCIA_DEVICE_MANF_CARD(0x0004, 0x0004),
+	PCMCIA_DEVICE_PROD_ID12("EAGLE Technology", "NE200 ETHERNET LAN MBH10302 04", 0x528c88c4, 0x74f91e59),
+	PCMCIA_DEVICE_PROD_ID12("Eiger Labs,Inc", "EPX-10BT PC Card Ethernet 10BT", 0x53af556e, 0x877f9922),
+	PCMCIA_DEVICE_PROD_ID12("Eiger labs,Inc.", "EPX-10BT PC Card Ethernet 10BT", 0xf47e6c66, 0x877f9922),
+	PCMCIA_DEVICE_PROD_ID12("FUJITSU", "LAN Card(FMV-J182)", 0x6ee5a3d8, 0x5baf31db),
+	PCMCIA_DEVICE_PROD_ID12("FUJITSU", "MBH10308", 0x6ee5a3d8, 0x3f04875e),
+	PCMCIA_DEVICE_PROD_ID12("FUJITSU TOWA", "LA501", 0xb8451188, 0x12939ba2),
+	PCMCIA_DEVICE_PROD_ID12("HITACHI", "HT-4840-11", 0xf4f43949, 0x773910f4),
+	PCMCIA_DEVICE_PROD_ID12("NextComK.K.", "NC5310B Ver1.0       ", 0x8cef4d3a, 0x075fc7b6),
+	PCMCIA_DEVICE_PROD_ID12("NextComK.K.", "NC5310 Ver1.0        ", 0x8cef4d3a, 0xbccf43e6),
+	PCMCIA_DEVICE_PROD_ID12("RATOC System Inc.", "10BASE_T CARD R280", 0x85c10e17, 0xd9413666),
+	PCMCIA_DEVICE_PROD_ID12("TDK", "LAC-CD02x", 0x1eae9475, 0x8fa0ee70),
+	PCMCIA_DEVICE_PROD_ID12("TDK", "LAC-CF010", 0x1eae9475, 0x7683bc9a),
+	PCMCIA_DEVICE_PROD_ID1("CONTEC Co.,Ltd.", 0x58d8fee2),
+	PCMCIA_DEVICE_PROD_ID1("PCMCIA LAN MBH10304  ES", 0x2599f454),
+	PCMCIA_DEVICE_PROD_ID1("PCMCIA MBH10302", 0x8f4005da),
+	PCMCIA_DEVICE_PROD_ID1("UBKK,V2.0", 0x90888080),
+	PCMCIA_PFC_DEVICE_PROD_ID12(0, "TDK", "GlobalNetworker 3410/3412", 0x1eae9475, 0xd9a93bed),
+	PCMCIA_PFC_DEVICE_MANF_CARD(0, 0x0105, 0x0d0a),
+	PCMCIA_PFC_DEVICE_MANF_CARD(0, 0x0105, 0x0e0a),
+	PCMCIA_DEVICE_NULL,
+};
+MODULE_DEVICE_TABLE(pcmcia, fmvj18x_ids);
+
 static struct pcmcia_driver fmvj18x_cs_driver = {
 	.owner		= THIS_MODULE,
 	.drv		= {
 		.name	= "fmvj18x_cs",
 	},
 	.attach		= fmvj18x_attach,
+	.event		= fmvj18x_event,
 	.detach		= fmvj18x_detach,
+	.id_table       = fmvj18x_ids,
 };
 
 static int __init init_fmvj18x_cs(void)
@@ -792,8 +804,7 @@ static int __init init_fmvj18x_cs(void)
 static void __exit exit_fmvj18x_cs(void)
 {
 	pcmcia_unregister_driver(&fmvj18x_cs_driver);
-	while (dev_list != NULL)
-		fmvj18x_detach(dev_list);
+	BUG_ON(dev_list != NULL);
 }
 
 module_init(init_fmvj18x_cs);
@@ -805,7 +816,7 @@ static irqreturn_t fjn_interrupt(int irq, void *dev_id, struct pt_regs *regs)
 {
     struct net_device *dev = dev_id;
     local_info_t *lp = netdev_priv(dev);
-    ioaddr_t ioaddr;
+    kio_addr_t ioaddr;
     unsigned short tx_stat, rx_stat;
 
     if (lp == NULL) {
@@ -864,7 +875,7 @@ static irqreturn_t fjn_interrupt(int irq, void *dev_id, struct pt_regs *regs)
 static void fjn_tx_timeout(struct net_device *dev)
 {
     struct local_info_t *lp = netdev_priv(dev);
-    ioaddr_t ioaddr = dev->base_addr;
+    kio_addr_t ioaddr = dev->base_addr;
 
     printk(KERN_NOTICE "%s: transmit timed out with status %04x, %s?\n",
 	   dev->name, htons(inw(ioaddr + TX_STATUS)),
@@ -894,7 +905,7 @@ static void fjn_tx_timeout(struct net_device *dev)
 static int fjn_start_xmit(struct sk_buff *skb, struct net_device *dev)
 {
     struct local_info_t *lp = netdev_priv(dev);
-    ioaddr_t ioaddr = dev->base_addr;
+    kio_addr_t ioaddr = dev->base_addr;
     short length = skb->len;
     
     if (length < ETH_ZLEN)
@@ -968,7 +979,7 @@ static int fjn_start_xmit(struct sk_buff *skb, struct net_device *dev)
 static void fjn_reset(struct net_device *dev)
 {
     struct local_info_t *lp = netdev_priv(dev);
-    ioaddr_t ioaddr = dev->base_addr;
+    kio_addr_t ioaddr = dev->base_addr;
     int i;
 
     DEBUG(4, "fjn_reset(%s) called.\n",dev->name);
@@ -1054,7 +1065,7 @@ static void fjn_reset(struct net_device *dev)
 static void fjn_rx(struct net_device *dev)
 {
     struct local_info_t *lp = netdev_priv(dev);
-    ioaddr_t ioaddr = dev->base_addr;
+    kio_addr_t ioaddr = dev->base_addr;
     int boguscount = 10;	/* 5 -> 10: by agy 19940922 */
 
     DEBUG(4, "%s: in rx_packet(), rx_status %02x.\n",
@@ -1209,7 +1220,7 @@ static int fjn_close(struct net_device *dev)
 {
     struct local_info_t *lp = netdev_priv(dev);
     dev_link_t *link = &lp->link;
-    ioaddr_t ioaddr = dev->base_addr;
+    kio_addr_t ioaddr = dev->base_addr;
 
     DEBUG(4, "fjn_close('%s').\n", dev->name);
 
@@ -1252,7 +1263,7 @@ static struct net_device_stats *fjn_get_stats(struct net_device *dev)
 
 static void set_rx_mode(struct net_device *dev)
 {
-    ioaddr_t ioaddr = dev->base_addr;
+    kio_addr_t ioaddr = dev->base_addr;
     struct local_info_t *lp = netdev_priv(dev);
     u_char mc_filter[8];		 /* Multicast hash filter */
     u_long flags;

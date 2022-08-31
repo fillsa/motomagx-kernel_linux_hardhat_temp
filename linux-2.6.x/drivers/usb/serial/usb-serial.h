@@ -69,6 +69,7 @@
  * usb_serial_port: structure for the specific ports of a device.
  * @serial: pointer back to the struct usb_serial owner of this port.
  * @tty: pointer to the corresponding tty for this port.
+ * @lock: spinlock to grab when updating portions of this structure.
  * @number: the number of the port (the minor number).
  * @interrupt_in_buffer: pointer to the interrupt in buffer for this port.
  * @interrupt_in_urb: pointer to the interrupt in struct urb for this port.
@@ -98,6 +99,7 @@
 struct usb_serial_port {
 	struct usb_serial *	serial;
 	struct tty_struct *	tty;
+	spinlock_t		lock;
 	unsigned char		number;
 
 	unsigned char *		interrupt_in_buffer;
@@ -117,6 +119,7 @@ struct usb_serial_port {
 	unsigned char *		bulk_out_buffer;
 	int			bulk_out_size;
 	struct urb *		write_urb;
+	int			write_urb_busy;
 	__u8			bulk_out_endpointAddress;
 
 	wait_queue_head_t	write_wait;
@@ -148,8 +151,6 @@ static inline void usb_set_serial_port_data (struct usb_serial_port *port, void 
  * @num_interrupt_out: number of interrupt out endpoints we have
  * @num_bulk_in: number of bulk in endpoints we have
  * @num_bulk_out: number of bulk out endpoints we have
- * @vendor: vendor id of this device
- * @product: product id of this device
  * @port: array of struct usb_serial_port structures for the different ports.
  * @private: place to put any driver specific information that is needed.  The
  *	usb-serial driver is required to manage this data, the usb-serial core
@@ -167,8 +168,6 @@ struct usb_serial {
 	char				num_interrupt_out;
 	char				num_bulk_in;
 	char				num_bulk_out;
-	__u16				vendor;
-	__u16				product;
 	struct usb_serial_port *	port[MAX_NUM_PORTS];
 	struct kref			kref;
 	void *				private;

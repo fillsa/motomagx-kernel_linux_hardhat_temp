@@ -34,7 +34,6 @@ EXPORT_SYMBOL(__clear_user_asm);
 EXPORT_SYMBOL(__strncpy_from_user_asm);
 EXPORT_SYMBOL(__strnlen_user_asm);
 EXPORT_SYMBOL(diag10);
-EXPORT_SYMBOL(default_storage_key);
 
 /*
  * semaphore ops
@@ -63,4 +62,3 @@ EXPORT_SYMBOL(console_mode);
 EXPORT_SYMBOL(console_devno);
 EXPORT_SYMBOL(console_irq);
 EXPORT_SYMBOL(sys_wait4);
-EXPORT_SYMBOL(cpcmd);

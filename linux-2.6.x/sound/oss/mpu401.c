@@ -1240,8 +1240,7 @@ void unload_mpu401(struct address_info *hw_config)
 		p=mpu401_synth_operations[n];
 		sound_unload_mididev(n);
 		sound_unload_timerdev(hw_config->slots[2]);
-		if(p)
-			kfree(p);
+		kfree(p);
 	}
 }
 
@@ -1770,8 +1769,8 @@ static struct address_info cfg;
 static int io = -1;
 static int irq = -1;
 
-MODULE_PARM(irq, "i");
-MODULE_PARM(io, "i");
+module_param(irq, int, 0);
+module_param(io, int, 0);
 
 static int __init init_mpu401(void)
 {

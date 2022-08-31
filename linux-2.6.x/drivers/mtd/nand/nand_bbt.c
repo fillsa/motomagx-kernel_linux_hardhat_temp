@@ -7,7 +7,7 @@
  *  Copyright (C) 2005-2006 Motorola, Inc.
  *  Copyright (C) 2004 Thomas Gleixner (tglx@linutronix.de)
  *
- * $Id: nand_bbt.c,v 1.34 2005/07/15 07:16:41 gleixner Exp $
+ * $Id: nand_bbt.c,v 1.35 2005/07/15 13:53:47 gleixner Exp $
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 as
@@ -144,8 +144,6 @@ static int check_pattern (uint8_t *buf, int len, int paglen, struct nand_bbt_des
 			return -1;
 	}
 
-	p += td->len;
-	end += td->len;
 	if (td->options & NAND_BBT_SCANEMPTY) {
 		p += td->len;
 		end += td->len;

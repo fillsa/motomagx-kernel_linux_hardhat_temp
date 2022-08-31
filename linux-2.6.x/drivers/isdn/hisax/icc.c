@@ -27,7 +27,7 @@
 static char *ICCVer[] __initdata =
 {"2070 A1/A3", "2070 B1", "2070 B2/B3", "2070 V2.4"};
 
-void
+void __init
 ICCVersion(struct IsdnCardState *cs, char *s)
 {
 	int val;
@@ -108,7 +108,7 @@ icc_bh(struct IsdnCardState *cs)
 #endif
 }
 
-void
+static void
 icc_empty_fifo(struct IsdnCardState *cs, int count)
 {
 	u_char *ptr;
@@ -563,13 +563,13 @@ ICC_l1hw(struct PStack *st, int pr, void *arg)
 	}
 }
 
-void
+static void
 setstack_icc(struct PStack *st, struct IsdnCardState *cs)
 {
 	st->l1.l1hw = ICC_l1hw;
 }
 
-void 
+static void
 DC_Close_icc(struct IsdnCardState *cs) {
 	if (cs->dc.icc.mon_rx) {
 		kfree(cs->dc.icc.mon_rx);

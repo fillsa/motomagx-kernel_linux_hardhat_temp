@@ -77,8 +77,6 @@ static inline struct sctp_ulpevent *sctp_skb2event(struct sk_buff *skb)
 	return (struct sctp_ulpevent *)skb->cb;
 }
 
-struct sctp_ulpevent *sctp_ulpevent_new(int size, int flags, int gfp);
-void sctp_ulpevent_init(struct sctp_ulpevent *, int flags);
 void sctp_ulpevent_free(struct sctp_ulpevent *);
 int sctp_ulpevent_is_notification(const struct sctp_ulpevent *);
 void sctp_queue_purge_ulpevents(struct sk_buff_head *list);
@@ -90,7 +88,7 @@ struct sctp_ulpevent *sctp_ulpevent_make_assoc_change(
 	__u16 error,
 	__u16 outbound,
 	__u16 inbound,
-	int gfp);
+	unsigned int __nocast gfp);
 
 struct sctp_ulpevent *sctp_ulpevent_make_peer_addr_change(
 	const struct sctp_association *asoc,
@@ -98,35 +96,35 @@ struct sctp_ulpevent *sctp_ulpevent_make_peer_addr_change(
 	int flags,
 	int state,
 	int error,
-	int gfp);
+	unsigned int __nocast gfp);
 
 struct sctp_ulpevent *sctp_ulpevent_make_remote_error(
 	const struct sctp_association *asoc,
 	struct sctp_chunk *chunk,
 	__u16 flags,
-	int gfp);
+	unsigned int __nocast gfp);
 struct sctp_ulpevent *sctp_ulpevent_make_send_failed(
 	const struct sctp_association *asoc,
 	struct sctp_chunk *chunk,
 	__u16 flags,
 	__u32 error,
-	int gfp);
+	unsigned int __nocast gfp);
 
 struct sctp_ulpevent *sctp_ulpevent_make_shutdown_event(
 	const struct sctp_association *asoc,
 	__u16 flags,
-	int gfp);
+	unsigned int __nocast gfp);
 
 struct sctp_ulpevent *sctp_ulpevent_make_pdapi(
 	const struct sctp_association *asoc,
-	__u32 indication, int gfp);
+	__u32 indication, unsigned int __nocast gfp);
 
 struct sctp_ulpevent *sctp_ulpevent_make_adaption_indication(
-	const struct sctp_association *asoc, int gfp);
+	const struct sctp_association *asoc, unsigned int __nocast gfp);
 
 struct sctp_ulpevent *sctp_ulpevent_make_rcvmsg(struct sctp_association *asoc,
 	struct sctp_chunk *chunk,
-	int gfp);
+	unsigned int __nocast gfp);
 
 void sctp_ulpevent_read_sndrcvinfo(const struct sctp_ulpevent *event,
 	struct msghdr *);

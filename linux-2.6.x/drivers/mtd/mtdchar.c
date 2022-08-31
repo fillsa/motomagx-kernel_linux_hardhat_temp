@@ -1,5 +1,5 @@
 /*
- * $Id: mtdchar.c,v 1.72 2005/06/30 00:23:24 tpoynor Exp $
+ * $Id: mtdchar.c,v 1.73 2005/07/04 17:36:41 gleixner Exp $
  *
  * Character-device access to raw MTD devices.
  *
@@ -32,12 +32,11 @@
 #include <linux/slab.h>
 #include <linux/init.h>
 #include <linux/fs.h>
-#include <linux/device.h>
 #include <asm/uaccess.h>
 
-#ifdef CONFIG_DEVFS_FS
-#include <linux/devfs_fs_kernel.h>
-#endif
+#include <linux/device.h>
+
+static struct class *mtd_class;
 
 #ifdef CONFIG_MOT_FEAT_NAND_RDDIST
 #define READ_ACC_CNT	0
@@ -60,7 +59,7 @@ extern wait_queue_head_t g_blkers_waitq;
 extern int nand_ecc_flag;
 #endif /*CONFIG_MOT_FEAT_NANDECC_TEST*/
 
-static struct class_simple *mtd_class;
+static struct class *mtd_class;
 
 #ifdef CONFIG_MOT_FEAT_SECURE_DRM
 static inline int is_protected_device (struct mtd_info *mtd)
@@ -89,12 +88,12 @@ static void mtd_notify_add(struct mtd_info* mtd)
 		      S_IFCHR | S_IRUSR | S_IWUSR | S_IRGRP | S_IWGRP, "mtd/%s", mtd->name);
 #endif
 
-	class_simple_device_add(mtd_class, MKDEV(MTD_CHAR_MAJOR, mtd->index*2),
-				NULL, "mtd%d", mtd->index);
-
-	class_simple_device_add(mtd_class,
-				MKDEV(MTD_CHAR_MAJOR, mtd->index*2+1),
-				NULL, "mtd%dro", mtd->index);
+	class_device_create(mtd_class, MKDEV(MTD_CHAR_MAJOR, mtd->index*2),
+			    NULL, "mtd%d", mtd->index);
+	
+	class_device_create(mtd_class, 
+			    MKDEV(MTD_CHAR_MAJOR, mtd->index*2+1),
+			    NULL, "mtd%dro", mtd->index);
 }
 
 static void mtd_notify_remove(struct mtd_info* mtd)
@@ -107,8 +106,8 @@ static void mtd_notify_remove(struct mtd_info* mtd)
 	devfs_remove("mtd/%s", mtd->name);
 #endif
 
-	class_simple_device_remove(MKDEV(MTD_CHAR_MAJOR, mtd->index*2));
-	class_simple_device_remove(MKDEV(MTD_CHAR_MAJOR, mtd->index*2+1));
+	class_device_destroy(mtd_class, MKDEV(MTD_CHAR_MAJOR, mtd->index*2));
+	class_device_destroy(mtd_class, MKDEV(MTD_CHAR_MAJOR, mtd->index*2+1));
 }
 
 static struct mtd_notifier notifier = {
@@ -905,7 +904,7 @@ static int __init init_mtdchar(void)
 		return -EAGAIN;
 	}
 
-	mtd_class = class_simple_create(THIS_MODULE, "mtd");
+	mtd_class = class_create(THIS_MODULE, "mtd"); // mvl class_simple_create 
 
 	if (IS_ERR(mtd_class)) {
 		printk(KERN_ERR "Error creating mtd class.\n");
@@ -924,8 +923,7 @@ static int __init init_mtdchar(void)
 static void __exit cleanup_mtdchar(void)
 {
 	unregister_mtd_user(&notifier);
-	class_simple_destroy(mtd_class);
-
+	class_destroy(mtd_class); // mvl class_simple_destroy()
 #ifdef CONFIG_DEVFS_FS
 	devfs_remove("mtd");
 #endif

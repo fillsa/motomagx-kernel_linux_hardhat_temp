@@ -2,15 +2,17 @@
  * linux/arch/arm/mach-sa1100/shannon.c
  */
 
+#include <linux/config.h>
 #include <linux/init.h>
+#include <linux/device.h>
 #include <linux/kernel.h>
 #include <linux/tty.h>
 #include <linux/mtd/mtd.h>
 #include <linux/mtd/partitions.h>
 
 #include <asm/hardware.h>
+#include <asm/mach-types.h>
 #include <asm/setup.h>
-#include <asm/irq.h>
 
 #include <asm/mach/arch.h>
 #include <asm/mach/flash.h>
@@ -52,7 +54,7 @@ static struct resource shannon_flash_resource = {
 
 static void __init shannon_init(void)
 {
-	sa11x0_set_flash_data(&shannon_flash_data, shannon_flash_resource, 1);
+	sa11x0_set_flash_data(&shannon_flash_data, &shannon_flash_resource, 1);
 }
 
 static void __init shannon_map_io(void)
@@ -74,10 +76,12 @@ static void __init shannon_map_io(void)
 }
 
 MACHINE_START(SHANNON, "Shannon (AKA: Tuxscreen)")
-	BOOT_MEM(0xc0000000, 0x80000000, 0xf8000000)
-	BOOT_PARAMS(0xc0000100)
-	MAPIO(shannon_map_io)
-	INITIRQ(sa1100_init_irq)
+	.phys_ram	= 0xc0000000,
+	.phys_io	= 0x80000000,
+	.io_pg_offst	= ((0xf8000000) >> 18) & 0xfffc,
+	.boot_params	= 0xc0000100,
+	.map_io		= shannon_map_io,
+	.init_irq	= sa1100_init_irq,
 	.timer		= &sa1100_timer,
 	.init_machine	= shannon_init,
 MACHINE_END

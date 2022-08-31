@@ -55,7 +55,6 @@
  * Add adapter resets
  */
 
-#include <linux/config.h>
 #include <linux/kernel.h>
 #include <linux/module.h>
 #include <linux/delay.h>
@@ -181,9 +180,11 @@ static int sis5595_setup(struct pci_dev *SIS5595_dev)
 
 	if (force_addr) {
 		dev_info(&SIS5595_dev->dev, "forcing ISA address 0x%04X\n", sis5595_base);
-		if (!pci_write_config_word(SIS5595_dev, ACPI_BASE, sis5595_base))
+		if (pci_write_config_word(SIS5595_dev, ACPI_BASE, sis5595_base)
+		    != PCIBIOS_SUCCESSFUL)
 			goto error;
-		if (!pci_read_config_word(SIS5595_dev, ACPI_BASE, &a))
+		if (pci_read_config_word(SIS5595_dev, ACPI_BASE, &a)
+		    != PCIBIOS_SUCCESSFUL)
 			goto error;
 		if ((a & ~(SIS5595_EXTENT - 1)) != sis5595_base) {
 			/* doesn't work for some chips! */
@@ -192,13 +193,16 @@ static int sis5595_setup(struct pci_dev *SIS5595_dev)
 		}
 	}
 
-	if (!pci_read_config_byte(SIS5595_dev, SIS5595_ENABLE_REG, &val))
+	if (pci_read_config_byte(SIS5595_dev, SIS5595_ENABLE_REG, &val)
+	    != PCIBIOS_SUCCESSFUL)
 		goto error;
 	if ((val & 0x80) == 0) {
 		dev_info(&SIS5595_dev->dev, "enabling ACPI\n");
-		if (!pci_write_config_byte(SIS5595_dev, SIS5595_ENABLE_REG, val | 0x80))
+		if (pci_write_config_byte(SIS5595_dev, SIS5595_ENABLE_REG, val | 0x80)
+		    != PCIBIOS_SUCCESSFUL)
 			goto error;
-		if (!pci_read_config_byte(SIS5595_dev, SIS5595_ENABLE_REG, &val))
+		if (pci_read_config_byte(SIS5595_dev, SIS5595_ENABLE_REG, &val)
+		    != PCIBIOS_SUCCESSFUL)
 			goto error;
 		if ((val & 0x80) == 0) {
 			/* doesn't work for some chips? */
@@ -224,7 +228,7 @@ static int sis5595_transaction(struct i2c_adapter *adap)
 	/* Make sure the SMBus host is ready to start transmitting */
 	temp = sis5595_read(SMB_STS_LO) + (sis5595_read(SMB_STS_HI) << 8);
 	if (temp != 0x00) {
-		dev_dbg(&adap->dev, "SMBus busy (%04x). Resetting... \n", temp);
+		dev_dbg(&adap->dev, "SMBus busy (%04x). Resetting...\n", temp);
 		sis5595_write(SMB_STS_LO, temp & 0xff);
 		sis5595_write(SMB_STS_HI, temp >> 8);
 		if ((temp = sis5595_read(SMB_STS_LO) + (sis5595_read(SMB_STS_HI) << 8)) != 0x00) {

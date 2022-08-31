@@ -60,121 +60,6 @@
 
 #define NFSDDBG_FACILITY		NFSDDBG_XDR
 
-static const char utf8_byte_len[256] = {
-	1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1, 1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,
-	1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1, 1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,
-	1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1, 1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,
-	1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1, 1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,
-	0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0, 0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
-	0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0, 0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
-	0,0,2,2,2,2,2,2,2,2,2,2,2,2,2,2, 2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,
-	3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3, 4,4,4,4,4,4,4,4,5,5,5,5,6,6,0,0
-};
-
-static inline int
-is_legal_utf8_sequence(unsigned char *source, int length)
-{
-	unsigned char *ptr;
-	unsigned char c;
-
-	if (length==1) return 1;
-
-	/* Check for overlong sequence, and check second byte */
-	c = *(source + 1);
-	switch (*source) {
-	case 0xE0: /* 3 bytes */
-		if ( c < 0xA0 ) return 0;
-		break;
-	case 0xF0: /* 4 bytes */
-		if ( c < 0x90 ) return 0;
-		break;
-	case 0xF8: /* 5 bytes */
-		if ( c < 0xC8 ) return 0;
-		break;
-	case 0xFC: /* 6 bytes */
-		if ( c < 0x84 ) return 0;
-		break;
-	default:
-		if ( (c & 0xC0) != 0x80) return 0;
-	}
-
-	/* Check that trailing bytes look like 10xxxxxx */
-	for (ptr = source++ + length - 1; ptr>source; ptr--)
-		if ( ((*ptr) & 0xC0) != 0x80 ) return 0;
-	return 1;
-}
-
-/* This does some screening on disallowed unicode characters.  It is NOT
- * comprehensive.
- */
-static int
-is_allowed_utf8_char(unsigned char *source, int length)
-{
-	/* We assume length and source point to a valid utf8 sequence */
-	unsigned char c;
-
-	/* Disallow F0000 and up (in utf8, F3B08080) */
-	if (*source > 0xF3 ) return 0;
-	c = *(source + 1);
-	switch (*source) {
-	case 0xF3:
-		if (c >= 0xB0) return 0;
-		break;
-	/* Disallow D800-F8FF (in utf8, EDA080-EFA3BF */
-	case 0xED:
-		if (c >= 0xA0) return 0;
-		break;
-	case 0xEE:
-		return 0;
-		break;
-	case 0xEF:
-		if (c <= 0xA3) return 0;
-	/* Disallow FFF9-FFFF (EFBFB9-EFBFBF) */
-		if (c==0xBF)
-			/* Don't need to check <=0xBF, since valid utf8 */
-			if ( *(source+2) >= 0xB9) return 0;
-		break;
-	}
-	return 1;
-}
-
-/* This routine should really check to see that the proper stringprep
- * mappings have been applied.  Instead, we do a simple screen of some
- * of the more obvious illegal values by calling is_allowed_utf8_char.
- * This will allow many illegal strings through, but if a client behaves,
- * it will get full functionality.  The other option (apart from full
- * stringprep checking) is to limit everything to an easily handled subset,
- * such as 7-bit ascii.
- *
- * Note - currently calling routines ignore return value except as boolean.
- */
-static int
-check_utf8(char *str, int len)
-{
-	unsigned char *chunk, *sourceend;
-	int chunklen;
-
-	chunk = str;
-	sourceend = str + len;
-
-	while (chunk < sourceend) {
-		chunklen = utf8_byte_len[*chunk];
-		if (!chunklen)
-			return nfserr_inval;
-		if (chunk + chunklen > sourceend)
-			return nfserr_inval;
-		if (!is_legal_utf8_sequence(chunk, chunklen))
-			return nfserr_inval;
-		if (!is_allowed_utf8_char(chunk, chunklen))
-			return nfserr_inval;
-		if ( (chunklen==1) && (!*chunk) )
-			return nfserr_inval; /* Disallow embedded nulls */
-		chunk += chunklen;
-	}
-
-	return 0;
-}
-
 static int
 check_filename(char *str, int len, int err)
 {
@@ -187,7 +72,7 @@ check_filename(char *str, int len, int err)
 	for (i = 0; i < len; i++)
 		if (str[i] == '/')
 			return err;
-	return check_utf8(str, len);
+	return 0;
 }
 
 /*
@@ -251,7 +136,7 @@ xdr_error:					\
 	}					\
 } while (0)
 
-u32 *read_buf(struct nfsd4_compoundargs *argp, int nbytes)
+static u32 *read_buf(struct nfsd4_compoundargs *argp, int nbytes)
 {
 	/* We want more bytes than seem to be available.
 	 * Maybe we need a new page, maybe we have just run out
@@ -305,7 +190,7 @@ defer_free(struct nfsd4_compoundargs *argp,
 	return 0;
 }
 
-char *savemem(struct nfsd4_compoundargs *argp, u32 *p, int nbytes)
+static char *savemem(struct nfsd4_compoundargs *argp, u32 *p, int nbytes)
 {
 	void *new = NULL;
 	if (p == argp->tmp) {
@@ -403,8 +288,6 @@ nfsd4_decode_fattr(struct nfsd4_compoundargs *argp, u32 *bmval, struct iattr *ia
 			READ_BUF(dummy32);
 			len += XDR_QUADLEN(dummy32) << 2;
 			READMEM(buf, dummy32);
-			if (check_utf8(buf, dummy32))
-				return nfserr_inval;
 			ace.whotype = nfs4_acl_get_whotype(buf, dummy32);
 			status = 0;
 			if (ace.whotype != NFS4_ACL_WHO_NAMED)
@@ -439,8 +322,6 @@ nfsd4_decode_fattr(struct nfsd4_compoundargs *argp, u32 *bmval, struct iattr *ia
 		READ_BUF(dummy32);
 		len += (XDR_QUADLEN(dummy32) << 2);
 		READMEM(buf, dummy32);
-		if (check_utf8(buf, dummy32))
-			return nfserr_inval;
 		if ((status = nfsd_map_name_to_uid(argp->rqstp, buf, dummy32, &iattr->ia_uid)))
 			goto out_nfserr;
 		iattr->ia_valid |= ATTR_UID;
@@ -452,8 +333,6 @@ nfsd4_decode_fattr(struct nfsd4_compoundargs *argp, u32 *bmval, struct iattr *ia
 		READ_BUF(dummy32);
 		len += (XDR_QUADLEN(dummy32) << 2);
 		READMEM(buf, dummy32);
-		if (check_utf8(buf, dummy32))
-			return nfserr_inval;
 		if ((status = nfsd_map_name_to_gid(argp->rqstp, buf, dummy32, &iattr->ia_gid)))
 			goto out_nfserr;
 		iattr->ia_valid |= ATTR_GID;
@@ -585,8 +464,6 @@ nfsd4_decode_create(struct nfsd4_compoundargs *argp, struct nfsd4_create *create
 		READ32(create->cr_linklen);
 		READ_BUF(create->cr_linklen);
 		SAVEMEM(create->cr_linkname, create->cr_linklen);
-		if (check_utf8(create->cr_linkname, create->cr_linklen))
-			return nfserr_inval;
 		break;
 	case NF4BLK:
 	case NF4CHR:
@@ -610,6 +487,18 @@ nfsd4_decode_create(struct nfsd4_compoundargs *argp, struct nfsd4_create *create
 
 	if ((status = nfsd4_decode_fattr(argp, create->cr_bmval, &create->cr_iattr, &create->cr_acl)))
 		goto out;
+
+	DECODE_TAIL;
+}
+
+static inline int
+nfsd4_decode_delegreturn(struct nfsd4_compoundargs *argp, struct nfsd4_delegreturn *dr)
+{
+	DECODE_HEAD;
+
+	READ_BUF(sizeof(stateid_t));
+	READ32(dr->dr_stateid.si_generation);
+	COPYMEM(&dr->dr_stateid.si_opaque, sizeof(stateid_opaque_t));
 
 	DECODE_TAIL;
 }
@@ -790,8 +679,8 @@ nfsd4_decode_open(struct nfsd4_compoundargs *argp, struct nfsd4_open *open)
 		READ32(open->op_delegate_type);
 		break;
 	case NFS4_OPEN_CLAIM_DELEGATE_CUR:
-		READ_BUF(sizeof(delegation_stateid_t) + 4);
-		COPYMEM(&open->op_delegate_stateid, sizeof(delegation_stateid_t));
+		READ_BUF(sizeof(stateid_t) + 4);
+		COPYMEM(&open->op_delegate_stateid, sizeof(stateid_t));
 		READ32(open->op_fname.len);
 		READ_BUF(open->op_fname.len);
 		SAVEMEM(open->op_fname.data, open->op_fname.len);
@@ -825,7 +714,7 @@ nfsd4_decode_open_downgrade(struct nfsd4_compoundargs *argp, struct nfsd4_open_d
 	DECODE_HEAD;
 		    
 	open_down->od_stateowner = NULL;
-	READ_BUF(4 + sizeof(stateid_t));
+	READ_BUF(12 + sizeof(stateid_t));
 	READ32(open_down->od_stateid.si_generation);
 	COPYMEM(&open_down->od_stateid.si_opaque, sizeof(stateid_opaque_t));
 	READ32(open_down->od_seqid);
@@ -1170,6 +1059,9 @@ nfsd4_decode_compound(struct nfsd4_compoundargs *argp)
 		case OP_CREATE:
 			op->status = nfsd4_decode_create(argp, &op->u.create);
 			break;
+		case OP_DELEGRETURN:
+			op->status = nfsd4_decode_delegreturn(argp, &op->u.delegreturn);
+			break;
 		case OP_GETATTR:
 			op->status = nfsd4_decode_getattr(argp, &op->u.getattr);
 			break;
@@ -1318,16 +1210,15 @@ nfsd4_decode_compound(struct nfsd4_compoundargs *argp)
 	save = resp->p;
 
 /*
- * Routine for encoding the result of a
- * "seqid-mutating" NFSv4 operation.  This is
- * where seqids are incremented, and the
- * replay cache is filled.
+ * Routine for encoding the result of a "seqid-mutating" NFSv4 operation.  This
+ * is where sequence id's are incremented, and the replay cache is filled.
+ * Note that we increment sequence id's here, at the last moment, so we're sure
+ * we know whether the error to be returned is a sequence id mutating error.
  */
 
 #define ENCODE_SEQID_OP_TAIL(stateowner) do {			\
 	if (seqid_mutating_err(nfserr) && stateowner) { 	\
-		if (stateowner->so_confirmed)			\
-			stateowner->so_seqid++;			\
+		stateowner->so_seqid++;				\
 		stateowner->so_replay.rp_status = nfserr;   	\
 		stateowner->so_replay.rp_buflen = 		\
 			  (((char *)(resp)->p - (char *)save)); \
@@ -1425,7 +1316,7 @@ nfsd4_encode_fattr(struct svc_fh *fhp, struct svc_export *exp,
 		if (status)
 			goto out_nfserr;
 	}
-	if ((bmval0 & FATTR4_WORD0_FILEHANDLE) && !fhp) {
+	if ((bmval0 & (FATTR4_WORD0_FILEHANDLE | FATTR4_WORD0_FSID)) && !fhp) {
 		fh_init(&tempfh, NFS4_FHSIZE);
 		status = fh_compose(&tempfh, exp, dentry, NULL);
 		if (status)
@@ -1439,7 +1330,10 @@ nfsd4_encode_fattr(struct svc_fh *fhp, struct svc_export *exp,
 		if (bmval0 & FATTR4_WORD0_ACL) {
 			if (status == -EOPNOTSUPP)
 				bmval0 &= ~FATTR4_WORD0_ACL;
-			else if (status != 0)
+			else if (status == -EINVAL) {
+				status = nfserr_attrnotsupp;
+				goto out;
+			} else if (status != 0)
 				goto out_nfserr;
 		}
 	}
@@ -1471,7 +1365,10 @@ nfsd4_encode_fattr(struct svc_fh *fhp, struct svc_export *exp,
 	if (bmval0 & FATTR4_WORD0_FH_EXPIRE_TYPE) {
 		if ((buflen -= 4) < 0)
 			goto out_resource;
-		WRITE32( NFS4_FH_NOEXPIRE_WITH_OPEN | NFS4_FH_VOL_RENAME );
+		if (exp->ex_flags & NFSEXP_NOSUBTREECHECK)
+			WRITE32(NFS4_FH_PERSISTENT);
+		else
+			WRITE32(NFS4_FH_PERSISTENT|NFS4_FH_VOL_RENAME);
 	}
 	if (bmval0 & FATTR4_WORD0_CHANGE) {
 		/*
@@ -1508,10 +1405,15 @@ nfsd4_encode_fattr(struct svc_fh *fhp, struct svc_export *exp,
 	if (bmval0 & FATTR4_WORD0_FSID) {
 		if ((buflen -= 16) < 0)
 			goto out_resource;
-		WRITE32(0);
-		WRITE32(MAJOR(stat.dev));
-		WRITE32(0);
-		WRITE32(MINOR(stat.dev));
+		if (is_fsid(fhp, rqstp->rq_reffh)) {
+			WRITE64((u64)exp->ex_fsid);
+			WRITE64((u64)0);
+		} else {
+			WRITE32(0);
+			WRITE32(MAJOR(stat.dev));
+			WRITE32(0);
+			WRITE32(MINOR(stat.dev));
+		}
 	}
 	if (bmval0 & FATTR4_WORD0_UNIQUE_HANDLES) {
 		if ((buflen -= 4) < 0)
@@ -1765,17 +1667,65 @@ out_serverfault:
 }
 
 static int
+nfsd4_encode_dirent_fattr(struct nfsd4_readdir *cd,
+		const char *name, int namlen, u32 *p, int *buflen)
+{
+	struct svc_export *exp = cd->rd_fhp->fh_export;
+	struct dentry *dentry;
+	int nfserr;
+
+	dentry = lookup_one_len(name, cd->rd_fhp->fh_dentry, namlen);
+	if (IS_ERR(dentry))
+		return nfserrno(PTR_ERR(dentry));
+
+	exp_get(exp);
+	if (d_mountpoint(dentry)) {
+		if (nfsd_cross_mnt(cd->rd_rqstp, &dentry, &exp)) {
+		/*
+		 * -EAGAIN is the only error returned from
+		 * nfsd_cross_mnt() and it indicates that an
+		 * up-call has  been initiated to fill in the export
+		 * options on exp.  When the answer comes back,
+		 * this call will be retried.
+		 */
+			nfserr = nfserr_dropit;
+			goto out_put;
+		}
+
+	}
+	nfserr = nfsd4_encode_fattr(NULL, exp, dentry, p, buflen, cd->rd_bmval,
+					cd->rd_rqstp);
+out_put:
+	dput(dentry);
+	exp_put(exp);
+	return nfserr;
+}
+
+static u32 *
+nfsd4_encode_rdattr_error(u32 *p, int buflen, int nfserr)
+{
+	u32 *attrlenp;
+
+	if (buflen < 6)
+		return NULL;
+	*p++ = htonl(2);
+	*p++ = htonl(FATTR4_WORD0_RDATTR_ERROR); /* bmval0 */
+	*p++ = htonl(0);			 /* bmval1 */
+
+	attrlenp = p++;
+	*p++ = nfserr;       /* no htonl */
+	*attrlenp = htonl((char *)p - (char *)attrlenp - 4);
+	return p;
+}
+
+static int
 nfsd4_encode_dirent(struct readdir_cd *ccd, const char *name, int namlen,
 		    loff_t offset, ino_t ino, unsigned int d_type)
 {
 	struct nfsd4_readdir *cd = container_of(ccd, struct nfsd4_readdir, common);
 	int buflen;
 	u32 *p = cd->buffer;
-	u32 *attrlenp;
-	struct dentry *dentry;
-	struct svc_export *exp = cd->rd_fhp->fh_export;
-	u32 bmval0, bmval1;
-	int nfserr = 0;
+	int nfserr = nfserr_toosmall;
 
 	/* In nfsv4, "." and ".." never make it onto the wire.. */
 	if (name && isdotent(name, namlen)) {
@@ -1788,106 +1738,44 @@ nfsd4_encode_dirent(struct readdir_cd *ccd, const char *name, int namlen,
 
 	buflen = cd->buflen - 4 - XDR_QUADLEN(namlen);
 	if (buflen < 0)
-		goto nospc;
+		goto fail;
 
 	*p++ = xdr_one;                             /* mark entry present */
 	cd->offset = p;                             /* remember pointer */
 	p = xdr_encode_hyper(p, NFS_OFFSET_MAX);    /* offset of next entry */
 	p = xdr_encode_array(p, name, namlen);      /* name length & name */
 
-	/*
-	 * Now we come to the ugly part: writing the fattr for this entry.
-	 */
-	bmval0 = cd->rd_bmval[0];
-	bmval1 = cd->rd_bmval[1];
-	if ((bmval0 & ~(FATTR4_WORD0_RDATTR_ERROR | FATTR4_WORD0_FILEID)) || bmval1)  {
+	nfserr = nfsd4_encode_dirent_fattr(cd, name, namlen, p, &buflen);
+	switch (nfserr) {
+	case nfs_ok:
+		p += buflen;
+		break;
+	case nfserr_resource:
+		nfserr = nfserr_toosmall;
+		goto fail;
+	case nfserr_dropit:
+		goto fail;
+	default:
 		/*
-		 * "Heavyweight" case: we have no choice except to
-		 * call nfsd4_encode_fattr(). 
-		 */
-		dentry = lookup_one_len(name, cd->rd_fhp->fh_dentry, namlen);
-		if (IS_ERR(dentry)) {
-			nfserr = nfserrno(PTR_ERR(dentry));
-			goto error;
-		}
-
-		exp_get(exp);
-		if (d_mountpoint(dentry)) {
-			if ((nfserr = nfsd_cross_mnt(cd->rd_rqstp, &dentry, 
-					 &exp))) {	
-			/* 
-			 * -EAGAIN is the only error returned from 
-			 * nfsd_cross_mnt() and it indicates that an 
-			 * up-call has  been initiated to fill in the export 
-			 * options on exp.  When the answer comes back,
-			 * this call will be retried.
-			 */
-				dput(dentry);
-				exp_put(exp);
-				nfserr = nfserr_dropit;
-				goto error;
-			}
-
-		}
-
-		nfserr = nfsd4_encode_fattr(NULL, exp,
-				dentry, p, &buflen, cd->rd_bmval,
-				cd->rd_rqstp);
-		dput(dentry);
-		exp_put(exp);
-		if (!nfserr) {
-			p += buflen;
-			goto out;
-		}
-		if (nfserr == nfserr_resource)
-			goto nospc;
-
-error:
-		/*
-		 * If we get here, we experienced a miscellaneous
-		 * failure while writing the attributes.  If the
-		 * client requested the RDATTR_ERROR attribute,
+		 * If the client requested the RDATTR_ERROR attribute,
 		 * we stuff the error code into this attribute
 		 * and continue.  If this attribute was not requested,
 		 * then in accordance with the spec, we fail the
 		 * entire READDIR operation(!)
 		 */
-		if (!(bmval0 & FATTR4_WORD0_RDATTR_ERROR)) {
-			cd->common.err = nfserr;
-			return -EINVAL;
-		}
-
-		bmval0 = FATTR4_WORD0_RDATTR_ERROR;
-		bmval1 = 0;
-		/* falling through here will do the right thing... */
+		if (!(cd->rd_bmval[0] & FATTR4_WORD0_RDATTR_ERROR))
+			goto fail;
+		nfserr = nfserr_toosmall;
+		p = nfsd4_encode_rdattr_error(p, buflen, nfserr);
+		if (p == NULL)
+			goto fail;
 	}
-
-	/*
-	 * In the common "lightweight" case, we avoid
-	 * the overhead of nfsd4_encode_fattr() by assembling
-	 * a small fattr by hand.
-	 */
-	if (buflen < 6)
-		goto nospc;
-	*p++ = htonl(2);
-	*p++ = htonl(bmval0);
-	*p++ = htonl(bmval1);
-
-	attrlenp = p++;
-	if (bmval0 & FATTR4_WORD0_RDATTR_ERROR)
-		*p++ = nfserr;       /* no htonl */
-	if (bmval0 & FATTR4_WORD0_FILEID)
-		p = xdr_encode_hyper(p, (u64)ino);
-	*attrlenp = htonl((char *)p - (char *)attrlenp - 4);
-
-out:
 	cd->buflen -= (p - cd->buffer);
 	cd->buffer = p;
 	cd->common.err = nfs_ok;
 	return 0;
-
-nospc:
-	cd->common.err = nfserr_toosmall;
+fail:
+	cd->common.err = nfserr;
 	return -EINVAL;
 }
 
@@ -2081,9 +1969,9 @@ nfsd4_encode_open(struct nfsd4_compoundres *resp, int nfserr, struct nfsd4_open 
 	case NFS4_OPEN_DELEGATE_NONE:
 		break;
 	case NFS4_OPEN_DELEGATE_READ:
-		RESERVE_SPACE(20 + sizeof(delegation_stateid_t));
-		WRITEMEM(&open->op_delegate_stateid, sizeof(delegation_stateid_t));
-		WRITE32(0);
+		RESERVE_SPACE(20 + sizeof(stateid_t));
+		WRITEMEM(&open->op_delegate_stateid, sizeof(stateid_t));
+		WRITE32(open->op_recall);
 
 		/*
 		 * TODO: ACE's in delegations
@@ -2095,8 +1983,8 @@ nfsd4_encode_open(struct nfsd4_compoundres *resp, int nfserr, struct nfsd4_open 
 		ADJUST_ARGS();
 		break;
 	case NFS4_OPEN_DELEGATE_WRITE:
-		RESERVE_SPACE(32 + sizeof(delegation_stateid_t));
-		WRITEMEM(&open->op_delegate_stateid, sizeof(delegation_stateid_t));
+		RESERVE_SPACE(32 + sizeof(stateid_t));
+		WRITEMEM(&open->op_delegate_stateid, sizeof(stateid_t));
 		WRITE32(0);
 
 		/*
@@ -2185,10 +2073,10 @@ nfsd4_encode_read(struct nfsd4_compoundres *resp, int nfserr, struct nfsd4_read 
 	}
 	read->rd_vlen = v;
 
-	nfserr = nfsd_read(read->rd_rqstp, read->rd_fhp,
-			   read->rd_offset,
-			   read->rd_iov, read->rd_vlen,
-			   &maxcount);
+	nfserr = nfsd_read(read->rd_rqstp, read->rd_fhp, read->rd_filp,
+			read->rd_offset, read->rd_iov, read->rd_vlen,
+			&maxcount);
+
 	if (nfserr == nfserr_symlink)
 		nfserr = nfserr_inval;
 	if (nfserr)
@@ -2459,6 +2347,8 @@ nfsd4_encode_operation(struct nfsd4_compoundres *resp, struct nfsd4_op *op)
 		break;
 	case OP_CREATE:
 		nfsd4_encode_create(resp, op->status, &op->u.create);
+		break;
+	case OP_DELEGRETURN:
 		break;
 	case OP_GETATTR:
 		op->status = nfsd4_encode_getattr(resp, op->status, &op->u.getattr);

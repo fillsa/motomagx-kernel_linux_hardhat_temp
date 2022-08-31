@@ -7,10 +7,9 @@
  *
  * For licensing information, see the file 'LICENCE' in this directory.
  *
- * $Id: file.c,v 1.101 2005/05/20 15:26:45 gleixner Exp $
+ * $Id: file.c,v 1.102 2005/07/06 12:13:09 dwmw2 Exp $
  *
  */
-
 
 
 /*
@@ -278,9 +277,10 @@ static int jffs2_commit_write (struct file *filp, struct page *pg,
 		}
 	}
 
-          /* update inode information accordingly */
-        inode->i_blocks = (inode->i_size + 511) >> 9;
-        inode->i_ctime = inode->i_mtime = ITIME(je32_to_cpu(ri->ctime));
+			/* update inode information accordingly */
+			inode->i_blocks = (inode->i_size + 511) >> 9;
+
+			inode->i_ctime = inode->i_mtime = ITIME(je32_to_cpu(ri->ctime));
 
 
 	jffs2_free_raw_inode(ri);

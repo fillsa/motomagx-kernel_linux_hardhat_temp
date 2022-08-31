@@ -60,13 +60,13 @@ MODULE_AUTHOR("Eric Sandeen <eric_sandeen@bigfoot.com>");
 MODULE_DESCRIPTION("bttv driver for the tda7432 audio processor chip");
 MODULE_LICENSE("GPL");
 
-MODULE_PARM(debug,"i");
-MODULE_PARM(loudness,"i");
+static int maxvol;
+static int loudness; /* disable loudness by default */
+static int debug;	 /* insmod parameter */
+module_param(debug, int, S_IRUGO | S_IWUSR);
+module_param(loudness, int, S_IRUGO);
 MODULE_PARM_DESC(maxvol,"Set maximium volume to +20db (0), default is 0db(1)");
-MODULE_PARM(maxvol,"i");
-static int maxvol = 0;
-static int loudness = 0; /* disable loudness by default */
-static int debug = 0;	 /* insmod parameter */
+module_param(maxvol, int, S_IRUGO | S_IWUSR);
 
 
 /* Address to scan (I2C address of this chip) */
@@ -74,7 +74,6 @@ static unsigned short normal_i2c[] = {
 	I2C_TDA7432 >> 1,
 	I2C_CLIENT_END,
 };
-static unsigned short normal_i2c_range[] = { I2C_CLIENT_END, I2C_CLIENT_END };
 I2C_CLIENT_INSMOD;
 
 /* Structure of address and subaddresses for the tda7432 */
@@ -244,19 +243,6 @@ static int tda7432_write(struct i2c_client *client, int subaddr, int val)
 }
 
 /* I don't think we ever actually _read_ the chip... */
-#if 0
-static int tda7432_read(struct i2c_client *client)
-{
-	unsigned char buffer;
-	d2printk("tda7432: In tda7432_read\n");
-	if (1 != i2c_master_recv(client,&buffer,1)) {
-		printk(KERN_WARNING "tda7432: I/O error, trying (read)\n");
-		return -1;
-	}
-	dprintk("tda7432: Read 0x%02x\n", buffer);
-	return buffer;
-}
-#endif
 
 static int tda7432_set(struct i2c_client *client)
 {
@@ -528,7 +514,6 @@ static struct i2c_driver driver = {
 static struct i2c_client client_template =
 {
 	I2C_DEVNAME("tda7432"),
-        .id         = -1,
 	.driver     = &driver,
 };
 

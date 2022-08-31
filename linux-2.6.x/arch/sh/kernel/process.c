@@ -69,7 +69,7 @@ void default_idle(void)
 	}
 }
 
-void cpu_idle(void *unused)
+void cpu_idle(void)
 {
 	default_idle();
 }
@@ -80,8 +80,6 @@ void machine_restart(char * __unused)
 	asm volatile("ldc %0, sr\n\t"
 		     "mov.l @%1, %0" : : "r" (0x10000000), "r" (0x80000001));
 }
-
-EXPORT_SYMBOL(machine_restart);
 
 void machine_halt(void)
 {
@@ -97,8 +95,6 @@ void machine_halt(void)
 		cpu_sleep();
 }
 
-EXPORT_SYMBOL(machine_halt);
-
 void machine_power_off(void)
 {
 #if defined(CONFIG_SH_HS7751RVOIP)
@@ -110,8 +106,6 @@ void machine_power_off(void)
 	ctrl_outw(0x0001, PA_POWOFF);
 #endif
 }
-
-EXPORT_SYMBOL(machine_power_off);
 
 void show_regs(struct pt_regs * regs)
 {
@@ -213,7 +207,7 @@ void flush_thread(void)
 
 	/* Forget lazy FPU state */
 	clear_fpu(tsk, regs);
-	tsk->used_math = 0;
+	clear_used_math();
 #endif
 }
 
@@ -230,7 +224,7 @@ int dump_fpu(struct pt_regs *regs, elf_fpregset_t *fpu)
 #if defined(CONFIG_SH_FPU)
 	struct task_struct *tsk = current;
 
-	fpvalid = tsk->used_math;
+	fpvalid = !!tsk_used_math(tsk);
 	if (fpvalid) {
 		unlazy_fpu(tsk, regs);
 		memcpy(fpu, &tsk->thread.fpu.hard, sizeof(*fpu));
@@ -265,7 +259,7 @@ dump_task_fpu (struct task_struct *tsk, elf_fpregset_t *fpu)
 	int fpvalid = 0;
 
 #if defined(CONFIG_SH_FPU)
-	fpvalid = tsk->used_math;
+	fpvalid = !!tsk_used_math(tsk);
 	if (fpvalid) {
 		struct pt_regs *regs = (struct pt_regs *)
 					((unsigned long)tsk->thread_info
@@ -291,7 +285,7 @@ int copy_thread(int nr, unsigned long clone_flags, unsigned long usp,
 
 	unlazy_fpu(tsk, regs);
 	p->thread.fpu = tsk->thread.fpu;
-	p->used_math = tsk->used_math;
+	copy_to_stopped_child_used_math(p);
 #endif
 
 	childregs = ((struct pt_regs *)

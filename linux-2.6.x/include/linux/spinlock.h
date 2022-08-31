@@ -40,6 +40,8 @@
  * If CONFIG_SMP is set, pull in the _raw_* definitions
  */
 #ifdef CONFIG_SMP
+
+#define assert_spin_locked(x)	BUG_ON(!spin_is_locked(x))
 #include <asm/spinlock.h>
 
 int __lockfunc _raw_spin_trylock(raw_spinlock_t *lock);
@@ -75,9 +77,10 @@ void __lockfunc _raw_write_unlock_irqrestore(raw_rwlock_t *lock, unsigned long f
 void __lockfunc _raw_write_unlock_irq(raw_rwlock_t *lock)				__releases(raw_rwlock_t);
 void __lockfunc _raw_write_unlock_bh(raw_rwlock_t *lock)				__releases(raw_rwlock_t);
 
-int __lockfunc _raw_spin_trylock_bh(raw_spinlock_t *lock);
 int __lockfunc _raw_spin_trylock_irq(raw_spinlock_t *lock);
 int __lockfunc _raw_spin_trylock_irqsave(raw_spinlock_t *lock, unsigned long *flags);
+
+int __lockfunc _raw_spin_trylock_bh(raw_spinlock_t *lock);
 int __lockfunc generic_raw_read_trylock(raw_rwlock_t *lock);
 int in_lock_functions(unsigned long addr);
 
@@ -149,6 +152,14 @@ typedef struct {
 		0; \
 	})
 
+/* with debugging, assert_spin_locked() on UP does check
+ * the lock value properly */
+#define assert_spin_locked(x) \
+	({ \
+		CHECK_LOCK(x); \
+		BUG_ON(!(x)->lock); \
+	})
+
 /* without debugging, spin_trylock on UP always says
  * TRUE. --> printk if already locked. */
 #define __raw_spin_trylock(x) \
@@ -193,11 +204,12 @@ typedef struct {
  * If CONFIG_SMP is unset, declare the _raw_* definitions as nops
  */
 #define __raw_spin_lock_init(lock)	do { (void)(lock); } while(0)
-#define __raw_spin_lock(lock)		do { (void)(lock); } while(0)
+#define __raw_spin_lock(lock)	do { (void)(lock); } while(0)
 #define __raw_spin_is_locked(lock)	((void)(lock), 0)
+#define assert_spin_locked(lock)	do { (void)(lock); } while(0)
 #define __raw_spin_trylock(lock)	(((void)(lock), 1))
 #define __raw_spin_unlock_wait(lock)	(void)(lock)
-#define __raw_spin_unlock(lock) 	do { (void)(lock); } while(0)
+#define __raw_spin_unlock(lock) do { (void)(lock); } while(0)
 #endif /* CONFIG_DEBUG_SPINLOCK */
 
 /* RW spinlocks: No debug version */
@@ -206,15 +218,15 @@ typedef struct {
 // #define __RAW_RW_LOCK_UNLOCKED { }
 // #define RAW_RW_LOCK_UNLOCKED (raw_rwlock_t) __RAW_RW_LOCK_UNLOCKED
 
-#define __raw_rwlock_init(lock)		do { (void)(lock); } while(0)
-#define __raw_read_lock(lock)		do { (void)(lock); } while(0)
-#define __raw_read_unlock(lock)		do { (void)(lock); } while(0)
-#define __raw_write_lock(lock)		do { (void)(lock); } while(0)
+#define __raw_rwlock_init(lock)	do { (void)(lock); } while(0)
+#define __raw_read_lock(lock)	do { (void)(lock); } while(0)
+#define __raw_read_unlock(lock)	do { (void)(lock); } while(0)
+#define __raw_write_lock(lock)	do { (void)(lock); } while(0)
 #define __raw_write_unlock(lock)	do { (void)(lock); } while(0)
 #define __raw_read_can_lock(lock)	(((void)(lock), 1))
 #define __raw_write_can_lock(lock)	(((void)(lock), 1))
-#define __raw_read_trylock(lock)	({ (void)(lock); (1); })
-#define __raw_write_trylock(lock)	({ (void)(lock); (1); })
+#define __raw_read_trylock(lock) ({ (void)(lock); (1); })
+#define __raw_write_trylock(lock) ({ (void)(lock); (1); })
 
 #define _raw_spin_trylock(lock)	({preempt_disable(); __raw_spin_trylock(lock) ? \
 				1 : ({preempt_enable(); 0;});})
@@ -227,7 +239,8 @@ typedef struct {
 
 #define _raw_spin_trylock_bh(lock)	({preempt_disable(); local_bh_disable(); \
 				__raw_spin_trylock(lock) ? \
-				1 : ({preempt_enable(); local_bh_enable(); 0;});})
+/* do 2.6.12				1 : ({preempt_enable(); local_bh_enable(); 0;});}) */ \
+				1 : ({preempt_enable_no_resched(); local_bh_enable(); 0;});})
 
 #define _raw_spin_trylock_irq(lock) \
 ({ \
@@ -256,7 +269,7 @@ do { \
 	__raw_write_lock(lock); \
 	__acquire(lock); \
 } while(0)
- 
+
 #define _raw_read_lock(lock)	\
 do { \
 	preempt_disable(); \
@@ -378,18 +391,22 @@ do { \
 	__release(lock); \
 } while (0)
 
+//2.6.12	define _spin_unlock_bh(lock) 
 #define _raw_spin_unlock_bh(lock) \
 do { \
 	__raw_spin_unlock(lock); \
-	preempt_enable(); \
+/* do2.6.12	preempt_enable();*/ \
+	preempt_enable_no_resched(); \
 	local_bh_enable(); \
 	__release(lock); \
 } while (0)
 
+//2.6.12	#define _write_unlock_bh(lock)
 #define _raw_write_unlock_bh(lock) \
 do { \
 	__raw_write_unlock(lock); \
-	preempt_enable(); \
+/* do2.6.12	preempt_enable();*/ \
+	preempt_enable_no_resched(); \
 	local_bh_enable(); \
 	__release(lock); \
 } while (0)
@@ -421,9 +438,11 @@ do { \
 	__release(lock); \
 } while (0)
 
+//2.6.12	#define _read_unlock_bh(lock)
 #define _raw_read_unlock_bh(lock)	\
 do { \
 	__raw_read_unlock(lock);\
+	preempt_enable_no_resched();/*2.6.12*/	\
 	local_bh_enable();	\
 	preempt_enable();	\
 	__release(lock); \
@@ -475,7 +494,7 @@ do {								\
 		_raw_##optype##op((type *)(lock));		\
 	else if (TYPE_EQUAL(lock, spinlock_t))			\
 		_spin##op((spinlock_t *)(lock));		\
-	else __bad_spinlock_type();				\
+	else __bad_spinlock_type();	/*oshibka tut 2.6.13*/			\
 } while (0)
 
 #define PICK_OP_RET(type, optype, op, lock...)			\
@@ -641,10 +660,8 @@ do {									\
  */
 // #define spin_trylock(lock)	_spin_trylock(lock)
 #define spin_trylock(lock)	__cond_lock(PICK_OP_RET(raw_spinlock_t, spin, _trylock, lock))
-
 //#define read_trylock(lock)	_read_trylock(lock)
 #define read_trylock(lock)	__cond_lock(PICK_RW_OP_RET(raw_rwlock_t, read, _trylock, lock))
-
 //#define write_trylock(lock)	_write_trylock(lock)
 #define write_trylock(lock)	__cond_lock(PICK_RW_OP_RET(raw_rwlock_t, write, _trylock, lock))
 
@@ -658,10 +675,8 @@ do {									\
 
 // #define spin_lock(lock)	_spin_lock(lock)
 #define spin_lock(lock)		PICK_OP(raw_spinlock_t, spin, _lock, lock)
-
 //#define write_lock(lock)	_write_lock(lock)
 #define write_lock(lock)	PICK_RW_OP(raw_rwlock_t, write, _lock, lock)
-
 // #define read_lock(lock)		_read_lock(lock)
 #define read_lock(lock)		PICK_RW_OP(raw_rwlock_t, read, _lock, lock)
 
@@ -682,15 +697,15 @@ do {									\
 # define write_lock_irqsave(lock, flags) \
 	flags = PICK_RW_OP_RET(raw_rwlock_t, write, _lock_irqsave, lock)
 
-// #define spin_lock_irq(lock)	_spin_lock_irq(lock)
-// #define spin_lock_bh(lock)	_spin_lock_bh(lock)
-#define spin_lock_irq(lock)	PICK_OP(raw_spinlock_t, spin, _lock_irq, lock)
-#define spin_lock_bh(lock)	PICK_OP(raw_spinlock_t, spin, _lock_bh, lock)
+// #define spin_lock_irq(lock)		_spin_lock_irq(lock)
+// #define spin_lock_bh(lock)		_spin_lock_bh(lock)
+#define spin_lock_irq(lock)		PICK_OP(raw_spinlock_t, spin, _lock_irq, lock)
+#define spin_lock_bh(lock)		PICK_OP(raw_spinlock_t, spin, _lock_bh, lock)
 
-// #define read_lock_irq(lock)	_read_lock_irq(lock)
-// #define read_lock_bh(lock)	_read_lock_bh(lock)
-#define read_lock_irq(lock)	PICK_RW_OP(raw_rwlock_t, read, _lock_irq, lock)
-#define read_lock_bh(lock)	PICK_RW_OP(raw_rwlock_t, read, _lock_bh, lock)
+// #define read_lock_irq(lock)		_read_lock_irq(lock)
+// #define read_lock_bh(lock)		_read_lock_bh(lock)
+#define read_lock_irq(lock)		PICK_RW_OP(raw_rwlock_t, read, _lock_irq, lock)
+#define read_lock_bh(lock)		PICK_RW_OP(raw_rwlock_t, read, _lock_bh, lock)
 
 // #define write_lock_irq(lock)		_write_lock_irq(lock)
 // #define write_lock_bh(lock)		_write_lock_bh(lock)
@@ -731,21 +746,21 @@ do {									\
 #define write_unlock_irq(lock) PICK_RW_OP(raw_rwlock_t, write, _unlock_irq, lock)
 #define write_unlock_bh(lock) PICK_RW_OP(raw_rwlock_t, write, _unlock_bh, lock)
 
-// #define spin_trylock_bh(lock)	_spin_trylock_bh(lock)
-#define spin_trylock_bh(lock)	__cond_lock(PICK_OP_RET(raw_spinlock_t, spin, _trylock_bh, lock))
+// #define spin_trylock_bh(lock)			_spin_trylock_bh(lock)
+#define spin_trylock_bh(lock)			__cond_lock(PICK_OP_RET(raw_spinlock_t, spin, _trylock_bh, lock))
 
 // #define spin_trylock_irq(lock)
-
-#define spin_trylock_irq(lock)	__cond_lock(PICK_OP_RET(raw_spinlock_t, spin, _trylock_irq, lock))
+#define spin_trylock_irq(lock) \
+__cond_lock(PICK_OP_RET(raw_spinlock_t, spin, _trylock_irq, lock))
 
 // #define spin_trylock_irqsave(lock, flags)
-
-#define spin_trylock_irqsave(lock, flags)	__cond_lock(PICK_OP2_RET(raw_spinlock_t, spin, _trylock_irqsave, lock, &flags))
+#define spin_trylock_irqsave(lock, flags) \
+__cond_lock(PICK_OP2_RET(raw_spinlock_t, spin, _trylock_irqsave, lock, &flags))
 
 /* "lock on reference count zero" */
 #ifndef ATOMIC_DEC_AND_LOCK
-# include <asm/atomic.h>
-  extern int _atomic_dec_and_raw_spin_lock(atomic_t *atomic, raw_spinlock_t *lock);
+#include <asm/atomic.h>
+extern int _atomic_dec_and_raw_spin_lock(atomic_t *atomic, raw_spinlock_t *lock);
 #endif
 
 #define atomic_dec_and_lock(atomic, lock)				\
@@ -780,9 +795,13 @@ static inline void bit_spin_lock(int bitnum, unsigned long *addr)
 	 * attempt to acquire the lock bit.
 	 */
 #if defined(CONFIG_SMP) || defined(CONFIG_DEBUG_SPINLOCK) || defined(CONFIG_PREEMPT)
-	while (test_and_set_bit(bitnum, addr))
-		while (test_bit(bitnum, addr))
+	while (test_and_set_bit(bitnum, addr)) {
+		while (test_bit(bitnum, addr)) {
+			preempt_enable();
 			cpu_relax();
+			preempt_disable();
+		}
+	}
 #endif
 	__acquire(bitlock);
 }
@@ -793,8 +812,9 @@ static inline void bit_spin_lock(int bitnum, unsigned long *addr)
 static inline int bit_spin_trylock(int bitnum, unsigned long *addr)
 {
 #if defined(CONFIG_SMP) || defined(CONFIG_DEBUG_SPINLOCK) || defined(CONFIG_PREEMPT)
-	if (test_and_set_bit(bitnum, addr))
+	if (test_and_set_bit(bitnum, addr)) {
 		return 0;
+	}
 #endif
 	__acquire(bitlock);
 	return 1;
@@ -827,13 +847,11 @@ static inline int bit_spin_is_locked(int bitnum, unsigned long *addr)
 
 #define DEFINE_SPINLOCK(name) \
 	spinlock_t name __cacheline_aligned_in_smp = _SPIN_LOCK_UNLOCKED(name)
-
 #define DEFINE_RAW_SPINLOCK(name) \
 	raw_spinlock_t name __cacheline_aligned_in_smp = RAW_SPIN_LOCK_UNLOCKED
 
 #define DEFINE_RWLOCK(name) \
 	rwlock_t name __cacheline_aligned_in_smp = _RW_LOCK_UNLOCKED(name)
-
 #define DEFINE_RAW_RWLOCK(name) \
 	raw_rwlock_t name __cacheline_aligned_in_smp = RAW_RW_LOCK_UNLOCKED
 
@@ -845,6 +863,6 @@ static inline int bit_spin_is_locked(int bitnum, unsigned long *addr)
  * __raw_spin_can_lock - would __raw_spin_trylock() succeed?
  * @lock: the spinlock in question.
  */
-#define __raw_spin_can_lock(lock)            (!__raw_spin_is_locked(lock))
+#define __raw_spin_can_lock(lock)		(!__raw_spin_is_locked(lock))
 
 #endif /* __LINUX_SPINLOCK_H */

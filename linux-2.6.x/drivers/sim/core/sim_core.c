@@ -1320,7 +1320,7 @@ static int sim_module_debounce_simpd(void * unused)
     
     lock_kernel();
     daemonize("ksim_module_debounce_simpd\n");
-    reparent_to_init();
+///del 2.6.12    reparent_to_init();
     siginitsetinv(&current->blocked, sigmask(SIGKILL)|sigmask(SIGINT)|sigmask(SIGTERM));
     unlock_kernel();
     

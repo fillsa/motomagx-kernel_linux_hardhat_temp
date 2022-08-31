@@ -21,7 +21,7 @@
  *                              merged HAL layer (patches from Brian)
  */
 
-/* $Id: sa11xx-uda1341.c,v 1.18 2004/07/20 15:54:09 cladisch Exp $ */
+/* $Id: sa11xx-uda1341.c,v 1.21 2005/01/28 19:34:04 tiwai Exp $ */
 
 /***************************************************************************************************
 *
@@ -862,7 +862,7 @@ static int __init snd_card_sa11xx_uda1341_pcm(sa11xx_uda1341_t *sa11xx_uda1341, 
 
 #ifdef CONFIG_PM
 
-static int snd_sa11xx_uda1341_suspend(snd_card_t *card, unsigned int state)
+static int snd_sa11xx_uda1341_suspend(snd_card_t *card, pm_message_t state)
 {
 	sa11xx_uda1341_t *chip = card->pm_private_data;
 
@@ -875,11 +875,10 @@ static int snd_sa11xx_uda1341_suspend(snd_card_t *card, unsigned int state)
 #endif
 	l3_command(chip->uda1341, CMD_SUSPEND, NULL);
 	sa11xx_uda1341_audio_shutdown(chip);
-	snd_power_change_state(card, SNDRV_CTL_POWER_D3hot);
 	return 0;
 }
 
-static int snd_sa11xx_uda1341_resume(snd_card_t *card, unsigned int state)
+static int snd_sa11xx_uda1341_resume(snd_card_t *card)
 {
 	sa11xx_uda1341_t *chip = card->pm_private_data;
 
@@ -891,7 +890,6 @@ static int snd_sa11xx_uda1341_resume(snd_card_t *card, unsigned int state)
 #else
 	//FIXME
 #endif
-	snd_power_change_state(card, SNDRV_CTL_POWER_D0);
 	return 0;
 }
 #endif /* COMFIG_PM */
@@ -940,7 +938,7 @@ static int __init sa11xx_uda1341_init(void)
 	if ((err = snd_card_sa11xx_uda1341_pcm(sa11xx_uda1341, 0)) < 0)
 		goto nodev;
         
-	snd_card_set_dev_pm_callback(card, PM_SYS_DEV,
+	snd_card_set_generic_pm_callback(card,
 				     snd_sa11xx_uda1341_suspend, snd_sa11_uda1341_resume,
 				     sa11xx_uda1341);
 

@@ -1,5 +1,5 @@
 /*
- * $Id: mtd-abi.h,v 1.10 2005/02/09 09:17:42 pavlov Exp $
+ * $Id: mtd-abi.h,v 1.11 2005/05/19 16:08:58 gleixner Exp $
  *
  *  Copyright (C) 2006-2007 Motorola, Inc.
  *
@@ -40,6 +40,7 @@ struct mtd_oob_buf {
 #define MTD_NANDFLASH		4
 #define MTD_PEROM		5
 #define MTD_DATAFLASH		6
+#define MTD_NO_VIRTBLOCKS	256	// Virtual blocks not allowed
 #define MTD_OTHER		14
 #define MTD_UNKNOWN		15
 

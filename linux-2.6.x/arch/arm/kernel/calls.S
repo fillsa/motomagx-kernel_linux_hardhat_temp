@@ -22,7 +22,7 @@
 /* 10 */	.long	sys_unlink
 		.long	sys_execve_wrapper
 		.long	sys_chdir
-		.long	OBSOLETE(sys_time)	/* used by libc4 */
+		.long	OBSOLETE(sys_time)		/* used by libc4 */
 		.long	sys_mknod
 /* 15 */	.long	sys_chmod
 		.long	sys_lchown16
@@ -31,15 +31,15 @@
 		.long	sys_lseek
 /* 20 */	.long	sys_getpid
 		.long	sys_mount
-		.long	OBSOLETE(sys_oldumount)	/* used by libc4 */
+		.long	OBSOLETE(sys_oldumount)		/* used by libc4 */
 		.long	sys_setuid16
 		.long	sys_getuid16
 /* 25 */	.long	OBSOLETE(sys_stime)
 		.long	sys_ptrace
-		.long	OBSOLETE(sys_alarm)	/* used by libc4 */
+		.long	OBSOLETE(sys_alarm)		/* used by libc4 */
 		.long	sys_ni_syscall		/* was sys_fstat */
 		.long	sys_pause
-/* 30 */	.long	OBSOLETE(sys_utime)	/* used by libc4 */
+/* 30 */	.long	OBSOLETE(sys_utime)		/* used by libc4 */
 		.long	sys_ni_syscall		/* was sys_stty */
 		.long	sys_ni_syscall		/* was sys_getty */
 		.long	sys_access
@@ -85,21 +85,21 @@
 		.long	sys_sigpending
 		.long	sys_sethostname
 /* 75 */	.long	sys_setrlimit
-		.long	OBSOLETE(sys_old_getrlimit) /* used by libc4 */
+		.long	OBSOLETE(sys_old_getrlimit)	/* used by libc4 */
 		.long	sys_getrusage
 		.long	sys_gettimeofday
 		.long	sys_settimeofday
 /* 80 */	.long	sys_getgroups16
 		.long	sys_setgroups16
-		.long	OBSOLETE(old_select)	/* used by libc4 */
+		.long	OBSOLETE(old_select)		/* used by libc4 */
 		.long	sys_symlink
 		.long	sys_ni_syscall		/* was sys_lstat */
 /* 85 */	.long	sys_readlink
 		.long	sys_uselib
 		.long	sys_swapon
 		.long	sys_reboot
-		.long	OBSOLETE(old_readdir)	/* used by libc4 */
-/* 90 */	.long	OBSOLETE(old_mmap)	/* used by libc4 */
+		.long	OBSOLETE(old_readdir)		/* used by libc4 */
+/* 90 */	.long	OBSOLETE(old_mmap)		/* used by libc4 */
 		.long	sys_munmap
 		.long	sys_truncate
 		.long	sys_ftruncate
@@ -122,7 +122,7 @@
 /* 110 */	.long	sys_ni_syscall		/* was sys_iopl */
 		.long	sys_vhangup
 		.long	sys_ni_syscall
-		.long	OBSOLETE(sys_syscall)	/* call a syscall */
+		.long	OBSOLETE(sys_syscall)		/* call a syscall */
 		.long	sys_wait4
 /* 115 */	.long	sys_swapoff
 		.long	sys_sysinfo
@@ -249,7 +249,7 @@
 		.long	sys_fremovexattr
 		.long	sys_tkill
 		.long	sys_sendfile64
-/* 240 */	.long	sys_futex
+/* 240 */	.long	sys_futex_wrapper
 		.long	sys_sched_setaffinity
 		.long	sys_sched_getaffinity
 		.long	sys_io_setup

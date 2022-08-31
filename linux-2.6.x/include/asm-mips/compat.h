@@ -29,6 +29,7 @@ typedef s32		compat_caddr_t;
 typedef struct {
 	s32	val[2];
 } compat_fsid_t;
+typedef s32		compat_timer_t;
 
 typedef s32		compat_int_t;
 typedef s32		compat_long_t;
@@ -137,5 +138,8 @@ static inline void *compat_alloc_user_space(long len)
 
 	return (void *) (regs->regs[29] - len);
 }
+#if defined (__MIPSEL__)
+#define __COMPAT_ENDIAN_SWAP__ 	1
+#endif
 
 #endif /* _ASM_COMPAT_H */

@@ -25,10 +25,10 @@ extern int trap_init_f00f_bug(void);
 /*
  * Alignment at which movsl is preferred for bulk memory copies.
  */
-struct movsl_mask movsl_mask;
+struct movsl_mask movsl_mask __read_mostly;
 #endif
 
-void __init early_intel_workaround(struct cpuinfo_x86 *c)
+void __devinit early_intel_workaround(struct cpuinfo_x86 *c)
 {
 	if (c->x86_vendor != X86_VENDOR_INTEL)
 		return;
@@ -43,7 +43,7 @@ void __init early_intel_workaround(struct cpuinfo_x86 *c)
  *	This is called before we do cpu ident work
  */
  
-int __init ppro_with_ram_bug(void)
+int __devinit ppro_with_ram_bug(void)
 {
 	/* Uses data from early_cpu_detect now */
 	if (boot_cpu_data.x86_vendor == X86_VENDOR_INTEL &&
@@ -61,7 +61,7 @@ int __init ppro_with_ram_bug(void)
  * P4 Xeon errata 037 workaround.
  * Hardware prefetcher may cause stale data to be loaded into the cache.
  */
-static void __init Intel_errata_workarounds(struct cpuinfo_x86 *c)
+static void __devinit Intel_errata_workarounds(struct cpuinfo_x86 *c)
 {
 	unsigned long lo, hi;
 
@@ -77,7 +77,28 @@ static void __init Intel_errata_workarounds(struct cpuinfo_x86 *c)
 }
 
 
-static void __init init_intel(struct cpuinfo_x86 *c)
+/*
+ * find out the number of processor cores on the die
+ */
+static int __devinit num_cpu_cores(struct cpuinfo_x86 *c)
+{
+	unsigned int eax;
+
+	if (c->cpuid_level < 4)
+		return 1;
+
+	__asm__("cpuid"
+		: "=a" (eax)
+		: "0" (4), "c" (0)
+		: "bx", "dx");
+
+	if (eax & 0x1f)
+		return ((eax >> 26) + 1);
+	else
+		return 1;
+}
+
+static void __devinit init_intel(struct cpuinfo_x86 *c)
 {
 	unsigned int l2 = 0;
 	char *p = NULL;
@@ -139,50 +160,9 @@ static void __init init_intel(struct cpuinfo_x86 *c)
 	if ( p )
 		strcpy(c->x86_model_id, p);
 	
-#ifdef CONFIG_X86_HT
-	if (cpu_has(c, X86_FEATURE_HT)) {
-		extern	int phys_proc_id[NR_CPUS];
-		
-		u32 	eax, ebx, ecx, edx;
-		int 	index_lsb, index_msb, tmp;
-		int 	cpu = smp_processor_id();
+	c->x86_num_cores = num_cpu_cores(c);
 
-		cpuid(1, &eax, &ebx, &ecx, &edx);
-		smp_num_siblings = (ebx & 0xff0000) >> 16;
-
-		if (smp_num_siblings == 1) {
-			printk(KERN_INFO  "CPU: Hyper-Threading is disabled\n");
-		} else if (smp_num_siblings > 1 ) {
-			index_lsb = 0;
-			index_msb = 31;
-
-			if (smp_num_siblings > NR_CPUS) {
-				printk(KERN_WARNING "CPU: Unsupported number of the siblings %d", smp_num_siblings);
-				smp_num_siblings = 1;
-				goto too_many_siblings;
-			}
-			tmp = smp_num_siblings;
-			while ((tmp & 1) == 0) {
-				tmp >>=1 ;
-				index_lsb++;
-			}
-			tmp = smp_num_siblings;
-			while ((tmp & 0x80000000 ) == 0) {
-				tmp <<=1 ;
-				index_msb--;
-			}
-			if (index_lsb != index_msb )
-				index_msb++;
-			phys_proc_id[cpu] = phys_pkg_id((ebx >> 24) & 0xFF, index_msb);
-
-			printk(KERN_INFO  "CPU: Physical Processor ID: %d\n",
-                               phys_proc_id[cpu]);
-		}
-
-	}
-too_many_siblings:
-
-#endif
+	detect_ht(c);
 
 	/* Work around errata */
 	Intel_errata_workarounds(c);
@@ -224,7 +204,7 @@ static unsigned int intel_size_cache(struct cpuinfo_x86 * c, unsigned int size)
 	return size;
 }
 
-static struct cpu_dev intel_cpu_dev __initdata = {
+static struct cpu_dev intel_cpu_dev __devinitdata = {
 	.c_vendor	= "Intel",
 	.c_ident 	= { "GenuineIntel" },
 	.c_models = {

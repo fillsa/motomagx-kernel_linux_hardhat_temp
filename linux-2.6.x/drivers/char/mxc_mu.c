@@ -73,7 +73,7 @@
 #endif
 
 #define DVR_VER "2.0"
-static struct class_simple *mxc_mu_class;
+static struct class *mxc_mu_class;
 static int mu_major;
 
 /*
@@ -1783,7 +1783,7 @@ static int __init mxc_mu_probe(struct device *dev)
 		return -EAGAIN;
 	}
 
-	mxc_mu_class = class_simple_create(THIS_MODULE, "mxc_mu");
+	mxc_mu_class = class_create(THIS_MODULE, "mxc_mu");
 
 	if (IS_ERR(mxc_mu_class)) {
 		printk(KERN_ERR "Error creating mu class.\n");
@@ -1796,7 +1796,7 @@ static int __init mxc_mu_probe(struct device *dev)
 
 	for (i = 0; i <= 3; i++) {
 		temp_class =
-		    class_simple_device_add(mxc_mu_class, MKDEV(mu_major, i),
+		    class_device_create(mxc_mu_class, MKDEV(mu_major, i),
 					    NULL, "mxc_mu%u", i);
 
 		if (IS_ERR(temp_class))
@@ -1842,12 +1842,12 @@ static int __init mxc_mu_probe(struct device *dev)
 
       err_out1:
 	for (i = 0; i <= 3; i++) {
-		class_simple_device_remove(MKDEV(mu_major, i));
+		class_device_destroy(mxc_mu_class, MKDEV(mu_major, i));
 		devfs_remove("mxc_mu%u", i);
 	}
 	mxc_mu_unload_mod();
 	devfs_remove("mxc_mu");
-	class_simple_destroy(mxc_mu_class);
+	class_destroy(mxc_mu_class);
 	unregister_chrdev(mu_major, "mxc_mu");
 
 	return -1;
@@ -1869,11 +1869,11 @@ static void __exit mxc_mu_remove(struct device *dev)
 		free_irq(irq, NULL);
 	}
 	for (i = 0; i <= 3; i++) {
-		class_simple_device_remove(MKDEV(mu_major, i));
+		class_device_destroy(mxc_mu_class, MKDEV(mu_major, i));
 		devfs_remove("mxc_mu%u", i);
 	}
 	devfs_remove("mxc_mu");
-	class_simple_destroy(mxc_mu_class);
+	class_destroy(mxc_mu_class);
 	unregister_chrdev(mu_major, "mxc_mu");
 
 }

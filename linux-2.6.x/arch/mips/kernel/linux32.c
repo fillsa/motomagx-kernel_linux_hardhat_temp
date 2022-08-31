@@ -239,7 +239,7 @@ put_rusage (struct rusage32 *ru, struct rusage *r)
 {
 	int err;
 
-	if (verify_area(VERIFY_WRITE, ru, sizeof *ru))
+	if (!access_ok(VERIFY_WRITE, ru, sizeof *ru))
 		return -EFAULT;
 
 	err = __put_user (r->ru_utime.tv_sec, &ru->ru_utime.tv_sec);
@@ -1190,13 +1190,6 @@ asmlinkage long sys32_sysctl(struct sysctl_args32 *args)
 		copy_to_user(args->__unused, tmp.__unused, sizeof(tmp.__unused));
 	}
 	return error;
-}
-
-#else /* CONFIG_SYSCTL */
-
-asmlinkage long sys32_sysctl(struct sysctl_args32 *args)
-{
-	return -ENOSYS;
 }
 
 #endif /* CONFIG_SYSCTL */

@@ -164,7 +164,7 @@ int ipv6_setsockopt(struct sock *sk, int level, int optname,
 			ipv6_sock_mc_close(sk);
 
 			if (sk->sk_protocol == IPPROTO_TCP) {
-				struct tcp_opt *tp = tcp_sk(sk);
+				struct tcp_sock *tp = tcp_sk(sk);
 
 				local_bh_disable();
 				sock_prot_dec_use(sk->sk_prot);
@@ -281,7 +281,7 @@ update:
 		retv = 0;
 		if (sk->sk_type == SOCK_STREAM) {
 			if (opt) {
-				struct tcp_opt *tp = tcp_sk(sk);
+				struct tcp_sock *tp = tcp_sk(sk);
 				if (!((1 << sk->sk_state) &
 				      (TCPF_LISTEN | TCPF_CLOSE))
 				    && inet_sk(sk)->daddr != LOOPBACK4_IPV6) {
@@ -423,11 +423,12 @@ done:
 			psin6 = (struct sockaddr_in6 *)&greqs.gsr_group;
 			retv = ipv6_sock_mc_join(sk, greqs.gsr_interface,
 				&psin6->sin6_addr);
-			if (retv)
+			/* prior join w/ different source is ok */
+			if (retv && retv != -EADDRINUSE)
 				break;
 			omode = MCAST_INCLUDE;
 			add = 1;
-		} else /*IP_DROP_SOURCE_MEMBERSHIP */ {
+		} else /* MCAST_LEAVE_SOURCE_GROUP */ {
 			omode = MCAST_INCLUDE;
 			add = 0;
 		}
@@ -610,7 +611,7 @@ int ipv6_getsockopt(struct sock *sk, int level, int optname,
 		lock_sock(sk);
 		dst = sk_dst_get(sk);
 		if (dst) {
-			val = dst_pmtu(dst) - dst->header_len;
+			val = dst_mtu(dst);
 			dst_release(dst);
 		}
 		release_sock(sk);

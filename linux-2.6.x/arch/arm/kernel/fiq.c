@@ -45,7 +45,6 @@
  * 10/21/2007   Motorola  Introduce the image resolution information into FIQ handler
  * 03/11/2008   Motorola  Added WDOG2 FIQ handler to common FIQ handler
  */
-
 #include <linux/module.h>
 #include <linux/kernel.h>
 #include <linux/init.h>
@@ -105,7 +104,8 @@ void set_fiq_handler(void *start, unsigned int length)
 
 /*
  * Taking an interrupt in FIQ mode is death, so both these functions
- * disable irqs for the duration. 
+ * disable irqs for the duration.  Note - these functions are almost
+ * entirely coded in assembly.
  */
 #if defined(CONFIG_MOT_FEAT_DEBUG_WDOG) || defined(CONFIG_FIQ)
 void __attribute__((naked)) set_fiq_regs(struct pt_regs *regs)

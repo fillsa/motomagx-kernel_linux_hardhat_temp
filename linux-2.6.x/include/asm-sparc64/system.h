@@ -78,9 +78,9 @@ enum sparc_cpu {
 
 #define nop() 		__asm__ __volatile__ ("nop")
 
-#define membar(type)	__asm__ __volatile__ ("membar " type : : : "memory");
+#define membar(type)	__asm__ __volatile__ ("membar " type : : : "memory")
 #define mb()		\
-	membar("#LoadLoad | #LoadStore | #StoreStore | #StoreLoad");
+	membar("#LoadLoad | #LoadStore | #StoreStore | #StoreLoad")
 #define rmb()		membar("#LoadLoad")
 #define wmb()		membar("#StoreStore")
 #define read_barrier_depends()		do { } while(0)
@@ -95,9 +95,9 @@ enum sparc_cpu {
 #define smp_wmb()	wmb()
 #define smp_read_barrier_depends()	read_barrier_depends()
 #else
-#define smp_mb()	__asm__ __volatile__("":::"memory");
-#define smp_rmb()	__asm__ __volatile__("":::"memory");
-#define smp_wmb()	__asm__ __volatile__("":::"memory");
+#define smp_mb()	__asm__ __volatile__("":::"memory")
+#define smp_rmb()	__asm__ __volatile__("":::"memory")
+#define smp_wmb()	__asm__ __volatile__("":::"memory")
 #define smp_read_barrier_depends()	do { } while(0)
 #endif
 
@@ -107,7 +107,7 @@ enum sparc_cpu {
 
 /* Performance counter register access. */
 #define read_pcr(__p)  __asm__ __volatile__("rd	%%pcr, %0" : "=r" (__p))
-#define write_pcr(__p) __asm__ __volatile__("wr	%0, 0x0, %%pcr" : : "r" (__p));
+#define write_pcr(__p) __asm__ __volatile__("wr	%0, 0x0, %%pcr" : : "r" (__p))
 #define read_pic(__p)  __asm__ __volatile__("rd %%pic, %0" : "=r" (__p))
 
 /* Blackbird errata workaround.  See commentary in
@@ -139,18 +139,12 @@ extern void __flushw_user(void);
 #define flush_user_windows flushw_user
 #define flush_register_windows flushw_all
 
-#define prepare_arch_switch(rq, next)		\
-do {	spin_lock(&(next)->switch_lock);	\
-	spin_unlock(&(rq)->lock);		\
+/* Don't hold the runqueue lock over context switch */
+#define __ARCH_WANT_UNLOCKED_CTXSW
+#define prepare_arch_switch(next)		\
+do {						\
 	flushw_all();				\
 } while (0)
-
-#define finish_arch_switch(rq, prev)		\
-do {	spin_unlock_irq(&(prev)->switch_lock);	\
-} while (0)
-
-#define task_running(rq, p) \
-	((rq)->curr == (p) || spin_is_locked(&(p)->switch_lock))
 
 	/* See what happens when you design the chip correctly?
 	 *
@@ -182,7 +176,7 @@ do {	if (test_thread_flag(TIF_PERFCTR)) {				\
 	__asm__ __volatile__("wr %%g0, %0, %%asi"			\
 	: : "r" (__thread_flag_byte_ptr(next->thread_info)[TI_FLAG_BYTE_CURRENT_DS]));\
 	__asm__ __volatile__(						\
-	"mov	%%g4, %%g5\n\t"						\
+	"mov	%%g4, %%g7\n\t"						\
 	"wrpr	%%g0, 0x95, %%pstate\n\t"				\
 	"stx	%%i6, [%%sp + 2047 + 0x70]\n\t"				\
 	"stx	%%i7, [%%sp + 2047 + 0x78]\n\t"				\
@@ -196,26 +190,25 @@ do {	if (test_thread_flag(TIF_PERFCTR)) {				\
 	"wrpr	%%g1, %%cwp\n\t"					\
 	"ldx	[%%g6 + %3], %%o6\n\t"					\
 	"ldub	[%%g6 + %2], %%o5\n\t"					\
-	"ldx	[%%g6 + %4], %%o7\n\t"					\
+	"ldub	[%%g6 + %4], %%o7\n\t"					\
 	"mov	%%g6, %%l2\n\t"						\
 	"wrpr	%%o5, 0x0, %%wstate\n\t"				\
 	"ldx	[%%sp + 2047 + 0x70], %%i6\n\t"				\
 	"ldx	[%%sp + 2047 + 0x78], %%i7\n\t"				\
 	"wrpr	%%g0, 0x94, %%pstate\n\t"				\
 	"mov	%%l2, %%g6\n\t"						\
-	"ldx	[%%g6 + %7], %%g4\n\t"					\
+	"ldx	[%%g6 + %6], %%g4\n\t"					\
 	"wrpr	%%g0, 0x96, %%pstate\n\t"				\
-	"andcc	%%o7, %6, %%g0\n\t"					\
-	"beq,pt %%icc, 1f\n\t"						\
-	" mov	%%g5, %0\n\t"						\
+	"brz,pt %%o7, 1f\n\t"						\
+	" mov	%%g7, %0\n\t"						\
 	"b,a ret_from_syscall\n\t"					\
 	"1:\n\t"							\
 	: "=&r" (last)							\
 	: "0" (next->thread_info),					\
-	  "i" (TI_WSTATE), "i" (TI_KSP), "i" (TI_FLAGS), "i" (TI_CWP),	\
-	  "i" (_TIF_NEWCHILD), "i" (TI_TASK)				\
+	  "i" (TI_WSTATE), "i" (TI_KSP), "i" (TI_NEW_CHILD),            \
+	  "i" (TI_CWP), "i" (TI_TASK)					\
 	: "cc",								\
-	        "g1", "g2", "g3",       "g5",       "g7",		\
+	        "g1", "g2", "g3",                   "g7",		\
 	              "l2", "l3", "l4", "l5", "l6", "l7",		\
 	  "i0", "i1", "i2", "i3", "i4", "i5",				\
 	  "o0", "o1", "o2", "o3", "o4", "o5",       "o7" EXTRA_CLOBBER);\
@@ -226,35 +219,41 @@ do {	if (test_thread_flag(TIF_PERFCTR)) {				\
 	}								\
 } while(0)
 
-static __inline__ unsigned long xchg32(__volatile__ unsigned int *m, unsigned int val)
+static inline unsigned long xchg32(__volatile__ unsigned int *m, unsigned int val)
 {
+	unsigned long tmp1, tmp2;
+
 	__asm__ __volatile__(
-"	mov		%0, %%g5\n"
-"1:	lduw		[%2], %%g7\n"
-"	cas		[%2], %%g7, %0\n"
-"	cmp		%%g7, %0\n"
+"	membar		#StoreLoad | #LoadLoad\n"
+"	mov		%0, %1\n"
+"1:	lduw		[%4], %2\n"
+"	cas		[%4], %2, %0\n"
+"	cmp		%2, %0\n"
 "	bne,a,pn	%%icc, 1b\n"
-"	 mov		%%g5, %0\n"
+"	 mov		%1, %0\n"
 "	membar		#StoreLoad | #StoreStore\n"
-	: "=&r" (val)
+	: "=&r" (val), "=&r" (tmp1), "=&r" (tmp2)
 	: "0" (val), "r" (m)
-	: "g5", "g7", "cc", "memory");
+	: "cc", "memory");
 	return val;
 }
 
-static __inline__ unsigned long xchg64(__volatile__ unsigned long *m, unsigned long val)
+static inline unsigned long xchg64(__volatile__ unsigned long *m, unsigned long val)
 {
+	unsigned long tmp1, tmp2;
+
 	__asm__ __volatile__(
-"	mov		%0, %%g5\n"
-"1:	ldx		[%2], %%g7\n"
-"	casx		[%2], %%g7, %0\n"
-"	cmp		%%g7, %0\n"
+"	membar		#StoreLoad | #LoadLoad\n"
+"	mov		%0, %1\n"
+"1:	ldx		[%4], %2\n"
+"	casx		[%4], %2, %0\n"
+"	cmp		%2, %0\n"
 "	bne,a,pn	%%xcc, 1b\n"
-"	 mov		%%g5, %0\n"
+"	 mov		%1, %0\n"
 "	membar		#StoreLoad | #StoreStore\n"
-	: "=&r" (val)
+	: "=&r" (val), "=&r" (tmp1), "=&r" (tmp2)
 	: "0" (val), "r" (m)
-	: "g5", "g7", "cc", "memory");
+	: "cc", "memory");
 	return val;
 }
 
@@ -289,7 +288,8 @@ extern void die_if_kernel(char *str, struct pt_regs *regs) __attribute__ ((noret
 static __inline__ unsigned long
 __cmpxchg_u32(volatile int *m, int old, int new)
 {
-	__asm__ __volatile__("cas [%2], %3, %0\n\t"
+	__asm__ __volatile__("membar #StoreLoad | #LoadLoad\n"
+			     "cas [%2], %3, %0\n\t"
 			     "membar #StoreLoad | #StoreStore"
 			     : "=&r" (new)
 			     : "0" (new), "r" (m), "r" (old)
@@ -301,7 +301,8 @@ __cmpxchg_u32(volatile int *m, int old, int new)
 static __inline__ unsigned long
 __cmpxchg_u64(volatile long *m, unsigned long old, unsigned long new)
 {
-	__asm__ __volatile__("casx [%2], %3, %0\n\t"
+	__asm__ __volatile__("membar #StoreLoad | #LoadLoad\n"
+			     "casx [%2], %3, %0\n\t"
 			     "membar #StoreLoad | #StoreStore"
 			     : "=&r" (new)
 			     : "0" (new), "r" (m), "r" (old)
@@ -336,5 +337,7 @@ __cmpxchg(volatile void *ptr, unsigned long old, unsigned long new, int size)
   })
 
 #endif /* !(__ASSEMBLY__) */
+
+#define arch_align_stack(x) (x)
 
 #endif /* !(__SPARC64_SYSTEM_H) */

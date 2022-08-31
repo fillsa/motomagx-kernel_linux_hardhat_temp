@@ -3,6 +3,7 @@
  * Licensed under the GPL
  */
 
+#include "linux/compiler.h"
 #include "linux/stddef.h"
 #include "linux/kernel.h"
 #include "linux/string.h"
@@ -28,9 +29,12 @@ static unsigned long maybe_map(unsigned long virt, int is_write)
 	if(IS_ERR(phys) || (is_write && !pte_write(pte))){
 		err = handle_page_fault(virt, 0, is_write, 1, &dummy_code);
 		if(err)
-			return(0);
+			return(-1UL);
 		phys = um_virt_to_phys(current, virt, NULL);
 	}
+        if(IS_ERR(phys))
+                phys = (void *) -1;
+
 	return((unsigned long) phys);
 }
 
@@ -41,7 +45,7 @@ static int do_op(unsigned long addr, int len, int is_write,
 	int n;
 
 	addr = maybe_map(addr, is_write);
-	if(addr == -1)
+	if(addr == -1UL)
 		return(-1);
 
 	page = phys_to_page(addr);
@@ -54,15 +58,23 @@ static int do_op(unsigned long addr, int len, int is_write,
 
 static void do_buffer_op(void *jmpbuf, void *arg_ptr)
 {
-	va_list args = *((va_list *) arg_ptr);
-	unsigned long addr = va_arg(args, unsigned long);
-	int len = va_arg(args, int);
-	int is_write = va_arg(args, int);
-	int (*op)(unsigned long, int, void *) = va_arg(args, void *);
-	void *arg = va_arg(args, void *);
-	int *res = va_arg(args, int *);
-	int size = min(PAGE_ALIGN(addr) - addr, (unsigned long) len);
-	int remain = len, n;
+	va_list args;
+	unsigned long addr;
+	int len, is_write, size, remain, n;
+	int (*op)(unsigned long, int, void *);
+	void *arg;
+	int *res;
+
+	va_copy(args, *(va_list *)arg_ptr);
+	addr = va_arg(args, unsigned long);
+	len = va_arg(args, int);
+	is_write = va_arg(args, int);
+	op = va_arg(args, void *);
+	arg = va_arg(args, void *);
+	res = va_arg(args, int *);
+	va_end(args);
+	size = min(PAGE_ALIGN(addr) - addr, (unsigned long) len);
+	remain = len;
 
 	current->thread.fault_catcher = jmpbuf;
 	n = do_op(addr, size, is_write, op, arg);
@@ -124,10 +136,10 @@ static int copy_chunk_from_user(unsigned long from, int len, void *arg)
 	return(0);
 }
 
-int copy_from_user_skas(void *to, const void *from, int n)
+int copy_from_user_skas(void *to, const void __user *from, int n)
 {
 	if(segment_eq(get_fs(), KERNEL_DS)){
-		memcpy(to, from, n);
+		memcpy(to, (__force void*)from, n);
 		return(0);
 	}
 
@@ -145,10 +157,10 @@ static int copy_chunk_to_user(unsigned long to, int len, void *arg)
 	return(0);
 }
 
-int copy_to_user_skas(void *to, const void *from, int n)
+int copy_to_user_skas(void __user *to, const void *from, int n)
 {
 	if(segment_eq(get_fs(), KERNEL_DS)){
-		memcpy(to, from, n);
+		memcpy((__force void*)to, from, n);
 		return(0);
 	}
 
@@ -171,13 +183,13 @@ static int strncpy_chunk_from_user(unsigned long from, int len, void *arg)
 	return(0);
 }
 
-int strncpy_from_user_skas(char *dst, const char *src, int count)
+int strncpy_from_user_skas(char *dst, const char __user *src, int count)
 {
 	int n;
 	char *ptr = dst;
 
 	if(segment_eq(get_fs(), KERNEL_DS)){
-		strncpy(dst, src, count);
+		strncpy(dst, (__force void*)src, count);
 		return(strnlen(dst, count));
 	}
 
@@ -197,15 +209,15 @@ static int clear_chunk(unsigned long addr, int len, void *unused)
 	return(0);
 }
 
-int __clear_user_skas(void *mem, int len)
+int __clear_user_skas(void __user *mem, int len)
 {
 	return(buffer_op((unsigned long) mem, len, 1, clear_chunk, NULL));
 }
 
-int clear_user_skas(void *mem, int len)
+int clear_user_skas(void __user *mem, int len)
 {
 	if(segment_eq(get_fs(), KERNEL_DS)){
-		memset(mem, 0, len);
+		memset((__force void*)mem, 0, len);
 		return(0);
 	}
 
@@ -225,12 +237,12 @@ static int strnlen_chunk(unsigned long str, int len, void *arg)
 	return(0);
 }
 
-int strnlen_user_skas(const void *str, int len)
+int strnlen_user_skas(const void __user *str, int len)
 {
 	int count = 0, n;
 
 	if(segment_eq(get_fs(), KERNEL_DS))
-		return(strnlen(str, len) + 1);
+		return(strnlen((__force char*)str, len) + 1);
 
 	n = buffer_op((unsigned long) str, len, 0, strnlen_chunk, &count);
 	if(n == 0)

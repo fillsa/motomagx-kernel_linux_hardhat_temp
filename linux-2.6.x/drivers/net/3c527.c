@@ -182,7 +182,7 @@ struct mc32_local
 
 	u16 rx_ring_tail;       /* index to rx de-queue end */ 
 
-	struct compat_semaphore cmd_mutex; /* Serialises issuing of execute commands */
+	struct compat_semaphore cmd_mutex;    /* Serialises issuing of execute commands */
         struct completion execution_cmd; /* Card has completed an execute command */
 	struct completion xceiver_cmd;   /* Card has completed a tx or rx command */
 };
@@ -197,7 +197,7 @@ struct mca_adapters_t {
 	char		*name;
 };
 
-const struct mca_adapters_t mc32_adapters[] = {
+static const struct mca_adapters_t mc32_adapters[] = {
 	{ 0x0041, "3COM EtherLink MC/32" },
 	{ 0x8EF5, "IBM High Performance Lan Adapter" },
 	{ 0x0000, NULL }

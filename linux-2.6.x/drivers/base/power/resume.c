@@ -54,17 +54,24 @@ int resume_device(struct device * dev)
 {
 	int error = 0;
 
+	down(&dev->sem);
+	if (dev->power.pm_parent
+			&& dev->power.pm_parent->power.power_state) {
+		dev_err(dev, "PM: resume from %d, parent %s still %d\n",
+			dev->power.power_state,
+			dev->power.pm_parent->bus_id,
+			dev->power.pm_parent->power.power_state);
+	}
 	if (dev->bus && dev->bus->resume) {
-
 #ifdef CONFIG_MOT_FEAT_PM_DEVICE_SUSPEND_DEBUG
-		dev_dbg(dev, "resuming\n");
+		dev_dbg(dev,"resuming\n");
 #endif
 		error = dev->bus->resume(dev);
 
 		if (!error)
 			assert_constraints(dev->constraints);
 	}
-
+	up(&dev->sem);
 	return error;
 }
 

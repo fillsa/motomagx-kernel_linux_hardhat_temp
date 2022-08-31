@@ -30,6 +30,10 @@ config RWSEM_XCHGADD_ALGORITHM
 	bool
 	default y
 
+config GENERIC_CALIBRATE_DELAY
+	bool
+	default y
+
 config TIME_INTERPOLATION
 	bool
 	default y
@@ -41,6 +45,14 @@ config EFI
 config GENERIC_IOMAP
 	bool
 	default y
+
+config SCHED_NO_NO_OMIT_FRAME_POINTER
+	bool
+	default y
+
+config IA64_UNCACHED_ALLOCATOR
+	bool
+	select GENERIC_ALLOCATOR
 
 choice
 	prompt "System type"
@@ -57,11 +69,12 @@ config IA64_GENERIC
 	  will run on any supported IA-64 system.  However, if you configure
 	  a kernel for your specific system, it will be faster and smaller.
 
-	  generic	 For any supported IA-64 system
-	  DIG-compliant	 For DIG ("Developer's Interface Guide") compliant systems
-	  HP-zx1/sx1000	 For HP systems
-	  SGI-SN2	 For SGI Altix systems
-	  Ski-simulator  For the HP simulator <http://www.hpl.hp.com/research/linux/ski/>
+	  generic		For any supported IA-64 system
+	  DIG-compliant		For DIG ("Developer's Interface Guide") compliant systems
+	  HP-zx1/sx1000		For HP systems
+	  HP-zx1/sx1000+swiotlb	For HP systems with (broken) DMA-constrained devices.
+	  SGI-SN2		For SGI Altix systems
+	  Ski-simulator		For the HP simulator <http://www.hpl.hp.com/research/linux/ski/>
 
 	  If you don't know what to do, choose "generic".
 
@@ -73,6 +86,15 @@ config IA64_HP_ZX1
 	help
 	  Build a kernel that runs on HP zx1 and sx1000 systems.  This adds
 	  support for the HP I/O MMU.
+
+config IA64_HP_ZX1_SWIOTLB
+	bool "HP-zx1/sx1000 with software I/O TLB"
+	help
+	  Build a kernel that runs on HP zx1 and sx1000 systems even when they
+	  have broken PCI devices which cannot DMA to full 32 bits.  Apart
+	  from support for the HP I/O MMU, this includes support for the software
+	  I/O TLB, which allows supporting the broken devices at the expense of
+	  wasting some kernel memory (about 2MB by default).
 
 config IA64_SGI_SN2
 	bool "SGI-SN2"
@@ -139,18 +161,12 @@ config IA64_PAGE_SIZE_64KB
 
 endchoice
 
+source kernel/Kconfig.hz
+
 config IA64_BRL_EMU
 	bool
 	depends on ITANIUM
 	default y
-
-config ITANIUM_BSTEP_SPECIFIC
-	bool "Itanium B-step specific code"
-	depends on ITANIUM
-	help
-	  Select this option to build a kernel for an Itanium prototype system
-	  with a B-step CPU.  You have a B-step CPU if the "revision" field in
-	  /proc/cpuinfo has a value in the range from 1 to 4.
 
 # align cache-sensitive data to 128 bytes
 config IA64_L1_CACHE_SHIFT
@@ -163,6 +179,7 @@ config NUMA
 	bool "NUMA support"
 	depends on !IA64_HP_SIM
 	default y if IA64_SGI_SN2
+	select ACPI_NUMA
 	help
 	  Say Y to compile the kernel to support NUMA (Non-Uniform Memory
 	  Access).  This option is for configuring high-end multiprocessor
@@ -178,9 +195,13 @@ config VIRTUAL_MEM_MAP
 	  require the DISCONTIGMEM option for your machine. If you are
 	  unsure, say Y.
 
-config DISCONTIGMEM
+config HOLES_IN_ZONE
+	bool
+	default y if VIRTUAL_MEM_MAP
+
+config ARCH_DISCONTIGMEM_ENABLE
 	bool "Discontiguous memory support"
-	depends on (IA64_DIG || IA64_SGI_SN2 || IA64_GENERIC || IA64_HP_ZX1) && NUMA && VIRTUAL_MEM_MAP
+	depends on (IA64_DIG || IA64_SGI_SN2 || IA64_GENERIC || IA64_HP_ZX1 || IA64_HP_ZX1_SWIOTLB) && NUMA && VIRTUAL_MEM_MAP
 	default y if (IA64_SGI_SN2 || IA64_GENERIC) && NUMA
 	help
 	  Say Y to support efficient handling of discontiguous physical memory,
@@ -199,12 +220,15 @@ config IOSAPIC
 	depends on !IA64_HP_SIM
 	default y
 
-config IA64_SGI_SN_SIM
-	bool "SGI Medusa Simulator Support"
-	depends on IA64_SGI_SN2
+config IA64_SGI_SN_XP
+	tristate "Support communication between SGI SSIs"
+	select IA64_UNCACHED_ALLOCATOR
 	help
-	  If you are compiling a kernel that will run under SGI's IA-64
-	  simulator (Medusa) then say Y, otherwise say N.
+	  An SGI machine can be divided into multiple Single System
+	  Images which act independently of each other and have
+	  hardware based memory protection from the others.  Enabling
+	  this feature will allow for direct communication between SSIs
+	  based on a network adapter and DMA messaging.
 
 config FORCE_MAX_ZONEORDER
 	int
@@ -241,13 +265,23 @@ config NR_CPUS
 	  performance hit.
 
 config HOTPLUG_CPU
-    bool "Support for hot-pluggable CPUs (EXPERIMENTAL)"
-    depends on SMP && HOTPLUG && EXPERIMENTAL
+	bool "Support for hot-pluggable CPUs (EXPERIMENTAL)"
+	depends on SMP && EXPERIMENTAL
+	select HOTPLUG
 	default n
-    ---help---
-      Say Y here to experiment with turning CPUs off and on.  CPUs
-      can be controlled through /sys/devices/system/cpu/cpu#.
-      Say N if you want to disable CPU hotplug.
+	---help---
+	  Say Y here to experiment with turning CPUs off and on.  CPUs
+	  can be controlled through /sys/devices/system/cpu/cpu#.
+	  Say N if you want to disable CPU hotplug.
+
+config SCHED_SMT
+	bool "SMT scheduler support"
+	depends on SMP
+	default off
+	help
+	  Improves the CPU scheduler's decision making when dealing with
+	  Intel IA64 chips with MultiThreading at a cost of slightly increased
+	  overhead in some places. If unsure say N here.
 
 config PREEMPT
 	bool "Preemptible Kernel"
@@ -260,6 +294,8 @@ config PREEMPT
 
           Say Y here if you are building a kernel for a desktop, embedded
           or real-time system.  Say N if you are unsure.
+
+source "mm/Kconfig"
 
 config HAVE_DEC_LOCK
 	bool
@@ -302,6 +338,11 @@ config IA64_PALINFO
 	  To use this option, you have to ensure that the "/proc file system
 	  support" (CONFIG_PROC_FS) is enabled, too.
 
+config ACPI_DEALLOCATE_IRQ
+	bool
+	depends on IOSAPIC && EXPERIMENTAL
+	default y
+
 source "drivers/firmware/Kconfig"
 
 source "fs/Kconfig.binfmt"
@@ -312,7 +353,7 @@ menu "Power management and ACPI"
 
 config PM
 	bool "Power Management support"
-	depends on IA64_GENERIC || IA64_DIG || IA64_HP_ZX1
+	depends on !IA64_HP_SIM
 	default y
 	help
 	  "Power Management" means that parts of your computer are shut
@@ -351,15 +392,8 @@ menu "Bus options (PCI, PCMCIA)"
 config PCI
 	bool "PCI support"
 	help
-	  Find out whether you have a PCI motherboard. PCI is the name of a
-	  bus system, i.e. the way the CPU talks to the other stuff inside
-	  your box. Other bus systems are ISA, EISA, MicroChannel (MCA) or
-	  VESA. If you have PCI, say Y, otherwise N.
-
-	  The PCI-HOWTO, available from
-	  <http://www.tldp.org/docs.html#howto>, contains valuable
-	  information about which PCI hardware does work under Linux and which
-	  doesn't.
+	  Real IA-64 machines all have PCI/PCI-X/PCI Express busses.  Say Y
+	  here unless you are using a simulator without PCI support.
 
 config PCI_DOMAINS
 	bool
@@ -375,11 +409,24 @@ endmenu
 
 endif
 
+source "net/Kconfig"
+
 source "drivers/Kconfig"
 
 source "fs/Kconfig"
 
 source "lib/Kconfig"
+
+#
+# Use the generic interrupt handling code in kernel/irq/:
+#
+config GENERIC_HARDIRQS
+	bool
+	default y
+
+config GENERIC_IRQ_PROBE
+	bool
+	default y
 
 source "arch/ia64/hp/sim/Kconfig"
 

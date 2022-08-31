@@ -65,7 +65,7 @@ op_axp_setup(void)
 	model->reg_setup(&reg, ctr, &sys);
 
 	/* Configure the registers on all cpus.  */
-	smp_call_function(model->cpu_setup, &reg, 0, 1);
+	(void)smp_call_function(model->cpu_setup, &reg, 0, 1);
 	model->cpu_setup(&reg);
 	return 0;
 }
@@ -86,7 +86,7 @@ op_axp_cpu_start(void *dummy)
 static int
 op_axp_start(void)
 {
-	smp_call_function(op_axp_cpu_start, NULL, 0, 1);
+	(void)smp_call_function(op_axp_cpu_start, NULL, 0, 1);
 	op_axp_cpu_start(NULL);
 	return 0;
 }
@@ -101,7 +101,7 @@ op_axp_cpu_stop(void *dummy)
 static void
 op_axp_stop(void)
 {
-	smp_call_function(op_axp_cpu_stop, NULL, 0, 1);
+	(void)smp_call_function(op_axp_cpu_stop, NULL, 0, 1);
 	op_axp_cpu_stop(NULL);
 }
 
@@ -138,17 +138,8 @@ op_axp_create_files(struct super_block * sb, struct dentry * root)
 	return 0;
 }
 
-static struct oprofile_operations oprof_axp_ops = {
-	.create_files	= op_axp_create_files,
-	.setup		= op_axp_setup,
-	.shutdown	= op_axp_shutdown,
-	.start		= op_axp_start,
-	.stop		= op_axp_stop,
-	.cpu_type	= NULL		/* To be filled in below.  */
-};
-
 int __init
-oprofile_arch_init(struct oprofile_operations **ops)
+oprofile_arch_init(struct oprofile_operations *ops)
 {
 	struct op_axp_model *lmodel = NULL;
 
@@ -178,8 +169,12 @@ oprofile_arch_init(struct oprofile_operations **ops)
 		return -ENODEV;
 	model = lmodel;
 
-	oprof_axp_ops.cpu_type = lmodel->cpu_type;
-	*ops = &oprof_axp_ops;
+	ops->create_files = op_axp_create_files;
+	ops->setup = op_axp_setup;
+	ops->shutdown = op_axp_shutdown;
+	ops->start = op_axp_start;
+	ops->stop = op_axp_stop;
+	ops->cpu_type = lmodel->cpu_type;
 
 	printk(KERN_INFO "oprofile: using %s performance monitoring.\n",
 	       lmodel->cpu_type);

@@ -82,20 +82,6 @@ static inline void ad1889_set_wav_rate(ad1889_dev_t *dev, int rate)
 	ac97_codec->codec_write(dev->ac97_codec, AC97_POWER_CONTROL, 0);
 }
 
-static inline void ad1889_set_adc_rate(ad1889_dev_t *dev, int rate)
-{
-	struct ac97_codec *ac97_codec = dev->ac97_codec;
-
-	DBG("Setting ADC rate to %d\n", rate);
-	dev->state[AD_ADC_STATE].dmabuf.rate = rate;
-	AD1889_WRITEW(dev, AD_DSRES, rate);
-
-	/* Cycle the ADC to enable the new rate */
-	ac97_codec->codec_write(dev->ac97_codec, AC97_POWER_CONTROL, 0x0100);
-	WAIT_10MS();
-	ac97_codec->codec_write(dev->ac97_codec, AC97_POWER_CONTROL, 0);
-}
-
 static inline void ad1889_set_wav_fmt(ad1889_dev_t *dev, int fmt)
 {
 	u16 tmp;
@@ -291,8 +277,7 @@ static void ad1889_free_dev(ad1889_dev_t *dev)
 
 	for (j = 0; j < AD_MAX_STATES; j++) {
 		dmabuf = &dev->state[j].dmabuf;
-		if (dmabuf->rawbuf != NULL) 
-			kfree(dmabuf->rawbuf);
+		kfree(dmabuf->rawbuf);
 	}
 
 	kfree(dev);
@@ -308,8 +293,8 @@ static inline void ad1889_trigger_playback(ad1889_dev_t *dev)
 	ad1889_start_wav(&dev->state[AD_WAV_STATE]);
 }
 
-int ad1889_read_proc (char *page, char **start, off_t off,
-		      int count, int *eof, void *data)
+static int ad1889_read_proc (char *page, char **start, off_t off,
+			     int count, int *eof, void *data)
 {
 	char *out = page;
 	int len, i;

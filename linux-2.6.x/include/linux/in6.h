@@ -44,8 +44,10 @@ struct in6_addr
  * NOTE: Be aware the IN6ADDR_* constants and in6addr_* externals are defined
  * in network byte order, not in host byte order as are the IPv4 equivalents
  */
+#if 0
 extern const struct in6_addr in6addr_any;
 #define IN6ADDR_ANY_INIT { { { 0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0 } } }
+#endif
 extern const struct in6_addr in6addr_loopback;
 #define IN6ADDR_LOOPBACK_INIT { { { 0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1 } } }
 
@@ -156,7 +158,7 @@ struct in6_flowlabel_req
 #define IPV6_CHECKSUM		7
 #define IPV6_HOPLIMIT		8
 #define IPV6_NEXTHOP		9
-#define IPV6_AUTHHDR		10
+#define IPV6_AUTHHDR		10	/* obsolete */
 #define IPV6_FLOWINFO		11
 
 #define IPV6_UNICAST_HOPS	16

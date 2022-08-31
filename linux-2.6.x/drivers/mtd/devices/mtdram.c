@@ -1,13 +1,15 @@
 /*
  * mtdram - a test mtd device
- * $Id: mtdram.c,v 1.36 2005/03/17 19:44:27 gleixner Exp $
+ * $Id: mtdram.c,v 1.37 2005/04/21 03:42:11 joern Exp $
  * Author: Alexander Larsson <alex@cendio.se>
  *
  * Copyright (c) 1999 Alexander Larsson <alex@cendio.se>
  * Copyright (c) 2005 Joern Engel <joern@wh.fh-wedel.de>
  *
  * This code is GPL
+ *
  */
+
 #include <linux/config.h>
 #include <linux/module.h>
 #include <linux/slab.h>
@@ -28,6 +30,7 @@ MODULE_PARM_DESC(total_size, "Total device size in KiB");
 module_param(erase_size, ulong, 0);
 MODULE_PARM_DESC(erase_size, "Device erase block size in KiB");
 #endif
+
 
 // We could store these in the mtd structure, but we only support 1 device..
 static struct mtd_info *mtd_info;

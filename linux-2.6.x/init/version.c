@@ -38,7 +38,7 @@ struct new_utsname system_utsname = {
 EXPORT_SYMBOL(system_utsname);
 
 #ifdef CONFIG_MOT_FEAT_CHKSUM
-const char *linux_banner = 
+const char linux_banner[] =
 	"Linux version " UTS_RELEASE  
 	"(" LINUX_COMPILER ")\n";
 #else

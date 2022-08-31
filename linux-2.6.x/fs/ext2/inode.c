@@ -33,6 +33,7 @@
 #include <linux/mpage.h>
 #include "ext2.h"
 #include "acl.h"
+#include "xip.h"
 
 MODULE_AUTHOR("Remy Card and others");
 MODULE_DESCRIPTION("Second Extended Filesystem");
@@ -50,6 +51,19 @@ static inline int ext2_inode_is_fast_symlink(struct inode *inode)
 
 	return (S_ISLNK(inode->i_mode) &&
 		inode->i_blocks - ea_blocks == 0);
+}
+
+/*
+ * Called at each iput().
+ *
+ * The inode may be "bad" if ext2_read_inode() saw an error from
+ * ext2_get_inode(), so we need to check that to avoid freeing random disk
+ * blocks.
+ */
+void ext2_put_inode(struct inode *inode)
+{
+	if (!is_bad_inode(inode))
+		ext2_discard_prealloc(inode);
 }
 
 /*
@@ -354,7 +368,7 @@ static inline int ext2_find_goal(struct inode *inode,
 {
 	struct ext2_inode_info *ei = EXT2_I(inode);
 	write_lock(&ei->i_meta_lock);
-	if (block == ei->i_next_alloc_block + 1) {
+	if ((block == ei->i_next_alloc_block + 1) && ei->i_next_alloc_goal) {
 		ei->i_next_alloc_block++;
 		ei->i_next_alloc_goal++;
 	} 
@@ -493,7 +507,7 @@ static inline int ext2_splice_branch(struct inode *inode,
 
 	/* We are done with atomic stuff, now do the rest of housekeeping */
 
-	inode->i_ctime = CURRENT_TIME;
+	inode->i_ctime = CURRENT_TIME_SEC;
 
 	/* had we spliced it onto indirect block? */
 	if (where->bh)
@@ -524,7 +538,7 @@ changed:
  * reachable from inode.
  */
 
-static int ext2_get_block(struct inode *inode, sector_t iblock, struct buffer_head *bh_result, int create)
+int ext2_get_block(struct inode *inode, sector_t iblock, struct buffer_head *bh_result, int create)
 {
 	int err = -EIO;
 	int offsets[4];
@@ -581,6 +595,16 @@ out:
 	if (err)
 		goto cleanup;
 
+	if (ext2_use_xip(inode->i_sb)) {
+		/*
+		 * we need to clear the block
+		 */
+		err = ext2_clear_xip_target (inode,
+			le32_to_cpu(chain[depth-1].key));
+		if (err)
+			goto cleanup;
+	}
+
 	if (ext2_splice_branch(inode, iblock, chain, partial, left) < 0)
 		goto changed;
 
@@ -624,6 +648,12 @@ ext2_nobh_prepare_write(struct file *file, struct page *page,
 			unsigned from, unsigned to)
 {
 	return nobh_prepare_write(page,from,to,ext2_get_block);
+}
+
+static int ext2_nobh_writepage(struct page *page,
+			struct writeback_control *wbc)
+{
+	return nobh_writepage(page, ext2_get_block, wbc);
 }
 
 static sector_t ext2_bmap(struct address_space *mapping, sector_t block)
@@ -672,10 +702,15 @@ struct address_space_operations ext2_aops = {
 	.writepages		= ext2_writepages,
 };
 
+struct address_space_operations ext2_aops_xip = {
+	.bmap			= ext2_bmap,
+	.get_xip_page		= ext2_get_xip_page,
+};
+
 struct address_space_operations ext2_nobh_aops = {
 	.readpage		= ext2_readpage,
 	.readpages		= ext2_readpages,
-	.writepage		= ext2_writepage,
+	.writepage		= ext2_nobh_writepage,
 	.sync_page		= block_sync_page,
 	.prepare_write		= ext2_nobh_prepare_write,
 	.commit_write		= nobh_commit_write,
@@ -891,7 +926,9 @@ void ext2_truncate (struct inode * inode)
 	iblock = (inode->i_size + blocksize-1)
 					>> EXT2_BLOCK_SIZE_BITS(inode->i_sb);
 
-	if (test_opt(inode->i_sb, NOBH))
+	if (mapping_is_xip(inode->i_mapping))
+		xip_truncate_page(inode->i_mapping, inode->i_size);
+	else if (test_opt(inode->i_sb, NOBH))
 		nobh_truncate_page(inode->i_mapping, inode->i_size);
 	else
 		block_truncate_page(inode->i_mapping,
@@ -953,7 +990,7 @@ do_indirects:
 		case EXT2_TIND_BLOCK:
 			;
 	}
-	inode->i_mtime = inode->i_ctime = CURRENT_TIME;
+	inode->i_mtime = inode->i_ctime = CURRENT_TIME_SEC;
 	if (inode_needs_sync(inode)) {
 		sync_mapping_buffers(inode->i_mapping);
 		ext2_sync_inode (inode);
@@ -1091,11 +1128,16 @@ void ext2_read_inode (struct inode * inode)
 
 	if (S_ISREG(inode->i_mode)) {
 		inode->i_op = &ext2_file_inode_operations;
-		inode->i_fop = &ext2_file_operations;
-		if (test_opt(inode->i_sb, NOBH))
+		if (ext2_use_xip(inode->i_sb)) {
+			inode->i_mapping->a_ops = &ext2_aops_xip;
+			inode->i_fop = &ext2_xip_file_operations;
+		} else if (test_opt(inode->i_sb, NOBH)) {
 			inode->i_mapping->a_ops = &ext2_nobh_aops;
-		else
+			inode->i_fop = &ext2_file_operations;
+		} else {
 			inode->i_mapping->a_ops = &ext2_aops;
+			inode->i_fop = &ext2_file_operations;
+		}
 	} else if (S_ISDIR(inode->i_mode)) {
 		inode->i_op = &ext2_dir_inode_operations;
 		inode->i_fop = &ext2_dir_operations;

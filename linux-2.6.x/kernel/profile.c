@@ -36,11 +36,11 @@ struct profile_hit {
 #define NR_PROFILE_GRP		(NR_PROFILE_HIT/PROFILE_GRPSZ)
 
 /* Oprofile timer tick hook */
-int (*timer_hook)(struct pt_regs *);
+int (*timer_hook)(struct pt_regs *) __read_mostly;
 
 static atomic_t *prof_buffer;
 static unsigned long prof_len, prof_shift;
-static int prof_on;
+static int prof_on __read_mostly;
 static cpumask_t prof_cpu_mask = CPU_MASK_ALL;
 int prof_pid = -1;
 #ifdef CONFIG_SMP
@@ -61,7 +61,8 @@ static int __init profile_setup(char * str)
 	}
 	if (!strncmp(str, "schedule", 8)) {
 		prof_on = SCHED_PROFILING;
-		printk(KERN_INFO "kernel schedule profiling enabled\n");
+		printk(KERN_INFO
+			"kernel schedule profiling enabled\n");
 		if (str[8] == ',')
 			str += 9;
 	}
@@ -71,7 +72,8 @@ static int __init profile_setup(char * str)
 			prof_on = CPU_PROFILING;
 			printk(KERN_INFO "kernel CPU profiling enabled\n");
 		}
-		printk(KERN_INFO "kernel profiling shift: %ld\n", prof_shift);
+		printk(KERN_INFO "kernel profiling shift: %ld\n",
+			prof_shift);
 	}
 	return 1;
 }
@@ -194,7 +196,7 @@ void unregister_timer_hook(int (*hook)(struct pt_regs *))
 	WARN_ON(hook != timer_hook);
 	timer_hook = NULL;
 	/* make sure all CPUs see the NULL hook */
-	synchronize_kernel();
+	synchronize_sched();  /* Allow ongoing interrupts to complete. */
 }
 
 EXPORT_SYMBOL_GPL(register_timer_hook);
@@ -336,17 +338,15 @@ static int __devinit profile_cpu_callback(struct notifier_block *info,
 		node = cpu_to_node(cpu);
 		per_cpu(cpu_profile_flip, cpu) = 0;
 		if (!per_cpu(cpu_profile_hits, cpu)[1]) {
-			page = alloc_pages_node(node, GFP_KERNEL, 0);
+			page = alloc_pages_node(node, GFP_KERNEL | __GFP_ZERO, 0);
 			if (!page)
 				return NOTIFY_BAD;
-			clear_highpage(page);
 			per_cpu(cpu_profile_hits, cpu)[1] = page_address(page);
 		}
 		if (!per_cpu(cpu_profile_hits, cpu)[0]) {
-			page = alloc_pages_node(node, GFP_KERNEL, 0);
+			page = alloc_pages_node(node, GFP_KERNEL | __GFP_ZERO, 0);
 			if (!page)
 				goto out_free;
-			clear_highpage(page);
 			per_cpu(cpu_profile_hits, cpu)[0] = page_address(page);
 		}
 		break;
@@ -544,23 +544,21 @@ static int __init create_hash_tables(void)
 		int node = cpu_to_node(cpu);
 		struct page *page;
 
-		page = alloc_pages_node(node, GFP_KERNEL, 0);
+		page = alloc_pages_node(node, GFP_KERNEL | __GFP_ZERO, 0);
 		if (!page)
 			goto out_cleanup;
-		clear_highpage(page);
 		per_cpu(cpu_profile_hits, cpu)[1]
 				= (struct profile_hit *)page_address(page);
-		page = alloc_pages_node(node, GFP_KERNEL, 0);
+		page = alloc_pages_node(node, GFP_KERNEL | __GFP_ZERO, 0);
 		if (!page)
 			goto out_cleanup;
-		clear_highpage(page);
 		per_cpu(cpu_profile_hits, cpu)[0]
 				= (struct profile_hit *)page_address(page);
 	}
 	return 0;
 out_cleanup:
 	prof_on = 0;
-	mb();
+	smp_mb();
 	on_each_cpu(profile_nop, NULL, 0, 1);
 	for_each_online_cpu(cpu) {
 		struct page *page;

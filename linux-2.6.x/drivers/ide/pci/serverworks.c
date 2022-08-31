@@ -21,6 +21,9 @@
  *
  *   CSB6: `Champion South Bridge' IDE Interface (optional: third channel)
  *
+ *   HT1000: AKA BCM5785 - Hypertransport Southbridge for Opteron systems. IDE
+ *   controller same as the CSB6. Single channel ATA100 only.
+ *
  * Documentation:
  *	Available under NDA only. Errata info very hard to get.
  *
@@ -39,7 +42,18 @@
 
 #include <asm/io.h>
 
-#include "serverworks.h"
+#define SVWKS_CSB5_REVISION_NEW	0x92 /* min PCI_REVISION_ID for UDMA5 (A2.0) */
+#define SVWKS_CSB6_REVISION	0xa0 /* min PCI_REVISION_ID for UDMA4 (A1.0) */
+
+/* Seagate Barracuda ATA IV Family drives in UDMA mode 5
+ * can overrun their FIFOs when used with the CSB5 */
+static const char *svwks_bad_ata100[] = {
+	"ST320011A",
+	"ST340016A",
+	"ST360021A",
+	"ST380021A",
+	NULL
+};
 
 static u8 svwks_revision = 0;
 static struct pci_dev *isa_dev;
@@ -60,6 +74,8 @@ static u8 svwks_ratemask (ide_drive_t *drive)
 	if (!svwks_revision)
 		pci_read_config_byte(dev, PCI_REVISION_ID, &svwks_revision);
 
+	if (dev->device == PCI_DEVICE_ID_SERVERWORKS_HT1000IDE)
+		return 2;
 	if (dev->device == PCI_DEVICE_ID_SERVERWORKS_OSB4IDE) {
 		u32 reg = 0;
 		if (isa_dev)
@@ -98,6 +114,7 @@ static u8 svwks_csb_check (struct pci_dev *dev)
 		case PCI_DEVICE_ID_SERVERWORKS_CSB5IDE:
 		case PCI_DEVICE_ID_SERVERWORKS_CSB6IDE:
 		case PCI_DEVICE_ID_SERVERWORKS_CSB6IDE2:
+		case PCI_DEVICE_ID_SERVERWORKS_HT1000IDE:
 			return 1;
 		default:
 			break;
@@ -330,7 +347,7 @@ static int svwks_ide_dma_end (ide_drive_t *drive)
 	return __ide_dma_end(drive);
 }
 
-static unsigned int __init init_chipset_svwks (struct pci_dev *dev, const char *name)
+static unsigned int __devinit init_chipset_svwks (struct pci_dev *dev, const char *name)
 {
 	unsigned int reg;
 	u8 btr;
@@ -359,11 +376,9 @@ static unsigned int __init init_chipset_svwks (struct pci_dev *dev, const char *
 	else if ((dev->device == PCI_DEVICE_ID_SERVERWORKS_CSB5IDE) ||
 		 (dev->device == PCI_DEVICE_ID_SERVERWORKS_CSB6IDE) ||
 		 (dev->device == PCI_DEVICE_ID_SERVERWORKS_CSB6IDE2)) {
-//		u32 pioreg = 0, dmareg = 0;
 
 		/* Third Channel Test */
 		if (!(PCI_FUNC(dev->devfn) & 1)) {
-#if 1
 			struct pci_dev * findev = NULL;
 			u32 reg4c = 0;
 			findev = pci_find_device(PCI_VENDOR_ID_SERVERWORKS,
@@ -375,19 +390,11 @@ static unsigned int __init init_chipset_svwks (struct pci_dev *dev, const char *
 				reg4c |=  0x00000020;
 				pci_write_config_dword(findev, 0x4C, reg4c);
 			}
-#endif
 			outb_p(0x06, 0x0c00);
 			dev->irq = inb_p(0x0c01);
 #if 0
-			/* WE need to figure out how to get the correct one */
-			printk("%s: interrupt %d\n", name, dev->irq);
-			if (dev->irq != 0x0B)
-				dev->irq = 0x0B;
-#endif
-#if 0
 			printk("%s: device class (0x%04x)\n",
 				name, dev->class);
-#else
 			if ((dev->class >> 8) != PCI_CLASS_STORAGE_IDE) {
 				dev->class &= ~0x000F0F00;
 		//		dev->class |= ~0x00000400;
@@ -413,7 +420,8 @@ static unsigned int __init init_chipset_svwks (struct pci_dev *dev, const char *
 			 * interrupt pin to be set, and it is a compatibility
 			 * mode issue.
 			 */
-			dev->irq = 0;
+			if ((dev->class >> 8) == PCI_CLASS_STORAGE_IDE)
+				dev->irq = 0;
 		}
 //		pci_read_config_dword(dev, 0x40, &pioreg)
 //		pci_write_config_dword(dev, 0x40, 0x99999999);
@@ -436,11 +444,18 @@ static unsigned int __init init_chipset_svwks (struct pci_dev *dev, const char *
 			btr |= (svwks_revision >= SVWKS_CSB5_REVISION_NEW) ? 0x3 : 0x2;
 		pci_write_config_byte(dev, 0x5A, btr);
 	}
+	/* Setup HT1000 SouthBridge Controller - Single Channel Only */
+	else if (dev->device == PCI_DEVICE_ID_SERVERWORKS_HT1000IDE) {
+		pci_read_config_byte(dev, 0x5A, &btr);
+		btr &= ~0x40;
+		btr |= 0x3;
+		pci_write_config_byte(dev, 0x5A, btr);
+	}
 
 	return (dev->irq) ? dev->irq : 0;
 }
 
-static unsigned int __init ata66_svwks_svwks (ide_hwif_t *hwif)
+static unsigned int __devinit ata66_svwks_svwks (ide_hwif_t *hwif)
 {
 	return 1;
 }
@@ -452,7 +467,7 @@ static unsigned int __init ata66_svwks_svwks (ide_hwif_t *hwif)
  * Bit 14 clear = primary IDE channel does not have 80-pin cable.
  * Bit 14 set   = primary IDE channel has 80-pin cable.
  */
-static unsigned int __init ata66_svwks_dell (ide_hwif_t *hwif)
+static unsigned int __devinit ata66_svwks_dell (ide_hwif_t *hwif)
 {
 	struct pci_dev *dev = hwif->pci_dev;
 	if (dev->subsystem_vendor == PCI_VENDOR_ID_DELL &&
@@ -470,7 +485,7 @@ static unsigned int __init ata66_svwks_dell (ide_hwif_t *hwif)
  *
  * WARNING: this only works on Alpine hardware!
  */
-static unsigned int __init ata66_svwks_cobalt (ide_hwif_t *hwif)
+static unsigned int __devinit ata66_svwks_cobalt (ide_hwif_t *hwif)
 {
 	struct pci_dev *dev = hwif->pci_dev;
 	if (dev->subsystem_vendor == PCI_VENDOR_ID_SUN &&
@@ -481,7 +496,7 @@ static unsigned int __init ata66_svwks_cobalt (ide_hwif_t *hwif)
 	return 0;
 }
 
-static unsigned int __init ata66_svwks (ide_hwif_t *hwif)
+static unsigned int __devinit ata66_svwks (ide_hwif_t *hwif)
 {
 	struct pci_dev *dev = hwif->pci_dev;
 
@@ -506,7 +521,7 @@ static unsigned int __init ata66_svwks (ide_hwif_t *hwif)
 }
 
 #undef CAN_SW_DMA
-static void __init init_hwif_svwks (ide_hwif_t *hwif)
+static void __devinit init_hwif_svwks (ide_hwif_t *hwif)
 {
 	u8 dma_stat = 0;
 
@@ -554,7 +569,7 @@ static void __init init_hwif_svwks (ide_hwif_t *hwif)
 /*
  * We allow the BM-DMA driver to only work on enabled interfaces.
  */
-static void __init init_dma_svwks (ide_hwif_t *hwif, unsigned long dmabase)
+static void __devinit init_dma_svwks (ide_hwif_t *hwif, unsigned long dmabase)
 {
 	struct pci_dev *dev = hwif->pci_dev;
 
@@ -566,20 +581,17 @@ static void __init init_dma_svwks (ide_hwif_t *hwif, unsigned long dmabase)
 	ide_setup_dma(hwif, dmabase, 8);
 }
 
-static void __init init_setup_svwks (struct pci_dev *dev, ide_pci_device_t *d)
+static int __devinit init_setup_svwks (struct pci_dev *dev, ide_pci_device_t *d)
 {
-	ide_setup_pci_device(dev, d);
+	return ide_setup_pci_device(dev, d);
 }
 
-static void __init init_setup_csb6 (struct pci_dev *dev, ide_pci_device_t *d)
+static int __devinit init_setup_csb6 (struct pci_dev *dev, ide_pci_device_t *d)
 {
 	if (!(PCI_FUNC(dev->devfn) & 1)) {
 		d->bootable = NEVER_BOARD;
 		if (dev->resource[0].start == 0x01f1)
 			d->bootable = ON_BOARD;
-	} else {
-		if ((dev->class >> 8) != PCI_CLASS_STORAGE_IDE)
-			return;
 	}
 #if 0
 	if ((IDE_PCI_DEVID_EQ(d->devid, DEVID_CSB6) &&
@@ -591,9 +603,56 @@ static void __init init_setup_csb6 (struct pci_dev *dev, ide_pci_device_t *d)
 			dev->device == PCI_DEVICE_ID_SERVERWORKS_CSB6IDE2) &&
 		       (!(PCI_FUNC(dev->devfn) & 1))) ? 1 : 2;
 
-	ide_setup_pci_device(dev, d);
+	return ide_setup_pci_device(dev, d);
 }
 
+static ide_pci_device_t serverworks_chipsets[] __devinitdata = {
+	{	/* 0 */
+		.name		= "SvrWks OSB4",
+		.init_setup	= init_setup_svwks,
+		.init_chipset	= init_chipset_svwks,
+		.init_hwif	= init_hwif_svwks,
+		.channels	= 2,
+		.autodma	= AUTODMA,
+		.bootable	= ON_BOARD,
+	},{	/* 1 */
+		.name		= "SvrWks CSB5",
+		.init_setup	= init_setup_svwks,
+		.init_chipset	= init_chipset_svwks,
+		.init_hwif	= init_hwif_svwks,
+		.init_dma	= init_dma_svwks,
+		.channels	= 2,
+		.autodma	= AUTODMA,
+		.bootable	= ON_BOARD,
+	},{	/* 2 */
+		.name		= "SvrWks CSB6",
+		.init_setup	= init_setup_csb6,
+		.init_chipset	= init_chipset_svwks,
+		.init_hwif	= init_hwif_svwks,
+		.init_dma	= init_dma_svwks,
+		.channels	= 2,
+		.autodma	= AUTODMA,
+		.bootable	= ON_BOARD,
+	},{	/* 3 */
+		.name		= "SvrWks CSB6",
+		.init_setup	= init_setup_csb6,
+		.init_chipset	= init_chipset_svwks,
+		.init_hwif	= init_hwif_svwks,
+		.init_dma	= init_dma_svwks,
+		.channels	= 1,	/* 2 */
+		.autodma	= AUTODMA,
+		.bootable	= ON_BOARD,
+	},{	/* 4 */
+		.name		= "SvrWks HT1000",
+		.init_setup	= init_setup_svwks,
+		.init_chipset	= init_chipset_svwks,
+		.init_hwif	= init_hwif_svwks,
+		.init_dma	= init_dma_svwks,
+		.channels	= 1,	/* 2 */
+		.autodma	= AUTODMA,
+		.bootable	= ON_BOARD,
+	}
+};
 
 /**
  *	svwks_init_one	-	called when a OSB/CSB is found
@@ -608,8 +667,7 @@ static int __devinit svwks_init_one(struct pci_dev *dev, const struct pci_device
 {
 	ide_pci_device_t *d = &serverworks_chipsets[id->driver_data];
 
-	d->init_setup(dev, d);
-	return 0;
+	return d->init_setup(dev, d);
 }
 
 static struct pci_device_id svwks_pci_tbl[] = {
@@ -617,6 +675,7 @@ static struct pci_device_id svwks_pci_tbl[] = {
 	{ PCI_VENDOR_ID_SERVERWORKS, PCI_DEVICE_ID_SERVERWORKS_CSB5IDE, PCI_ANY_ID, PCI_ANY_ID, 0, 0, 1},
 	{ PCI_VENDOR_ID_SERVERWORKS, PCI_DEVICE_ID_SERVERWORKS_CSB6IDE, PCI_ANY_ID, PCI_ANY_ID, 0, 0, 2},
 	{ PCI_VENDOR_ID_SERVERWORKS, PCI_DEVICE_ID_SERVERWORKS_CSB6IDE2, PCI_ANY_ID, PCI_ANY_ID, 0, 0, 3},
+	{ PCI_VENDOR_ID_SERVERWORKS, PCI_DEVICE_ID_SERVERWORKS_HT1000IDE, PCI_ANY_ID, PCI_ANY_ID, 0, 0, 4},
 	{ 0, },
 };
 MODULE_DEVICE_TABLE(pci, svwks_pci_tbl);
@@ -625,10 +684,6 @@ static struct pci_driver driver = {
 	.name		= "Serverworks_IDE",
 	.id_table	= svwks_pci_tbl,
 	.probe		= svwks_init_one,
-#if 0	/* FIXME: implement */
-	.suspend	= ,
-	.resume		= ,
-#endif
 };
 
 static int svwks_ide_init(void)

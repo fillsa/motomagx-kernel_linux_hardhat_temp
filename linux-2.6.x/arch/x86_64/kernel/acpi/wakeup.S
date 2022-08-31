@@ -67,7 +67,7 @@ wakeup_code:
 	shll	$4, %eax
 	addl	$(gdta - wakeup_code), %eax
 	movl	%eax, gdt_48a +2 - wakeup_code
-	lgdt	%ds:gdt_48a - wakeup_code		# load gdt with whatever is
+	lgdtl	%ds:gdt_48a - wakeup_code	# load gdt with whatever is
 						# appropriate
 
 	movl	$1, %eax			# protected mode (PE) bit
@@ -429,9 +429,6 @@ ENTRY(do_suspend_lowlevel_s4bios)
 do_suspend_lowlevel:
 .LFB5:
 	subq	$8, %rsp
-.LCFI2:
-	testl	%edi, %edi
-	jne	.L99
 	xorl	%eax, %eax
 	call	save_processor_state
 

@@ -8,7 +8,7 @@
  *
  * For licensing information, see the file 'LICENCE' in this directory.
  *
- * $Id: gc.c,v 1.147 2005/03/20 21:43:22 dedekind Exp $
+ * $Id: gc.c,v 1.148 2005/04/09 10:47:00 dedekind Exp $
  *
  */
 

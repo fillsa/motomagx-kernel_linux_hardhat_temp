@@ -123,12 +123,7 @@ struct net_device * __init hp_probe(int unit)
 	err = do_hp_probe(dev);
 	if (err)
 		goto out;
-	err = register_netdev(dev);
-	if (err)
-		goto out1;
 	return dev;
-out1:
-	cleanup_card(dev);
 out:
 	free_netdev(dev);
 	return ERR_PTR(err);
@@ -227,7 +222,12 @@ static int __init hp_probe1(struct net_device *dev, int ioaddr)
 	ei_status.block_output = &hp_block_output;
 	hp_init_card(dev);
 
+	retval = register_netdev(dev);
+	if (retval)
+		goto out1;
 	return 0;
+out1:
+	free_irq(dev->irq, dev);
 out:
 	release_region(ioaddr, HP_IO_EXTENT);
 	return retval;
@@ -406,8 +406,8 @@ static struct net_device *dev_hp[MAX_HP_CARDS];
 static int io[MAX_HP_CARDS];
 static int irq[MAX_HP_CARDS];
 
-MODULE_PARM(io, "1-" __MODULE_STRING(MAX_HP_CARDS) "i");
-MODULE_PARM(irq, "1-" __MODULE_STRING(MAX_HP_CARDS) "i");
+module_param_array(io, int, NULL, 0);
+module_param_array(irq, int, NULL, 0);
 MODULE_PARM_DESC(io, "I/O base address(es)");
 MODULE_PARM_DESC(irq, "IRQ number(s) (assigned)");
 MODULE_DESCRIPTION("HP PC-LAN ISA ethernet driver");
@@ -432,11 +432,8 @@ init_module(void)
 		dev->irq = irq[this_dev];
 		dev->base_addr = io[this_dev];
 		if (do_hp_probe(dev) == 0) {
-			if (register_netdev(dev) == 0) {
-				dev_hp[found++] = dev;
-				continue;
-			}
-			cleanup_card(dev);
+			dev_hp[found++] = dev;
+			continue;
 		}
 		free_netdev(dev);
 		printk(KERN_WARNING "hp.c: No HP card found (i/o = 0x%x).\n", io[this_dev]);

@@ -97,7 +97,7 @@ static int aout32_core_dump(long signr, struct pt_regs *regs, struct file *file)
 	set_fs(KERNEL_DS);
 	has_dumped = 1;
 	current->flags |= PF_DUMPCORE;
-       	strncpy(dump.u_comm, current->comm, sizeof(current->comm));
+       	strncpy(dump.u_comm, current->comm, sizeof(dump.u_comm));
 	dump.signal = signr;
 	dump_thread(regs, &dump);
 
@@ -114,9 +114,9 @@ static int aout32_core_dump(long signr, struct pt_regs *regs, struct file *file)
 
 /* make sure we actually have a data and stack area to dump */
 	set_fs(USER_DS);
-	if (verify_area(VERIFY_READ, (void __user *) START_DATA(dump), dump.u_dsize))
+	if (!access_ok(VERIFY_READ, (void __user *) START_DATA(dump), dump.u_dsize))
 		dump.u_dsize = 0;
-	if (verify_area(VERIFY_READ, (void __user *) START_STACK(dump), dump.u_ssize))
+	if (!access_ok(VERIFY_READ, (void __user *) START_STACK(dump), dump.u_ssize))
 		dump.u_ssize = 0;
 
 	set_fs(KERNEL_DS);
@@ -241,7 +241,7 @@ static int load_aout32_binary(struct linux_binprm * bprm, struct pt_regs * regs)
 	current->mm->brk = ex.a_bss +
 		(current->mm->start_brk = N_BSSADDR(ex));
 
-	current->mm->rss = 0;
+	set_mm_counter(current->mm, rss, 0);
 	current->mm->mmap = NULL;
 	compute_creds(bprm);
  	current->flags &= ~PF_FORKNOEXEC;
@@ -321,7 +321,7 @@ beyond_if:
 	orig_thr_flags = current_thread_info()->flags;
 	current_thread_info()->flags |= _TIF_32BIT;
 
-	retval = setup_arg_pages(bprm, EXSTACK_DEFAULT);
+	retval = setup_arg_pages(bprm, STACK_TOP, EXSTACK_DEFAULT);
 	if (retval < 0) { 
 		current_thread_info()->flags = orig_thr_flags;
 
@@ -333,9 +333,8 @@ beyond_if:
 	current->mm->start_stack =
 		(unsigned long) create_aout32_tables((char __user *)bprm->p, bprm);
 	if (!(orig_thr_flags & _TIF_32BIT)) {
-		unsigned long pgd_cache;
+		unsigned long pgd_cache = get_pgd_cache(current->mm->pgd);
 
-		pgd_cache = ((unsigned long)current->mm->pgd[0])<<11UL;
 		__asm__ __volatile__("stxa\t%0, [%1] %2\n\t"
 				     "membar #Sync"
 				     : /* no outputs */

@@ -71,14 +71,15 @@
 
 #include <net/bluetooth/bluetooth.h>
 #include <net/bluetooth/hci_core.h>
+
 #include "hci_uart.h"
 
 #ifndef CONFIG_BT_HCIUART_DEBUG
 #undef  BT_DBG
 #define BT_DBG( A... )
-#undef  BT_DMP
-#define BT_DMP( A... )
 #endif
+
+static int reset = 0;
 
 static struct hci_uart_proto *hup[HCI_UART_MAX_PROTO];
 
@@ -475,7 +476,10 @@ static int hci_uart_register_dev(struct hci_uart *hu)
         hdev->resume = hci_uart_resume;
 
 	hdev->owner = THIS_MODULE;
-	
+
+	if (reset)
+		set_bit(HCI_QUIRK_RESET_ON_INIT, &hdev->quirks);
+
 	if (hci_register_dev(hdev) < 0) {
 		BT_ERR("Can't register HCI device");
 		hci_free_dev(hdev);
@@ -633,14 +637,17 @@ static void __exit hci_uart_exit(void)
 #endif
 
 	/* Release tty registration of line discipline */
-	if ((err = tty_register_ldisc(N_HCI, NULL)))
+	if ((err = tty_unregister_ldisc(N_HCI)))
 		BT_ERR("Can't unregister HCI line discipline (%d)", err);
 }
 
 module_init(hci_uart_init);
 module_exit(hci_uart_exit);
 
-MODULE_AUTHOR("Maxim Krasnyansky <maxk@qualcomm.com>");
+module_param(reset, bool, 0644);
+MODULE_PARM_DESC(reset, "Send HCI reset command on initialization");
+
+MODULE_AUTHOR("Maxim Krasnyansky <maxk@qualcomm.com>, Marcel Holtmann <marcel@holtmann.org>");
 MODULE_DESCRIPTION("Bluetooth HCI UART driver ver " VERSION);
 MODULE_VERSION(VERSION);
 MODULE_LICENSE("GPL");

@@ -21,7 +21,7 @@
 #define MPOL_F_ADDR	(1<<1)	/* look up vma using address */
 
 /* Flags for mbind */
-#define MPOL_MF_STRICT    (1<<0) /* Verify existing pages in the mapping */
+#define MPOL_MF_STRICT	(1<<0)	/* Verify existing pages in the mapping */
 #define MPOL_MF_MOVE	  (1<<1) /* Attempt to move pages in mapping that do
 				    not satisfy policy */
 #define MPOL_MF_NOREPLACE (1<<2) /* do not replace existing shared policies
@@ -149,14 +149,15 @@ static inline void mpol_shared_policy_init(struct shared_policy *info)
 }
 
 int mpol_set_shared_policy(struct shared_policy *info,
-			   struct vm_area_struct *vma,
-			   struct mempolicy *new,
-			   unsigned long flags);
+				struct vm_area_struct *vma,
+				struct mempolicy *new,
+				unsigned long flags);
 void mpol_free_shared_policy(struct shared_policy *p);
 struct mempolicy *mpol_shared_policy_lookup(struct shared_policy *sp,
 					    unsigned long idx);
 struct page *alloc_page_shared_policy(unsigned gfp, struct shared_policy *sp,
 				      unsigned long idx);
+
 extern void numa_default_policy(void);
 extern void numa_policy_init(void);
 

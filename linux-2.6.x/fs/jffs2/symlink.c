@@ -7,7 +7,7 @@
  *
  * For licensing information, see the file 'LICENCE' in this directory.
  *
- * $Id: symlink.c,v 1.15 2005/03/01 10:34:03 dedekind Exp $
+ * $Id: symlink.c,v 1.16 2005/03/01 10:50:48 dedekind Exp $
  *
  */
 
@@ -18,7 +18,7 @@
 #include <linux/namei.h>
 #include "nodelist.h"
 
-static int jffs2_follow_link(struct dentry *dentry, struct nameidata *nd);
+static void *jffs2_follow_link(struct dentry *dentry, struct nameidata *nd);
 
 struct inode_operations jffs2_symlink_inode_operations =
 {	
@@ -27,7 +27,7 @@ struct inode_operations jffs2_symlink_inode_operations =
 	.setattr =	jffs2_setattr
 };
 
-static int jffs2_follow_link(struct dentry *dentry, struct nameidata *nd)
+static void *jffs2_follow_link(struct dentry *dentry, struct nameidata *nd)
 {
 	struct jffs2_inode_info *f = JFFS2_INODE_INFO(dentry->d_inode);
 	

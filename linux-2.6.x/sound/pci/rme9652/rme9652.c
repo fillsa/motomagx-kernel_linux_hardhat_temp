@@ -303,18 +303,22 @@ static int snd_hammerfall_get_buffer(struct pci_dev *pci, struct snd_dma_buffer 
 {
 	dmab->dev.type = SNDRV_DMA_TYPE_DEV;
 	dmab->dev.dev = snd_dma_pci_data(pci);
-	if (! snd_dma_get_reserved_buf(dmab, snd_dma_pci_buf_id(pci))) {
-		if (snd_dma_alloc_pages(SNDRV_DMA_TYPE_DEV, snd_dma_pci_data(pci),
-					size, dmab) < 0)
-			return -ENOMEM;
+	if (snd_dma_get_reserved_buf(dmab, snd_dma_pci_buf_id(pci))) {
+		if (dmab->bytes >= size)
+			return 0;
 	}
+	if (snd_dma_alloc_pages(SNDRV_DMA_TYPE_DEV, snd_dma_pci_data(pci),
+				size, dmab) < 0)
+		return -ENOMEM;
 	return 0;
 }
 
 static void snd_hammerfall_free_buffer(struct snd_dma_buffer *dmab, struct pci_dev *pci)
 {
-	if (dmab->area)
+	if (dmab->area) {
+		dmab->dev.dev = NULL; /* make it anonymous */
 		snd_dma_reserve_buf(dmab, snd_dma_pci_buf_id(pci));
+	}
 }
 
 
@@ -1466,7 +1470,7 @@ static int snd_rme9652_get_tc_valid(snd_kcontrol_t * kcontrol, snd_ctl_elem_valu
 	return 0;
 }
 
-#if ALSA_HAS_STANDARD_WAY_OF_RETURNING_TIMECODE
+#ifdef ALSA_HAS_STANDARD_WAY_OF_RETURNING_TIMECODE
 
 /* FIXME: this routine needs a port to the new control API --jk */
 
@@ -1584,7 +1588,7 @@ RME9652_ADAT_SYNC("ADAT3 Sync Check", 0, 2);
 static snd_kcontrol_new_t snd_rme9652_adat1_input =
 RME9652_ADAT1_IN("ADAT1 Input Source", 0);
 
-int snd_rme9652_create_controls(snd_card_t *card, rme9652_t *rme9652)
+static int snd_rme9652_create_controls(snd_card_t *card, rme9652_t *rme9652)
 {
 	unsigned int idx;
 	int err;
@@ -2664,7 +2668,7 @@ static struct pci_driver driver = {
 
 static int __init alsa_card_hammerfall_init(void)
 {
-	return pci_module_init(&driver);
+	return pci_register_driver(&driver);
 }
 
 static void __exit alsa_card_hammerfall_exit(void)

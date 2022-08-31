@@ -417,13 +417,13 @@ _memcpy_toio(volatile void __iomem *dst, const void *src, __kernel_size_t n)
 
 #define memcpy_toio(d,s,sz)	_memcpy_toio(d,s,sz)
 
-static inline int check_signature(unsigned long io_addr,
+static inline int check_signature(void __iomem *io_addr,
 				  const unsigned char *signature,
 				  int length)
 {
 	int retval = 0;
 	do {
-		if (readb((void __iomem *)io_addr) != *signature++)
+		if (readb(io_addr) != *signature++)
 			goto out;
 		io_addr++;
 	} while (--length);
@@ -484,6 +484,17 @@ extern void pci_iounmap(struct pci_dev *dev, void __iomem *);
 #define dma_cache_inv(_start,_size)		do { } while (0)
 #define dma_cache_wback(_start,_size)		do { } while (0)
 #define dma_cache_wback_inv(_start,_size)	do { } while (0)
+
+/*
+ * Convert a physical pointer to a virtual kernel pointer for /dev/mem
+ * access
+ */
+#define xlate_dev_mem_ptr(p)	__va(p)
+
+/*
+ * Convert a virtual cached pointer to an uncached pointer
+ */
+#define xlate_dev_kmem_ptr(p)	p
 
 #endif
 

@@ -12,6 +12,7 @@
 
 #include <linux/linkage.h>
 #include <asm/assembler.h>
+#include "abort-macro.S"
 /*
  * Function: v6_early_abort
  *
@@ -25,6 +26,9 @@
  *	   : sp = pointer to registers
  *
  * Purpose : obtain information about current aborted instruction.
+ * Note: we read user space.  This means we might cause a data
+ * abort here if the I-TLB and D-TLB aren't seeing the same
+ * picture.  Unfortunately, this does happen.  We live with it.
  */
 	.align	5
 ENTRY(v6_early_abort)
@@ -51,3 +55,5 @@ ENTRY(v6_early_abort)
 	cmp	r3, r2
 	orreq	r1, r1, #1 << 11		@ SWP/SWPB, so set write bit.
 	mov	pc, lr
+
+

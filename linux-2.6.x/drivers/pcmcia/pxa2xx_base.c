@@ -260,7 +260,7 @@ int pxa2xx_drv_pcmcia_remove(struct device *dev)
 	return soc_common_drv_pcmcia_remove(dev);
 }
 
-static int pxa2xx_drv_pcmcia_suspend(struct device *dev, u32 state, u32 level)
+static int pxa2xx_drv_pcmcia_suspend(struct device *dev, pm_message_t state, u32 level)
 {
 	int ret = 0;
 	if (level == SUSPEND_SAVE_STATE)

@@ -19,6 +19,8 @@
 #include <linux/mc146818rtc.h>
 #include <linux/cache.h>
 #include <linux/interrupt.h>
+#include <linux/cpu.h>
+#include <linux/module.h>
 
 #include <asm/mtrr.h>
 #include <asm/tlbflush.h>
@@ -164,7 +166,7 @@ void send_IPI_mask_bitmask(cpumask_t cpumask, int vector)
 	unsigned long flags;
 
 	local_irq_save(flags);
-		
+	WARN_ON(mask & ~cpus_addr(cpu_online_map)[0]);
 	/*
 	 * Wait for idle.
 	 */
@@ -189,7 +191,7 @@ void send_IPI_mask_bitmask(cpumask_t cpumask, int vector)
 	local_irq_restore(flags);
 }
 
-inline void send_IPI_mask_sequence(cpumask_t mask, int vector)
+void send_IPI_mask_sequence(cpumask_t mask, int vector)
 {
 	unsigned long cfg, flags;
 	unsigned int query_cpu;
@@ -245,6 +247,7 @@ inline void send_IPI_mask_sequence(cpumask_t mask, int vector)
 static cpumask_t flush_cpumask;
 static struct mm_struct * flush_mm;
 static unsigned long flush_va;
+//2.6.12	+static DEFINE_SPINLOCK(tlbstate_lock);
 static DEFINE_RAW_SPINLOCK(tlbstate_lock);
 #define FLUSH_ALL	0xffffffff
 
@@ -347,20 +350,20 @@ out:
 static void flush_tlb_others(cpumask_t cpumask, struct mm_struct *mm,
 						unsigned long va)
 {
-	cpumask_t tmp;
 	/*
 	 * A couple of (to be removed) sanity checks:
 	 *
-	 * - we do not send IPIs to not-yet booted CPUs.
 	 * - current CPU must not be in mask
 	 * - mask must exist :)
 	 */
 	BUG_ON(cpus_empty(cpumask));
-
-	cpus_and(tmp, cpumask, cpu_online_map);
-	BUG_ON(!cpus_equal(cpumask, tmp));
 	BUG_ON(cpu_isset(smp_processor_id(), cpumask));
 	BUG_ON(!mm);
+
+	/* If a CPU which we ran on has gone down, OK. */
+	cpus_and(cpumask, cpumask, cpu_online_map);
+	if (cpus_empty(cpumask))
+		return;
 
 	/*
 	 * i'm not happy about this global shared spinlock in the
@@ -454,6 +457,7 @@ void flush_tlb_page(struct vm_area_struct * vma, unsigned long va)
 
 	preempt_enable();
 }
+EXPORT_SYMBOL(flush_tlb_page);
 
 static void do_flush_tlb_all(void* info)
 {
@@ -476,6 +480,7 @@ void flush_tlb_all(void)
  */
 void smp_send_reschedule(int cpu)
 {
+	WARN_ON(cpu_is_offline(cpu));
 	send_IPI_mask(cpumask_of_cpu(cpu), RESCHEDULE_VECTOR);
 }
 
@@ -493,6 +498,7 @@ void smp_send_reschedule_allbutself(void)
  * Structure and data for smp_call_function(). This is designed to minimise
  * static memory requirements. It also looks cleaner.
  */
+//2.6.12	+static DEFINE_SPINLOCK(call_lock);
 static DEFINE_RAW_SPINLOCK(call_lock);
 
 struct call_data_struct {
@@ -502,6 +508,16 @@ struct call_data_struct {
 	atomic_t finished;
 	int wait;
 };
+
+void lock_ipi_call_lock(void)
+{
+	spin_lock_irq(&call_lock);
+}
+
+void unlock_ipi_call_lock(void)
+{
+	spin_unlock_irq(&call_lock);
+}
 
 static struct call_data_struct * call_data;
 
@@ -526,10 +542,15 @@ int smp_call_function (void (*func) (void *info), void *info, int nonatomic,
  */
 {
 	struct call_data_struct data;
-	int cpus = num_online_cpus()-1;
+	int cpus;
 
-	if (!cpus)
+	/* Holding any lock stops cpus from going down. */
+	spin_lock(&call_lock);
+	cpus = num_online_cpus() - 1;
+	if (!cpus) {
+		spin_unlock(&call_lock);
 		return 0;
+	}
 
 	/* Can deadlock when called with interrupts disabled */
 	WARN_ON(irqs_disabled());
@@ -541,7 +562,6 @@ int smp_call_function (void (*func) (void *info), void *info, int nonatomic,
 	if (wait)
 		atomic_set(&data.finished, 0);
 
-	spin_lock(&call_lock);
 	call_data = &data;
 	mb();
 	
@@ -559,6 +579,7 @@ int smp_call_function (void (*func) (void *info), void *info, int nonatomic,
 
 	return 0;
 }
+EXPORT_SYMBOL(smp_call_function);
 
 static void stop_this_cpu (void * dummy)
 {

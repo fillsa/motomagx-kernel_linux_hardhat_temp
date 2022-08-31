@@ -1,4 +1,4 @@
-/* 
+/*
  * dvb_frontend.h
  *
  * Copyright (C) 2001 convergence integrated media GmbH
@@ -39,28 +39,6 @@
 #include <linux/dvb/frontend.h>
 
 #include "dvbdev.h"
-
-/* FIXME: Move to i2c-id.h */
-#define I2C_DRIVERID_DVBFE_SP8870	I2C_DRIVERID_EXP2
-#define I2C_DRIVERID_DVBFE_CX22700	I2C_DRIVERID_EXP2
-#define I2C_DRIVERID_DVBFE_AT76C651	I2C_DRIVERID_EXP2
-#define I2C_DRIVERID_DVBFE_CX24110	I2C_DRIVERID_EXP2
-#define I2C_DRIVERID_DVBFE_CX22702	I2C_DRIVERID_EXP2
-#define I2C_DRIVERID_DVBFE_DIB3000MB	I2C_DRIVERID_EXP2
-#define I2C_DRIVERID_DVBFE_DST		I2C_DRIVERID_EXP2
-#define I2C_DRIVERID_DVBFE_DUMMY	I2C_DRIVERID_EXP2
-#define I2C_DRIVERID_DVBFE_L64781	I2C_DRIVERID_EXP2
-#define I2C_DRIVERID_DVBFE_MT312	I2C_DRIVERID_EXP2
-#define I2C_DRIVERID_DVBFE_MT352	I2C_DRIVERID_EXP2
-#define I2C_DRIVERID_DVBFE_NXT6000	I2C_DRIVERID_EXP2
-#define I2C_DRIVERID_DVBFE_SP887X	I2C_DRIVERID_EXP2
-#define I2C_DRIVERID_DVBFE_STV0299	I2C_DRIVERID_EXP2
-#define I2C_DRIVERID_DVBFE_TDA1004X	I2C_DRIVERID_EXP2
-#define I2C_DRIVERID_DVBFE_TDA8083	I2C_DRIVERID_EXP2
-#define I2C_DRIVERID_DVBFE_VES1820	I2C_DRIVERID_EXP2
-#define I2C_DRIVERID_DVBFE_VES1X93	I2C_DRIVERID_EXP2
-#define I2C_DRIVERID_DVBFE_TDA80XX	I2C_DRIVERID_EXP2
-
 
 struct dvb_frontend_tune_settings {
         int min_delay_ms;
@@ -115,28 +93,7 @@ struct dvb_frontend {
 	struct dvb_frontend_ops* ops;
 	struct dvb_adapter *dvb;
 	void* demodulator_priv;
-
-	struct dvb_device *dvbdev;
-	struct dvb_frontend_parameters parameters;
-	struct dvb_fe_events events;
-	struct semaphore sem;
-	struct list_head list_head;
-	wait_queue_head_t wait_queue;
-	pid_t thread_pid;
-	unsigned long release_jiffies;
-	int state;
-	int bending;
-	int lnb_drift;
-	int inversion;
-	int auto_step;
-	int auto_sub_step;
-	int started_auto_step;
-	int min_delay;
-	int max_drift;
-	int step_size;
-	int exit;
-	int wakeup;
-	fe_status_t status;
+	void* frontend_priv;
 };
 
 extern int dvb_register_frontend(struct dvb_adapter* dvb,

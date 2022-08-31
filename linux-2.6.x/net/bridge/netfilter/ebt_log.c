@@ -55,13 +55,12 @@ static void print_MAC(unsigned char *p)
 }
 
 #define myNIPQUAD(a) a[0], a[1], a[2], a[3]
-static void ebt_log(const struct sk_buff *skb, const struct net_device *in,
-   const struct net_device *out, const void *data, unsigned int datalen)
+static void ebt_log(const struct sk_buff *skb, unsigned int hooknr,
+   const struct net_device *in, const struct net_device *out,
+   const void *data, unsigned int datalen)
 {
 	struct ebt_log_info *info = (struct ebt_log_info *)data;
 	char level_string[4] = "< >";
-	union {struct iphdr iph; struct tcpudphdr ports;
-	       struct arphdr arph; struct arppayload arpp;} u;
 
 	level_string[1] = '0' + info->loglevel;
 	spin_lock_bh(&ebt_log_lock);
@@ -87,7 +86,7 @@ static void ebt_log(const struct sk_buff *skb, const struct net_device *in,
 		}
 		printk(" IP SRC=%u.%u.%u.%u IP DST=%u.%u.%u.%u,",
 		   NIPQUAD(ih->saddr), NIPQUAD(ih->daddr));
-		printk(" IP tos=0x%02X, IP proto=%d", u.iph.tos,
+		printk(" IP tos=0x%02X, IP proto=%d", ih->tos,
 		       ih->protocol);
 		if (ih->protocol == IPPROTO_TCP ||
 		    ih->protocol == IPPROTO_UDP) {
@@ -126,7 +125,7 @@ static void ebt_log(const struct sk_buff *skb, const struct net_device *in,
 		    ah->ar_pln == sizeof(uint32_t)) {
 			struct arppayload _arpp, *ap;
 
-			ap = skb_header_pointer(skb, sizeof(u.arph),
+			ap = skb_header_pointer(skb, sizeof(_arph),
 						sizeof(_arpp), &_arpp);
 			if (ap == NULL) {
 				printk(" INCOMPLETE ARP payload");

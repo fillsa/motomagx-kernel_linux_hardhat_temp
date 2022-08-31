@@ -87,6 +87,7 @@ static int __init dec_serial_console_init(void)
 	if (IOASIC)
 		zs_serial_console_init();
 #endif
+
 #ifdef CONFIG_DZ
 	if (!IOASIC)
 		dz_serial_console_init();

@@ -31,6 +31,7 @@
 #include <linux/time.h>
 #include <linux/hrtimers.h>
 #include <linux/jiffies.h>
+#include <linux/posix-timers.h>
 #include <linux/cpu.h>
 #include <linux/syscalls.h>
 #include <linux/kallsyms.h>
@@ -42,7 +43,7 @@
 #include <asm/div64.h>
 #include <asm/timex.h>
 #include <asm/io.h>
-#include <linux/timer-list.h>
+#include <linux/timer-list.h> //mvl 2.6.12 define tut
 
 #ifdef CONFIG_TIME_INTERPOLATION
 static void time_interpolator_update(long delta_nsec);
@@ -55,12 +56,9 @@ static inline void set_running_timer(tvec_base_t *base,
 					struct timer_list *timer)
 {
 #ifdef CONFIG_SMP
-	base->running_timer = timer;
+	base->t_base.running_timer = timer;
 #endif
 }
-/* Fake initialization */
-DEFINE_PER_CPU(tvec_base_t, tvec_bases) = { SPIN_LOCK_UNLOCKED };
-
 
 static void check_timer_failed(struct timer_list *timer)
 {
@@ -76,7 +74,6 @@ static void check_timer_failed(struct timer_list *timer)
 	/*
 	 * Now fix it up
 	 */
-	spin_lock_init(&timer->lock);
 	timer->magic = TIMER_MAGIC;
 }
 
@@ -131,65 +128,113 @@ static void internal_add_timer(tvec_base_t *base, struct timer_list *timer)
 	timer->base = base;	
 }
 
+typedef struct timer_base_s timer_base_t;
+/*
+ * Used by TIMER_INITIALIZER, we can't use per_cpu(tvec_bases)
+ * at compile time, and we need timer->base to lock the timer.
+ */
+timer_base_t __init_timer_base
+	____cacheline_aligned_in_smp = { .lock = SPIN_LOCK_UNLOCKED };
+EXPORT_SYMBOL(__init_timer_base);
+
+/***
+ * init_timer - initialize a timer.
+ * @timer: the timer to be initialized
+ *
+ * init_timer() must be done to a timer prior calling *any* of the
+ * other timer functions.
+ */
+void fastcall init_timer(struct timer_list *timer)
+{
+	timer->entry.next = NULL;
+	timer->base = &per_cpu(tvec_bases, raw_smp_processor_id()).t_base;
+	timer->magic = TIMER_MAGIC;
+}
+EXPORT_SYMBOL(init_timer);
+
+static inline void detach_timer(struct timer_list *timer,
+					int clear_pending)
+{
+	struct list_head *entry = &timer->entry;
+
+	__list_del(entry->prev, entry->next);
+	if (clear_pending)
+		entry->next = NULL;
+	entry->prev = LIST_POISON2;
+}
+
+/*
+ * We are using hashed locking: holding per_cpu(tvec_bases).t_base.lock
+ * means that all timers which are tied to this base via timer->base are
+ * locked, and the base itself is locked too.
+ *
+ * So __run_timers/migrate_timers can safely modify all timers which could
+ * be found on ->tvX lists.
+ *
+ * When the timer's base is locked, and the timer removed from list, it is
+ * possible to set timer->base = NULL and drop the lock: the timer remains
+ * locked.
+ */
+static timer_base_t *lock_timer_base(struct timer_list *timer,
+					unsigned long *flags)
+{
+	timer_base_t *base;
+
+	for (;;) {
+		base = timer->base;
+		if (likely(base != NULL)) {
+			spin_lock_irqsave(&base->lock, *flags);
+			if (likely(base == timer->base))
+				return base;
+			/* The timer has migrated to another CPU */
+			spin_unlock_irqrestore(&base->lock, *flags);
+		}
+		cpu_relax();
+	}
+}
+
 int __mod_timer(struct timer_list *timer, unsigned long expires)
 {
-	tvec_base_t *old_base, *new_base;
+	timer_base_t *base;
+	tvec_base_t *new_base;
 	unsigned long flags;
 	int ret = 0, cpu;
 
 	BUG_ON(!timer->function);
-
 	check_timer(timer);
 
-	spin_lock_irqsave(&timer->lock, flags);
-	cpu = _smp_processor_id();
-	new_base = &per_cpu(tvec_bases, cpu);
-repeat:
-	old_base = timer->base;
+	base = lock_timer_base(timer, &flags);
 
-	/*
-	 * Prevent deadlocks via ordering by old_base < new_base.
-	 */
-	if (old_base && (new_base != old_base)) {
-		if (old_base < new_base) {
-			spin_lock(&new_base->lock);
-			spin_lock(&old_base->lock);
-		} else {
-			spin_lock(&old_base->lock);
-			spin_lock(&new_base->lock);
-		}
-		/*
-		 * The timer base might have been cancelled while we were
-		 * trying to take the lock(s):
-		 */
-		if (timer->base != old_base) {
-			spin_unlock(&new_base->lock);
-			spin_unlock(&old_base->lock);
-			goto repeat;
-		}
-	} else {
-		spin_lock(&new_base->lock);
-		if (timer->base != old_base) {
-			spin_unlock(&new_base->lock);
-			goto repeat;
-		}
-	}
-
-	/*
-	 * Delete the previous timeout (if there was any), and install
-	 * the new one:
-	 */
-	if (old_base) {
-		list_del(&timer->entry);
+	if (timer_pending(timer)) {
+		detach_timer(timer, 0);
 		ret = 1;
 	}
+
+	cpu = raw_smp_processor_id();
+	new_base = &per_cpu(tvec_bases, cpu);
+	if (base != &new_base->t_base) {
+		/*
+		 * We are trying to schedule the timer on the local CPU.
+		 * However we can't change timer's base while it is running,
+		 * otherwise del_timer_sync() can't detect that the timer's
+		 * handler yet has not finished. This also guarantees that
+		 * the timer is serialized wrt itself.
+		 */
+		if (unlikely(base->running_timer == timer)) {
+			/* The timer remains on a former base */
+			new_base = container_of(base, tvec_base_t, t_base);
+		} else {
+			/* See the comment in lock_timer_base() */
+			timer->base = NULL;
+			spin_unlock(&base->lock);
+			spin_lock(&new_base->t_base.lock);
+			timer->base = &new_base->t_base;
+		}
+	}
+
 	timer->expires = expires;
 	internal_add_timer(new_base, timer);
-
-	if (old_base && (new_base != old_base))
-		spin_unlock(&old_base->lock);
-	spin_unlock(&new_base->lock);
-	spin_unlock_irqrestore(&timer->lock, flags);
+	spin_unlock_irqrestore(&new_base->t_base.lock, flags);
 
 	return ret;
 }
@@ -207,14 +252,15 @@ void add_timer_on(struct timer_list *timer, int cpu)
 {
 	tvec_base_t *base = &per_cpu(tvec_bases, cpu);
   	unsigned long flags;
-  
+
   	BUG_ON(timer_pending(timer) || !timer->function);
 
 	check_timer(timer);
 
-	spin_lock_irqsave(&base->lock, flags);
+	spin_lock_irqsave(&base->t_base.lock, flags);
+	timer->base = &base->t_base;
 	internal_add_timer(base, timer);
-	spin_unlock_irqrestore(&base->lock, flags);
+	spin_unlock_irqrestore(&base->t_base.lock, flags);
 }
 
 
@@ -269,32 +315,55 @@ EXPORT_SYMBOL(mod_timer);
  */
 int del_timer(struct timer_list *timer)
 {
+	timer_base_t *base;
 	unsigned long flags;
-	tvec_base_t *base;
+	int ret = 0;
 
 	check_timer(timer);
 
-repeat:
- 	base = timer->base;
-	if (!base)
-		return 0;
-	spin_lock_irqsave(&base->lock, flags);
-	if (base != timer->base) {
+	if (timer_pending(timer)) {
+		base = lock_timer_base(timer, &flags);
+		if (timer_pending(timer)) {
+			detach_timer(timer, 1);
+			ret = 1;
+		}
 		spin_unlock_irqrestore(&base->lock, flags);
-		goto repeat;
 	}
-	list_del(&timer->entry);
-	/* Need to make sure that anybody who sees a NULL base also sees the list ops */
-	smp_wmb();
-	timer->base = NULL;
-	spin_unlock_irqrestore(&base->lock, flags);
 
-	return 1;
+	return ret;
 }
 
 EXPORT_SYMBOL(del_timer);
 
 #ifdef CONFIG_SMP
+/*
+ * This function tries to deactivate a timer. Upon successful (ret >= 0)
+ * exit the timer is not queued and the handler is not running on any CPU.
+ *
+ * It must not be called from interrupt contexts.
+ */
+int try_to_del_timer_sync(struct timer_list *timer)
+{
+	timer_base_t *base;
+	unsigned long flags;
+	int ret = -1;
+
+	base = lock_timer_base(timer, &flags);
+
+	if (base->running_timer == timer)
+		goto out;
+
+	ret = 0;
+	if (timer_pending(timer)) {
+		detach_timer(timer, 1);
+		ret = 1;
+	}
+out:
+	spin_unlock_irqrestore(&base->lock, flags);
+
+	return ret;
+}
+
 /***
  * del_timer_sync - deactivate a timer and wait for the handler to finish.
  * @timer: the timer to be deactivated
@@ -306,70 +375,24 @@ EXPORT_SYMBOL(del_timer);
  * Synchronization rules: callers must prevent restarting of the timer,
  * otherwise this function is meaningless. It must not be called from
  * interrupt contexts. The caller must not hold locks which would prevent
- * completion of the timer's handler.  Upon exit the timer is not queued and
- * the handler is not running on any CPU.
+ * completion of the timer's handler. The timer's handler must not call
+ * add_timer_on(). Upon exit the timer is not queued and the handler is
+ * not running on any CPU.
  *
  * The function returns whether it has deactivated a pending timer or not.
- *
- * del_timer_sync() is slow and complicated because it copes with timer
- * handlers which re-arm the timer (periodic timers).  If the timer handler
- * is known to not do this (a single shot timer) then use
- * del_singleshot_timer_sync() instead.
  */
 int del_timer_sync(struct timer_list *timer)
 {
-	tvec_base_t *base;
-	int i, ret = 0;
-
 	check_timer(timer);
 
-del_again:
-	ret += del_timer(timer);
-
-	for_each_online_cpu(i) {
-		base = &per_cpu(tvec_bases, i);
-		if (base->running_timer == timer) {
-			wait_event(base->wait_for_running_timer,
-				base->running_timer != timer);
-			break;
-		}
+	for (;;) {
+		int ret = try_to_del_timer_sync(timer);
+		if (ret >= 0)
+			return ret;
 	}
-	smp_rmb();
-	if (timer_pending(timer))
-		goto del_again;
-
-	return ret;
 }
+
 EXPORT_SYMBOL(del_timer_sync);
-
-/***
- * del_singleshot_timer_sync - deactivate a non-recursive timer
- * @timer: the timer to be deactivated
- *
- * This function is an optimization of del_timer_sync for the case where the
- * caller can guarantee the timer does not reschedule itself in its timer
- * function.
- *
- * Synchronization rules: callers must prevent restarting of the timer,
- * otherwise this function is meaningless. It must not be called from
- * interrupt contexts. The caller must not hold locks which wold prevent
- * completion of the timer's handler.  Upon exit the timer is not queued and
- * the handler is not running on any CPU.
- *
- * The function returns whether it has deactivated a pending timer or not.
- */
-int del_singleshot_timer_sync(struct timer_list *timer)
-{
-	int ret = del_timer(timer);
-
-	if (!ret) {
-		ret = del_timer_sync(timer);
-		BUG_ON(ret);
-	}
-
-	return ret;
-}
-EXPORT_SYMBOL(del_singleshot_timer_sync);
 #endif
 
 static int cascade(tvec_base_t *base, tvec_t *tv, int index)
@@ -387,7 +410,7 @@ static int cascade(tvec_base_t *base, tvec_t *tv, int index)
 		struct timer_list *tmp;
 
 		tmp = list_entry(curr, struct timer_list, entry);
-		BUG_ON(tmp->base != base);
+		BUG_ON(tmp->base != &base->t_base);
 		curr = curr->next;
 		internal_add_timer(base, tmp);
 	}
@@ -409,22 +432,22 @@ static inline void __run_timers(tvec_base_t *base)
 {
 	struct timer_list *timer;
 
-	spin_lock_irq(&base->lock);
+	spin_lock_irq(&base->t_base.lock);
  	BUMP_VST_VISIT_COUNT; 
 	while (time_after_eq(jiffies, base->timer_jiffies)) {
 		struct list_head work_list = LIST_HEAD_INIT(work_list);
 		struct list_head *head = &work_list;
  		int index = base->timer_jiffies & TVR_MASK;
-
+ 
 		if (softirq_need_resched()) {
 			/* running_timer might be stale: */
 			set_running_timer(base, NULL);
 //			if (waitqueue_active(&base->wait_running_timer))
 				wake_up(&base->wait_for_running_timer);
-			spin_unlock_irq(&base->lock);
+			spin_unlock_irq(&base->t_base.lock);
 			cond_resched_all();
 			cpu_relax();
-			spin_lock_irq(&base->lock);
+			spin_lock_irq(&base->t_base.lock);
 			/*
 			 * We can simply continue after preemption, nobody
 			 * else can touch timer_jiffies so 'index' is still
@@ -448,7 +471,7 @@ repeat:
 			unsigned long data;
 
 			timer = list_entry(head->next,struct timer_list,entry);
-			check_for_high_res_timer(timer, &base->lock, 
+			check_for_high_res_timer(timer, &base->t_base.lock, 
 						 goto repeat);
  			fn = timer->function;
  			data = timer->data;
@@ -457,23 +480,23 @@ repeat:
 			set_running_timer(base, timer);
 			smp_wmb();
 			timer->base = NULL;
-			spin_unlock_irq(&base->lock);
+			spin_unlock_irq(&base->t_base.lock);
 			{
 				u32 preempt_count = preempt_count();
 				fn(data);
 				if (preempt_count != preempt_count()) {
-					print_symbol("BUG: unbalanced timer-handler preempt count in %s!\n", (unsigned long) fn);
-					printk("entered with %08x, exited with %08x.\n", preempt_count, preempt_count());
-					preempt_count() = preempt_count;
+					       print_symbol("BUG: unbalanced timer-handler preempt count in %s!\n", (unsigned long) fn);
+					       printk("entered with %08x, exited with %08x.\n", preempt_count, preempt_count());
+					       preempt_count() = preempt_count;
 				}
 			}
 			cond_resched_all();
-			spin_lock_irq(&base->lock);
+			spin_lock_irq(&base->t_base.lock);
 			goto repeat;
 		}
 	}
 	set_running_timer(base, NULL);
-	spin_unlock_irq(&base->lock);
+	spin_unlock_irq(&base->t_base.lock);
 //	if (waitqueue_active(&base->wait_running_timer))
 		wake_up(&base->wait_for_running_timer);
 	done_to_high_res();
@@ -495,7 +518,7 @@ unsigned long next_timer_interrupt(void)
 	int i, j;
 
 	base = &__get_cpu_var(tvec_bases);
-	spin_lock(&base->lock);
+	spin_lock(&base->t_base.lock);
 	expires = base->timer_jiffies + (LONG_MAX >> 1);
 	list = 0;
 
@@ -543,7 +566,7 @@ found:
 				expires = nte->expires;
 		}
 	}
-	spin_unlock(&base->lock);
+	spin_unlock(&base->t_base.lock);
 	return expires;
 }
 #endif
@@ -559,7 +582,7 @@ unsigned long tick_nsec = TICK_NSEC;		/* ACTHZ period (nsec) */
 /* 
  * The current time 
  * wall_to_monotonic is what we need to add to xtime (or xtime corrected 
- * for sub jiffie times) to get to monotonic time.  Monotonic is pegged at zero
+ * for sub jiffie times) to get to monotonic time.  Monotonic is pegged
  * at zero at system boot time, so wall_to_monotonic will be negative,
  * however, we will ALWAYS keep the tv_nsec part positive so we can use
  * the usual normalization.
@@ -585,10 +608,10 @@ long time_tolerance = MAXFREQ;		/* frequency tolerance (ppm)	*/
 long time_precision = 1;		/* clock precision (us)		*/
 long time_maxerror = NTP_PHASE_LIMIT;	/* maximum error (us)		*/
 long time_esterror = NTP_PHASE_LIMIT;	/* estimated error (us)		*/
-long time_phase;			/* phase offset (scaled us)	*/
+static long time_phase;			/* phase offset (scaled us)	*/
 long time_freq = (((NSEC_PER_SEC + HZ/2) % HZ - HZ/2) << SHIFT_USEC) / NSEC_PER_USEC;
 					/* frequency offset (scaled ppm)*/
-long time_adj;				/* tick adjust (scaled 1 / HZ)	*/
+static long time_adj;			/* tick adjust (scaled 1 / HZ)	*/
 long time_reftime;			/* time at last adjustment (s)	*/
 long time_adjust;
 long time_next_adjust;
@@ -804,59 +827,6 @@ static void update_wall_time(unsigned long ticks)
 	} while (ticks);
 }
 
-static inline void do_process_times(struct task_struct *p,
-	unsigned long user, unsigned long system)
-{
-	unsigned long psecs;
-
-	psecs = (p->utime += user);
-	psecs += (p->stime += system);
-	if (p->signal && !unlikely(p->state & (EXIT_DEAD|EXIT_ZOMBIE)) &&
-	    psecs / HZ >= p->signal->rlim[RLIMIT_CPU].rlim_cur) {
-		/* Send SIGXCPU every second.. */
-		if (!(psecs % HZ))
-			send_sig(SIGXCPU, p, 1);
-		/* and SIGKILL when we go over max.. */
-		if (psecs / HZ >= p->signal->rlim[RLIMIT_CPU].rlim_max)
-			send_sig(SIGKILL, p, 1);
-	}
-}
-
-static inline void do_it_virt(struct task_struct * p, unsigned long ticks)
-{
-	unsigned long it_virt = p->it_virt_value;
-
-	if (it_virt) {
-		it_virt -= ticks;
-		if (!it_virt) {
-			it_virt = p->it_virt_incr;
-			send_sig(SIGVTALRM, p, 1);
-		}
-		p->it_virt_value = it_virt;
-	}
-}
-
-static inline void do_it_prof(struct task_struct *p)
-{
-	unsigned long it_prof = p->it_prof_value;
-
-	if (it_prof) {
-		if (--it_prof == 0) {
-			it_prof = p->it_prof_incr;
-			send_sig(SIGPROF, p, 1);
-		}
-		p->it_prof_value = it_prof;
-	}
-}
-
-static void update_one_process(struct task_struct *p, unsigned long user,
-			unsigned long system, int cpu)
-{
-	do_process_times(p, user, system);
-	do_it_virt(p, user);
-	do_it_prof(p);
-}	
-
 /*
  * Called from the timer interrupt handler to charge one tick to the current 
  * process.  user_tick is 1 if the tick is user time, 0 for system.
@@ -871,16 +841,16 @@ void update_process_times(int user_tick)
 	unsigned long delta_jiffies = jiffies - process_jiffies[cpu];
 
 	process_jiffies[cpu] += delta_jiffies;
-	if (user_tick) 
-		user_tick = delta_jiffies;
+	/* Note: this timer irq context must be accounted for as well. */
+	if (user_tick)
+		user_tick = delta_jiffies; // account_user_time(p, jiffies_to_cputime(1));
 	else
-		system = delta_jiffies;
-
-	update_one_process(p, user_tick, system, cpu);
+		system = delta_jiffies; // account_system_time(p, HARDIRQ_OFFSET, jiffies_to_cputime(1));
 	run_local_timers();
 	if (rcu_pending(cpu))
 		rcu_check_callbacks(cpu, user_tick);
-	scheduler_tick(user_tick, system);
+	scheduler_tick();
+ 	run_posix_cpu_timers(p);
 }
 
 /*
@@ -908,6 +878,8 @@ static unsigned long count_active_tasks(void)
  * Requires xtime_lock to access.
  */
 unsigned long avenrun[3];
+
+EXPORT_SYMBOL(avenrun);
 
 /*
  * calc_load - given tick count, update the avenrun load estimates.
@@ -1082,7 +1054,7 @@ asmlinkage long sys_getppid(void)
 	parent = me->group_leader->real_parent;
 	for (;;) {
 		pid = parent->tgid;
-#ifdef CONFIG_SMP
+#if defined(CONFIG_SMP) || defined(CONFIG_PREEMPT)
 {
 		struct task_struct *old = parent;
 
@@ -1090,7 +1062,7 @@ asmlinkage long sys_getppid(void)
 		 * Make sure we read the pid before re-reading the
 		 * parent pointer:
 		 */
-		rmb();
+		smp_rmb();
 		parent = me->group_leader->real_parent;
 		if (old != parent)
 			continue;
@@ -1370,9 +1342,9 @@ static void __devinit init_timers_cpu(int cpu)
 {
 	int j;
 	tvec_base_t *base;
-       
+
 	base = &per_cpu(tvec_bases, cpu);
-	spin_lock_init(&base->lock);
+	spin_lock_init(&base->t_base.lock);
 	init_waitqueue_head(&base->wait_for_running_timer);
 
 	for (j = 0; j < TVN_SIZE; j++) {
@@ -1389,21 +1361,16 @@ static void __devinit init_timers_cpu(int cpu)
 }
 
 #ifdef CONFIG_HOTPLUG_CPU
-static int migrate_timer_list(tvec_base_t *new_base, struct list_head *head)
+static void migrate_timer_list(tvec_base_t *new_base, struct list_head *head)
 {
 	struct timer_list *timer;
 
 	while (!list_empty(head)) {
 		timer = list_entry(head->next, struct timer_list, entry);
-		/* We're locking backwards from __mod_timer order here,
-		   beware deadlock. */
-		if (!spin_trylock(&timer->lock))
-			return 0;
-		list_del(&timer->entry);
+		detach_timer(timer, 0);
+		timer->base = &new_base->t_base;
 		internal_add_timer(new_base, timer);
-		spin_unlock(&timer->lock);
 	}
-	return 1;
 }
 
 static void __devinit migrate_timers(int cpu)
@@ -1417,39 +1384,24 @@ static void __devinit migrate_timers(int cpu)
 	new_base = &get_cpu_var(tvec_bases);
 
 	local_irq_disable();
-again:
-	/* Prevent deadlocks via ordering by old_base < new_base. */
-	if (old_base < new_base) {
-		spin_lock(&new_base->lock);
-		spin_lock(&old_base->lock);
-	} else {
-		spin_lock(&old_base->lock);
-		spin_lock(&new_base->lock);
-	}
+	spin_lock(&new_base->t_base.lock);
+	spin_lock(&old_base->t_base.lock);
 
-	if (old_base->running_timer)
+	if (old_base->t_base.running_timer)
 		BUG();
 	for (i = 0; i < TVR_SIZE; i++)
-		if (!migrate_timer_list(new_base, old_base->tv1.vec + i))
-			goto unlock_again;
-	for (i = 0; i < TVN_SIZE; i++)
-		if (!migrate_timer_list(new_base, old_base->tv2.vec + i)
-		    || !migrate_timer_list(new_base, old_base->tv3.vec + i)
-		    || !migrate_timer_list(new_base, old_base->tv4.vec + i)
-		    || !migrate_timer_list(new_base, old_base->tv5.vec + i))
-			goto unlock_again;
-	spin_unlock(&old_base->lock);
-	spin_unlock(&new_base->lock);
+		migrate_timer_list(new_base, old_base->tv1.vec + i);
+	for (i = 0; i < TVN_SIZE; i++) {
+		migrate_timer_list(new_base, old_base->tv2.vec + i);
+		migrate_timer_list(new_base, old_base->tv3.vec + i);
+		migrate_timer_list(new_base, old_base->tv4.vec + i);
+		migrate_timer_list(new_base, old_base->tv5.vec + i);
+	}
+
+	spin_unlock(&old_base->t_base.lock);
+	spin_unlock(&new_base->t_base.lock);
 	local_irq_enable();
 	put_cpu_var(tvec_bases);
-	return;
-
-unlock_again:
-	/* Avoid deadlock with __mod_timer, by backing off. */
-	spin_unlock(&old_base->lock);
-	spin_unlock(&new_base->lock);
-	cpu_relax();
-	goto again;
 }
 #endif /* CONFIG_HOTPLUG_CPU */
 
@@ -1503,10 +1455,10 @@ static inline u64 time_interpolator_get_cycles(unsigned int src)
 			return x();
 
 		case TIME_SOURCE_MMIO64	:
-			return readq(time_interpolator->addr);
+			return readq((void __iomem *) time_interpolator->addr);
 
 		case TIME_SOURCE_MMIO32	:
-			return readl(time_interpolator->addr);
+			return readl((void __iomem *) time_interpolator->addr);
 
 		default: return get_cycles();
 	}
@@ -1681,7 +1633,7 @@ void msleep(unsigned int msecs)
 EXPORT_SYMBOL(msleep);
 
 /**
- * msleep_interruptible - sleep waiting for waitqueue interruptions
+ * msleep_interruptible - sleep waiting for signals
  * @msecs: Time in milliseconds to sleep for
  */
 unsigned long msleep_interruptible(unsigned int msecs)

@@ -19,10 +19,10 @@
 #include "os.h"
 #include "user_util.h"
 #include "tlb.h"
-#include "frame.h"
 #include "kern.h"
 #include "mode.h"
 #include "proc_mm.h"
+#include "registers.h"
 
 void *switch_to_skas(void *prev, void *next)
 {
@@ -68,8 +68,11 @@ void new_thread_handler(int sig)
 	 * 0 if it just exits
 	 */
 	n = run_kernel_thread(fn, arg, &current->thread.exec_buf);
-	if(n == 1)
+	if(n == 1){
+		/* Handle any immediate reschedules or signals */
+		interrupt_end();
 		userspace(&current->thread.regs.regs);
+	}
 	else do_exit(0);
 }
 
@@ -80,10 +83,6 @@ void new_thread_proc(void *stack, void (*handler)(int sig))
 }
 
 void release_thread_skas(struct task_struct *task)
-{
-}
-
-void exit_thread_skas(void)
 {
 }
 
@@ -100,6 +99,8 @@ void fork_handler(int sig)
 	schedule_tail(current->thread.prev_sched);
 	current->thread.prev_sched = NULL;
 
+	/* Handle any immediate reschedules or signals */
+	interrupt_end();
 	userspace(&current->thread.regs.regs);
 }
 
@@ -110,8 +111,7 @@ int copy_thread_skas(int nr, unsigned long clone_flags, unsigned long sp,
   	void (*handler)(int);
 
 	if(current->thread.forking){
-	  	memcpy(&p->thread.regs.regs.skas, 
-		       &current->thread.regs.regs.skas, 
+	  	memcpy(&p->thread.regs.regs.skas, &regs->regs.skas,
 		       sizeof(p->thread.regs.regs.skas));
 		REGS_SET_SYSCALL_RETURN(p->thread.regs.regs.skas.regs, 0);
 		if(sp != 0) REGS_SP(p->thread.regs.regs.skas.regs) = sp;
@@ -119,12 +119,7 @@ int copy_thread_skas(int nr, unsigned long clone_flags, unsigned long sp,
 		handler = fork_handler;
 	}
 	else {
-	  	memcpy(p->thread.regs.regs.skas.regs, exec_regs, 
-		       sizeof(p->thread.regs.regs.skas.regs));
-		memcpy(p->thread.regs.regs.skas.fp, exec_fp_regs, 
-		       sizeof(p->thread.regs.regs.skas.fp));
-	  	memcpy(p->thread.regs.regs.skas.xfp, exec_fpx_regs, 
-		       sizeof(p->thread.regs.regs.skas.xfp));
+		init_thread_registers(&p->thread.regs.regs);
                 p->thread.request.u.thread = current->thread.request.u.thread;
 		handler = new_thread_handler;
 	}
@@ -180,13 +175,14 @@ static int start_kernel_proc(void *unused)
 	return(0);
 }
 
+extern int userspace_pid[];
+
 int start_uml_skas(void)
 {
-	start_userspace(0);
-	capture_signal_stack();
+	if(proc_mm)
+		userspace_pid[0] = start_userspace(0);
 
 	init_new_thread_signals(1);
-	uml_idle_timer();
 
 	init_task.thread.request.u.thread.proc = start_kernel_proc;
 	init_task.thread.request.u.thread.arg = NULL;
@@ -207,13 +203,30 @@ int thread_pid_skas(struct task_struct *task)
 	return(userspace_pid[0]);
 }
 
-/*
- * Overrides for Emacs so that we follow Linus's tabbing style.
- * Emacs will notice this stuff at the end of the file and automatically
- * adjust the settings for this buffer only.  This must remain at the end
- * of the file.
- * ---------------------------------------------------------------------------
- * Local variables:
- * c-file-style: "linux"
- * End:
- */
+void kill_off_processes_skas(void)
+{
+	if(proc_mm)
+#warning need to loop over userspace_pids in kill_off_processes_skas
+		os_kill_ptraced_process(userspace_pid[0], 1);
+	else {
+		struct task_struct *p;
+		int pid, me;
+
+		me = os_getpid();
+		for_each_process(p){
+			if(p->mm == NULL)
+				continue;
+
+			pid = p->mm->context.skas.id.u.pid;
+			os_kill_ptraced_process(pid, 1);
+		}
+	}
+}
+
+unsigned long current_stub_stack(void)
+{
+	if(current->mm == NULL)
+		return(0);
+
+	return(current->mm->context.skas.id.stack);
+}

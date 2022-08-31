@@ -39,6 +39,9 @@ config USB_GADGET
 	   If in doubt, say "N" and don't enable these drivers; most people
 	   don't have this kind of hardware (except maybe inside Linux PDAs).
 
+	   For more information, see <http://www.linux-usb.org/gadget> and
+	   the kernel DocBook documentation for this API.
+
 config USB_GADGET_DEBUG_FILES
 	boolean "Debugging information files"
 	depends on USB_GADGET && PROC_FS
@@ -50,6 +53,9 @@ config USB_GADGET_DEBUG_FILES
 	   driver on a new board.   Enable these files by choosing "Y"
 	   here.  If in doubt, or to conserve kernel memory, say "N".
 
+config	USB_GADGET_SELECTED
+	boolean
+
 #
 # USB Peripheral Controller Support
 #
@@ -59,6 +65,8 @@ choice
 	help
 	   A USB device uses a controller to talk to its host.
 	   Systems should have only one such upstream link.
+	   Many controller drivers are platform-specific; these
+	   often need board-specific hooks.
 
 config USB_GADGET_NET2280
 	boolean "NetChip 2280"
@@ -66,8 +74,8 @@ config USB_GADGET_NET2280
 	select USB_GADGET_DUALSPEED
 	help
 	   NetChip 2280 is a PCI based USB peripheral controller which
-	   supports both full and high speed USB 2.0 data transfers.
-
+	   supports both full and high speed USB 2.0 data transfers.  
+	   
 	   It has six configurable endpoints, as well as endpoint zero
 	   (for control transfers) and several endpoints with dedicated
 	   functions.
@@ -80,12 +88,13 @@ config USB_NET2280
 	tristate
 	depends on USB_GADGET_NET2280
 	default USB_GADGET
+	select USB_GADGET_SELECTED
 
 config USB_GADGET_PXA2XX
-	boolean "PXA 2xx or IXP 4xx"
+	boolean "PXA 25x or IXP 4xx"
 	depends on (ARCH_PXA && PXA25x) || ARCH_IXP4XX
 	help
-	   Intel's PXA 2xx series XScale ARM-5TE processors include
+	   Intel's PXA 25x series XScale ARM-5TE processors include
 	   an integrated full speed USB 1.1 device controller.  The
 	   controller in the IXP 4xx series is register-compatible.
 
@@ -100,6 +109,7 @@ config USB_PXA2XX
 	tristate
 	depends on USB_GADGET_PXA2XX
 	default USB_GADGET
+	select USB_GADGET_SELECTED
 
 # if there's only one gadget driver, using only two bulk endpoints,
 # don't waste memory for the other endpoints
@@ -126,6 +136,7 @@ config USB_PXA27X
 	tristate
 	depends on USB_GADGET_PXA27X
 	default USB_GADGET
+	select USB_GADGET_SELECTED
 
 config USB_PXA27X_DMA
 	bool "Use DMA support"
@@ -138,7 +149,7 @@ config USB_GADGET_GOKU
 	help
 	   The Toshiba TC86C001 is a PCI device which includes controllers
 	   for full speed USB devices, IDE, I2C, SIO, plus a USB host (OHCI).
-
+	   
 	   The device controller has three configurable (bulk or interrupt)
 	   endpoints, plus endpoint zero (for control transfers).
 
@@ -150,22 +161,8 @@ config USB_GOKU
 	tristate
 	depends on USB_GADGET_GOKU
 	default USB_GADGET
+	select USB_GADGET_SELECTED
 
-# this could be built elsewhere (doesn't yet exist)
-config USB_GADGET_SA1100
-	boolean "SA 1100"
-	depends on ARCH_SA1100
-	help
-	   Intel's SA-1100 is an ARM-4 processor with an integrated
-	   full speed USB 1.1 device controller.
-
-	   It has two fixed-function endpoints, as well as endpoint
-	   zero (for control transfers).
-
-config USB_SA1100
-	tristate
-	depends on USB_GADGET_SA1100
-	default USB_GADGET
 
 config USB_GADGET_LH7A40X
 	boolean "LH7A40X"
@@ -177,35 +174,8 @@ config USB_LH7A40X
 	tristate
 	depends on USB_GADGET_LH7A40X
 	default USB_GADGET
+	select USB_GADGET_SELECTED
 
-
-config USB_GADGET_DUMMY_HCD
-	boolean "Dummy HCD (DEVELOPMENT)"
-	depends on USB && EXPERIMENTAL
-	select USB_GADGET_DUALSPEED
-	help
-	  This host controller driver emulates USB, looping all data transfer
-	  requests back to a USB "gadget driver" in the same host.  The host
-	  side is the master; the gadget side is the slave.  Gadget drivers
-	  can be high, full, or low speed; and they have access to endpoints
-	  like those from NET2280, PXA2xx, or SA1100 hardware.
-
-	  This may help in some stages of creating a driver to embed in a
-	  Linux device, since it lets you debug several parts of the gadget
-	  driver without its hardware or drivers being involved.
-
-	  Since such a gadget side driver needs to interoperate with a host
-	  side Linux-USB device driver, this may help to debug both sides
-	  of a USB protocol stack.
-
-	  Say "y" to link the driver statically, or "m" to build a
-	  dynamically linked module called "dummy_hcd" and force all
-	  gadget drivers to also be dynamically linked.
-
-config USB_DUMMY_HCD
-	tristate
-	depends on USB_GADGET_DUMMY_HCD
-	default USB_GADGET
 
 config USB_GADGET_OMAP
 	boolean "OMAP USB Device Controller"
@@ -226,6 +196,7 @@ config USB_OMAP
 	tristate
 	depends on USB_GADGET_OMAP
 	default USB_GADGET
+	select USB_GADGET_SELECTED
 
 config USB_GADGET_ARC
 	boolean "ARC USB Device Controller"
@@ -263,6 +234,39 @@ config USB_OTG
 	   later, when two dual-role devices talk to each other.
 
 	   Select this only if your board has a Mini-AB connector.
+
+
+config USB_GADGET_DUMMY_HCD
+	boolean "Dummy HCD (DEVELOPMENT)"
+	depends on USB && EXPERIMENTAL
+	select USB_GADGET_DUALSPEED
+	help
+	  This host controller driver emulates USB, looping all data transfer
+	  requests back to a USB "gadget driver" in the same host.  The host
+	  side is the master; the gadget side is the slave.  Gadget drivers
+	  can be high, full, or low speed; and they have access to endpoints
+	  like those from NET2280, PXA2xx, or SA1100 hardware.
+	  
+	  This may help in some stages of creating a driver to embed in a
+	  Linux device, since it lets you debug several parts of the gadget
+	  driver without its hardware or drivers being involved.
+	  
+	  Since such a gadget side driver needs to interoperate with a host
+	  side Linux-USB device driver, this may help to debug both sides
+	  of a USB protocol stack.
+
+	  Say "y" to link the driver statically, or "m" to build a
+	  dynamically linked module called "dummy_hcd" and force all
+	  gadget drivers to also be dynamically linked.
+
+config USB_DUMMY_HCD
+	tristate
+	depends on USB_GADGET_DUMMY_HCD
+	default USB_GADGET
+	select USB_GADGET_SELECTED
+
+# NOTE:  Please keep dummy_hcd LAST so that "real hardware" appears
+# first and will be selected by default.
 
 endchoice
 
@@ -307,8 +311,23 @@ endchoice
 #
 choice
 	tristate "USB Gadget Drivers"
-	depends on USB_GADGET
+	depends on USB_GADGET && USB_GADGET_SELECTED
 	default USB_ETH
+	help
+	  A Linux "Gadget Driver" talks to the USB Peripheral Controller
+	  driver through the abstract "gadget" API.  Some other operating
+	  systems call these "client" drivers, of which "class drivers"
+	  are a subset (implementing a USB device class specification).
+	  A gadget driver implements one or more USB functions using
+	  the peripheral hardware.
+
+	  Gadget drivers are hardware-neutral, or "platform independent",
+	  except that they sometimes must understand quirks or limitations
+	  of the particular controllers they work with.  For example, when
+	  a controller doesn't support alternate configurations or provide
+	  enough of the right types of endpoints, the gadget driver might
+	  not be able work with that controller, or might need to implement
+	  a less common variant of a device class protocol.
 
 # this first set of drivers all depend on bulk-capable hardware.
 
@@ -348,12 +367,12 @@ config USB_ZERO_HNPTEST
 	  one serve as the USB host instead (in the "B-Host" role).
 
 config USB_ETH
-	tristate "Ethernet Gadget"
+	tristate "Ethernet Gadget (with CDC Ethernet support)"
 	depends on NET
 	help
 	  This driver implements Ethernet style communication, in either
 	  of two ways:
-
+	  
 	   - The "Communication Device Class" (CDC) Ethernet Control Model.
 	     That protocol is often avoided with pure Ethernet adapters, in
 	     favor of simpler vendor-specific hardware, but is widely
@@ -389,6 +408,11 @@ config USB_ETH_RNDIS
 	   If you say "y" here, the Ethernet gadget driver will try to provide
 	   a second device configuration, supporting RNDIS to talk to such
 	   Microsoft USB hosts.
+	   
+	   To make MS-Windows work with this, use Documentation/usb/linux.inf
+	   as the "driver info file".  For versions of MS-Windows older than
+	   XP, you'll need to download drivers from Microsoft's website; a URL
+	   is given in comments found in that info file.
 
 config USB_GADGETFS
 	tristate "Gadget Filesystem (EXPERIMENTAL)"
@@ -405,8 +429,6 @@ config USB_GADGETFS
 
 config USB_FILE_STORAGE
 	tristate "File-backed Storage Gadget"
-	# we don't support the SA1100 because of its limitations
-	depends on USB_GADGET_SA1100 = n
 	help
 	  The File-backed Storage Gadget acts as a USB Mass Storage
 	  disk drive.  As its storage repository it can use a regular
@@ -427,13 +449,19 @@ config USB_FILE_STORAGE_TEST
 	  normal operation.
 
 config USB_G_SERIAL
-	tristate "Serial Gadget"
+	tristate "Serial Gadget (with CDC ACM support)"
 	help
 	  The Serial Gadget talks to the Linux-USB generic serial driver.
+	  This driver supports a CDC-ACM module option, which can be used
+	  to interoperate with MS-Windows hosts or with the Linux-USB
+	  "cdc-acm" driver.
 
 	  Say "y" to link the driver statically, or "m" to build a
 	  dynamically linked module called "g_serial".
 
+	  For more information, see Documentation/usb/gadget_serial.txt
+	  which includes instructions and a "driver info file" needed to
+	  make MS-Windows work with this driver.
 
 
 # put drivers that need isochronous transfer support (for audio

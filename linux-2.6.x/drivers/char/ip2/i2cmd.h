@@ -64,18 +64,6 @@ typedef struct _cmdSyntax
 						// directly from user-level
 #define VAR 0x10        // This command is of variable length!
 
-//-----------------------------------
-// External declarations for i2cmd.c
-//-----------------------------------
-// Routine to set up parameters for the "define hot-key sequence" command. Since
-// there is more than one parameter to assign, we must use a function rather
-// than a macro (used usually).
-//
-extern cmdSyntaxPtr i2cmdSetSeq(UCHAR seqno, UCHAR size, UCHAR *string);
-extern cmdSyntaxPtr i2cmdUnixFlags(USHORT iflag,USHORT cflag,USHORT lflag);
-extern cmdSyntaxPtr i2cmdBaudRemap(UCHAR dest, UCHAR src);
-extern cmdSyntaxPtr i2cmdBaudDef(int which, USHORT rate);
-
 // Declarations for the global arrays used to bear the commands and their
 // arguments.
 //
@@ -397,14 +385,6 @@ static UCHAR cc02[];
 // library code in response to data movement and shouldn't ever be sent by the
 // user code. See i2pack.h and the body of i2lib.c for details.
 
-// COMMAND 38: Define the hot-key sequence
-// seqno:  sequence number 0-15
-// size:   number of characters in sequence (1-8)
-// string: pointer to the characters
-// (if size == 0, "undefines" this sequence
-//
-#define CMD_SET_SEQ(seqno,size,string) i2cmdSetSeq(seqno,size,string)
-
 // Enable on-board post-processing, using options given in oflag argument.
 // Formerly, this command was automatically preceded by a CMD_OPOST_OFF command
 // because the loadware does not permit sending back-to-back CMD_OPOST_ON
@@ -443,6 +423,7 @@ static UCHAR cc02[];
 #define CMD_HOT_ENAB (cmdSyntaxPtr)(ct45) // Enable Hot-key checking
 #define CMD_HOT_DSAB (cmdSyntaxPtr)(ct46) // Disable Hot-key checking
 
+#if 0
 // COMMAND 47: Send Protocol info via Unix flags:
 // iflag = Unix tty t_iflag
 // cflag = Unix tty t_cflag
@@ -451,19 +432,13 @@ static UCHAR cc02[];
 // within these flags
 //
 #define CMD_UNIX_FLAGS(iflag,cflag,lflag) i2cmdUnixFlags(iflag,cflag,lflag)
+#endif  /*  0  */
 
 #define CMD_DSRFL_ENAB  (cmdSyntaxPtr)(ct48) // Enable  DSR receiver ctrl
 #define CMD_DSRFL_DSAB  (cmdSyntaxPtr)(ct49) // Disable DSR receiver ctrl
 #define CMD_DTRFL_ENAB  (cmdSyntaxPtr)(ct50) // Enable  DTR flow control
 #define CMD_DTRFL_DSAB  (cmdSyntaxPtr)(ct51) // Disable DTR flow control
 #define CMD_BAUD_RESET  (cmdSyntaxPtr)(ct52) // Reset baudrate table
-
-// COMMAND 53: Remap baud rate table
-// dest = index of table entry to be changed
-// src  = index value to substitute.
-// at default mapping table is f(x) = x
-//
-#define CMD_BAUD_REMAP(dest,src) i2cmdBaudRemap(dest,src)
 
 // COMMAND 54: Define custom rate #1
 // rate = (short) 1/10 of the desired baud rate

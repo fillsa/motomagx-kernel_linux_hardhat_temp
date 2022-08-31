@@ -275,7 +275,7 @@ static const char *CHIP;
  *
  * After opening, configure non-control endpoints.  Then use normal
  * stream read() and write() requests; and maybe ioctl() to get more
- * precise FIFO status when recovering from cancelation.
+ * precise FIFO status when recovering from cancellation.
  */
 
 static void epio_complete (struct usb_ep *ep, struct usb_request *req)
@@ -417,8 +417,8 @@ ep_read (struct file *fd, char __user *buf, size_t len, loff_t *ptr)
 		goto free1;
 
 	value = ep_io (data, kbuf, len);
-	VDEBUG (data->dev, "%s read %d OUT, status %d\n",
-		data->name, len, value);
+	VDEBUG (data->dev, "%s read %zu OUT, status %d\n",
+		data->name, len, (int) value);
 	if (value >= 0 && copy_to_user (buf, kbuf, value))
 		value = -EFAULT;
 
@@ -465,8 +465,8 @@ ep_write (struct file *fd, const char __user *buf, size_t len, loff_t *ptr)
 	}
 
 	value = ep_io (data, kbuf, len);
-	VDEBUG (data->dev, "%s write %d IN, status %d\n",
-		data->name, len, value);
+	VDEBUG (data->dev, "%s write %zu IN, status %d\n",
+		data->name, len, (int) value);
 free1:
 	up (&data->lock);
 	kfree (kbuf);
@@ -1474,7 +1474,7 @@ unrecognized:
 		VDEBUG (dev, "%s req%02x.%02x v%04x i%04x l%d\n",
 			dev->usermode_setup ? "delegate" : "fail",
 			ctrl->bRequestType, ctrl->bRequest,
-			wValue, wIndex, wLength);
+			wValue, le16_to_cpu(ctrl->wIndex), wLength);
 
 		/* if there's an ep0 reader, don't stall */
 		if (dev->usermode_setup) {
@@ -1515,8 +1515,7 @@ delegate:
 	/* proceed with data transfer and status phases? */
 	if (value >= 0 && dev->state != STATE_SETUP) {
 		req->length = value;
-		req->zero = value < wLength
-				&& (value % gadget->ep0->maxpacket) == 0;
+		req->zero = value < wLength;
 		value = usb_ep_queue (gadget->ep0, req, GFP_ATOMIC);
 		if (value < 0) {
 			DBG (dev, "ep_queue --> %d\n", value);
@@ -2024,6 +2023,7 @@ gadgetfs_fill_super (struct super_block *sb, void *opts, int silent)
 	sb->s_blocksize_bits = PAGE_CACHE_SHIFT;
 	sb->s_magic = GADGETFS_MAGIC;
 	sb->s_op = &gadget_fs_operations;
+	sb->s_time_gran = 1;
 
 	/* root inode */
 	inode = gadgetfs_make_inode (sb,

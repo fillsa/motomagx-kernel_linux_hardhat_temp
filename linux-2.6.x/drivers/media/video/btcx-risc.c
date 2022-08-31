@@ -1,5 +1,5 @@
 /*
-    $Id: btcx-risc.c,v 1.4 2004/11/07 13:17:14 kraxel Exp $
+    $Id: btcx-risc.c,v 1.6 2005/02/21 13:57:59 kraxel Exp $
 
     btcx-risc.c
 
@@ -24,6 +24,7 @@
 */
 
 #include <linux/module.h>
+#include <linux/moduleparam.h>
 #include <linux/init.h>
 #include <linux/pci.h>
 #include <linux/interrupt.h>
@@ -51,12 +52,13 @@ void btcx_riscmem_free(struct pci_dev *pci,
 {
 	if (NULL == risc->cpu)
 		return;
-	pci_free_consistent(pci, risc->size, risc->cpu, risc->dma);
-	memset(risc,0,sizeof(*risc));
 	if (debug) {
 		memcnt--;
-		printk("btcx: riscmem free [%d]\n",memcnt);
+		printk("btcx: riscmem free [%d] dma=%lx\n",
+		       memcnt, (unsigned long)risc->dma);
 	}
+	pci_free_consistent(pci, risc->size, risc->cpu, risc->dma);
+	memset(risc,0,sizeof(*risc));
 }
 
 int btcx_riscmem_alloc(struct pci_dev *pci,
@@ -77,7 +79,8 @@ int btcx_riscmem_alloc(struct pci_dev *pci,
 		risc->size = size;
 		if (debug) {
 			memcnt++;
-			printk("btcx: riscmem alloc size=%d [%d]\n",size,memcnt);
+			printk("btcx: riscmem alloc [%d] dma=%lx cpu=%p size=%d\n",
+			       memcnt, (unsigned long)dma, cpu, size);
 		}
 	}
 	memset(risc->cpu,0,risc->size);

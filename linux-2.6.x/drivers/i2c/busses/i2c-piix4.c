@@ -28,7 +28,6 @@
    Note: we assume there can only be one device, with one SMBus interface.
 */
 
-#include <linux/config.h>
 #include <linux/module.h>
 #include <linux/moduleparam.h>
 #include <linux/pci.h>
@@ -244,7 +243,7 @@ static int piix4_transaction(void)
 	/* Make sure the SMBus host is ready to start transmitting */
 	if ((temp = inb_p(SMBHSTSTS)) != 0x00) {
 		dev_dbg(&piix4_adapter.dev, "SMBus busy (%02x). "
-			"Resetting... \n", temp);
+			"Resetting...\n", temp);
 		outb_p(temp, SMBHSTSTS);
 		if ((temp = inb_p(SMBHSTSTS)) != 0x00) {
 			dev_err(&piix4_adapter.dev, "Failed! (%02x)\n", temp);
@@ -414,48 +413,18 @@ static struct i2c_adapter piix4_adapter = {
 };
 
 static struct pci_device_id piix4_ids[] = {
-	{
-		.vendor =	PCI_VENDOR_ID_INTEL,
-		.device =	PCI_DEVICE_ID_INTEL_82371AB_3,
-		.subvendor =	PCI_ANY_ID,
-		.subdevice =	PCI_ANY_ID,
-		.driver_data =	3
-	},
-	{
-		.vendor =	PCI_VENDOR_ID_SERVERWORKS,
-		.device =	PCI_DEVICE_ID_SERVERWORKS_OSB4,
-		.subvendor =	PCI_ANY_ID,
-		.subdevice =	PCI_ANY_ID,
-		.driver_data =	0,
-	},
-	{
-		.vendor =	PCI_VENDOR_ID_SERVERWORKS,
-		.device =	PCI_DEVICE_ID_SERVERWORKS_CSB5,
-		.subvendor =	PCI_ANY_ID,
-		.subdevice =	PCI_ANY_ID,
-		.driver_data =	0,
-	},
-	{
-		.vendor =	PCI_VENDOR_ID_SERVERWORKS,
-		.device =	PCI_DEVICE_ID_SERVERWORKS_CSB6,
-		.subvendor =	PCI_ANY_ID,
-		.subdevice =	PCI_ANY_ID,
-		.driver_data =	0,
-	},
-	{
-		.vendor =	PCI_VENDOR_ID_INTEL,
-		.device =	PCI_DEVICE_ID_INTEL_82443MX_3,
-		.subvendor =	PCI_ANY_ID,
-		.subdevice =	PCI_ANY_ID,
-		.driver_data =	3,
-	},
-	{
-		.vendor =	PCI_VENDOR_ID_EFAR,
-		.device =	PCI_DEVICE_ID_EFAR_SLC90E66_3,
-		.subvendor =	PCI_ANY_ID,
-		.subdevice =	PCI_ANY_ID,
-		.driver_data =	0,
-	},
+	{ PCI_DEVICE(PCI_VENDOR_ID_INTEL, PCI_DEVICE_ID_INTEL_82371AB_3),
+	  .driver_data = 3 },
+	{ PCI_DEVICE(PCI_VENDOR_ID_SERVERWORKS, PCI_DEVICE_ID_SERVERWORKS_OSB4),
+	  .driver_data = 0 },
+	{ PCI_DEVICE(PCI_VENDOR_ID_SERVERWORKS, PCI_DEVICE_ID_SERVERWORKS_CSB5),
+	  .driver_data = 0 },
+	{ PCI_DEVICE(PCI_VENDOR_ID_SERVERWORKS, PCI_DEVICE_ID_SERVERWORKS_CSB6),
+	  .driver_data = 0 },
+	{ PCI_DEVICE(PCI_VENDOR_ID_INTEL, PCI_DEVICE_ID_INTEL_82443MX_3),
+	  .driver_data = 3 },
+	{ PCI_DEVICE(PCI_VENDOR_ID_EFAR, PCI_DEVICE_ID_EFAR_SLC90E66_3),
+	  .driver_data = 0 },
 	{ 0, }
 };
 

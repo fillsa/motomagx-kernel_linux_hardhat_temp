@@ -38,7 +38,7 @@
 #include <linux/blkdev.h>
 #include <linux/quotaops.h>
 #include <linux/namei.h>
-#include <linux/buffer_head.h>		/* for f-2007sync_super() */
+#include <linux/buffer_head.h>		/* for fsync_super() */
 #include <linux/mount.h>
 #include <linux/security.h>
 #include <linux/syscalls.h>
@@ -82,6 +82,7 @@ static struct super_block *alloc_super(void)
 		INIT_LIST_HEAD(&s->s_files);
 		INIT_LIST_HEAD(&s->s_instances);
 		INIT_HLIST_HEAD(&s->s_anon);
+		INIT_LIST_HEAD(&s->s_inodes);
 		init_rwsem(&s->s_umount);
 		sema_init(&s->s_lock, 1);
 		down_write(&s->s_umount);
@@ -96,6 +97,7 @@ static struct super_block *alloc_super(void)
 		s->dq_op = sb_dquot_ops;
 		s->s_qcop = sb_quotactl_ops;
 		s->s_op = &default_op;
+		s->s_time_gran = 1000000000;
 	}
 out:
 	return s;
@@ -153,7 +155,7 @@ int __put_super_and_need_restart(struct super_block *sb)
 
 /**
  *	put_super	-	drop a temporary reference to superblock
- *	@s: superblock in question
+ *	@sb: superblock in question
  *
  *	Drops a temporary reference, frees superblock if there's no
  *	references left.
@@ -247,10 +249,10 @@ void generic_shutdown_super(struct super_block *sb)
 		dput(root);
 		fsync_super(sb);
 		lock_super(sb);
-		lock_kernel();
 		sb->s_flags &= ~MS_ACTIVE;
 		/* bad name - it should be evict_inodes() */
 		invalidate_inodes(sb);
+		lock_kernel();
 
 		if (sop->write_super && sb->s_dirt)
 			sop->write_super(sb);
@@ -354,20 +356,22 @@ static inline void write_super(struct super_block *sb)
  */
 void sync_supers(void)
 {
-	struct super_block * sb;
-restart:
+	struct super_block *sb;
+
 	spin_lock(&sb_lock);
-	sb = sb_entry(super_blocks.prev);
-	while (sb != sb_entry(&super_blocks))
+restart:
+	list_for_each_entry(sb, &super_blocks, s_list) {
 		if (sb->s_dirt) {
 			sb->s_count++;
 			spin_unlock(&sb_lock);
 			down_read(&sb->s_umount);
 			write_super(sb);
-			drop_super(sb);
-			goto restart;
-		} else
-			sb = sb_entry(sb->s_list.prev);
+			up_read(&sb->s_umount);
+			spin_lock(&sb_lock);
+			if (__put_super_and_need_restart(sb))
+				goto restart;
+		}
+	}
 	spin_unlock(&sb_lock);
 }
 
@@ -394,20 +398,16 @@ void sync_filesystems(int wait)
 
 	down(&mutex);		/* Could be down_interruptible */
 	spin_lock(&sb_lock);
-	for (sb = sb_entry(super_blocks.prev); sb != sb_entry(&super_blocks);
-			sb = sb_entry(sb->s_list.prev)) {
+	list_for_each_entry(sb, &super_blocks, s_list) {
 		if (!sb->s_op->sync_fs)
 			continue;
 		if (sb->s_flags & MS_RDONLY)
 			continue;
 		sb->s_need_sync_fs = 1;
 	}
-	spin_unlock(&sb_lock);
 
 restart:
-	spin_lock(&sb_lock);
-	for (sb = sb_entry(super_blocks.prev); sb != sb_entry(&super_blocks);
-			sb = sb_entry(sb->s_list.prev)) {
+	list_for_each_entry(sb, &super_blocks, s_list) {
 		if (!sb->s_need_sync_fs)
 			continue;
 		sb->s_need_sync_fs = 0;
@@ -418,8 +418,11 @@ restart:
 		down_read(&sb->s_umount);
 		if (sb->s_root && (wait || sb->s_dirt))
 			sb->s_op->sync_fs(sb, wait);
-		drop_super(sb);
-		goto restart;
+		up_read(&sb->s_umount);
+		/* restart only when sb is no longer on the list */
+		spin_lock(&sb_lock);
+		if (__put_super_and_need_restart(sb))
+			goto restart;
 	}
 	spin_unlock(&sb_lock);
 	up(&mutex);
@@ -435,21 +438,25 @@ restart:
 
 struct super_block * get_super(struct block_device *bdev)
 {
-	struct list_head *p;
+	struct super_block *sb;
+
 	if (!bdev)
 		return NULL;
-rescan:
+
 	spin_lock(&sb_lock);
-	list_for_each(p, &super_blocks) {
-		struct super_block *s = sb_entry(p);
-		if (s->s_bdev == bdev) {
-			s->s_count++;
+rescan:
+	list_for_each_entry(sb, &super_blocks, s_list) {
+		if (sb->s_bdev == bdev) {
+			sb->s_count++;
 			spin_unlock(&sb_lock);
-			down_read(&s->s_umount);
-			if (s->s_root)
-				return s;
-			drop_super(s);
-			goto rescan;
+			down_read(&sb->s_umount);
+			if (sb->s_root)
+				return sb;
+			up_read(&sb->s_umount);
+			/* restart only when sb is no longer on the list */
+			spin_lock(&sb_lock);
+			if (__put_super_and_need_restart(sb))
+				goto rescan;
 		}
 	}
 	spin_unlock(&sb_lock);
@@ -460,20 +467,22 @@ EXPORT_SYMBOL(get_super);
  
 struct super_block * user_get_super(dev_t dev)
 {
-	struct list_head *p;
+	struct super_block *sb;
 
-rescan:
 	spin_lock(&sb_lock);
-	list_for_each(p, &super_blocks) {
-		struct super_block *s = sb_entry(p);
-		if (s->s_dev ==  dev) {
-			s->s_count++;
+rescan:
+	list_for_each_entry(sb, &super_blocks, s_list) {
+		if (sb->s_dev ==  dev) {
+			sb->s_count++;
 			spin_unlock(&sb_lock);
-			down_read(&s->s_umount);
-			if (s->s_root)
-				return s;
-			drop_super(s);
-			goto rescan;
+			down_read(&sb->s_umount);
+			if (sb->s_root)
+				return sb;
+			up_read(&sb->s_umount);
+			/* restart only when sb is no longer on the list */
+			spin_lock(&sb_lock);
+			if (__put_super_and_need_restart(sb))
+				goto rescan;
 		}
 	}
 	spin_unlock(&sb_lock);
@@ -745,7 +754,7 @@ void kill_block_super(struct super_block *sb)
 
 	bdev_uevent(bdev, KOBJ_UMOUNT);
 	generic_shutdown_super(sb);
-	set_blocksize(bdev, sb->s_old_blocksize);
+	sync_blockdev(bdev);
 	close_bdev_excl(bdev);
 }
 
@@ -846,8 +855,8 @@ do_kern_mount(const char *fstype, int flags, const char *name, void *data)
 	mnt->mnt_root = dget(sb->s_root);
 	mnt->mnt_mountpoint = sb->s_root;
 	mnt->mnt_parent = mnt;
-	mnt->mnt_namespace = current->namespace;
 	up_write(&sb->s_umount);
+	free_secdata(secdata);
 	put_filesystem(type);
 	return mnt;
 out_sb:

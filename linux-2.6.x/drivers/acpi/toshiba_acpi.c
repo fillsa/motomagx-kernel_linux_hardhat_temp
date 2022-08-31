@@ -263,6 +263,9 @@ dispatch_write(struct file* file, const char __user * buffer,
 	 * destination so that sscanf can be used on it safely.
 	 */
 	tmp_buffer = kmalloc(count + 1, GFP_KERNEL);
+	if(!tmp_buffer)
+		return -ENOMEM;
+
 	if (copy_from_user(tmp_buffer, buffer, count)) {
 		result = -EFAULT;
 	}
@@ -481,7 +484,7 @@ read_version(char* p)
 
 #define PROC_TOSHIBA		"toshiba"
 
-ProcItem proc_items[] =
+static ProcItem proc_items[] =
 {
 	{ "lcd"		, read_lcd	, write_lcd	},
 	{ "video"	, read_video	, write_video	},
@@ -508,7 +511,7 @@ add_device(void)
 			proc->write_proc = (write_proc_t*)dispatch_write;
 	}
 
-	return(AE_OK);
+	return AE_OK;
 }
 
 static acpi_status __exit
@@ -518,7 +521,7 @@ remove_device(void)
 
 	for (item = proc_items; item->name; ++item)
 		remove_proc_entry(item->name, toshiba_proc_dir);
-	return(AE_OK);
+	return AE_OK;
 }
 
 static int __init
@@ -529,6 +532,11 @@ toshiba_acpi_init(void)
 
 	if (acpi_disabled)
 		return -ENODEV;
+
+	if (!acpi_specific_hotkey_enabled){
+		printk(MY_INFO "Using generic hotkey driver\n");
+		return -ENODEV;	
+	}
 	/* simple device detection: look for HCI method */
 	if (is_valid_acpi_path(METHOD_HCI_1))
 		method_hci = METHOD_HCI_1;

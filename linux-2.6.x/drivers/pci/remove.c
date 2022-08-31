@@ -2,14 +2,6 @@
 #include <linux/module.h>
 #include "pci.h"
 
-#undef DEBUG
-
-#ifdef DEBUG
-#define DBG(x...) printk(x)
-#else
-#define DBG(x...)
-#endif
-
 static void pci_free_resources(struct pci_dev *dev)
 {
 	int i;
@@ -26,17 +18,21 @@ static void pci_free_resources(struct pci_dev *dev)
 
 static void pci_destroy_dev(struct pci_dev *dev)
 {
-	pci_proc_detach_device(dev);
-	pci_remove_sysfs_dev_files(dev);
-	device_unregister(&dev->dev);
+	if (!list_empty(&dev->global_list)) {
+		pci_proc_detach_device(dev);
+		pci_remove_sysfs_dev_files(dev);
+		device_unregister(&dev->dev);
+		spin_lock(&pci_bus_lock);
+		list_del(&dev->global_list);
+		dev->global_list.next = dev->global_list.prev = NULL;
+		spin_unlock(&pci_bus_lock);
+	}
 
 	/* Remove the device from the device lists, and prevent any further
 	 * list accesses from this device */
 	spin_lock(&pci_bus_lock);
 	list_del(&dev->bus_list);
-	list_del(&dev->global_list);
 	dev->bus_list.next = dev->bus_list.prev = NULL;
-	dev->global_list.next = dev->global_list.prev = NULL;
 	spin_unlock(&pci_bus_lock);
 
 	pci_free_resources(dev);
@@ -61,15 +57,18 @@ int pci_remove_device_safe(struct pci_dev *dev)
 }
 EXPORT_SYMBOL(pci_remove_device_safe);
 
-void pci_remove_bus(struct pci_bus *b)
+void pci_remove_bus(struct pci_bus *pci_bus)
 {
-	pci_proc_detach_bus(b);
+	pci_proc_detach_bus(pci_bus);
 
 	spin_lock(&pci_bus_lock);
-	list_del(&b->node);
+	list_del(&pci_bus->node);
 	spin_unlock(&pci_bus_lock);
-
-	class_device_unregister(&b->class_dev);
+	pci_remove_legacy_files(pci_bus);
+	class_device_remove_file(&pci_bus->class_dev,
+		&class_device_attr_cpuaffinity);
+	sysfs_remove_link(&pci_bus->class_dev.kobj, "bridge");
+	class_device_unregister(&pci_bus->class_dev);
 }
 EXPORT_SYMBOL(pci_remove_bus);
 

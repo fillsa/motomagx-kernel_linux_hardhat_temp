@@ -31,7 +31,7 @@
 /*
  * .. because we flush the whole mm when it fills up.
  */
-#define tlb_flush(tlb)	flush_tlb_mm(tlb_mm(tlb))
+#define tlb_flush(tlb) flush_tlb_mm(tlb_mm(tlb))
 
 #ifdef CONFIG_PREEMPT_RT
 #include <asm-generic/tlb-simple.h>

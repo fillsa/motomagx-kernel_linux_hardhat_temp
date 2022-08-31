@@ -19,6 +19,7 @@
 
 #include <linux/fs.h>
 #include <linux/xattr.h>
+#include <linux/posix_acl_xattr.h>
 #include <linux/quotaops.h>
 #include "jfs_incore.h"
 #include "jfs_superblock.h"
@@ -91,6 +92,12 @@ struct ea_buffer {
 #define XATTR_OS2_PREFIX "os2."
 #define XATTR_OS2_PREFIX_LEN (sizeof (XATTR_OS2_PREFIX) - 1)
 
+/* XATTR_SECURITY_PREFIX is defined in include/linux/xattr.h */
+#define XATTR_SECURITY_PREFIX_LEN (sizeof (XATTR_SECURITY_PREFIX) - 1)
+
+#define XATTR_TRUSTED_PREFIX "trusted."
+#define XATTR_TRUSTED_PREFIX_LEN (sizeof (XATTR_TRUSTED_PREFIX) - 1)
+
 /*
  * These three routines are used to recognize on-disk extended attributes
  * that are in a recognized namespace.  If the attribute is not recognized,
@@ -109,6 +116,19 @@ static inline int is_os2_xattr(struct jfs_ea *ea)
 	 */
 	if ((ea->namelen >= XATTR_USER_PREFIX_LEN) &&
 	    !strncmp(ea->name, XATTR_USER_PREFIX, XATTR_USER_PREFIX_LEN))
+		return FALSE;
+	/*
+	 * Check for "security."
+	 */
+	if ((ea->namelen >= XATTR_SECURITY_PREFIX_LEN) &&
+	    !strncmp(ea->name, XATTR_SECURITY_PREFIX,
+		     XATTR_SECURITY_PREFIX_LEN))
+		return FALSE;
+	/*
+	 * Check for "trusted."
+	 */
+	if ((ea->namelen >= XATTR_TRUSTED_PREFIX_LEN) &&
+	    !strncmp(ea->name, XATTR_TRUSTED_PREFIX, XATTR_TRUSTED_PREFIX_LEN))
 		return FALSE;
 	/*
 	 * Add any other valid namespace prefixes here
@@ -699,9 +719,9 @@ static int can_set_system_xattr(struct inode *inode, const char *name,
 		return -EPERM;
 
 	/*
-	 * XATTR_NAME_ACL_ACCESS is tied to i_mode
+	 * POSIX_ACL_XATTR_ACCESS is tied to i_mode
 	 */
-	if (strcmp(name, XATTR_NAME_ACL_ACCESS) == 0) {
+	if (strcmp(name, POSIX_ACL_XATTR_ACCESS) == 0) {
 		acl = posix_acl_from_xattr(value, value_len);
 		if (IS_ERR(acl)) {
 			rc = PTR_ERR(acl);
@@ -731,7 +751,7 @@ static int can_set_system_xattr(struct inode *inode, const char *name,
 		JFS_IP(inode)->i_acl = JFS_ACL_NOT_CACHED;
 
 		return 0;
-	} else if (strcmp(name, XATTR_NAME_ACL_DEFAULT) == 0) {
+	} else if (strcmp(name, POSIX_ACL_XATTR_DEFAULT) == 0) {
 		acl = posix_acl_from_xattr(value, value_len);
 		if (IS_ERR(acl)) {
 			rc = PTR_ERR(acl);
@@ -761,7 +781,7 @@ static int can_set_xattr(struct inode *inode, const char *name,
 	if (IS_RDONLY(inode))
 		return -EROFS;
 
-	if (IS_IMMUTABLE(inode) || IS_APPEND(inode) || S_ISLNK(inode->i_mode))
+	if (IS_IMMUTABLE(inode) || IS_APPEND(inode))
 		return -EPERM;
 
 	if(strncmp(name, XATTR_SYSTEM_PREFIX, XATTR_SYSTEM_PREFIX_LEN) == 0)
@@ -770,6 +790,15 @@ static int can_set_xattr(struct inode *inode, const char *name,
 		 */
 		return can_set_system_xattr(inode, name, value, value_len);
 
+	if(strncmp(name, XATTR_TRUSTED_PREFIX, XATTR_TRUSTED_PREFIX_LEN) == 0)
+		return (capable(CAP_SYS_ADMIN) ? 0 : -EPERM);
+
+#ifdef CONFIG_JFS_SECURITY
+	if (strncmp(name, XATTR_SECURITY_PREFIX, XATTR_SECURITY_PREFIX_LEN)
+	    == 0)
+		return 0;	/* Leave it to the security module */
+#endif
+		
 	if((strncmp(name, XATTR_USER_PREFIX, XATTR_USER_PREFIX_LEN) != 0) &&
 	   (strncmp(name, XATTR_OS2_PREFIX, XATTR_OS2_PREFIX_LEN) != 0))
 		return -EOPNOTSUPP;
@@ -918,8 +947,7 @@ int __jfs_setxattr(struct inode *inode, const char *name, const void *value,
       out:
 	up_write(&JFS_IP(inode)->xattr_sem);
 
-	if (os2name)
-		kfree(os2name);
+	kfree(os2name);
 
 	return rc;
 }
@@ -937,8 +965,17 @@ int jfs_setxattr(struct dentry *dentry, const char *name, const void *value,
 
 static int can_get_xattr(struct inode *inode, const char *name)
 {
+#ifdef CONFIG_JFS_SECURITY
+	if(strncmp(name, XATTR_SECURITY_PREFIX, XATTR_SECURITY_PREFIX_LEN) == 0)
+		return 0;
+#endif
+
+	if(strncmp(name, XATTR_TRUSTED_PREFIX, XATTR_TRUSTED_PREFIX_LEN) == 0)
+		return (capable(CAP_SYS_ADMIN) ? 0 : -EPERM);
+
 	if(strncmp(name, XATTR_SYSTEM_PREFIX, XATTR_SYSTEM_PREFIX_LEN) == 0)
 		return 0;
+
 	return permission(inode, MAY_READ, NULL);
 }
 
@@ -1005,8 +1042,7 @@ ssize_t __jfs_getxattr(struct inode *inode, const char *name, void *data,
       out:
 	up_read(&JFS_IP(inode)->xattr_sem);
 
-	if (os2name)
-		kfree(os2name);
+	kfree(os2name);
 
 	return size;
 }
@@ -1019,6 +1055,16 @@ ssize_t jfs_getxattr(struct dentry *dentry, const char *name, void *data,
 	err = __jfs_getxattr(dentry->d_inode, name, data, buf_size);
 
 	return err;
+}
+
+/*
+ * No special permissions are needed to list attributes except for trusted.*
+ */
+static inline int can_list(struct jfs_ea *ea)
+{
+	return (strncmp(ea->name, XATTR_TRUSTED_PREFIX,
+			    XATTR_TRUSTED_PREFIX_LEN) ||
+		capable(CAP_SYS_ADMIN));
 }
 
 ssize_t jfs_listxattr(struct dentry * dentry, char *data, size_t buf_size)
@@ -1045,8 +1091,10 @@ ssize_t jfs_listxattr(struct dentry * dentry, char *data, size_t buf_size)
 	ealist = (struct jfs_ea_list *) ea_buf.xattr;
 
 	/* compute required size of list */
-	for (ea = FIRST_EA(ealist); ea < END_EALIST(ealist); ea = NEXT_EA(ea))
-		size += name_size(ea) + 1;
+	for (ea = FIRST_EA(ealist); ea < END_EALIST(ealist); ea = NEXT_EA(ea)) {
+	    	if (can_list(ea))
+			size += name_size(ea) + 1;
+	}
 
 	if (!data)
 		goto release;
@@ -1059,8 +1107,10 @@ ssize_t jfs_listxattr(struct dentry * dentry, char *data, size_t buf_size)
 	/* Copy attribute names to buffer */
 	buffer = data;
 	for (ea = FIRST_EA(ealist); ea < END_EALIST(ealist); ea = NEXT_EA(ea)) {
-		int namelen = copy_name(buffer, ea);
-		buffer += namelen + 1;
+	    	if (can_list(ea)) {
+			int namelen = copy_name(buffer, ea);
+			buffer += namelen + 1;
+		}
 	}
 
       release:

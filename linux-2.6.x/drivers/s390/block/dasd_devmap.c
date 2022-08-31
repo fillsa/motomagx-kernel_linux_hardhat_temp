@@ -11,7 +11,7 @@
  * functions may not be called from interrupt context. In particular
  * dasd_get_device is a no-no from interrupt context.
  *
- * $Revision: 1.34 $
+ * $Revision: 1.40 $
  */
 
 #include <linux/config.h>
@@ -70,7 +70,6 @@ int dasd_autodetect = 0;	/* is true, when autodetection is active */
  * strings when running as a module.
  */
 static char *dasd[256];
-
 /*
  * Single spinlock to protect devmap structures and lists.
  */
@@ -485,7 +484,8 @@ dasd_devmap_from_cdev(struct ccw_device *cdev)
 
 	devmap = dasd_find_busid(cdev->dev.bus_id);
 	if (IS_ERR(devmap))
-		devmap = dasd_add_busid(cdev->dev.bus_id, DASD_FEATURE_DEFAULT);
+		devmap = dasd_add_busid(cdev->dev.bus_id,
+					DASD_FEATURE_DEFAULT);
 	return devmap;
 }
 
@@ -513,14 +513,6 @@ dasd_create_device(struct ccw_device *cdev)
 	if (!devmap->device) {
 		devmap->device = device;
 		device->devindex = devmap->devindex;
-		if (devmap->features & DASD_FEATURE_READONLY)
-			set_bit(DASD_FLAG_RO, &device->flags);
-		else
-			clear_bit(DASD_FLAG_RO, &device->flags);
-		if (devmap->features & DASD_FEATURE_USEDIAG)
-			set_bit(DASD_FLAG_USE_DIAG, &device->flags);
-		else
-			clear_bit(DASD_FLAG_USE_DIAG, &device->flags);
 		get_device(&cdev->dev);
 		device->cdev = cdev;
 		rc = 0;
@@ -553,6 +545,8 @@ dasd_delete_device(struct dasd_device *device)
 
 	/* First remove device pointer from devmap. */
 	devmap = dasd_find_busid(device->cdev->dev.bus_id);
+	if (IS_ERR(devmap))
+		BUG();
 	spin_lock(&dasd_devmap_lock);
 	if (devmap->device != device) {
 		spin_unlock(&dasd_devmap_lock);
@@ -621,13 +615,13 @@ dasd_device_from_cdev(struct ccw_device *cdev)
  * readonly controls the readonly status of a dasd
  */
 static ssize_t
-dasd_ro_show(struct device *dev, char *buf)
+dasd_ro_show(struct device *dev, struct device_attribute *attr, char *buf)
 {
 	struct dasd_devmap *devmap;
 	int ro_flag;
 
-	devmap = dev->driver_data;
-	if (devmap)
+	devmap = dasd_find_busid(dev->bus_id);
+	if (!IS_ERR(devmap))
 		ro_flag = (devmap->features & DASD_FEATURE_READONLY) != 0;
 	else
 		ro_flag = (DASD_FEATURE_DEFAULT & DASD_FEATURE_READONLY) != 0;
@@ -635,26 +629,22 @@ dasd_ro_show(struct device *dev, char *buf)
 }
 
 static ssize_t
-dasd_ro_store(struct device *dev, const char *buf, size_t count)
+dasd_ro_store(struct device *dev, struct device_attribute *attr, const char *buf, size_t count)
 {
 	struct dasd_devmap *devmap;
 	int ro_flag;
 
 	devmap = dasd_devmap_from_cdev(to_ccwdev(dev));
+	if (IS_ERR(devmap))
+		return PTR_ERR(devmap);
 	ro_flag = buf[0] == '1';
 	spin_lock(&dasd_devmap_lock);
 	if (ro_flag)
 		devmap->features |= DASD_FEATURE_READONLY;
 	else
 		devmap->features &= ~DASD_FEATURE_READONLY;
-	if (devmap->device) {
-		if (devmap->device->gdp)
-			set_disk_ro(devmap->device->gdp, ro_flag);
-		if (ro_flag)
-			set_bit(DASD_FLAG_RO, &devmap->device->flags);
-		else
-			clear_bit(DASD_FLAG_RO, &devmap->device->flags);
-	}
+	if (devmap->device && devmap->device->gdp)
+		set_disk_ro(devmap->device->gdp, ro_flag);
 	spin_unlock(&dasd_devmap_lock);
 	return count;
 }
@@ -665,15 +655,14 @@ static DEVICE_ATTR(readonly, 0644, dasd_ro_show, dasd_ro_store);
  * use_diag controls whether the driver should use diag rather than ssch
  * to talk to the device
  */
-/* TODO: Implement */
 static ssize_t 
-dasd_use_diag_show(struct device *dev, char *buf)
+dasd_use_diag_show(struct device *dev, struct device_attribute *attr, char *buf)
 {
 	struct dasd_devmap *devmap;
 	int use_diag;
 
-	devmap = dev->driver_data;
-	if (devmap)
+	devmap = dasd_find_busid(dev->bus_id);
+	if (!IS_ERR(devmap))
 		use_diag = (devmap->features & DASD_FEATURE_USEDIAG) != 0;
 	else
 		use_diag = (DASD_FEATURE_DEFAULT & DASD_FEATURE_USEDIAG) != 0;
@@ -681,31 +670,35 @@ dasd_use_diag_show(struct device *dev, char *buf)
 }
 
 static ssize_t
-dasd_use_diag_store(struct device *dev, const char *buf, size_t count)
+dasd_use_diag_store(struct device *dev, struct device_attribute *attr, const char *buf, size_t count)
 {
 	struct dasd_devmap *devmap;
+	ssize_t rc;
 	int use_diag;
 
 	devmap = dasd_devmap_from_cdev(to_ccwdev(dev));
+	if (IS_ERR(devmap))
+		return PTR_ERR(devmap);
 	use_diag = buf[0] == '1';
 	spin_lock(&dasd_devmap_lock);
 	/* Changing diag discipline flag is only allowed in offline state. */
+	rc = count;
 	if (!devmap->device) {
 		if (use_diag)
 			devmap->features |= DASD_FEATURE_USEDIAG;
 		else
 			devmap->features &= ~DASD_FEATURE_USEDIAG;
 	} else
-		count = -EPERM;
+		rc = -EPERM;
 	spin_unlock(&dasd_devmap_lock);
-	return count;
+	return rc;
 }
 
 static
 DEVICE_ATTR(use_diag, 0644, dasd_use_diag_show, dasd_use_diag_store);
 
 static ssize_t
-dasd_discipline_show(struct device *dev, char *buf)
+dasd_discipline_show(struct device *dev, struct device_attribute *attr, char *buf)
 {
 	struct dasd_devmap *devmap;
 	char *dname;
@@ -731,6 +724,45 @@ static struct attribute * dasd_attrs[] = {
 static struct attribute_group dasd_attr_group = {
 	.attrs = dasd_attrs,
 };
+
+/*
+ * Return value of the specified feature.
+ */
+int
+dasd_get_feature(struct ccw_device *cdev, int feature)
+{
+	struct dasd_devmap *devmap;
+
+	devmap = dasd_find_busid(cdev->dev.bus_id);
+	if (IS_ERR(devmap))
+		return (int) PTR_ERR(devmap);
+
+	return ((devmap->features & feature) != 0);
+}
+
+/*
+ * Set / reset given feature.
+ * Flag indicates wether to set (!=0) or the reset (=0) the feature.
+ */
+int
+dasd_set_feature(struct ccw_device *cdev, int feature, int flag)
+{
+	struct dasd_devmap *devmap;
+
+	devmap = dasd_find_busid(cdev->dev.bus_id);
+	if (IS_ERR(devmap))
+		return (int) PTR_ERR(devmap);
+
+	spin_lock(&dasd_devmap_lock);
+	if (flag)
+		devmap->features |= feature;
+	else
+		devmap->features &= ~feature;
+
+	spin_unlock(&dasd_devmap_lock);
+	return 0;
+}
+
 
 int
 dasd_add_sysfs_files(struct ccw_device *cdev)

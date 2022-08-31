@@ -473,13 +473,7 @@ struct net_device * __init eth16i_probe(int unit)
 	err = do_eth16i_probe(dev);
 	if (err)
 		goto out;
-	err = register_netdev(dev);
-	if (err)
-		goto out1;
 	return dev;
-out1:
-	free_irq(dev->irq, dev);
-	release_region(dev->base_addr, ETH16I_IO_EXTENT);
 out:
 	free_netdev(dev);
 	return ERR_PTR(err);
@@ -569,7 +563,13 @@ static int __init eth16i_probe1(struct net_device *dev, int ioaddr)
 	dev->tx_timeout 	= eth16i_timeout;
 	dev->watchdog_timeo	= TX_TIMEOUT;
 	spin_lock_init(&lp->lock);
+
+	retval = register_netdev(dev);
+	if (retval)
+		goto out1;
 	return 0;
+out1:
+	free_irq(dev->irq, dev);
 out:
 	release_region(ioaddr, ETH16I_IO_EXTENT);
 	return retval;
@@ -1420,18 +1420,18 @@ MODULE_DESCRIPTION("ICL EtherTeam 16i/32 driver");
 MODULE_LICENSE("GPL");
 
 
-MODULE_PARM(io, "1-" __MODULE_STRING(MAX_ETH16I_CARDS) "i");
+module_param_array(io, int, NULL, 0);
 MODULE_PARM_DESC(io, "eth16i I/O base address(es)");
 
 #if 0
-MODULE_PARM(irq, "1-" __MODULE_STRING(MAX_ETH16I_CARDS) "i");
+module_param_array(irq, int, NULL, 0);
 MODULE_PARM_DESC(irq, "eth16i interrupt request number");
 #endif
 
-MODULE_PARM(mediatype, "1-" __MODULE_STRING(MAX_ETH16I_CARDS) "s");
+module_param_array(mediatype, charp, NULL, 0);
 MODULE_PARM_DESC(mediatype, "eth16i media type of interface(s) (bnc,tp,dix,auto,eprom)");
 
-MODULE_PARM(debug, "i");
+module_param(debug, int, 0);
 MODULE_PARM_DESC(debug, "eth16i debug level (0-6)");
 
 int init_module(void)
@@ -1462,12 +1462,8 @@ int init_module(void)
 		}
 
 		if (do_eth16i_probe(dev) == 0) {
-			if (register_netdev(dev) == 0) {
-				dev_eth16i[found++] = dev;
-				continue;
-			}
-			free_irq(dev->irq, dev);
-			release_region(dev->base_addr, ETH16I_IO_EXTENT);
+			dev_eth16i[found++] = dev;
+			continue;
 		}
 		printk(KERN_WARNING "eth16i.c No Eth16i card found (i/o = 0x%x).\n",
 		       io[this_dev]);

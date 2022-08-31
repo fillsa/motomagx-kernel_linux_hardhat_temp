@@ -4,6 +4,10 @@
  *  Copyright (C) 1992 Linus Torvalds
  *  Modifications for ARM processor Copyright (C) 1995-2000 Russell King.
  *
+ *  Support for Dynamic Tick Timer Copyright (C) 2004-2005 Nokia Corporation.
+ *  Dynamic Tick Timer written by Tony Lindgren <tony@atomide.com> and
+ *  Tuukka Tikkanen <tuukka.tikkanen@elektrobit.com>.
+ *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 as
  * published by the Free Software Foundation.
@@ -50,6 +54,7 @@
 #include <asm/irq.h>
 #include <asm/system.h>
 #include <asm/mach/irq.h>
+#include <asm/mach/time.h>
 
 /*
  * Maximum IRQ count.  Currently, this is arbitary.  However, it should
@@ -65,7 +70,7 @@ __do_irq(unsigned int irq, struct irqaction *action, struct pt_regs *regs);
 
 static int noirqdebug;
 static volatile unsigned long irq_err_count;
-static DEFINE_RAW_SPINLOCK(irq_controller_lock);
+static DEFINE_RAW_SPINLOCK(irq_controller_lock); //static DEFINE_SPINLOCK(irq_controller_lock);
 static LIST_HEAD(irq_pending);
 
 struct irqdesc irq_desc[NR_IRQS];
@@ -82,6 +87,20 @@ struct timer_update_handler timer_update = {
 	.function	= NULL,
 	.skip		= 0,
 };
+
+/*
+ * No architecture-specific irq_finish function defined in arm/arch/irqs.h.
+ */
+#ifndef irq_finish
+#define irq_finish(irq) do { } while (0)
+#endif
+
+/*
+ * No architecture-specific irq_finish function defined in arm/arch/irqs.h.
+ */
+#ifndef irq_finish
+#define irq_finish(irq) do { } while (0)
+#endif
 
 /*
  * Dummy mask/unmask handler
@@ -314,6 +333,8 @@ int ltt_snapshot_irqs(int rchan)
 				relay_error = 1;
 				goto relay_write_err;
 			}
+
+		smp_clear_running(desc);
 		}
 		spin_unlock_irqrestore(&irq_controller_lock, flags);	
 	}
@@ -528,6 +549,15 @@ __do_irq(unsigned int irq, struct irqaction *action, struct pt_regs *regs)
 	int ret, retval = 0;
 
 	spin_unlock(&irq_controller_lock);
+
+#ifdef CONFIG_NO_IDLE_HZ
+	if (!(action->flags & SA_TIMER) && system_timer->dyn_tick != NULL) {
+		write_seqlock(&xtime_lock);
+		if (system_timer->dyn_tick->state & DYN_TICK_ENABLED)
+			system_timer->dyn_tick->handler(irq, 0, regs);
+		write_sequnlock(&xtime_lock);
+	}
+#endif
 
 	if (!hardirq_count() || !(action->flags & SA_INTERRUPT))
 		local_irq_enable();
@@ -781,6 +811,8 @@ asmlinkage notrace void asm_do_IRQ(unsigned int irq, struct pt_regs *regs)
 	 */
 	if (!list_empty(&irq_pending))
 		do_pending_irqs(regs);
+
+	irq_finish(irq);
 
 	spin_unlock(&irq_controller_lock);
 	irq_exit();

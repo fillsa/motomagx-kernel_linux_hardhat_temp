@@ -274,26 +274,39 @@ killable_write_proc(struct file *file, const char *buf, size_t count,
  *    of least surprise ... (be careful when you change it)
  */
 
-static unsigned long badness(struct task_struct *p, unsigned long uptime)
+unsigned long badness(struct task_struct *p, unsigned long uptime)
 {
 	unsigned long points, cpu_time, run_time, s;
+	struct list_head *tsk;
 
 	if (!p->mm)
 		return 0;
 
-	if (p->flags & PF_MEMDIE)
-		return 0;
 	/*
 	 * The memory size of the process is the basis for the badness.
 	 */
 	points = p->mm->total_vm;
 
 	/*
+	 * Processes which fork a lot of child processes are likely
+	 * a good choice. We add the vmsize of the childs if they
+	 * have an own mm. This prevents forking servers to flood the
+	 * machine with an endless amount of childs
+	 */
+	list_for_each(tsk, &p->children) {
+		struct task_struct *chld;
+		chld = list_entry(tsk, struct task_struct, sibling);
+		if (chld->mm != p->mm && chld->mm)
+			points += chld->mm->total_vm;
+	}
+
+	/*
 	 * CPU time is in tens of seconds and run time is in thousands
          * of seconds. There is no particular reason for this other than
          * that it turned out to work very well in practice.
 	 */
-	cpu_time = (p->utime + p->stime) >> (SHIFT_HZ + 3);
+	cpu_time = (cputime_to_jiffies(p->utime) + cputime_to_jiffies(p->stime))
+		>> (SHIFT_HZ + 3);
 
 	if (uptime >= p->start_time.tv_sec)
 		run_time = (uptime - p->start_time.tv_sec) >> 10;
@@ -330,6 +343,17 @@ static unsigned long badness(struct task_struct *p, unsigned long uptime)
 	 */
 	if (cap_t(p->cap_effective) & CAP_TO_MASK(CAP_SYS_RAWIO))
 		points /= 4;
+
+	/*
+	 * Adjust the score by oomkilladj.
+	 */
+	if (p->oomkilladj) {
+		if (p->oomkilladj > 0)
+			points <<= p->oomkilladj;
+		else
+			points >>= -(p->oomkilladj);
+	}
+
 #ifdef DEBUG
 	printk(KERN_DEBUG "OOMkill: task %d (%s) got %d points\n",
 	p->pid, p->comm, points);
@@ -401,14 +425,25 @@ no_killable_list:
  			skip = 0;
  		} else
 #endif 
-		if (p->pid) {
-			unsigned long points = badness(p, uptime.tv_sec);
-			if (points > maxpoints) {
+		/* skip the init task with pid == 1 */
+		if (p->pid > 1 && p->oomkilladj != OOM_DISABLE) {
+			unsigned long points;
+
+			/*
+			 * This is in the process of releasing memory so wait it
+			 * to finish before killing some other task by mistake.
+			 */
+			if ((unlikely(test_tsk_thread_flag(p, TIF_MEMDIE)) || (p->flags & PF_EXITING)) &&
+			    !(p->flags & PF_DEAD))
+				return ERR_PTR(-1UL);
+			if (p->flags & PF_SWAPOFF)
+				return p;
+
+			points = badness(p, uptime.tv_sec);
+			if (points > maxpoints || !chosen) {
 				chosen = p;
 				maxpoints = points;
 			}
-			if (p->flags & PF_SWAPOFF)
-				return p;
 		}
 	} while_each_thread(g, p);
 	return chosen;
@@ -421,6 +456,12 @@ no_killable_list:
  */
 static void __oom_kill_task(task_t *p)
 {
+	if (p->pid == 1) {
+		WARN_ON(1);
+		printk(KERN_WARNING "tried to kill init!\n");
+		return;
+	}
+
 	task_lock(p);
 	if (!p->mm || p->mm == &init_mm) {
 		WARN_ON(1);
@@ -437,25 +478,53 @@ static void __oom_kill_task(task_t *p)
 	 * exit() and clear out its resources quickly...
 	 */
 	p->time_slice = HZ;
-	p->flags |= PF_MEMALLOC | PF_MEMDIE;
+	set_tsk_thread_flag(p, TIF_MEMDIE);
 
-	/* This process has hardware access, be more careful. */
-	if (cap_t(p->cap_effective) & CAP_TO_MASK(CAP_SYS_RAWIO)) {
-		force_sig(SIGTERM, p);
-	} else {
-		force_sig(SIGKILL, p);
-	}
+	force_sig(SIGKILL, p);
 }
 
 static struct mm_struct *oom_kill_task(task_t *p)
 {
 	struct mm_struct *mm = get_task_mm(p);
-	if (!mm || mm == &init_mm)
+	task_t * g, * q;
+
+	if (!mm)
 		return NULL;
+	if (mm == &init_mm) {
+		mmput(mm);
+		return NULL;
+	}
+
 	__oom_kill_task(p);
+	/*
+	 * kill all processes that share the ->mm (i.e. all threads),
+	 * but are in a different thread group
+	 */
+	do_each_thread(g, q)
+		if (q->mm == mm && q->tgid != p->tgid)
+			__oom_kill_task(q);
+	while_each_thread(g, q);
+
 	return mm;
 }
 
+static struct mm_struct *oom_kill_process(struct task_struct *p)
+{
+ 	struct mm_struct *mm;
+	struct task_struct *c;
+	struct list_head *tsk;
+
+	/* Try to kill a child first */
+	list_for_each(tsk, &p->children) {
+		c = list_entry(tsk, struct task_struct, sibling);
+		if (c->mm == p->mm)
+			continue;
+		mm = oom_kill_task(c);
+		if (mm)
+			return mm;
+	}
+	return oom_kill_task(p);
+}
 
 /**
  * oom_kill - kill the "best" process when we run out of memory
@@ -465,119 +534,45 @@ static struct mm_struct *oom_kill_task(task_t *p)
  * OR try to be smart about which process to kill. Note that we
  * don't have to be perfect here, we just have to be good.
  */
-static void oom_kill(void)
+void out_of_memory(unsigned int __nocast gfp_mask, int order)
 {
-	struct mm_struct *mm;
-	struct task_struct *g, *p, *q;
-	
+	struct mm_struct *mm = NULL;
+	task_t * p;
+
+	if (printk_ratelimit()) {
+		printk("oom-killer: gfp_mask=0x%x, order=%d\n",
+			gfp_mask, order);
+		show_mem();
+	}
+
 	read_lock(&tasklist_lock);
 retry:
 	p = select_bad_process();
 
+	if (PTR_ERR(p) == -1UL)
+		goto out;
+
 	/* Found nothing?!?! Either we hang forever, or we panic. */
 	if (!p) {
-		show_free_areas();
+		read_unlock(&tasklist_lock);
 		panic("Out of memory and no killable processes...\n");
 	}
 
-	mm = oom_kill_task(p);
+	mm = oom_kill_process(p);
 	if (!mm)
 		goto retry;
-	/*
-	 * kill all processes that share the ->mm (i.e. all threads),
-	 * but are in a different thread group
-	 */
-	do_each_thread(g, q)
-		if (q->mm == mm && q->tgid != p->tgid)
-			__oom_kill_task(q);
-	while_each_thread(g, q);
-	if (!p->mm)
-		printk(KERN_INFO "Fixed up OOM kill of mm-less task\n");
+
+ out:
 	read_unlock(&tasklist_lock);
-	mmput(mm);
+	if (mm)
+		mmput(mm);
 
 	/*
-	 * Make kswapd go out of the way, so "p" has a good chance of
-	 * killing itself before someone else gets the chance to ask
-	 * for more memory.
+	 * Give "p" a good chance of killing itself before we
+	 * retry to allocate memory.
 	 */
-	yield();
-	return;
-}
-
-/**
- * out_of_memory - is the system out of memory?
- */
-void out_of_memory(int gfp_mask)
-{
-	/*
-	 * oom_lock protects out_of_memory()'s static variables.
-	 * It's a global lock; this is not performance-critical.
-	 */
-	static DEFINE_SPINLOCK(oom_lock);
-	static unsigned long first, last, count, lastkill;
-	unsigned long now, since;
-
-	spin_lock(&oom_lock);
-	now = jiffies;
-	since = now - last;
-	last = now;
-
-	/*
-	 * If it's been a long time since last failure,
-	 * we're not oom.
-	 */
-	if (since > 5*HZ)
-		goto reset;
-
-	/*
-	 * If we haven't tried for at least one second,
-	 * we're not really oom.
-	 */
-	since = now - first;
-	if (since < HZ)
-		goto out_unlock;
-
-	/*
-	 * If we have gotten only a few failures,
-	 * we're not really oom. 
-	 */
-	if (++count < 10)
-		goto out_unlock;
-
-	/*
-	 * If we just killed a process, wait a while
-	 * to give that task a chance to exit. This
-	 * avoids killing multiple processes needlessly.
-	 */
-	since = now - lastkill;
-	if (since < HZ*5)
-		goto out_unlock;
-
-	/*
-	 * Ok, really out of memory. Kill something.
-	 */
-	lastkill = now;
-
-	printk("oom-killer: gfp_mask=0x%x\n", gfp_mask);
-	show_free_areas();
-
-	/* oom_kill() sleeps */
-	spin_unlock(&oom_lock);
-	oom_kill();
-	spin_lock(&oom_lock);
-
-reset:
-	/*
-	 * We dropped the lock above, so check to be sure the variable
-	 * first only ever increases to prevent false OOM's.
-	 */
-	if (time_after(now, first))
-		first = now;
-	count = 0;
-
-out_unlock:
-	spin_unlock(&oom_lock);
+	__set_current_state(TASK_INTERRUPTIBLE);
+	schedule_timeout(1);
 }
 
 #else
@@ -595,7 +590,7 @@ static void show_mem_usage(void)
 			printk("%d:%s:%lu:%lu:%lu:%lu\n",
 			task->pid, task->comm,
 			(mm->total_vm - mm->reserved_vm) << (PAGE_SHIFT-10), /* SzVM */
-			mm->rss << (PAGE_SHIFT-10), /* RSS */
+			get_mm_counter(mm, rss) << (PAGE_SHIFT-10), /* RSS */
 			(mm->total_vm - mm->shared_vm - mm->stack_vm) << (PAGE_SHIFT-10), /* data */
 			mm->stack_vm << (PAGE_SHIFT-10)); /* stack */
 			mmput(mm);
@@ -612,7 +607,7 @@ extern int kpanic_in_progress;
 /**
  * out_of_memory - Intentionally panic in out of memory situations
  */
-void out_of_memory(int gfp_mask)
+void out_of_memory(unsigned int __nocast gfp_mask, int order)
 {
 	char buf[1024];
 #ifdef CONFIG_MOT_FEAT_KPANIC

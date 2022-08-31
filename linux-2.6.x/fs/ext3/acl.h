@@ -4,10 +4,9 @@
   (C) 2001 Andreas Gruenbacher, <a.gruenbacher@computer.org>
 */
 
-#include <linux/xattr_acl.h>
+#include <linux/posix_acl_xattr.h>
 
 #define EXT3_ACL_VERSION	0x0001
-#define EXT3_ACL_MAX_ENTRIES	32
 
 typedef struct {
 	__le16		e_tag;

@@ -63,6 +63,68 @@ struct sys_timer omap_timer;
 
 #ifdef CONFIG_OMAP_MPU_TIMER
 
+/* cycles to nsec conversions taken from arch/i386/kernel/timers/timer_tsc.c,
+ * converted to use kHz by Kevin Hilman */
+/* convert from cycles(64bits) => nanoseconds (64bits)
+ *  basic equation:
+ *		ns = cycles / (freq / ns_per_sec)
+ *		ns = cycles * (ns_per_sec / freq)
+ *		ns = cycles * (10^9 / (cpu_khz * 10^3))
+ *		ns = cycles * (10^6 / cpu_khz)
+ *
+ *	Then we use scaling math (suggested by george at mvista.com) to get:
+ *		ns = cycles * (10^6 * SC / cpu_khz / SC
+ *		ns = cycles * cyc2ns_scale / SC
+ *
+ *	And since SC is a constant power of two, we can convert the div
+ *  into a shift.
+ *			-johnstul at us.ibm.com "math is hard, lets go shopping!"
+ */
+static unsigned long cyc2ns_scale;
+#define CYC2NS_SCALE_FACTOR 10 /* 2^10, carefully chosen */
+
+static inline void set_cyc2ns_scale(unsigned long cpu_khz)
+{
+	cyc2ns_scale = (1000000 << CYC2NS_SCALE_FACTOR)/cpu_khz;
+}
+
+static inline unsigned long long cycles_2_ns(unsigned long long cyc)
+{
+	return (cyc * cyc2ns_scale) >> CYC2NS_SCALE_FACTOR;
+}
+
+/* cycles to nsec conversions taken from arch/i386/kernel/timers/timer_tsc.c,
+ * converted to use kHz by Kevin Hilman */
+/* convert from cycles(64bits) => nanoseconds (64bits)
+ *  basic equation:
+ *		ns = cycles / (freq / ns_per_sec)
+ *		ns = cycles * (ns_per_sec / freq)
+ *		ns = cycles * (10^9 / (cpu_khz * 10^3))
+ *		ns = cycles * (10^6 / cpu_khz)
+ *
+ *	Then we use scaling math (suggested by george at mvista.com) to get:
+ *		ns = cycles * (10^6 * SC / cpu_khz / SC
+ *		ns = cycles * cyc2ns_scale / SC
+ *
+ *	And since SC is a constant power of two, we can convert the div
+ *  into a shift.
+ *			-johnstul at us.ibm.com "math is hard, lets go shopping!"
+ */
+static unsigned long cyc2ns_scale;
+#define CYC2NS_SCALE_FACTOR 10 /* 2^10, carefully chosen */
+
+static inline void set_cyc2ns_scale(unsigned long cpu_khz)
+{
+	cyc2ns_scale = (1000000 << CYC2NS_SCALE_FACTOR)/cpu_khz;
+}
+
+static inline unsigned long long cycles_2_ns(unsigned long long cyc)
+{
+	return (cyc * cyc2ns_scale) >> CYC2NS_SCALE_FACTOR;
+}
+
+#ifdef CONFIG_OMAP_MPU_TIMER
+
 /*
  * ---------------------------------------------------------------------------
  * MPU timer
@@ -270,7 +332,6 @@ unsigned long long sched_clock(void)
 
 	return cycles_2_ns(ticks64);
 }
-
 #endif	/* CONFIG_OMAP_MPU_TIMER */
 
 #ifdef CONFIG_OMAP_32K_TIMER

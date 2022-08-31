@@ -4,6 +4,7 @@
 obj- := misc.o	# Dummy rule to force built-in.o to be made
 
 obj-$(CONFIG_IBM_ASM)	+= ibmasm/
+obj-$(CONFIG_HDPU_FEATURES)	+= hdpuftrs/
 
 obj-$(CONFIG_MCP)              += mcp-core.o
 obj-$(CONFIG_MCP_UCB1200)      += ucb1x00-core.o

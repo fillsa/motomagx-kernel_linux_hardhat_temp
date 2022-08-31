@@ -6,9 +6,10 @@
  * This file contains driver APIs to the irq subsystem.
  */
 
+#include <linux/config.h>
 #include <linux/irq.h>
-#include <linux/random.h>
 #include <linux/module.h>
+#include <linux/random.h>
 #include <linux/kthread.h>
 #include <linux/syscalls.h>
 #include <linux/interrupt.h>
@@ -16,6 +17,8 @@
 #include "internals.h"
 
 #ifdef CONFIG_SMP
+
+cpumask_t irq_affinity[NR_IRQS] = { [0 ... NR_IRQS-1] = CPU_MASK_ALL };
 
 /**
  *	synchronize_irq - wait for pending IRQ handlers (on other CPUs)
@@ -282,6 +285,13 @@ void free_irq(unsigned int irq, void *dev_id)
 
 			/* Found it - now remove it from the list of entries */
 			*pp = action->next;
+
+			/* Currently used only by UML, might disappear one day.*/
+#ifdef CONFIG_IRQ_RELEASE_METHOD
+			if (desc->handler->release)
+				desc->handler->release(irq, dev_id);
+#endif
+
 			if (!desc->action) {
 				desc->status |= IRQ_DISABLED;
 				if (desc->handler->shutdown)

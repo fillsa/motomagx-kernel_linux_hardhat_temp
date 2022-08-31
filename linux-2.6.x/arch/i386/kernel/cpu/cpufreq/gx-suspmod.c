@@ -190,7 +190,7 @@ static __init struct pci_dev *gx_detect_chipset(void)
 
 	/* detect which companion chip is used */
 	while ((gx_pci = pci_get_device(PCI_ANY_ID, PCI_ANY_ID, gx_pci)) != NULL) {
-		if ((pci_match_device (gx_chipset_tbl, gx_pci)) != NULL) {
+		if ((pci_match_id(gx_chipset_tbl, gx_pci)) != NULL) {
 			return gx_pci;
 		}
 	}
@@ -209,7 +209,7 @@ static unsigned int gx_get_cpuspeed(unsigned int cpu)
 	if ((gx_params->pci_suscfg & SUSMOD) == 0) 
 		return stock_freq;
 
-	return (stock_freq * gx_params->on_duration) 
+	return (stock_freq * gx_params->off_duration) 
 		/ (gx_params->on_duration + gx_params->off_duration);
 }
 

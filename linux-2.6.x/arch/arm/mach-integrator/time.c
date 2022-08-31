@@ -21,6 +21,8 @@
 #include <asm/uaccess.h>
 #include <asm/rtc.h>
 
+#include <asm/mach/time.h>
+
 #define RTC_DR		(0)
 #define RTC_MR		(4)
 #define RTC_STAT	(8)
@@ -30,7 +32,7 @@
 #define RTC_CR_MIE	(1 << 0)
 
 extern int (*set_rtc)(void);
-static void *rtc_base;
+static void __iomem *rtc_base; // mvl	static void *rtc_base;
 
 static int integrator_set_rtc(void)
 {
@@ -163,7 +165,7 @@ static int rtc_remove(struct amba_device *dev)
 
 static struct timespec rtc_delta;
 
-static int rtc_suspend(struct amba_device *dev, u32 state)
+static int rtc_suspend(struct amba_device *dev, pm_message_t state)
 {
 	struct timespec rtc;
 

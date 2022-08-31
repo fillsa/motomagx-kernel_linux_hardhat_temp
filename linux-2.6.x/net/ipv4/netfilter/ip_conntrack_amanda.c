@@ -26,7 +26,6 @@
 #include <net/checksum.h>
 #include <net/udp.h>
 
-#include <linux/netfilter_ipv4/lockhelp.h>
 #include <linux/netfilter_ipv4/ip_conntrack_helper.h>
 #include <linux/netfilter_ipv4/ip_conntrack_amanda.h>
 
@@ -42,16 +41,23 @@ static char *conns[] = { "DATA ", "MESG ", "INDEX " };
 
 /* This is slow, but it's simple. --RR */
 static char amanda_buffer[65536];
-static DECLARE_LOCK(amanda_buffer_lock);
+static DEFINE_SPINLOCK(amanda_buffer_lock);
 
-static int help(struct sk_buff *skb,
+unsigned int (*ip_nat_amanda_hook)(struct sk_buff **pskb,
+				   enum ip_conntrack_info ctinfo,
+				   unsigned int matchoff,
+				   unsigned int matchlen,
+				   struct ip_conntrack_expect *exp);
+EXPORT_SYMBOL_GPL(ip_nat_amanda_hook);
+
+static int help(struct sk_buff **pskb,
                 struct ip_conntrack *ct, enum ip_conntrack_info ctinfo)
 {
 	struct ip_conntrack_expect *exp;
-	struct ip_ct_amanda_expect *exp_amanda_info;
 	char *data, *data_limit, *tmp;
 	unsigned int dataoff, i;
 	u_int16_t port, len;
+	int ret = NF_ACCEPT;
 
 	/* Only look at packets from the Amanda server */
 	if (CTINFO2DIR(ctinfo) == IP_CT_DIR_ORIGINAL)
@@ -62,17 +68,17 @@ static int help(struct sk_buff *skb,
 	ip_ct_refresh_acct(ct, ctinfo, NULL, master_timeout * HZ);
 
 	/* No data? */
-	dataoff = skb->nh.iph->ihl*4 + sizeof(struct udphdr);
-	if (dataoff >= skb->len) {
+	dataoff = (*pskb)->nh.iph->ihl*4 + sizeof(struct udphdr);
+	if (dataoff >= (*pskb)->len) {
 		if (net_ratelimit())
-			printk("amanda_help: skblen = %u\n", skb->len);
+			printk("amanda_help: skblen = %u\n", (*pskb)->len);
 		return NF_ACCEPT;
 	}
 
-	LOCK_BH(&amanda_buffer_lock);
-	skb_copy_bits(skb, dataoff, amanda_buffer, skb->len - dataoff);
+	spin_lock_bh(&amanda_buffer_lock);
+	skb_copy_bits(*pskb, dataoff, amanda_buffer, (*pskb)->len - dataoff);
 	data = amanda_buffer;
-	data_limit = amanda_buffer + skb->len - dataoff;
+	data_limit = amanda_buffer + (*pskb)->len - dataoff;
 	*data_limit = '\0';
 
 	/* Search for the CONNECT string */
@@ -95,37 +101,43 @@ static int help(struct sk_buff *skb,
 		if (port == 0 || len > 5)
 			break;
 
-		exp = ip_conntrack_expect_alloc();
-		if (exp == NULL)
+		exp = ip_conntrack_expect_alloc(ct);
+		if (exp == NULL) {
+			ret = NF_DROP;
 			goto out;
+		}
+
+		exp->expectfn = NULL;
 
 		exp->tuple.src.ip = ct->tuplehash[IP_CT_DIR_ORIGINAL].tuple.src.ip;
+		exp->tuple.src.u.tcp.port = 0;
 		exp->tuple.dst.ip = ct->tuplehash[IP_CT_DIR_ORIGINAL].tuple.dst.ip;
 		exp->tuple.dst.protonum = IPPROTO_TCP;
-		exp->mask.src.ip = 0xFFFFFFFF;
-		exp->mask.dst.ip = 0xFFFFFFFF;
-		exp->mask.dst.protonum = 0xFFFF;
-		exp->mask.dst.u.tcp.port = 0xFFFF;
-
-		exp_amanda_info = &exp->help.exp_amanda_info;
-		exp_amanda_info->offset = tmp - amanda_buffer;
-		exp_amanda_info->port   = port;
-		exp_amanda_info->len    = len;
-
 		exp->tuple.dst.u.tcp.port = htons(port);
 
-		ip_conntrack_expect_related(exp, ct);
+		exp->mask.src.ip = 0xFFFFFFFF;
+		exp->mask.src.u.tcp.port = 0;
+		exp->mask.dst.ip = 0xFFFFFFFF;
+		exp->mask.dst.protonum = 0xFF;
+		exp->mask.dst.u.tcp.port = 0xFFFF;
+
+		if (ip_nat_amanda_hook)
+			ret = ip_nat_amanda_hook(pskb, ctinfo,
+						 tmp - amanda_buffer,
+						 len, exp);
+		else if (ip_conntrack_expect_related(exp) != 0)
+			ret = NF_DROP;
+		ip_conntrack_expect_put(exp);
 	}
 
 out:
-	UNLOCK_BH(&amanda_buffer_lock);
-	return NF_ACCEPT;
+	spin_unlock_bh(&amanda_buffer_lock);
+	return ret;
 }
 
 static struct ip_conntrack_helper amanda_helper = {
 	.max_expected = ARRAY_SIZE(conns),
 	.timeout = 180,
-	.flags = IP_CT_HELPER_F_REUSE_EXPECT,
 	.me = THIS_MODULE,
 	.help = help,
 	.name = "amanda",
@@ -134,7 +146,7 @@ static struct ip_conntrack_helper amanda_helper = {
 		   .dst = { .protonum = IPPROTO_UDP },
 	},
 	.mask = { .src = { .u = { 0xFFFF } },
-		 .dst = { .protonum = 0xFFFF },
+		 .dst = { .protonum = 0xFF },
 	},
 };
 
@@ -148,6 +160,5 @@ static int __init init(void)
 	return ip_conntrack_helper_register(&amanda_helper);
 }
 
-PROVIDES_CONNTRACK(amanda);
 module_init(init);
 module_exit(fini);

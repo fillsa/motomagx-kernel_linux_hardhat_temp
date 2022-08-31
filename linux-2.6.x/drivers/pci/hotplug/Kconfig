@@ -3,11 +3,11 @@
 #
 
 menu "PCI Hotplug Support"
-	depends on HOTPLUG
 
 config HOTPLUG_PCI
 	tristate "Support for PCI Hotplug (EXPERIMENTAL)"
 	depends on PCI && EXPERIMENTAL
+	select HOTPLUG
 	---help---
 	  Say Y here if you have a motherboard with a PCI Hotplug controller.
 	  This allows you to add and remove PCI cards while the machine is
@@ -134,27 +134,6 @@ config HOTPLUG_PCI_CPCI_GENERIC
 
 	  When in doubt, say N.
 
-config HOTPLUG_PCI_PCIE
-	tristate "PCI Express Hotplug driver"
-	depends on HOTPLUG_PCI
-	help
-	  Say Y here if you have a motherboard that supports PCI Express Native
-	  Hotplug
-
-	  To compile this driver as a module, choose M here: the
-	  module will be called pciehp.
-
-	  When in doubt, say N.
-
-config HOTPLUG_PCI_PCIE_POLL_EVENT_MODE
-	bool "Use polling mechanism for hot-plug events (for testing purpose)"
-	depends on HOTPLUG_PCI_PCIE
-	help
-	  Say Y here if you want to use the polling mechanism for hot-plug 
-	  events for early platform testing.
-	   
-	  When in doubt, say N.
-
 config HOTPLUG_PCI_SHPC
 	tristate "SHPC PCI Hotplug driver"
 	depends on HOTPLUG_PCI
@@ -208,9 +187,10 @@ config HOTPLUG_PCI_RPA_DLPAR
 
 config HOTPLUG_PCI_SGI
 	tristate "SGI PCI Hotplug Support"
-	depends on HOTPLUG_PCI && IA64_SGI_SN2
+	depends on HOTPLUG_PCI && (IA64_SGI_SN2 || IA64_GENERIC)
 	help
-	  Say Y here if you have an SGI IA64 Altix system.
+	  Say Y here if you want to use the SGI Altix Hotplug
+	  Driver for PCI devices.
 
 	  When in doubt, say N.
 

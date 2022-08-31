@@ -61,15 +61,14 @@ acpi_pci_data_handler (
 
 
 /**
- * acpi_os_get_pci_id
+ * acpi_get_pci_id
  * ------------------
  * This function is used by the ACPI Interpreter (a.k.a. Core Subsystem)
  * to resolve PCI information for ACPI-PCI devices defined in the namespace.
  * This typically occurs when resolving PCI operation region information.
  */
-#ifdef ACPI_FUTURE_USAGE
 acpi_status
-acpi_os_get_pci_id (
+acpi_get_pci_id (
 	acpi_handle		handle,
 	struct acpi_pci_id	*id)
 {
@@ -78,7 +77,7 @@ acpi_os_get_pci_id (
 	struct acpi_device	*device = NULL;
 	struct acpi_pci_data	*data = NULL;
 
-	ACPI_FUNCTION_TRACE("acpi_os_get_pci_id");
+	ACPI_FUNCTION_TRACE("acpi_get_pci_id");
 
 	if (!id)
 		return_ACPI_STATUS(AE_BAD_PARAMETER);
@@ -92,7 +91,7 @@ acpi_os_get_pci_id (
 	}
 
 	status = acpi_get_data(handle, acpi_pci_data_handler, (void**) &data);
-	if (ACPI_FAILURE(status) || !data || !data->dev) {
+	if (ACPI_FAILURE(status) || !data) {
 		ACPI_DEBUG_PRINT((ACPI_DB_ERROR, 
 			"Invalid ACPI-PCI context for device %s\n",
 			acpi_device_bid(device)));
@@ -115,7 +114,7 @@ acpi_os_get_pci_id (
 
 	return_ACPI_STATUS(AE_OK);
 }
-#endif  /*  ACPI_FUTURE_USAGE  */
+EXPORT_SYMBOL(acpi_get_pci_id);
 
 	
 int
@@ -126,18 +125,29 @@ acpi_pci_bind (
 	acpi_status		status = AE_OK;
 	struct acpi_pci_data	*data = NULL;
 	struct acpi_pci_data	*pdata = NULL;
-	char			pathname[ACPI_PATHNAME_MAX] = {0};
-	struct acpi_buffer	buffer = {ACPI_PATHNAME_MAX, pathname};
+	char			*pathname = NULL;
+	struct acpi_buffer	buffer = {0, NULL};
 	acpi_handle		handle = NULL;
+	struct pci_dev		*dev;
+	struct pci_bus 		*bus;
 
 	ACPI_FUNCTION_TRACE("acpi_pci_bind");
 
 	if (!device || !device->parent)
 		return_VALUE(-EINVAL);
 
-	data = kmalloc(sizeof(struct acpi_pci_data), GFP_KERNEL);
-	if (!data)
+	pathname = kmalloc(ACPI_PATHNAME_MAX, GFP_KERNEL);
+	if(!pathname)
 		return_VALUE(-ENOMEM);
+	memset(pathname, 0, ACPI_PATHNAME_MAX);
+	buffer.length = ACPI_PATHNAME_MAX;
+	buffer.pointer = pathname;
+
+	data = kmalloc(sizeof(struct acpi_pci_data), GFP_KERNEL);
+	if (!data){
+		kfree (pathname);
+		return_VALUE(-ENOMEM);
+	}
 	memset(data, 0, sizeof(struct acpi_pci_data));
 
 	acpi_get_name(device->handle, ACPI_FULL_PATHNAME, &buffer);
@@ -184,8 +194,20 @@ acpi_pci_bind (
 	 * Locate matching device in PCI namespace.  If it doesn't exist
 	 * this typically means that the device isn't currently inserted
 	 * (e.g. docking station, port replicator, etc.).
+	 * We cannot simply search the global pci device list, since
+	 * PCI devices are added to the global pci list when the root
+	 * bridge start ops are run, which may not have happened yet.
 	 */
-	data->dev = pci_find_slot(data->id.bus, PCI_DEVFN(data->id.device, data->id.function));
+	bus = pci_find_bus(data->id.segment, data->id.bus);
+	if (bus) {
+		list_for_each_entry(dev, &bus->devices, bus_list) {
+			if (dev->devfn == PCI_DEVFN(data->id.device,
+						data->id.function)) {
+				data->dev = dev;
+				break;
+			}
+		}
+	}
 	if (!data->dev) {
 		ACPI_DEBUG_PRINT((ACPI_DB_INFO, 
 			"Device %02x:%02x:%02x.%02x not present in PCI namespace\n",
@@ -216,6 +238,7 @@ acpi_pci_bind (
 			data->id.device, data->id.function));
 		data->bus = data->dev->subordinate;
 		device->ops.bind = acpi_pci_bind;
+		device->ops.unbind = acpi_pci_unbind;
 	}
 
 	/*
@@ -253,12 +276,64 @@ acpi_pci_bind (
 	}
 
 end:
+	kfree(pathname);
 	if (result)
 		kfree(data);
 
 	return_VALUE(result);
 }
 
+int acpi_pci_unbind(
+	struct acpi_device      *device)
+{
+	int                     result = 0;
+	acpi_status             status = AE_OK;
+	struct acpi_pci_data    *data = NULL;
+	char                    *pathname = NULL;
+	struct acpi_buffer      buffer = {0, NULL};
+
+	ACPI_FUNCTION_TRACE("acpi_pci_unbind");
+
+	if (!device || !device->parent)
+		return_VALUE(-EINVAL);
+
+	pathname = (char *) kmalloc(ACPI_PATHNAME_MAX, GFP_KERNEL);
+	if(!pathname)
+		return_VALUE(-ENOMEM);
+	memset(pathname, 0, ACPI_PATHNAME_MAX);
+
+	buffer.length = ACPI_PATHNAME_MAX;
+	buffer.pointer = pathname;
+	acpi_get_name(device->handle, ACPI_FULL_PATHNAME, &buffer);
+	ACPI_DEBUG_PRINT((ACPI_DB_INFO, "Unbinding PCI device [%s]...\n",
+		pathname));
+	kfree(pathname);
+
+	status = acpi_get_data(device->handle, acpi_pci_data_handler, (void**)&data);
+	if (ACPI_FAILURE(status)) {
+		ACPI_DEBUG_PRINT((ACPI_DB_ERROR,
+			"Unable to get data from device %s\n",
+			acpi_device_bid(device)));
+		result = -ENODEV;
+		goto end;
+	}
+
+	status = acpi_detach_data(device->handle, acpi_pci_data_handler);
+	if (ACPI_FAILURE(status)) {
+		ACPI_DEBUG_PRINT((ACPI_DB_ERROR,
+			"Unable to detach data from device %s\n",
+			acpi_device_bid(device)));
+		result = -ENODEV;
+		goto end;
+	}
+	if (data->dev->subordinate) {
+		acpi_pci_irq_del_prt(data->id.segment, data->bus->number);
+	}
+	kfree(data);
+
+end:
+	return_VALUE(result);
+}
 
 int 
 acpi_pci_bind_root (
@@ -269,22 +344,35 @@ acpi_pci_bind_root (
 	int			result = 0;
 	acpi_status		status = AE_OK;
 	struct acpi_pci_data	*data = NULL;
-	char			pathname[ACPI_PATHNAME_MAX] = {0};
-	struct acpi_buffer	buffer = {ACPI_PATHNAME_MAX, pathname};
+	char			*pathname = NULL;
+	struct acpi_buffer	buffer = {0, NULL};
 
 	ACPI_FUNCTION_TRACE("acpi_pci_bind_root");
 
-	if (!device || !id || !bus)
+	pathname = (char *)kmalloc(ACPI_PATHNAME_MAX, GFP_KERNEL);
+	if(!pathname)
+		return_VALUE(-ENOMEM);
+	memset(pathname, 0, ACPI_PATHNAME_MAX);
+
+	buffer.length = ACPI_PATHNAME_MAX;
+	buffer.pointer = pathname;
+
+	if (!device || !id || !bus){
+		kfree(pathname);
 		return_VALUE(-EINVAL);
+	}
 
 	data = kmalloc(sizeof(struct acpi_pci_data), GFP_KERNEL);
-	if (!data)
+	if (!data){
+		kfree(pathname);
 		return_VALUE(-ENOMEM);
+	}
 	memset(data, 0, sizeof(struct acpi_pci_data));
 
 	data->id = *id;
 	data->bus = bus;
 	device->ops.bind = acpi_pci_bind;
+	device->ops.unbind = acpi_pci_unbind;
 
 	acpi_get_name(device->handle, ACPI_FULL_PATHNAME, &buffer);
 
@@ -301,6 +389,7 @@ acpi_pci_bind_root (
 	}
 
 end:
+	kfree(pathname);
 	if (result != 0)
 		kfree(data);
 

@@ -5,7 +5,7 @@
  ******************************************************************************/
 
 /*
- * Copyright (C) 2000 - 2004, R. Byron Moore
+ * Copyright (C) 2000 - 2005, R. Byron Moore
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -67,7 +67,8 @@
  ******************************************************************************/
 
 acpi_status
-acpi_ns_root_initialize (void)
+acpi_ns_root_initialize (
+	void)
 {
 	acpi_status                         status;
 	const struct acpi_predefined_names *init_val = NULL;
@@ -155,8 +156,7 @@ acpi_ns_root_initialize (void)
 			 */
 			switch (init_val->type) {
 			case ACPI_TYPE_METHOD:
-				obj_desc->method.param_count = (u8) ACPI_STRTOUL
-						  (val, NULL, 10);
+				obj_desc->method.param_count = (u8) ACPI_TO_INTEGER (val);
 				obj_desc->common.flags |= AOPOBJ_DATA_VALID;
 
 #if defined (_ACPI_ASL_COMPILER) || defined (_ACPI_DUMP_App)
@@ -176,8 +176,7 @@ acpi_ns_root_initialize (void)
 
 			case ACPI_TYPE_INTEGER:
 
-				obj_desc->integer.value =
-						(acpi_integer) ACPI_STRTOUL (val, NULL, 10);
+				obj_desc->integer.value = ACPI_TO_INTEGER (val);
 				break;
 
 
@@ -195,8 +194,7 @@ acpi_ns_root_initialize (void)
 			case ACPI_TYPE_MUTEX:
 
 				obj_desc->mutex.node = new_node;
-				obj_desc->mutex.sync_level = (u8) ACPI_STRTOUL
-						  (val, NULL, 10);
+				obj_desc->mutex.sync_level = (u8) (ACPI_TO_INTEGER (val) - 1);
 
 				if (ACPI_STRCMP (init_val->name, "_GL_") == 0) {
 					/*
@@ -268,7 +266,7 @@ unlock_and_exit:
  *
  * FUNCTION:    acpi_ns_lookup
  *
- * PARAMETERS:  prefix_node     - Search scope if name is not fully qualified
+ * PARAMETERS:  scope_info      - Current scope info block
  *              Pathname        - Search pathname, in internal format
  *                                (as represented in the AML stream)
  *              Type            - Type associated with name

@@ -114,7 +114,7 @@ static struct gpio_bank gpio_bank_1510[2] = {
 #ifdef CONFIG_ARCH_OMAP730
 static struct gpio_bank gpio_bank_730[7] = {
 	{ OMAP_MPUIO_BASE,     INT_730_MPUIO,	    IH_MPUIO_BASE,	METHOD_MPUIO },
-	{ OMAP730_GPIO1_BASE,  INT_GPIO_BANK1,	    IH_GPIO_BASE,	METHOD_GPIO_730 },
+	{ OMAP730_GPIO1_BASE,  INT_730_GPIO_BANK1,  IH_GPIO_BASE,	METHOD_GPIO_730 },
 	{ OMAP730_GPIO2_BASE,  INT_730_GPIO_BANK2,  IH_GPIO_BASE + 32,	METHOD_GPIO_730 },
 	{ OMAP730_GPIO3_BASE,  INT_730_GPIO_BANK3,  IH_GPIO_BASE + 64,	METHOD_GPIO_730 },
 	{ OMAP730_GPIO4_BASE,  INT_730_GPIO_BANK4,  IH_GPIO_BASE + 96,	METHOD_GPIO_730 },
@@ -307,6 +307,9 @@ int omap_get_gpio_datain(int gpio)
 	case METHOD_GPIO_1610:
 		reg += OMAP1610_GPIO_DATAIN;
 		break;
+	case METHOD_GPIO_730:
+		reg += OMAP730_GPIO_DATA_INPUT;
+		break;
 	default:
 		BUG();
 		return -1;
@@ -413,7 +416,7 @@ static void _clear_gpio_irqbank(struct gpio_bank *bank, int gpio_mask)
 
 	switch (bank->method) {
 	case METHOD_MPUIO:
-		/* MPUIO irqstatus cannot be cleared one bit at a time,
+		/* MPUIO irqstatus is reset by reading the status register,
 		 * so do nothing here */
 		return;
 	case METHOD_GPIO_1510:
@@ -725,7 +728,7 @@ static int __init _omap_gpio_init(void)
 			else
 				set_irq_chip(j, &gpio_irq_chip);
 #ifdef CONFIG_PREEMPT_HARDIRQS
-			set_irq_handler(j, do_edge_IRQ);
+			set_irq_handler(j, do_simple_IRQ);
 #else
 			set_irq_handler(j, do_simple_IRQ);
 #endif

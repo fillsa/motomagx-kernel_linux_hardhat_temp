@@ -6,7 +6,7 @@
  *****************************************************************************/
 
 /*
- * Copyright (C) 2000 - 2004, R. Byron Moore
+ * Copyright (C) 2000 - 2005, R. Byron Moore
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -50,10 +50,9 @@
 #include "actbl.h"
 
 
- /*
+/*
  * Global interfaces
  */
-
 acpi_status
 acpi_initialize_subsystem (
 	void);
@@ -106,9 +105,8 @@ acpi_install_initialization_handler (
 #endif
 
 /*
- * ACPI Memory manager
+ * ACPI Memory managment
  */
-
 void *
 acpi_allocate (
 	u32                             size);
@@ -125,7 +123,6 @@ acpi_free (
 /*
  * ACPI table manipulation interfaces
  */
-
 acpi_status
 acpi_find_root_pointer (
 	u32                             flags,
@@ -168,7 +165,6 @@ acpi_get_firmware_table (
 /*
  * Namespace and name interfaces
  */
-
 acpi_status
 acpi_walk_namespace (
 	acpi_object_type                type,
@@ -218,7 +214,6 @@ acpi_get_data (
 /*
  * Object manipulation and enumeration
  */
-
 acpi_status
 acpi_evaluate_object (
 	acpi_handle                     object,
@@ -262,7 +257,6 @@ acpi_get_parent (
 /*
  * Event handler interfaces
  */
-
 acpi_status
 acpi_install_fixed_event_handler (
 	u32                             acpi_event,
@@ -319,7 +313,6 @@ acpi_install_exception_handler (
 /*
  * Event interfaces
  */
-
 acpi_status
 acpi_acquire_global_lock (
 	u16                             timeout,
@@ -345,11 +338,11 @@ acpi_disable_event (
 	u32                             event,
 	u32                             flags);
 
-#ifdef ACPI_FUTURE_USAGE
 acpi_status
 acpi_clear_event (
 	u32                             event);
 
+#ifdef ACPI_FUTURE_USAGE
 acpi_status
 acpi_get_event_status (
 	u32                             event,
@@ -404,7 +397,6 @@ acpi_remove_gpe_block (
 /*
  * Resource interfaces
  */
-
 typedef
 acpi_status (*ACPI_WALK_RESOURCE_CALLBACK) (
 	struct acpi_resource            *resource,
@@ -448,7 +440,6 @@ acpi_resource_to_address64 (
 /*
  * Hardware (ACPI device) interfaces
  */
-
 acpi_status
 acpi_get_register (
 	u32                             register_id,

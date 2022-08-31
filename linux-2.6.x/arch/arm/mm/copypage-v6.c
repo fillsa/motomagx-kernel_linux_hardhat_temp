@@ -26,7 +26,7 @@
 
 #define TOP_PTE(x)	pte_offset_kernel(top_pmd, x)
 
-static DEFINE_RAW_SPINLOCK(v6_lock);
+static DEFINE_RAW_SPINLOCK(v6_lock); //static DEFINE_SPINLOCK(v6_lock);
 
 /*
  * Copy the user page.  No aliasing to deal with so we can just

@@ -202,7 +202,7 @@ void ata_to_sense_error(struct ata_queued_cmd *qc, u8 drv_stat)
 		{0x40, 		MEDIUM_ERROR, 0x11, 0x04}, 	// Uncorrectable ECC error      Unrecovered read error
 		/* BBD - block marked bad */
 		{0x80, 		MEDIUM_ERROR, 0x11, 0x04}, 	// Block marked bad		  Medium error, unrecovered read error
-		{0xFF, 0xFF, 0xFF, 0xFF}, // END mark 
+		{0xFF, 0xFF, 0xFF, 0xFF}, // END mark
 	};
 	static unsigned char stat_table[][4] = {
 		/* Must be first because BUSY means no other bits valid */
@@ -210,22 +210,22 @@ void ata_to_sense_error(struct ata_queued_cmd *qc, u8 drv_stat)
 		{0x20, 		HARDWARE_ERROR,  0x00, 0x00}, 	// Device fault
 		{0x08, 		ABORTED_COMMAND, 0x47, 0x00},	// Timed out in xfer, fake parity for now
 		{0x04, 		RECOVERED_ERROR, 0x11, 0x00},	// Recovered ECC error	  Medium error, recovered
-		{0xFF, 0xFF, 0xFF, 0xFF}, // END mark 
+		{0xFF, 0xFF, 0xFF, 0xFF}, // END mark
 	};
 	int i = 0;
 
 	cmd->result = SAM_STAT_CHECK_CONDITION;
-	
+
 	/*
 	 *	Is this an error we can process/parse
 	 */
-	 
+
 	if(drv_stat & ATA_ERR)
 		/* Read the err bits */
 		err = ata_chk_err(qc->ap);
 
 	/* Display the ATA level error info */
-	
+
 	printk(KERN_WARNING "ata%u: status=0x%02x { ", qc->ap->id, drv_stat);
 	if(drv_stat & 0x80)
 	{
@@ -242,7 +242,7 @@ void ata_to_sense_error(struct ata_queued_cmd *qc, u8 drv_stat)
 		if(drv_stat & 0x01)	printk("Error ");
 	}
 	printk("}\n");
-	
+
 	if(err)
 	{
 		printk(KERN_WARNING "ata%u: error=0x%02x { ", qc->ap->id, err);
@@ -259,11 +259,11 @@ void ata_to_sense_error(struct ata_queued_cmd *qc, u8 drv_stat)
 		if(err & 0x02)		printk("TrackZeroNotFound ");
 		if(err & 0x01)		printk("AddrMarkNotFound ");
 		printk("}\n");
-		
+
 		/* Should we dump sector info here too ?? */
 	}
-		
-	
+
+
 	/* Look for err */
 	while(sense_table[i][0] != 0xFF)
 	{
@@ -282,7 +282,8 @@ void ata_to_sense_error(struct ata_queued_cmd *qc, u8 drv_stat)
 	/* No immediate match */
 	if(err)
 		printk(KERN_DEBUG "ata%u: no sense translation for 0x%02x\n", qc->ap->id, err);
-	
+
+	i = 0;
 	/* Fall back to interpreting status bits */
 	while(stat_table[i][0] != 0xFF)
 	{
@@ -300,11 +301,11 @@ void ata_to_sense_error(struct ata_queued_cmd *qc, u8 drv_stat)
 	/* No error ?? */
 	printk(KERN_ERR "ata%u: called with no error (%02X)!\n", qc->ap->id, drv_stat);
 	/* additional-sense-code[-qualifier] */
-	
+
 	sb[0] = 0x70;
 	sb[2] = MEDIUM_ERROR;
 	sb[7] = 0x0A;
-	if (cmd->sc_data_direction == SCSI_DATA_READ) {
+	if (cmd->sc_data_direction == DMA_FROM_DEVICE) {
 		sb[12] = 0x11; /* "unrecovered read error" */
 		sb[13] = 0x04;
 	} else {
@@ -346,7 +347,10 @@ int ata_scsi_slave_config(struct scsi_device *sdev)
 		 */
 		if ((dev->flags & ATA_DFLAG_LBA48) &&
 		    ((dev->flags & ATA_DFLAG_LOCK_SECTORS) == 0)) {
-			sdev->host->max_sectors = 2048;
+			/*
+			 * do not overwrite sdev->host->max_sectors, since
+			 * other drives on this host may not support LBA48
+			 */
 			blk_queue_max_sectors(sdev->request_queue, 2048);
 		}
 	}
@@ -381,6 +385,7 @@ int ata_scsi_error(struct Scsi_Host *host)
 	 * appropriate place
 	 */
 	host->host_failed--;
+	INIT_LIST_HEAD(&host->eh_cmd_q);
 
 	DPRINTK("EXIT\n");
 	return 0;
@@ -487,19 +492,24 @@ static unsigned int ata_scsi_verify_xlat(struct ata_queued_cmd *qc, u8 *scsicmd)
 	}
 
 	if (lba48) {
+		tf->command = ATA_CMD_VERIFY_EXT;
+
 		tf->hob_nsect = (n_sect >> 8) & 0xff;
 
 		tf->hob_lbah = (sect >> 40) & 0xff;
 		tf->hob_lbam = (sect >> 32) & 0xff;
 		tf->hob_lbal = (sect >> 24) & 0xff;
-	} else
+	} else {
+		tf->command = ATA_CMD_VERIFY;
+
 		tf->device |= (sect >> 24) & 0xf;
+	}
 
 	tf->nsect = n_sect & 0xff;
 
-	tf->hob_lbah = (sect >> 16) & 0xff;
-	tf->hob_lbam = (sect >> 8) & 0xff;
-	tf->hob_lbal = sect & 0xff;
+	tf->lbah = (sect >> 16) & 0xff;
+	tf->lbam = (sect >> 8) & 0xff;
+	tf->lbal = sect & 0xff;
 
 	return 0;
 }
@@ -599,7 +609,7 @@ static unsigned int ata_scsi_rw_xlat(struct ata_queued_cmd *qc, u8 *scsicmd)
 				return 1;
 
 			/* stores LBA27:24 in lower 4 bits of device reg */
-			tf->device |= scsicmd[2];
+			tf->device |= scsicmd[6];
 
 			qc->nsect = scsicmd[13];
 		}
@@ -665,8 +675,8 @@ static void ata_scsi_translate(struct ata_port *ap, struct ata_device *dev,
 		return;
 
 	/* data is present; dma-map it */
-	if (cmd->sc_data_direction == SCSI_DATA_READ ||
-	    cmd->sc_data_direction == SCSI_DATA_WRITE) {
+	if (cmd->sc_data_direction == DMA_FROM_DEVICE ||
+	    cmd->sc_data_direction == DMA_TO_DEVICE) {
 		if (unlikely(cmd->request_bufflen < 1)) {
 			printk(KERN_WARNING "ata%u(%u): WARNING: zero len r/w req\n",
 			       ap->id, dev->devno);
@@ -695,6 +705,7 @@ static void ata_scsi_translate(struct ata_port *ap, struct ata_device *dev,
 	return;
 
 err_out:
+	ata_qc_free(qc);
 	ata_bad_cdb(cmd, done);
 	DPRINTK("EXIT - badcmd\n");
 }
@@ -937,7 +948,7 @@ unsigned int ata_scsiop_inq_83(struct ata_scsi_args *args, u8 *rbuf,
 }
 
 /**
- *	ata_scsiop_noop -
+ *	ata_scsiop_noop - Command handler that simply returns success.
  *	@args: device IDENTIFY data / SCSI command of interest.
  *	@rbuf: Response buffer, to which simulated SCSI cmd output is sent.
  *	@buflen: Response buffer length.
@@ -1031,7 +1042,12 @@ static unsigned int ata_msense_caching(u16 *id, u8 **ptr_io,
 
 static unsigned int ata_msense_ctl_mode(u8 **ptr_io, const u8 *last)
 {
-	const u8 page[] = {0xa, 0xa, 2, 0, 0, 0, 0, 0, 0xff, 0xff, 0, 30};
+	const u8 page[] = {0xa, 0xa, 6, 0, 0, 0, 0, 0, 0xff, 0xff, 0, 30};
+
+	/* byte 2: set the descriptor format sense data bit (bit 2)
+	 * since we need to support returning this format for SAT
+	 * commands and any SCSI commands against a 48b LBA device.
+	 */
 
 	ata_msense_push(ptr_io, last, page, sizeof(page));
 	return sizeof(page);
@@ -1161,8 +1177,12 @@ unsigned int ata_scsiop_read_cap(struct ata_scsi_args *args, u8 *rbuf,
 		n_sectors = ata_id_u32(args->id, 60);
 	n_sectors--;		/* ATA TotalUserSectors - 1 */
 
-	tmp = n_sectors;	/* note: truncates, if lba48 */
 	if (args->cmd->cmnd[0] == READ_CAPACITY) {
+		if( n_sectors >= 0xffffffffULL )
+			tmp = 0xffffffff ;  /* Return max count on overflow */
+		else
+			tmp = n_sectors ;
+
 		/* sector count, 32-bit */
 		rbuf[0] = tmp >> (8 * 3);
 		rbuf[1] = tmp >> (8 * 2);
@@ -1176,10 +1196,12 @@ unsigned int ata_scsiop_read_cap(struct ata_scsi_args *args, u8 *rbuf,
 
 	} else {
 		/* sector count, 64-bit */
-		rbuf[2] = n_sectors >> (8 * 7);
-		rbuf[3] = n_sectors >> (8 * 6);
-		rbuf[4] = n_sectors >> (8 * 5);
-		rbuf[5] = n_sectors >> (8 * 4);
+		tmp = n_sectors >> (8 * 4);
+		rbuf[2] = tmp >> (8 * 3);
+		rbuf[3] = tmp >> (8 * 2);
+		rbuf[4] = tmp >> (8 * 1);
+		rbuf[5] = tmp;
+		tmp = n_sectors;
 		rbuf[6] = tmp >> (8 * 3);
 		rbuf[7] = tmp >> (8 * 2);
 		rbuf[8] = tmp >> (8 * 1);
@@ -1292,14 +1314,19 @@ static unsigned int atapi_xlat(struct ata_queued_cmd *qc, u8 *scsicmd)
 	struct scsi_cmnd *cmd = qc->scsicmd;
 	struct ata_device *dev = qc->dev;
 	int using_pio = (dev->flags & ATA_DFLAG_PIO);
-	int nodata = (cmd->sc_data_direction == SCSI_DATA_NONE);
+	int nodata = (cmd->sc_data_direction == DMA_NONE);
+
+	if (!using_pio)
+		/* Check whether ATAPI DMA is safe */
+		if (ata_check_atapi_dma(qc))
+			using_pio = 1;
 
 	memcpy(&qc->cdb, scsicmd, qc->ap->cdb_len);
 
 	qc->complete_fn = atapi_qc_complete;
 
 	qc->tf.flags |= ATA_TFLAG_ISADDR | ATA_TFLAG_DEVICE;
-	if (cmd->sc_data_direction == SCSI_DATA_WRITE) {
+	if (cmd->sc_data_direction == DMA_TO_DEVICE) {
 		qc->tf.flags |= ATA_TFLAG_WRITE;
 		DPRINTK("direction: write\n");
 	}
@@ -1323,7 +1350,7 @@ static unsigned int atapi_xlat(struct ata_queued_cmd *qc, u8 *scsicmd)
 
 #ifdef ATAPI_ENABLE_DMADIR
 		/* some SATA bridges need us to indicate data xfer direction */
-		if (cmd->sc_data_direction != SCSI_DATA_WRITE)
+		if (cmd->sc_data_direction != DMA_TO_DEVICE)
 			qc->tf.feature |= ATAPI_DMADIR;
 #endif
 	}

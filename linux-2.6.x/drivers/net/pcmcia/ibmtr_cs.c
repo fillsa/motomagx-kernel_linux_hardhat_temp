@@ -57,7 +57,6 @@
 #include <linux/trdevice.h>
 #include <linux/ibmtr.h>
 
-#include <pcmcia/version.h>
 #include <pcmcia/cs_types.h>
 #include <pcmcia/cs.h>
 #include <pcmcia/cistpl.h>
@@ -72,7 +71,7 @@
 
 #ifdef PCMCIA_DEBUG
 static int pc_debug = PCMCIA_DEBUG;
-MODULE_PARM(pc_debug, "i");
+module_param(pc_debug, int, 0);
 #define DEBUG(n, args...) if (pc_debug>(n)) printk(KERN_DEBUG args)
 static char *version =
 "ibmtr_cs.c 1.10   1996/01/06 05:19:00 (Steve Kipisz)\n"
@@ -86,10 +85,6 @@ static char *version =
 
 /* Parameters that can be set with 'insmod' */
 
-/* Bit map of interrupts to choose from */
-static u_int irq_mask = 0xdeb8;
-static int irq_list[4] = { -1 };
-
 /* MMIO base address */
 static u_long mmiobase = 0xce000;
 
@@ -102,12 +97,10 @@ static u_long sramsize = 64;
 /* Ringspeed 4,16 */
 static int ringspeed = 16;
 
-MODULE_PARM(irq_mask, "i");
-MODULE_PARM(irq_list, "1-4i");
-MODULE_PARM(mmiobase, "i");
-MODULE_PARM(srambase, "i");
-MODULE_PARM(sramsize, "i");
-MODULE_PARM(ringspeed, "i");
+module_param(mmiobase, ulong, 0);
+module_param(srambase, ulong, 0);
+module_param(sramsize, ulong, 0);
+module_param(ringspeed, int, 0);
 MODULE_LICENSE("GPL");
 
 /*====================================================================*/
@@ -124,9 +117,6 @@ static dev_link_t *ibmtr_attach(void);
 static void ibmtr_detach(dev_link_t *);
 
 static dev_link_t *dev_list;
-
-extern int ibmtr_probe_card(struct net_device *dev);
-extern irqreturn_t tok_interrupt (int irq, void *dev_id, struct pt_regs *regs);
 
 /*====================================================================*/
 
@@ -162,7 +152,7 @@ static dev_link_t *ibmtr_attach(void)
     dev_link_t *link;
     struct net_device *dev;
     client_reg_t client_reg;
-    int i, ret;
+    int ret;
     
     DEBUG(0, "ibmtr_attach()\n");
 
@@ -184,12 +174,7 @@ static dev_link_t *ibmtr_attach(void)
     link->io.NumPorts1 = 4;
     link->io.IOAddrLines = 16;
     link->irq.Attributes = IRQ_TYPE_EXCLUSIVE | IRQ_HANDLE_PRESENT;
-    link->irq.IRQInfo1 = IRQ_INFO2_VALID|IRQ_LEVEL_ID;
-    if (irq_list[0] == -1)
-	link->irq.IRQInfo2 = irq_mask;
-    else
-	for (i = 0; i < 4; i++)
-	    link->irq.IRQInfo2 |= 1 << irq_list[i];
+    link->irq.IRQInfo1 = IRQ_LEVEL_ID;
     link->irq.Handler = &tok_interrupt;
     link->conf.Attributes = CONF_ENABLE_IRQ;
     link->conf.Vcc = 50;
@@ -204,12 +189,6 @@ static dev_link_t *ibmtr_attach(void)
     link->next = dev_list;
     dev_list = link;
     client_reg.dev_info = &dev_info;
-    client_reg.Attributes = INFO_IO_CLIENT | INFO_CARD_SHARE;
-    client_reg.EventMask =
-        CS_EVENT_CARD_INSERTION | CS_EVENT_CARD_REMOVAL |
-        CS_EVENT_RESET_PHYSICAL | CS_EVENT_CARD_RESET |
-        CS_EVENT_PM_SUSPEND | CS_EVENT_PM_RESUME;
-    client_reg.event_handler = &ibmtr_event;
     client_reg.Version = 0x0210;
     client_reg.event_callback_args.client_data = link;
     ret = pcmcia_register_client(&link->handle, &client_reg);
@@ -355,7 +334,8 @@ static void ibmtr_config(dev_link_t *link)
     CS_CHECK(MapMemPage, pcmcia_map_mem_page(info->sram_win_handle, &mem));
 
     ti->sram_base = mem.CardOffset >> 12;
-    ti->sram_virt = (u_long)ioremap(req.Base, req.Size);
+    ti->sram_virt = ioremap(req.Base, req.Size);
+    ti->sram_phys = req.Base;
 
     CS_CHECK(RequestConfiguration, pcmcia_request_configuration(link->handle, &link->conf));
 
@@ -366,6 +346,7 @@ static void ibmtr_config(dev_link_t *link)
 
     link->dev = &info->node;
     link->state &= ~DEV_CONFIG_PENDING;
+    SET_NETDEV_DEV(dev, &handle_to_dev(handle));
 
     i = ibmtr_probe_card(dev);
     if (i != 0) {
@@ -412,7 +393,7 @@ static void ibmtr_release(dev_link_t *link)
     pcmcia_release_irq(link->handle, &link->irq);
     if (link->win) {
 	struct tok_info *ti = netdev_priv(dev);
-	iounmap((void *)ti->mmio);
+	iounmap(ti->mmio);
 	pcmcia_release_window(link->win);
 	pcmcia_release_window(info->sram_win_handle);
     }
@@ -444,7 +425,7 @@ static int ibmtr_event(event_t event, int priority,
         if (link->state & DEV_CONFIG) {
 	    /* set flag to bypass normal interrupt code */
 	    struct tok_info *priv = netdev_priv(dev);
-	    priv->sram_virt |= 1;
+	    priv->sram_phys |= 1;
 	    netif_device_detach(dev);
         }
         break;
@@ -521,13 +502,22 @@ static void ibmtr_hw_setup(struct net_device *dev, u_int mmiobase)
     return;
 }
 
+static struct pcmcia_device_id ibmtr_ids[] = {
+	PCMCIA_DEVICE_PROD_ID12("3Com", "TokenLink Velocity PC Card", 0x41240e5b, 0x82c3734e),
+	PCMCIA_DEVICE_PROD_ID12("IBM", "TOKEN RING", 0xb569a6e5, 0xbf8eed47),
+	PCMCIA_DEVICE_NULL,
+};
+MODULE_DEVICE_TABLE(pcmcia, ibmtr_ids);
+
 static struct pcmcia_driver ibmtr_cs_driver = {
 	.owner		= THIS_MODULE,
 	.drv		= {
 		.name	= "ibmtr_cs",
 	},
 	.attach		= ibmtr_attach,
+	.event		= ibmtr_event,
 	.detach		= ibmtr_detach,
+	.id_table       = ibmtr_ids,
 };
 
 static int __init init_ibmtr_cs(void)
@@ -538,8 +528,7 @@ static int __init init_ibmtr_cs(void)
 static void __exit exit_ibmtr_cs(void)
 {
 	pcmcia_unregister_driver(&ibmtr_cs_driver);
-	while (dev_list != NULL)
-		ibmtr_detach(dev_list);
+	BUG_ON(dev_list != NULL);
 }
 
 module_init(init_ibmtr_cs);

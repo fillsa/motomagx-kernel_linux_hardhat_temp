@@ -73,11 +73,13 @@
 #include <linux/highmem.h>
 #include <linux/file.h>
 #include <linux/times.h>
+#include <linux/cpuset.h>
 
 #include <asm/uaccess.h>
 #include <asm/pgtable.h>
 #include <asm/io.h>
 #include <asm/processor.h>
+#include "internal.h"
 
 /* Gcc optimizes away "strlen(x)" for constant x */
 #define ADDBUF(buffer, string) \
@@ -240,6 +242,8 @@ static inline char * task_sig(struct task_struct *p, char *buffer)
 {
 	sigset_t pending, shpending, blocked, ignored, caught;
 	int num_threads = 0;
+	unsigned long qsize = 0;
+	unsigned long qlim = 0;
 
 	sigemptyset(&pending);
 	sigemptyset(&shpending);
@@ -256,11 +260,14 @@ static inline char * task_sig(struct task_struct *p, char *buffer)
 		blocked = p->blocked;
 		collect_sigign_sigcatch(p, &ignored, &caught);
 		num_threads = atomic_read(&p->signal->count);
+		qsize = atomic_read(&p->user->sigpending);
+		qlim = p->signal->rlim[RLIMIT_SIGPENDING].rlim_cur;
 		spin_unlock_irq(&p->sighand->siglock);
 	}
 	read_unlock(&tasklist_lock);
 
 	buffer += sprintf(buffer, "Threads:\t%d\n", num_threads);
+	buffer += sprintf(buffer, "SigQ:\t%lu/%lu\n", qsize, qlim);
 
 	/* render them all */
 	buffer = render_sigset_t("SigPnd:\t", &pending, buffer);
@@ -296,6 +303,7 @@ int proc_pid_status(struct task_struct *task, char * buffer)
 	}
 	buffer = task_sig(task, buffer);
 	buffer = task_cap(task, buffer);
+	buffer = cpuset_task_status_allowed(task, buffer);
 #if defined(CONFIG_ARCH_S390)
 	buffer = task_show_regs(task, buffer);
 #endif
@@ -314,9 +322,11 @@ static int do_task_stat(struct task_struct *task, char * buffer, int whole)
 	int num_threads = 0;
 	struct mm_struct *mm;
 	unsigned long long start_time;
-	unsigned long cmin_flt = 0, cmaj_flt = 0, cutime = 0, cstime = 0;
-	unsigned long  min_flt = 0,  maj_flt = 0,  utime = 0,  stime = 0;
+	unsigned long cmin_flt = 0, cmaj_flt = 0;
+	unsigned long  min_flt = 0,  maj_flt = 0;
+	cputime_t cutime, cstime, utime, stime;
 	unsigned long rsslim = 0;
+	unsigned long it_real_value = 0;
 	struct task_struct *t;
 	char tcomm[sizeof(task->comm)];
 
@@ -333,6 +343,7 @@ static int do_task_stat(struct task_struct *task, char * buffer, int whole)
 
 	sigemptyset(&sigign);
 	sigemptyset(&sigcatch);
+	cutime = cstime = utime = stime = cputime_zero;
 	read_lock(&tasklist_lock);
 	if (task->sighand) {
 		spin_lock_irq(&task->sighand->siglock);
@@ -345,8 +356,8 @@ static int do_task_stat(struct task_struct *task, char * buffer, int whole)
 			do {
 				min_flt += t->min_flt;
 				maj_flt += t->maj_flt;
-				utime += t->utime;
-				stime += t->stime;
+				utime = cputime_add(utime, t->utime);
+				stime = cputime_add(stime, t->stime);
 				t = next_thread(t);
 			} while (t != task);
 		}
@@ -368,9 +379,10 @@ static int do_task_stat(struct task_struct *task, char * buffer, int whole)
 		if (whole) {
 			min_flt += task->signal->min_flt;
 			maj_flt += task->signal->maj_flt;
-			utime += task->signal->utime;
-			stime += task->signal->stime;
+			utime = cputime_add(utime, task->signal->utime);
+			stime = cputime_add(stime, task->signal->stime);
 		}
+		it_real_value = task->signal->it_real_value;
 	}
 	ppid = pid_alive(task) ? task->group_leader->real_parent->tgid : 0;
 	read_unlock(&tasklist_lock);
@@ -412,17 +424,17 @@ static int do_task_stat(struct task_struct *task, char * buffer, int whole)
 		cmin_flt,
 		maj_flt,
 		cmaj_flt,
-		jiffies_to_clock_t(utime),
-		jiffies_to_clock_t(stime),
-		jiffies_to_clock_t(cutime),
-		jiffies_to_clock_t(cstime),
+		cputime_to_clock_t(utime),
+		cputime_to_clock_t(stime),
+		cputime_to_clock_t(cutime),
+		cputime_to_clock_t(cstime),
 		priority,
 		nice,
 		num_threads,
-		jiffies_to_clock_t(task->it_real_value),
+		jiffies_to_clock_t(it_real_value),
 		start_time,
 		vsize,
-		mm ? mm->rss : 0, /* you might want to shift this left 3 */
+		mm ? get_mm_counter(mm, rss) : 0, /* you might want to shift this left 3 */
 	        rsslim,
 		mm ? mm->start_code : 0,
 		mm ? mm->end_code : 0,

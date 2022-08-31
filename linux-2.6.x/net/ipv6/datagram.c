@@ -36,7 +36,7 @@
 int ip6_datagram_connect(struct sock *sk, struct sockaddr *uaddr, int addr_len)
 {
 	struct sockaddr_in6	*usin = (struct sockaddr_in6 *) uaddr;
-	struct inet_opt      	*inet = inet_sk(sk);
+	struct inet_sock      	*inet = inet_sk(sk);
 	struct ipv6_pinfo      	*np = inet6_sk(sk);
 	struct in6_addr		*daddr, *final_p = NULL, final;
 	struct dst_entry	*dst;
@@ -337,7 +337,7 @@ int ipv6_recv_error(struct sock *sk, struct msghdr *msg, int len)
 			if (ipv6_addr_type(&sin->sin6_addr) & IPV6_ADDR_LINKLOCAL)
 				sin->sin6_scope_id = IP6CB(skb)->iif;
 		} else {
-			struct inet_opt *inet = inet_sk(sk);
+			struct inet_sock *inet = inet_sk(sk);
 
 			ipv6_addr_set(&sin->sin6_addr, 0, 0,
 				      htonl(0xffff),
@@ -355,14 +355,14 @@ int ipv6_recv_error(struct sock *sk, struct msghdr *msg, int len)
 	err = copied;
 
 	/* Reset and regenerate socket error */
-	spin_lock_irq(&sk->sk_error_queue.lock);
+	spin_lock_bh(&sk->sk_error_queue.lock);
 	sk->sk_err = 0;
 	if ((skb2 = skb_peek(&sk->sk_error_queue)) != NULL) {
 		sk->sk_err = SKB_EXT_ERR(skb2)->ee.ee_errno;
-		spin_unlock_irq(&sk->sk_error_queue.lock);
+		spin_unlock_bh(&sk->sk_error_queue.lock);
 		sk->sk_error_report(sk);
 	} else {
-		spin_unlock_irq(&sk->sk_error_queue.lock);
+		spin_unlock_bh(&sk->sk_error_queue.lock);
 	}
 
 out_free_skb:	

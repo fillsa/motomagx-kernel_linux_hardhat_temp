@@ -704,7 +704,6 @@ ahc_find_pci_device(ahc_dev_softc_t pci)
 int
 ahc_pci_config(struct ahc_softc *ahc, struct ahc_pci_identity *entry)
 {
-	u_long	 l;
 	u_int	 command;
 	u_int	 our_id;
 	u_int	 sxfrctl1;
@@ -721,7 +720,7 @@ ahc_pci_config(struct ahc_softc *ahc, struct ahc_pci_identity *entry)
 	ahc->chip |= AHC_PCI;
 	ahc->description = entry->name;
 
-	ahc_power_state_change(ahc, AHC_POWER_STATE_D0);
+	pci_set_power_state(ahc->dev_softc, AHC_POWER_STATE_D0);
 
 	error = ahc_pci_map_registers(ahc);
 	if (error != 0)
@@ -964,12 +963,7 @@ ahc_pci_config(struct ahc_softc *ahc, struct ahc_pci_identity *entry)
 	if (error != 0)
 		return (error);
 
-	ahc_list_lock(&l);
-	/*
-	 * Link this softc in with all other ahc instances.
-	 */
-	ahc_softc_insert(ahc);
-	ahc_list_unlock(&l);
+	ahc->init_level++;
 	return (0);
 }
 
@@ -2016,7 +2010,7 @@ static int
 ahc_pci_resume(struct ahc_softc *ahc)
 {
 
-	ahc_power_state_change(ahc, AHC_POWER_STATE_D0);
+	pci_set_power_state(ahc->dev_softc, AHC_POWER_STATE_D0);
 
 	/*
 	 * We assume that the OS has restored our register

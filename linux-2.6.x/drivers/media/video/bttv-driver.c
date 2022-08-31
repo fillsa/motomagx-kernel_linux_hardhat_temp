@@ -1,5 +1,5 @@
 /*
-    $Id: bttv-driver.c,v 1.27 2004/11/07 14:44:59 kraxel Exp $
+    $Id: bttv-driver.c,v 1.52 2005/08/04 00:55:16 mchehab Exp $
 
     bttv - Bt848 frame grabber driver
 
@@ -27,6 +27,7 @@
 
 #include <linux/init.h>
 #include <linux/module.h>
+#include <linux/moduleparam.h>
 #include <linux/delay.h>
 #include <linux/errno.h>
 #include <linux/fs.h>
@@ -34,6 +35,7 @@
 #include <linux/sched.h>
 #include <linux/interrupt.h>
 #include <linux/kdev_t.h>
+#include <linux/dma-mapping.h>
 
 #include <asm/io.h>
 #include <asm/byteorder.h>
@@ -75,6 +77,10 @@ static unsigned int whitecrush_upper = 0xCF;
 static unsigned int whitecrush_lower = 0x7F;
 static unsigned int vcr_hack    = 0;
 static unsigned int irq_iswitch = 0;
+static unsigned int uv_ratio    = 50;
+static unsigned int full_luma_range = 0;
+static unsigned int coring      = 0;
+extern int no_overlay;
 
 /* API features (turn on/off stuff for testing) */
 static unsigned int v4l2        = 1;
@@ -105,6 +111,10 @@ module_param(adc_crush,         int, 0444);
 module_param(whitecrush_upper,  int, 0444);
 module_param(whitecrush_lower,  int, 0444);
 module_param(vcr_hack,          int, 0444);
+module_param(uv_ratio,          int, 0444);
+module_param(full_luma_range,   int, 0444);
+module_param(coring,            int, 0444);
+
 module_param_array(radio, int, NULL, 0444);
 
 MODULE_PARM_DESC(radio,"The TV card supports radio, default is 0 (no)");
@@ -122,6 +132,9 @@ MODULE_PARM_DESC(whitecrush_upper,"sets the white crush upper value, default is 
 MODULE_PARM_DESC(whitecrush_lower,"sets the white crush lower value, default is 127");
 MODULE_PARM_DESC(vcr_hack,"enables the VCR hack (improves synch on poor VCR tapes), default is 0 (no)");
 MODULE_PARM_DESC(irq_iswitch,"switch inputs in irq handler");
+MODULE_PARM_DESC(uv_ratio,"ratio between u and v gains, default is 50");
+MODULE_PARM_DESC(full_luma_range,"use the full luma range, default is 0 (no)");
+MODULE_PARM_DESC(coring,"set the luma coring level, default is 0 (no)");
 
 MODULE_DESCRIPTION("bttv - v4l/v4l2 driver module for bt848/878 based cards");
 MODULE_AUTHOR("Ralph Metzler & Marcus Metzler & Gerd Knorr");
@@ -313,12 +326,12 @@ const struct bttv_tvnorm bttv_tvnorms[] = {
 		.sram           = -1,
 	}
 };
-const unsigned int BTTV_TVNORMS = ARRAY_SIZE(bttv_tvnorms);
+static const unsigned int BTTV_TVNORMS = ARRAY_SIZE(bttv_tvnorms);
 
 /* ----------------------------------------------------------------------- */
 /* bttv format list
    packed pixel formats must come first */
-const struct bttv_format bttv_formats[] = {
+static const struct bttv_format bttv_formats[] = {
 	{
 		.name     = "8 bpp, gray",
 		.palette  = VIDEO_PALETTE_GREY,
@@ -470,7 +483,7 @@ const struct bttv_format bttv_formats[] = {
 		.flags    = FORMAT_FLAGS_RAW,
 	}
 };
-const unsigned int BTTV_FORMATS = ARRAY_SIZE(bttv_formats);
+static const unsigned int BTTV_FORMATS = ARRAY_SIZE(bttv_formats);
 
 /* ----------------------------------------------------------------------- */
 
@@ -482,7 +495,10 @@ const unsigned int BTTV_FORMATS = ARRAY_SIZE(bttv_formats);
 #define V4L2_CID_PRIVATE_VCR_HACK    (V4L2_CID_PRIVATE_BASE + 5)
 #define V4L2_CID_PRIVATE_WHITECRUSH_UPPER   (V4L2_CID_PRIVATE_BASE + 6)
 #define V4L2_CID_PRIVATE_WHITECRUSH_LOWER   (V4L2_CID_PRIVATE_BASE + 7)
-#define V4L2_CID_PRIVATE_LASTP1      (V4L2_CID_PRIVATE_BASE + 8)
+#define V4L2_CID_PRIVATE_UV_RATIO    (V4L2_CID_PRIVATE_BASE + 8)
+#define V4L2_CID_PRIVATE_FULL_LUMA_RANGE    (V4L2_CID_PRIVATE_BASE + 9)
+#define V4L2_CID_PRIVATE_CORING      (V4L2_CID_PRIVATE_BASE + 10)
+#define V4L2_CID_PRIVATE_LASTP1      (V4L2_CID_PRIVATE_BASE + 11)
 
 static const struct v4l2_queryctrl no_ctl = {
 	.name  = "42",
@@ -616,10 +632,34 @@ static const struct v4l2_queryctrl bttv_ctls[] = {
 		.step          = 1,
 		.default_value = 0x7F,
 		.type          = V4L2_CTRL_TYPE_INTEGER,
+	},{
+		.id            = V4L2_CID_PRIVATE_UV_RATIO,
+		.name          = "uv ratio",
+		.minimum       = 0,
+		.maximum       = 100,
+		.step          = 1,
+		.default_value = 50,
+		.type          = V4L2_CTRL_TYPE_INTEGER,
+	},{
+		.id            = V4L2_CID_PRIVATE_FULL_LUMA_RANGE,
+		.name          = "full luma range",
+		.minimum       = 0,
+		.maximum       = 1,
+		.type          = V4L2_CTRL_TYPE_BOOLEAN,
+	},{
+		.id            = V4L2_CID_PRIVATE_CORING,
+		.name          = "coring",
+		.minimum       = 0,
+		.maximum       = 3,
+		.step          = 1,
+		.default_value = 0,
+		.type          = V4L2_CTRL_TYPE_INTEGER,
 	}
 
+
+
 };
-const int BTTV_CTLS = ARRAY_SIZE(bttv_ctls);
+static const int BTTV_CTLS = ARRAY_SIZE(bttv_ctls);
 
 /* ----------------------------------------------------------------------- */
 /* resource management                                                     */
@@ -660,12 +700,10 @@ int locked_btres(struct bttv *btv, int bit)
 static
 void free_btres(struct bttv *btv, struct bttv_fh *fh, int bits)
 {
-#if 1 /* DEBUG */
 	if ((fh->resources & bits) != bits) {
 		/* trying to free ressources not allocated by us ... */
 		printk("bttv: BUG! (btres)\n");
 	}
-#endif
 	down(&btv->reslock);
 	fh->resources  &= ~bits;
 	btv->resources &= ~bits;
@@ -755,7 +793,7 @@ static void set_pll(struct bttv *btv)
 }
 
 /* used to switch between the bt848's analog/digital video capture modes */
-void bt848A_set_timing(struct bttv *btv)
+static void bt848A_set_timing(struct bttv *btv)
 {
 	int i, len;
 	int table_idx = bttv_tvnorms[btv->tvnorm].sram;
@@ -831,8 +869,8 @@ static void bt848_sat(struct bttv *btv, int color)
 	btv->saturation = color;
 
 	/* 0-511 for the color */
-	val_u   = color >> 7;
-	val_v   = ((color>>7)*180L)/254;
+	val_u   = ((color * btv->opt_uv_ratio) / 50) >> 7;
+	val_v   = (((color * (100 - btv->opt_uv_ratio) / 50) >>7)*180L)/254;
         hibits  = (val_u >> 7) & 2;
 	hibits |= (val_v >> 8) & 1;
         btwrite(val_u & 0xff, BT848_SAT_U_LO);
@@ -905,11 +943,6 @@ audio_mux(struct bttv *btv, int mode)
 	i2c_mux = mux = (btv->audio & AUDIO_MUTE) ? AUDIO_OFF : btv->audio;
 	if (btv->opt_automute && !signal && !btv->radio_user)
 		mux = AUDIO_OFF;
-#if 0
-	printk("bttv%d: amux: mode=%d audio=%d signal=%s mux=%d/%d irq=%s\n",
-	       btv->c.nr, mode, btv->audio, signal ? "yes" : "no",
-	       mux, i2c_mux, in_interrupt() ? "yes" : "no");
-#endif
 
 	val = bttv_tvcards[btv->c.type].audiomux[mux];
 	gpio_bits(bttv_tvcards[btv->c.type].gpiomask,val);
@@ -956,11 +989,6 @@ set_tvnorm(struct bttv *btv, unsigned int norm)
 	case BTTV_VOODOOTV_FM:
 		bttv_tda9880_setnorm(btv,norm);
 		break;
-#if 0
-	case BTTV_OSPREY540:
-		osprey_540_set_norm(btv,norm);
-		break;
-#endif
 	}
 	return 0;
 }
@@ -1063,7 +1091,7 @@ static void init_bt848(struct bttv *btv)
 	init_irqreg(btv);
 }
 
-void bttv_reinit_bt848(struct bttv *btv)
+static void bttv_reinit_bt848(struct bttv *btv)
 {
 	unsigned long flags;
 
@@ -1148,6 +1176,15 @@ static int get_control(struct bttv *btv, struct v4l2_control *c)
 		break;
 	case V4L2_CID_PRIVATE_WHITECRUSH_LOWER:
 		c->value = btv->opt_whitecrush_lower;
+		break;
+	case V4L2_CID_PRIVATE_UV_RATIO:
+		c->value = btv->opt_uv_ratio;
+		break;
+	case V4L2_CID_PRIVATE_FULL_LUMA_RANGE:
+		c->value = btv->opt_full_luma_range;
+		break;
+	case V4L2_CID_PRIVATE_CORING:
+		c->value = btv->opt_coring;
 		break;
 	default:
 		return -EINVAL;
@@ -1245,6 +1282,18 @@ static int set_control(struct bttv *btv, struct v4l2_control *c)
 		btv->opt_whitecrush_lower = c->value;
 		btwrite(c->value, BT848_WC_DOWN);
 		break;
+	case V4L2_CID_PRIVATE_UV_RATIO:
+		btv->opt_uv_ratio = c->value;
+		bt848_sat(btv, btv->saturation);
+		break;
+	case V4L2_CID_PRIVATE_FULL_LUMA_RANGE:
+		btv->opt_full_luma_range = c->value;
+		btaor((c->value<<7), ~BT848_OFORM_RANGE, BT848_OFORM);
+		break;
+	case V4L2_CID_PRIVATE_CORING:
+		btv->opt_coring = c->value;
+		btaor((c->value<<5), ~BT848_OFORM_CORE32, BT848_OFORM);
+		break;
 	default:
 		return -EINVAL;
 	}
@@ -1267,7 +1316,7 @@ void bttv_gpio_tracking(struct bttv *btv, char *comment)
 	       btv->c.nr,outbits,data & outbits, data & ~outbits, comment);
 }
 
-void bttv_field_count(struct bttv *btv)
+static void bttv_field_count(struct bttv *btv)
 {
 	int need_count = 0;
 
@@ -1467,7 +1516,7 @@ static const char *v4l1_ioctls[] = {
 	"SMICROCODE", "GVBIFMT", "SVBIFMT" };
 #define V4L1_IOCTLS ARRAY_SIZE(v4l1_ioctls)
 
-int bttv_common_ioctls(struct bttv *btv, unsigned int cmd, void *arg)
+static int bttv_common_ioctls(struct bttv *btv, unsigned int cmd, void *arg)
 {
 	switch (cmd) {
         case BTTV_VERSION:
@@ -1790,7 +1839,7 @@ int bttv_common_ioctls(struct bttv *btv, unsigned int cmd, void *arg)
 
 		if (unlikely(f->tuner != 0))
 			return -EINVAL;
-		if (unlikely(f->type != V4L2_TUNER_ANALOG_TV))
+		if (unlikely (f->type != V4L2_TUNER_ANALOG_TV))
 			return -EINVAL;
 		down(&btv->lock);
 		btv->freq = f->frequency;
@@ -2103,6 +2152,10 @@ static int bttv_s_fmt(struct bttv_fh *fh, struct bttv *btv,
 		return 0;
 	}
 	case V4L2_BUF_TYPE_VIDEO_OVERLAY:
+		if (no_overlay > 0) {
+			printk ("V4L2_BUF_TYPE_VIDEO_OVERLAY: no_overlay\n");
+			return -EINVAL;
+		}
 		return setup_window(fh, btv, &f->fmt.win, 1);
 	case V4L2_BUF_TYPE_VBI_CAPTURE:
 		retval = bttv_switch_type(fh,f->type);
@@ -2176,9 +2229,11 @@ static int bttv_do_ioctl(struct inode *inode, struct file *file,
 			/* others */
 			cap->type = VID_TYPE_CAPTURE|
 				VID_TYPE_TUNER|
-				VID_TYPE_OVERLAY|
 				VID_TYPE_CLIPPING|
 				VID_TYPE_SCALES;
+			if (no_overlay <= 0)
+				cap->type |= VID_TYPE_OVERLAY;
+
 			cap->maxwidth  = bttv_tvnorms[btv->tvnorm].swidth;
 			cap->maxheight = bttv_tvnorms[btv->tvnorm].sheight;
 			cap->minwidth  = 48;
@@ -2253,6 +2308,11 @@ static int bttv_do_ioctl(struct inode *inode, struct file *file,
 	{
 		struct video_window *win = arg;
 		struct v4l2_window w2;
+
+		if (no_overlay > 0) {
+			printk ("VIDIOCSWIN: no_overlay\n");
+			return -EINVAL;
+		}
 
 		w2.field = V4L2_FIELD_ANY;
 		w2.w.left    = win->x;
@@ -2529,11 +2589,15 @@ static int bttv_do_ioctl(struct inode *inode, struct file *file,
 		cap->version = BTTV_VERSION_CODE;
 		cap->capabilities =
 			V4L2_CAP_VIDEO_CAPTURE |
-			V4L2_CAP_VIDEO_OVERLAY |
 			V4L2_CAP_VBI_CAPTURE |
-			V4L2_CAP_TUNER |
 			V4L2_CAP_READWRITE |
 			V4L2_CAP_STREAMING;
+		if (no_overlay <= 0)
+			cap->capabilities |= V4L2_CAP_VIDEO_OVERLAY;
+
+		if (bttv_tvcards[btv->c.type].tuner != UNSET &&
+		    bttv_tvcards[btv->c.type].tuner != TUNER_ABSENT)
+			cap->capabilities |= V4L2_CAP_TUNER;
 		return 0;
 	}
 
@@ -2988,6 +3052,9 @@ static int bttv_release(struct inode *inode, struct file *file)
 		free_btres(btv,fh,RESOURCE_VBI);
 	}
 
+	/* free stuff */
+	videobuf_mmap_free(&fh->cap);
+	videobuf_mmap_free(&fh->vbi);
 	v4l2_prio_close(&btv->prio,&fh->prio);
 	file->private_data = NULL;
 	kfree(fh);
@@ -3023,14 +3090,14 @@ static struct file_operations bttv_fops =
 static struct video_device bttv_video_template =
 {
 	.name     = "UNSET",
-	.type     = VID_TYPE_CAPTURE|VID_TYPE_TUNER|VID_TYPE_OVERLAY|
+	.type     = VID_TYPE_CAPTURE|VID_TYPE_TUNER|
 	            VID_TYPE_CLIPPING|VID_TYPE_SCALES,
 	.hardware = VID_HARDWARE_BT848,
 	.fops     = &bttv_fops,
 	.minor    = -1,
 };
 
-struct video_device bttv_vbi_template =
+static struct video_device bttv_vbi_template =
 {
 	.name     = "bt848/878 vbi",
 	.type     = VID_TYPE_TUNER|VID_TYPE_TELETEXT,
@@ -3110,11 +3177,6 @@ static int radio_do_ioctl(struct inode *inode, struct file *file,
                         return -EINVAL;
 		memset(v,0,sizeof(*v));
                 strcpy(v->name, "Radio");
-                /* japan:          76.0 MHz -  89.9 MHz
-                   western europe: 87.5 MHz - 108.0 MHz
-                   russia:         65.0 MHz - 108.0 MHz */
-                v->rangelow=(int)(65*16);
-                v->rangehigh=(int)(108*16);
                 bttv_call_i2c_clients(btv,cmd,v);
                 return 0;
         }
@@ -3160,6 +3222,82 @@ static struct video_device radio_template =
 };
 
 /* ----------------------------------------------------------------------- */
+/* some debug code                                                         */
+
+static int bttv_risc_decode(u32 risc)
+{
+	static char *instr[16] = {
+		[ BT848_RISC_WRITE     >> 28 ] = "write",
+		[ BT848_RISC_SKIP      >> 28 ] = "skip",
+		[ BT848_RISC_WRITEC    >> 28 ] = "writec",
+		[ BT848_RISC_JUMP      >> 28 ] = "jump",
+		[ BT848_RISC_SYNC      >> 28 ] = "sync",
+		[ BT848_RISC_WRITE123  >> 28 ] = "write123",
+		[ BT848_RISC_SKIP123   >> 28 ] = "skip123",
+		[ BT848_RISC_WRITE1S23 >> 28 ] = "write1s23",
+	};
+	static int incr[16] = {
+		[ BT848_RISC_WRITE     >> 28 ] = 2,
+		[ BT848_RISC_JUMP      >> 28 ] = 2,
+		[ BT848_RISC_SYNC      >> 28 ] = 2,
+		[ BT848_RISC_WRITE123  >> 28 ] = 5,
+		[ BT848_RISC_SKIP123   >> 28 ] = 2,
+		[ BT848_RISC_WRITE1S23 >> 28 ] = 3,
+	};
+	static char *bits[] = {
+		"be0",  "be1",  "be2",  "be3/resync",
+		"set0", "set1", "set2", "set3",
+		"clr0", "clr1", "clr2", "clr3",
+		"irq",  "res",  "eol",  "sol",
+	};
+	int i;
+
+	printk("0x%08x [ %s", risc,
+	       instr[risc >> 28] ? instr[risc >> 28] : "INVALID");
+	for (i = ARRAY_SIZE(bits)-1; i >= 0; i--)
+		if (risc & (1 << (i + 12)))
+			printk(" %s",bits[i]);
+	printk(" count=%d ]\n", risc & 0xfff);
+	return incr[risc >> 28] ? incr[risc >> 28] : 1;
+}
+
+static void bttv_risc_disasm(struct bttv *btv,
+			     struct btcx_riscmem *risc)
+{
+	unsigned int i,j,n;
+
+	printk("%s: risc disasm: %p [dma=0x%08lx]\n",
+	       btv->c.name, risc->cpu, (unsigned long)risc->dma);
+	for (i = 0; i < (risc->size >> 2); i += n) {
+		printk("%s:   0x%lx: ", btv->c.name,
+		       (unsigned long)(risc->dma + (i<<2)));
+		n = bttv_risc_decode(risc->cpu[i]);
+		for (j = 1; j < n; j++)
+			printk("%s:   0x%lx: 0x%08x [ arg #%d ]\n",
+			       btv->c.name, (unsigned long)(risc->dma + ((i+j)<<2)),
+			       risc->cpu[i+j], j);
+		if (0 == risc->cpu[i])
+			break;
+	}
+}
+
+static void bttv_print_riscaddr(struct bttv *btv)
+{
+	printk("  main: %08Lx\n",
+	       (unsigned long long)btv->main.dma);
+	printk("  vbi : o=%08Lx e=%08Lx\n",
+	       btv->cvbi ? (unsigned long long)btv->cvbi->top.dma : 0,
+	       btv->cvbi ? (unsigned long long)btv->cvbi->bottom.dma : 0);
+	printk("  cap : o=%08Lx e=%08Lx\n",
+	       btv->curr.top    ? (unsigned long long)btv->curr.top->top.dma : 0,
+	       btv->curr.bottom ? (unsigned long long)btv->curr.bottom->bottom.dma : 0);
+	printk("  scr : o=%08Lx e=%08Lx\n",
+	       btv->screen ? (unsigned long long)btv->screen->top.dma : 0,
+	       btv->screen ? (unsigned long long)btv->screen->bottom.dma : 0);
+	bttv_risc_disasm(btv, &btv->main);
+}
+
+/* ----------------------------------------------------------------------- */
 /* irq handler                                                             */
 
 static char *irq_name[] = {
@@ -3195,21 +3333,6 @@ static void bttv_print_irqbits(u32 print, u32 mark)
 		if (mark & (1 << i))
 			printk("*");
 	}
-}
-
-static void bttv_print_riscaddr(struct bttv *btv)
-{
-	printk("  main: %08Lx\n",
-	       (unsigned long long)btv->main.dma);
-	printk("  vbi : o=%08Lx e=%08Lx\n",
-	       btv->cvbi ? (unsigned long long)btv->cvbi->top.dma : 0,
-	       btv->cvbi ? (unsigned long long)btv->cvbi->bottom.dma : 0);
-	printk("  cap : o=%08Lx e=%08Lx\n",
-	       btv->curr.top    ? (unsigned long long)btv->curr.top->top.dma : 0,
-	       btv->curr.bottom ? (unsigned long long)btv->curr.bottom->bottom.dma : 0);
-	printk("  scr : o=%08Lx e=%08Lx\n",
-	       btv->screen ? (unsigned long long)btv->screen->top.dma  : 0,
-	       btv->screen ? (unsigned long long)btv->screen->bottom.dma : 0);
 }
 
 static void bttv_irq_debug_low_latency(struct bttv *btv, u32 rc)
@@ -3647,6 +3770,12 @@ static void bttv_unregister_video(struct bttv *btv)
 /* register video4linux devices */
 static int __devinit bttv_register_video(struct bttv *btv)
 {
+	if (no_overlay <= 0) {
+		bttv_video_template.type |= VID_TYPE_OVERLAY;
+	} else {
+		printk("bttv: Overlay support disabled.\n");
+	}
+
 	/* video */
 	btv->video_dev = vdev_init(btv, &bttv_video_template, "video");
         if (NULL == btv->video_dev)
@@ -3745,7 +3874,7 @@ static int __devinit bttv_probe(struct pci_dev *dev,
 		       btv->c.nr);
 		return -EIO;
 	}
-        if (pci_set_dma_mask(dev, 0xffffffff)) {
+        if (pci_set_dma_mask(dev, DMA_32BIT_MASK)) {
                 printk(KERN_WARNING "bttv%d: No suitable DMA available.\n",
 		       btv->c.nr);
 		return -EIO;
@@ -3760,11 +3889,6 @@ static int __devinit bttv_probe(struct pci_dev *dev,
         pci_set_master(dev);
 	pci_set_command(dev);
 	pci_set_drvdata(dev,btv);
-	if (!pci_dma_supported(dev,0xffffffff)) {
-		printk("bttv%d: Oops: no 32bit PCI DMA ???\n", btv->c.nr);
-		result = -EIO;
-		goto fail1;
-	}
 
         pci_read_config_byte(dev, PCI_CLASS_REVISION, &btv->revision);
         pci_read_config_byte(dev, PCI_LATENCY_TIMER, &lat);
@@ -3808,6 +3932,9 @@ static int __devinit bttv_probe(struct pci_dev *dev,
 	btv->opt_vcr_hack   = vcr_hack;
 	btv->opt_whitecrush_upper  = whitecrush_upper;
 	btv->opt_whitecrush_lower  = whitecrush_lower;
+	btv->opt_uv_ratio   = uv_ratio;
+	btv->opt_full_luma_range   = full_luma_range;
+	btv->opt_coring     = coring;
 
 	/* fill struct bttv with some useful defaults */
 	btv->init.btv         = btv;
@@ -3914,7 +4041,7 @@ static void __devexit bttv_remove(struct pci_dev *pci_dev)
         return;
 }
 
-static int bttv_suspend(struct pci_dev *pci_dev, u32 state)
+static int bttv_suspend(struct pci_dev *pci_dev, pm_message_t state)
 {
         struct bttv *btv = pci_get_drvdata(pci_dev);
 	struct bttv_buffer_set idle;
@@ -3942,7 +4069,7 @@ static int bttv_suspend(struct pci_dev *pci_dev, u32 state)
 
 	/* save pci state */
 	pci_save_state(pci_dev);
-	if (0 != pci_set_power_state(pci_dev, state)) {
+	if (0 != pci_set_power_state(pci_dev, pci_choose_state(pci_dev, state))) {
 		pci_disable_device(pci_dev);
 		btv->state.disabled = 1;
 	}
@@ -3961,7 +4088,7 @@ static int bttv_resume(struct pci_dev *pci_dev)
 		pci_enable_device(pci_dev);
 		btv->state.disabled = 0;
 	}
-	pci_set_power_state(pci_dev, 0);
+	pci_set_power_state(pci_dev, PCI_D0);
 	pci_restore_state(pci_dev);
 
 	/* restore bt878 state */

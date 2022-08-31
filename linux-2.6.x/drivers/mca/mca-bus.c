@@ -34,7 +34,7 @@
 /* Very few machines have more than one MCA bus.  However, there are
  * those that do (Voyager 35xx/5xxx), so we do it this way for future
  * expansion.  None that I know have more than 2 */
-struct mca_bus *mca_root_busses[MAX_MCA_BUSSES];
+static struct mca_bus *mca_root_busses[MAX_MCA_BUSSES];
 
 #define MCA_DEVINFO(i,s) { .pos = i, .name = s }
 
@@ -69,7 +69,7 @@ struct bus_type mca_bus_type = {
 };
 EXPORT_SYMBOL (mca_bus_type);
 
-static ssize_t mca_show_pos_id(struct device *dev, char *buf)
+static ssize_t mca_show_pos_id(struct device *dev, struct device_attribute *attr, char *buf)
 {
 	/* four digits, \n and trailing \0 */
 	struct mca_device *mca_dev = to_mca_device(dev);
@@ -81,7 +81,7 @@ static ssize_t mca_show_pos_id(struct device *dev, char *buf)
 		len = sprintf(buf, "none\n");
 	return len;
 }
-static ssize_t mca_show_pos(struct device *dev, char *buf)
+static ssize_t mca_show_pos(struct device *dev, struct device_attribute *attr, char *buf)
 {
 	/* enough for 8 two byte hex chars plus space and new line */
 	int j, len=0;

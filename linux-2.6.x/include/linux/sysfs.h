@@ -2,6 +2,7 @@
  * sysfs.h - definitions for the device driver filesystem
  *
  * Copyright (c) 2001,2002 Patrick Mochel
+ * Copyright (c) 2004 Silicon Graphics, Inc.
  *
  * Please see Documentation/filesystems/sysfs.txt for more information.
  */
@@ -15,13 +16,13 @@ struct kobject;
 struct module;
 
 struct attribute {
-	char			* name;
+	const char		* name;
 	struct module 		* owner;
 	mode_t			mode;
 };
 
 struct attribute_group {
-	char			* name;
+	const char		* name;
 	struct attribute	** attrs;
 };
 
@@ -47,11 +48,16 @@ struct attribute_group {
 
 #define attr_name(_attr) (_attr).attr.name
 
+struct vm_area_struct;
+
 struct bin_attribute {
 	struct attribute	attr;
 	size_t			size;
+	void			*private;
 	ssize_t (*read)(struct kobject *, char *, loff_t, size_t);
 	ssize_t (*write)(struct kobject *, char *, loff_t, size_t);
+	int (*mmap)(struct kobject *, struct bin_attribute *attr,
+		    struct vm_area_struct *vma);
 };
 
 struct sysfs_ops {
@@ -67,6 +73,7 @@ struct sysfs_dirent {
 	int			s_type;
 	umode_t			s_mode;
 	struct dentry		* s_dentry;
+	struct iattr		* s_iattr;
 };
 
 #define SYSFS_ROOT		0x0001
@@ -93,14 +100,17 @@ sysfs_create_file(struct kobject *, const struct attribute *);
 extern int
 sysfs_update_file(struct kobject *, const struct attribute *);
 
+extern int
+sysfs_chmod_file(struct kobject *kobj, struct attribute *attr, mode_t mode);
+
 extern void
 sysfs_remove_file(struct kobject *, const struct attribute *);
 
-extern int 
-sysfs_create_link(struct kobject * kobj, struct kobject * target, char * name);
+extern int
+sysfs_create_link(struct kobject * kobj, struct kobject * target, const char * name);
 
 extern void
-sysfs_remove_link(struct kobject *, char * name);
+sysfs_remove_link(struct kobject *, const char * name);
 
 int sysfs_create_bin_file(struct kobject * kobj, struct bin_attribute * attr);
 int sysfs_remove_bin_file(struct kobject * kobj, struct bin_attribute * attr);
@@ -134,18 +144,22 @@ static inline int sysfs_update_file(struct kobject * k, const struct attribute *
 {
 	return 0;
 }
+static inline int sysfs_chmod_file(struct kobject *kobj, struct attribute *attr, mode_t mode)
+{
+	return 0;
+}
 
 static inline void sysfs_remove_file(struct kobject * k, const struct attribute * a)
 {
 	;
 }
 
-static inline int sysfs_create_link(struct kobject * k, struct kobject * t, char * n)
+static inline int sysfs_create_link(struct kobject * k, struct kobject * t, const char * n)
 {
 	return 0;
 }
 
-static inline void sysfs_remove_link(struct kobject * k, char * name)
+static inline void sysfs_remove_link(struct kobject * k, const char * name)
 {
 	;
 }

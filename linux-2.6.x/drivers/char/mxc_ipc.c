@@ -403,7 +403,7 @@ static unsigned int rbits[4] = { AS_MUMSR_MRF0, AS_MUMSR_MRF1, AS_MUMSR_MRF2,
  */
 static int major_num = 0;
 
-static struct class_simple *mxc_ipc_class;
+static struct class *mxc_ipc_class;
 
 static void sdma_user_readcb(void *args);
 static void sdma_user_writecb(void *args);
@@ -2960,10 +2960,10 @@ static void ipc_cleanup_module(void)
 {
 	int i;
 	for (i = 0; i <= 5; i++) {
-		class_simple_device_remove(MKDEV(major_num, i));
+		class_device_destroy(mxc_ipc_class, MKDEV(major_num, i));
 		devfs_remove("mxc_ipc/%u", i);
 	}
-	class_simple_destroy(mxc_ipc_class);
+	class_destroy(mxc_ipc_class);
 	unregister_chrdev(major_num, "mxc_ipc");
 
 	DPRINTK("IPC Driver Module Unloaded\n");
@@ -2989,7 +2989,7 @@ int __init ipc_init_module(void)
 
 	major_num = res;
 
-	mxc_ipc_class = class_simple_create(THIS_MODULE, "mxc_ipc");
+	mxc_ipc_class = class_create(THIS_MODULE, "mxc_ipc");
 	if (IS_ERR(mxc_ipc_class)) {
 		printk(KERN_ERR "Error creating mxc_ipc class.\n");
 		unregister_chrdev(major_num, "mxc_ipc");
@@ -3000,7 +3000,7 @@ int __init ipc_init_module(void)
 
 	for (i = 0; i <= 5; i++) {
 		temp_class =
-		    class_simple_device_add(mxc_ipc_class, MKDEV(major_num, i),
+		    class_device_create(mxc_ipc_class, MKDEV(major_num, i),
 					    NULL, "mxc_ipc%u", i);
 
 		if (IS_ERR(temp_class))
@@ -3025,10 +3025,10 @@ int __init ipc_init_module(void)
       err_out:
 	printk(KERN_ERR "Error creating mxc_ipc class device.\n");
 	for (i = 0; i <= 5; i++) {
-		class_simple_device_remove(MKDEV(major_num, i));
+		class_device_destroy(mxc_ipc_class, MKDEV(major_num, i));
 		devfs_remove("mxc_ipc/%u", i);
 	}
-	class_simple_destroy(mxc_ipc_class);
+	class_destroy(mxc_ipc_class);
 	unregister_chrdev(major_num, "mxc_ipc");
 	return -1;
 }

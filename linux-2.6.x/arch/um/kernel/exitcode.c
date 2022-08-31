@@ -27,7 +27,7 @@ static int read_proc_exitcode(char *page, char **start, off_t off,
 	return(len);
 }
 
-static int write_proc_exitcode(struct file *file, const char *buffer,
+static int write_proc_exitcode(struct file *file, const char __user *buffer,
 			       unsigned long count, void *data)
 {
 	char *end, buf[sizeof("nnnnn\0")];
@@ -48,7 +48,7 @@ static int make_proc_exitcode(void)
 
 	ent = create_proc_entry("exitcode", 0600, &proc_root);
 	if(ent == NULL){
-		printk("make_proc_exitcode : Failed to register "
+		printk(KERN_WARNING "make_proc_exitcode : Failed to register "
 		       "/proc/exitcode\n");
 		return(0);
 	}

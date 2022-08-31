@@ -43,7 +43,7 @@
  * assuming we won't have both UniNorth and Bandit */
 static int has_uninorth;
 static struct pci_controller *u3_agp;
-struct pci_dev *k2_skiplist[2];
+struct device_node *k2_skiplist[2];
 
 static int __init fixup_one_level_bus_range(struct device_node *node, int higher)
 {
@@ -233,15 +233,6 @@ static int u3_ht_skip_device(struct pci_controller *hose,
 	struct device_node *busdn, *dn;
 	int i;
 
-	/*
-	 * When a device in K2 is powered down, we die on config
-	 * cycle accesses. Fix that here.
-	 */
-	for (i=0; i<2; i++)
-		if (k2_skiplist[i] && k2_skiplist[i]->bus == bus &&
-		    k2_skiplist[i]->devfn == devfn)
-			return 1;
-
 	/* We only allow config cycles to devices that are in OF device-tree
 	 * as we are apparently having some weird things going on with some
 	 * revs of K2 on recent G5s
@@ -255,6 +246,14 @@ static int u3_ht_skip_device(struct pci_controller *hose,
 			break;
 	if (dn == NULL)
 		return -1;
+
+	/*
+	 * When a device in K2 is powered down, we die on config
+	 * cycle accesses. Fix that here.
+	 */
+	for (i=0; i<2; i++)
+		if (k2_skiplist[i] == dn)
+			return 1;
 
 	return 0;
 }
@@ -657,17 +656,32 @@ static int __init add_bridge(struct device_node *dev)
 	return 0;
 }
 
+/*
+ * We use our own read_irq_line here because PCI_INTERRUPT_PIN is
+ * crap on some of Apple ASICs. We unconditionally use the Open Firmware
+ * interrupt number as this is always right.
+ */
+static int pmac_pci_read_irq_line(struct pci_dev *pci_dev)
+{
+	struct device_node *node;
+
+	node = pci_device_to_OF_node(pci_dev);
+	if (node == NULL)
+		return -1;
+	if (node->n_intrs == 0)
+		return -1;
+	pci_dev->irq = node->intrs[0].line;
+	pci_write_config_byte(pci_dev, PCI_INTERRUPT_LINE, pci_dev->irq);
+
+	return 0;
+}
 
 void __init pmac_pcibios_fixup(void)
 {
 	struct pci_dev *dev = NULL;
 
 	for_each_pci_dev(dev)
-		pci_read_irq_line(dev);
-
-	pci_fix_bus_sysdata();
-
-	iommu_setup_u3();
+		pmac_pci_read_irq_line(dev);
 }
 
 static void __init pmac_fixup_phb_resources(void)
@@ -776,3 +790,4 @@ static void fixup_k2_sata(struct pci_dev* dev)
 	}
 }
 DECLARE_PCI_FIXUP_HEADER(PCI_VENDOR_ID_SERVERWORKS, 0x0240, fixup_k2_sata);
+

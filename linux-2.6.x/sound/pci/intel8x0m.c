@@ -46,6 +46,8 @@ MODULE_SUPPORTED_DEVICE("{{Intel,82801AA-ICH},"
 		"{Intel,82801CA-ICH3},"
 		"{Intel,82801DB-ICH4},"
 		"{Intel,ICH5},"
+		"{Intel,ICH6},"
+		"{Intel,ICH7},"
 	        "{Intel,MX440},"
 		"{SiS,7013},"
 		"{NVidia,NForce Modem},"
@@ -54,7 +56,7 @@ MODULE_SUPPORTED_DEVICE("{{Intel,82801AA-ICH},"
 		"{NVidia,NForce3 Modem},"
 		"{AMD,AMD768}}");
 
-static int index[SNDRV_CARDS] = SNDRV_DEFAULT_IDX;	/* Index 0-MAX */
+static int index[SNDRV_CARDS] = {[0 ... (SNDRV_CARDS - 1)] = -2}; /* Exclude the first card */
 static char *id[SNDRV_CARDS] = SNDRV_DEFAULT_STR;	/* ID for this card */
 static int enable[SNDRV_CARDS] = SNDRV_DEFAULT_ENABLE_PNP;	/* Enable this card */
 static int ac97_clock[SNDRV_CARDS] = {[0 ... (SNDRV_CARDS - 1)] = 0};
@@ -92,6 +94,12 @@ MODULE_PARM_DESC(ac97_clock, "AC'97 codec clock (0 = auto-detect).");
 #endif
 #ifndef PCI_DEVICE_ID_INTEL_ICH5_6
 #define PCI_DEVICE_ID_INTEL_ICH5_6	0x24d6
+#endif
+#ifndef PCI_DEVICE_ID_INTEL_ICH6_6
+#define PCI_DEVICE_ID_INTEL_ICH6_6	0x266d
+#endif
+#ifndef PCI_DEVICE_ID_INTEL_ICH7_6
+#define PCI_DEVICE_ID_INTEL_ICH7_6	0x27dd
 #endif
 #ifndef PCI_DEVICE_ID_SI_7013
 #define PCI_DEVICE_ID_SI_7013		0x7013
@@ -247,13 +255,12 @@ struct _snd_intel8x0m {
 	snd_pcm_t *pcm[2];
 	ichdev_t ichd[2];
 
-	int in_ac97_init: 1;
+	unsigned int in_ac97_init: 1;
 
 	ac97_bus_t *ac97_bus;
 	ac97_t *ac97;
 
 	spinlock_t reg_lock;
-	spinlock_t ac97_lock;
 	
 	struct snd_dma_buffer bdbars;
 	u32 bdbars_count;
@@ -269,6 +276,8 @@ static struct pci_device_id snd_intel8x0m_ids[] = {
 	{ 0x8086, 0x2486, PCI_ANY_ID, PCI_ANY_ID, 0, 0, DEVICE_INTEL },	/* ICH3 */
 	{ 0x8086, 0x24c6, PCI_ANY_ID, PCI_ANY_ID, 0, 0, DEVICE_INTEL }, /* ICH4 */
 	{ 0x8086, 0x24d6, PCI_ANY_ID, PCI_ANY_ID, 0, 0, DEVICE_INTEL }, /* ICH5 */
+	{ 0x8086, 0x266d, PCI_ANY_ID, PCI_ANY_ID, 0, 0, DEVICE_INTEL },	/* ICH6 */
+	{ 0x8086, 0x27dd, PCI_ANY_ID, PCI_ANY_ID, 0, 0, DEVICE_INTEL },	/* ICH7 */
 	{ 0x8086, 0x7196, PCI_ANY_ID, PCI_ANY_ID, 0, 0, DEVICE_INTEL },	/* 440MX */
 	{ 0x1022, 0x7446, PCI_ANY_ID, PCI_ANY_ID, 0, 0, DEVICE_INTEL },	/* AMD768 */
 	{ 0x1039, 0x7013, PCI_ANY_ID, PCI_ANY_ID, 0, 0, DEVICE_SIS },	/* SI7013 */
@@ -411,13 +420,11 @@ static void snd_intel8x0_codec_write(ac97_t *ac97,
 {
 	intel8x0_t *chip = ac97->private_data;
 	
-	spin_lock(&chip->ac97_lock);
 	if (snd_intel8x0m_codec_semaphore(chip, ac97->num) < 0) {
 		if (! chip->in_ac97_init)
 			snd_printk("codec_write %d: semaphore is not ready for register 0x%x\n", ac97->num, reg);
 	}
 	iaputword(chip, reg + ac97->num * 0x80, val);
-	spin_unlock(&chip->ac97_lock);
 }
 
 static unsigned short snd_intel8x0_codec_read(ac97_t *ac97,
@@ -427,7 +434,6 @@ static unsigned short snd_intel8x0_codec_read(ac97_t *ac97,
 	unsigned short res;
 	unsigned int tmp;
 
-	spin_lock(&chip->ac97_lock);
 	if (snd_intel8x0m_codec_semaphore(chip, ac97->num) < 0) {
 		if (! chip->in_ac97_init)
 			snd_printk("codec_read %d: semaphore is not ready for register 0x%x\n", ac97->num, reg);
@@ -442,7 +448,8 @@ static unsigned short snd_intel8x0_codec_read(ac97_t *ac97,
 			res = 0xffff;
 		}
 	}
-	spin_unlock(&chip->ac97_lock);
+	if (reg == AC97_GPIO_STATUS)
+		iagetword(chip, 0); /* clear semaphore */
 	return res;
 }
 
@@ -641,26 +648,6 @@ static snd_pcm_uframes_t snd_intel8x0_pcm_pointer(snd_pcm_substream_t * substrea
 	return bytes_to_frames(substream->runtime, ptr);
 }
 
-static int snd_intel8x0m_pcm_trigger(snd_pcm_substream_t *substream, int cmd)
-{
-	ichdev_t *ichdev = get_ichdev(substream);
-	/* hook off/on on start/stop */
-	/* TODO: move it to ac97 controls */
-	switch (cmd) {
-	case SNDRV_PCM_TRIGGER_START:
-		snd_ac97_update_bits(ichdev->ac97, AC97_GPIO_STATUS,
-				     AC97_GPIO_LINE1_OH, AC97_GPIO_LINE1_OH);
-		break;
-	case SNDRV_PCM_TRIGGER_STOP:
-		snd_ac97_update_bits(ichdev->ac97, AC97_GPIO_STATUS,
-				     AC97_GPIO_LINE1_OH, ~AC97_GPIO_LINE1_OH);
-		break;
-	default:
-		return -EINVAL;
-	}
-	return snd_intel8x0_pcm_trigger(substream,cmd);
-}
-
 static int snd_intel8x0m_pcm_prepare(snd_pcm_substream_t * substream)
 {
 	intel8x0_t *chip = snd_pcm_substream_chip(substream);
@@ -756,7 +743,7 @@ static snd_pcm_ops_t snd_intel8x0m_playback_ops = {
 	.hw_params =	snd_intel8x0_hw_params,
 	.hw_free =	snd_intel8x0_hw_free,
 	.prepare =	snd_intel8x0m_pcm_prepare,
-	.trigger =	snd_intel8x0m_pcm_trigger,
+	.trigger =	snd_intel8x0_pcm_trigger,
 	.pointer =	snd_intel8x0_pcm_pointer,
 };
 
@@ -767,7 +754,7 @@ static snd_pcm_ops_t snd_intel8x0m_capture_ops = {
 	.hw_params =	snd_intel8x0_hw_params,
 	.hw_free =	snd_intel8x0_hw_free,
 	.prepare =	snd_intel8x0m_pcm_prepare,
-	.trigger =	snd_intel8x0m_pcm_trigger,
+	.trigger =	snd_intel8x0_pcm_trigger,
 	.pointer =	snd_intel8x0_pcm_pointer,
 };
 
@@ -926,7 +913,7 @@ static int __devinit snd_intel8x0_mixer(intel8x0_t *chip, int ac97_clock)
 		return err;
 	}
 	chip->ac97 = x97;
-	if(ac97_is_modem(x97) && !chip->ichd[ICHD_MDMIN].ac97 ) {
+	if(ac97_is_modem(x97) && !chip->ichd[ICHD_MDMIN].ac97) {
 		chip->ichd[ICHD_MDMIN].ac97 = x97;
 		chip->ichd[ICHD_MDMOUT].ac97 = x97;
 	}
@@ -1083,7 +1070,7 @@ static int snd_intel8x0_free(intel8x0_t *chip)
 /*
  * power management
  */
-static int intel8x0m_suspend(snd_card_t *card, unsigned int state)
+static int intel8x0m_suspend(snd_card_t *card, pm_message_t state)
 {
 	intel8x0_t *chip = card->pm_private_data;
 	int i;
@@ -1093,11 +1080,10 @@ static int intel8x0m_suspend(snd_card_t *card, unsigned int state)
 	if (chip->ac97)
 		snd_ac97_suspend(chip->ac97);
 	pci_disable_device(chip->pci);
-	snd_power_change_state(card, SNDRV_CTL_POWER_D3hot);
 	return 0;
 }
 
-static int intel8x0m_resume(snd_card_t *card, unsigned int state)
+static int intel8x0m_resume(snd_card_t *card)
 {
 	intel8x0_t *chip = card->pm_private_data;
 	pci_enable_device(chip->pci);
@@ -1106,7 +1092,6 @@ static int intel8x0m_resume(snd_card_t *card, unsigned int state)
 	if (chip->ac97)
 		snd_ac97_resume(chip->ac97);
 
-	snd_power_change_state(card, SNDRV_CTL_POWER_D0);
 	return 0;
 }
 #endif /* CONFIG_PM */
@@ -1179,7 +1164,6 @@ static int __devinit snd_intel8x0m_create(snd_card_t * card,
 		return -ENOMEM;
 	}
 	spin_lock_init(&chip->reg_lock);
-	spin_lock_init(&chip->ac97_lock);
 	chip->device_type = device_type;
 	chip->card = card;
 	chip->pci = pci;
@@ -1306,6 +1290,8 @@ static struct shortname_table {
 	{ PCI_DEVICE_ID_INTEL_ICH3_6, "Intel 82801CA-ICH3" },
 	{ PCI_DEVICE_ID_INTEL_ICH4_6, "Intel 82801DB-ICH4" },
 	{ PCI_DEVICE_ID_INTEL_ICH5_6, "Intel ICH5" },
+	{ PCI_DEVICE_ID_INTEL_ICH6_6, "Intel ICH6" },
+	{ PCI_DEVICE_ID_INTEL_ICH7_6, "Intel ICH7" },
 	{ 0x7446, "AMD AMD768" },
 	{ PCI_DEVICE_ID_SI_7013, "SiS SI7013" },
 	{ PCI_DEVICE_ID_NVIDIA_MCP_MODEM, "NVidia nForce" },
@@ -1394,7 +1380,7 @@ static struct pci_driver driver = {
 
 static int __init alsa_card_intel8x0m_init(void)
 {
-	return pci_module_init(&driver);
+	return pci_register_driver(&driver);
 }
 
 static void __exit alsa_card_intel8x0m_exit(void)

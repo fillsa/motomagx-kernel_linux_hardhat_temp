@@ -328,6 +328,11 @@ struct input_absinfo {
 #define KEY_BRIGHTNESSUP	225
 #define KEY_MEDIA		226
 
+#define KEY_SWITCHVIDEOMODE	227
+#define KEY_KBDILLUMTOGGLE	228
+#define KEY_KBDILLUMDOWN	229
+#define KEY_KBDILLUMUP		230
+
 #define KEY_UNKNOWN		240
 
 #define BTN_MISC		0x100
@@ -504,6 +509,9 @@ struct input_absinfo {
 #define REL_X			0x00
 #define REL_Y			0x01
 #define REL_Z			0x02
+#define REL_RX			0x03
+#define REL_RY			0x04
+#define REL_RZ			0x05
 #define REL_HWHEEL		0x06
 #define REL_DIAL		0x07
 #define REL_WHEEL		0x08
@@ -566,6 +574,8 @@ struct input_absinfo {
 #define LED_SUSPEND		0x06
 #define LED_MUTE		0x07
 #define LED_MISC		0x08
+#define LED_MAIL		0x09
+#define LED_CHARGING		0x0a
 #define LED_MAX			0x0f
 
 /*
@@ -766,7 +776,7 @@ struct ff_effect {
 #include <linux/fs.h>
 #include <linux/timer.h>
 
-#define NBITS(x) ((((x)-1)/BITS_PER_LONG)+1)
+#define NBITS(x) (((x)/BITS_PER_LONG)+1)
 #define BIT(x)	(1UL<<((x)%BITS_PER_LONG))
 #define LONG(x) ((x)/BITS_PER_LONG)
 
@@ -801,9 +811,9 @@ struct input_dev {
 
 	void *private;
 
-	char *name;
-	char *phys;
-	char *uniq;
+	const char *name;
+	const char *phys;
+	const char *uniq;
 	struct input_id id;
 
 	unsigned long evbit[NBITS(EV_MAX)];
@@ -823,7 +833,6 @@ struct input_dev {
 	unsigned int repeat_key;
 	struct timer_list timer;
 
-	struct pm_dev *pm_dev;
 	struct pt_regs *regs;
 	int state;
 
@@ -850,6 +859,10 @@ struct input_dev {
 	int (*erase_effect)(struct input_dev *dev, int effect_id);
 
 	struct input_handle *grab;
+
+	struct semaphore sem;	/* serializes open and close operations */
+	unsigned int users;
+
 	struct device *dev;
 
 	struct list_head	h_list;
@@ -1006,7 +1019,7 @@ static inline void input_set_abs_params(struct input_dev *dev, int axis, int min
 	dev->absbit[LONG(axis)] |= BIT(axis);
 }
 
-extern struct class_simple *input_class;
+extern struct class *input_class;
 
 #endif
 #endif

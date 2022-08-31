@@ -45,9 +45,8 @@ int show_interrupts(struct seq_file *p, void *v)
 
 	if (i == 0) {
 		seq_printf(p, "           ");
-		for (j=0; j<NR_CPUS; j++)
-			if (cpu_online(j))
-				seq_printf(p, "CPU%d       ",j);
+		for_each_online_cpu(j)
+			seq_printf(p, "CPU%d       ",j);
 		seq_putc(p, '\n');
 	}
 
@@ -60,9 +59,8 @@ int show_interrupts(struct seq_file *p, void *v)
 #ifndef CONFIG_SMP
 		seq_printf(p, "%10u ", kstat_irqs(i));
 #else
-		for (j = 0; j < NR_CPUS; j++)
-			if (cpu_online(j))
-				seq_printf(p, "%10u ", kstat_cpu(j).irqs[i]);
+		for_each_online_cpu(j)
+			seq_printf(p, "%10u ", kstat_cpu(j).irqs[i]);
 #endif
 		seq_printf(p, " %14s", irq_desc[i].handler->typename);
 		seq_printf(p, "  %s", action->name);
@@ -126,14 +124,16 @@ void irq_unlock(unsigned long flags)
 	spin_unlock_irqrestore(&irq_spinlock, flags);
 }
 
-/*  presently hw_interrupt_type must define (startup || enable) &&
- *  disable && end */
+/* hw_interrupt_type must define (startup || enable) &&
+ * (shutdown || disable) && end */
 static void dummy(unsigned int irq)
 {
 }
 
-static struct hw_interrupt_type SIGIO_irq_type = {
+/* This is used for everything else than the timer. */
+static struct hw_interrupt_type normal_irq_type = {
 	.typename = "SIGIO",
+	.release = free_irq_by_irq_and_dev,
 	.disable = dummy,
 	.enable = dummy,
 	.ack = dummy,
@@ -142,6 +142,7 @@ static struct hw_interrupt_type SIGIO_irq_type = {
 
 static struct hw_interrupt_type SIGVTALRM_irq_type = {
 	.typename = "SIGVTALRM",
+	.release = free_irq_by_irq_and_dev,
 	.shutdown = dummy, /* never called */
 	.disable = dummy,
 	.enable = dummy,
@@ -154,18 +155,17 @@ void __init init_IRQ(void)
 	int i;
 
 	irq_desc[TIMER_IRQ].status = IRQ_DISABLED;
-	irq_desc[TIMER_IRQ].action = 0;
+	irq_desc[TIMER_IRQ].action = NULL;
 	irq_desc[TIMER_IRQ].depth = 1;
 	irq_desc[TIMER_IRQ].handler = &SIGVTALRM_irq_type;
 	enable_irq(TIMER_IRQ);
 	for(i=1;i<NR_IRQS;i++){
 		irq_desc[i].status = IRQ_DISABLED;
-		irq_desc[i].action = 0;
+		irq_desc[i].action = NULL;
 		irq_desc[i].depth = 1;
-		irq_desc[i].handler = &SIGIO_irq_type;
+		irq_desc[i].handler = &normal_irq_type;
 		enable_irq(i);
 	}
-	init_irq_signals(0);
 }
 
 /*

@@ -357,6 +357,7 @@
 #define AC97_SCAP_INDEP_SDIN	(1<<6)	/* independent SDIN */
 #define AC97_SCAP_INV_EAPD	(1<<7)	/* inverted EAPD */
 #define AC97_SCAP_DETECT_BY_VENDOR (1<<8) /* use vendor registers for read tests */
+#define AC97_SCAP_NO_SPDIF	(1<<9)	/* don't build SPDIF controls */
 
 /* ac97->flags */
 #define AC97_HAS_PC_BEEP	(1<<0)	/* force PC Speaker usage */
@@ -365,6 +366,15 @@
 #define AC97_CX_SPDIF		(1<<3)	/* Conexant's spdif interface */
 #define AC97_STEREO_MUTES	(1<<4)	/* has stereo mute bits */
 #define AC97_DOUBLE_RATE	(1<<5)	/* supports double rate playback */
+#define AC97_HAS_NO_MASTER_VOL	(1<<6)	/* no Master volume */
+#define AC97_HAS_NO_PCM_VOL	(1<<7)	/* no PCM volume */
+#define AC97_DEFAULT_POWER_OFF	(1<<8)	/* no RESET write */
+#define AC97_MODEM_PATCH	(1<<9)	/* modem patch */
+#define AC97_HAS_NO_REC_GAIN	(1<<10) /* no Record gain */
+#define AC97_HAS_NO_PHONE	(1<<11) /* no PHONE volume */
+#define AC97_HAS_NO_PC_BEEP	(1<<12) /* no PC Beep volume */
+#define AC97_HAS_NO_VIDEO	(1<<13) /* no Video volume */
+#define AC97_HAS_NO_CD		(1<<14) /* no CD volume */
 
 /* rates indexes */
 #define AC97_RATES_FRONT_DAC	0
@@ -424,6 +434,11 @@ struct snd_ac97_build_ops {
 	int (*build_specific) (ac97_t *ac97);
 	int (*build_spdif) (ac97_t *ac97);
 	int (*build_post_spdif) (ac97_t *ac97);
+#ifdef CONFIG_PM
+	void (*suspend) (ac97_t *ac97);
+	void (*resume) (ac97_t *ac97);
+#endif
+	void (*update_jacks) (ac97_t *ac97);	/* for jack-sharing */
 };
 
 struct _snd_ac97_bus_ops {
@@ -478,8 +493,8 @@ struct _snd_ac97 {
 	snd_info_entry_t *proc_regs;
 	unsigned short subsystem_vendor;
 	unsigned short subsystem_device;
-	spinlock_t reg_lock;
-	struct semaphore mutex;	/* mutex for AD18xx multi-codecs and paging (2.3) */
+	struct semaphore reg_mutex;
+	struct semaphore page_mutex;	/* mutex for AD18xx multi-codecs and paging (2.3) */
 	unsigned short num;	/* number of codec: 0 = primary, 1 = secondary */
 	unsigned short addr;	/* physical address of codec [0-3] */
 	unsigned int id;	/* identification of codec */
@@ -503,6 +518,9 @@ struct _snd_ac97 {
 		} ad18xx;
 		unsigned int dev_flags;		/* device specific */
 	} spec;
+	/* jack-sharing info */
+	unsigned char indep_surround;
+	unsigned char channel_mode;
 	struct device dev;
 };
 
@@ -553,18 +571,19 @@ enum {
 	AC97_TUNE_AD_SHARING,	/* for AD1985, turn on OMS bit and use headphone */
 	AC97_TUNE_ALC_JACK,	/* for Realtek, enable JACK detection */
 	AC97_TUNE_INV_EAPD,	/* inverted EAPD implementation */
+	AC97_TUNE_MUTE_LED,	/* EAPD bit works as mute LED */
 };
 
 struct ac97_quirk {
-	unsigned short vendor;	/* PCI vendor id */
-	unsigned short device;	/* PCI device id */
+	unsigned short subvendor; /* PCI subsystem vendor id */
+	unsigned short subdevice; /* PCI sybsystem device id */
 	unsigned short mask;	/* device id bit mask, 0 = accept all */
 	unsigned int codec_id;	/* codec id (if any), 0 = accept all */
 	const char *name;	/* name shown as info */
 	int type;		/* quirk type above */
 };
 
-int snd_ac97_tune_hardware(ac97_t *ac97, struct ac97_quirk *quirk, int override);
+int snd_ac97_tune_hardware(ac97_t *ac97, struct ac97_quirk *quirk, const char *override);
 int snd_ac97_set_rate(ac97_t *ac97, int reg, unsigned int rate);
 
 int snd_ac97_pcm_assign(ac97_bus_t *ac97,
@@ -578,4 +597,11 @@ int snd_ac97_pcm_double_rate_rules(snd_pcm_runtime_t *runtime);
 /* for ad hoc drivers... */
 extern struct bus_type ac97_bus_type;
 
+struct ac97_enum {
+	unsigned char reg;
+	unsigned char shift_l;
+	unsigned char shift_r;
+	unsigned short mask;
+	const char **texts;
+};
 #endif /* __SOUND_AC97_CODEC_H */

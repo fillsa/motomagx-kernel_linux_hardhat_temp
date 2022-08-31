@@ -1,11 +1,13 @@
 #
 # Automatically generated make config: don't edit
-# Linux kernel version: 2.6.10-rc1-bk21
-# Fri Nov 12 16:08:49 2004
+# Linux kernel version: 2.6.12-rc5
+# Fri Jun  3 16:20:11 2005
 #
 CONFIG_M32R=y
-CONFIG_UID16=y
+# CONFIG_UID16 is not set
 CONFIG_GENERIC_ISA_DMA=y
+CONFIG_GENERIC_HARDIRQS=y
+CONFIG_GENERIC_IRQ_PROBE=y
 
 #
 # Code maturity level options
@@ -14,6 +16,7 @@ CONFIG_EXPERIMENTAL=y
 CONFIG_CLEAN_COMPILE=y
 CONFIG_BROKEN_ON_SMP=y
 CONFIG_LOCK_KERNEL=y
+CONFIG_INIT_ENV_ARG_LIMIT=32
 
 #
 # General setup
@@ -26,13 +29,15 @@ CONFIG_BSD_PROCESS_ACCT=y
 # CONFIG_BSD_PROCESS_ACCT_V3 is not set
 CONFIG_SYSCTL=y
 # CONFIG_AUDIT is not set
-CONFIG_LOG_BUF_SHIFT=14
 CONFIG_HOTPLUG=y
 CONFIG_KOBJECT_UEVENT=y
 CONFIG_IKCONFIG=y
 # CONFIG_IKCONFIG_PROC is not set
 CONFIG_EMBEDDED=y
 # CONFIG_KALLSYMS is not set
+CONFIG_PRINTK=y
+CONFIG_BUG=y
+CONFIG_BASE_FULL=y
 # CONFIG_FUTEX is not set
 # CONFIG_EPOLL is not set
 # CONFIG_CC_OPTIMIZE_FOR_SIZE is not set
@@ -42,6 +47,7 @@ CONFIG_CC_ALIGN_LABELS=0
 CONFIG_CC_ALIGN_LOOPS=0
 CONFIG_CC_ALIGN_JUMPS=0
 # CONFIG_TINY_SHMEM is not set
+CONFIG_BASE_SMALL=0
 
 #
 # Loadable module support
@@ -63,6 +69,7 @@ CONFIG_PLAT_M32700UT=y
 # CONFIG_PLAT_OPSPUT is not set
 # CONFIG_PLAT_OAKS32R is not set
 # CONFIG_PLAT_MAPPI2 is not set
+# CONFIG_PLAT_MAPPI3 is not set
 CONFIG_CHIP_M32700=y
 # CONFIG_CHIP_M32102 is not set
 # CONFIG_CHIP_VDEC2 is not set
@@ -81,6 +88,7 @@ CONFIG_NOHIGHMEM=y
 # CONFIG_DISCONTIGMEM is not set
 CONFIG_RWSEM_GENERIC_SPINLOCK=y
 # CONFIG_RWSEM_XCHGADD_ALGORITHM is not set
+CONFIG_GENERIC_CALIBRATE_DELAY=y
 CONFIG_PREEMPT=y
 # CONFIG_HAVE_DEC_LOCK is not set
 # CONFIG_SMP is not set
@@ -96,7 +104,6 @@ CONFIG_PREEMPT=y
 #
 CONFIG_PCCARD=y
 # CONFIG_PCMCIA_DEBUG is not set
-# CONFIG_PCMCIA_OBSOLETE is not set
 CONFIG_PCMCIA=y
 
 #
@@ -146,10 +153,12 @@ CONFIG_PREVENT_FIRMWARE_BUILD=y
 # Block devices
 #
 # CONFIG_BLK_DEV_FD is not set
+# CONFIG_BLK_DEV_COW_COMMON is not set
 CONFIG_BLK_DEV_LOOP=y
 # CONFIG_BLK_DEV_CRYPTOLOOP is not set
 CONFIG_BLK_DEV_NBD=y
 CONFIG_BLK_DEV_RAM=y
+CONFIG_BLK_DEV_RAM_COUNT=16
 CONFIG_BLK_DEV_RAM_SIZE=4096
 # CONFIG_BLK_DEV_INITRD is not set
 CONFIG_INITRAMFS_SOURCE=""
@@ -162,6 +171,7 @@ CONFIG_IOSCHED_NOOP=y
 # CONFIG_IOSCHED_AS is not set
 CONFIG_IOSCHED_DEADLINE=y
 CONFIG_IOSCHED_CFQ=y
+# CONFIG_ATA_OVER_ETH is not set
 
 #
 # ATA/ATAPI/MFM/RLL support
@@ -219,12 +229,12 @@ CONFIG_SCSI_MULTI_LUN=y
 #
 # CONFIG_SCSI_SPI_ATTRS is not set
 # CONFIG_SCSI_FC_ATTRS is not set
+# CONFIG_SCSI_ISCSI_ATTRS is not set
 
 #
 # SCSI low-level drivers
 #
 # CONFIG_SCSI_SATA is not set
-# CONFIG_SCSI_QLOGIC_1280_1040 is not set
 # CONFIG_SCSI_DEBUG is not set
 
 #
@@ -263,7 +273,6 @@ CONFIG_NET=y
 #
 CONFIG_PACKET=y
 # CONFIG_PACKET_MMAP is not set
-# CONFIG_NETLINK_DEV is not set
 CONFIG_UNIX=y
 # CONFIG_NET_KEY is not set
 CONFIG_INET=y
@@ -388,17 +397,6 @@ CONFIG_INPUT=y
 # CONFIG_INPUT_EVBUG is not set
 
 #
-# Input I/O drivers
-#
-# CONFIG_GAMEPORT is not set
-CONFIG_SOUND_GAMEPORT=y
-CONFIG_SERIO=y
-# CONFIG_SERIO_I8042 is not set
-CONFIG_SERIO_SERPORT=y
-# CONFIG_SERIO_CT82C710 is not set
-# CONFIG_SERIO_RAW is not set
-
-#
 # Input Device Drivers
 #
 # CONFIG_INPUT_KEYBOARD is not set
@@ -406,6 +404,17 @@ CONFIG_SERIO_SERPORT=y
 # CONFIG_INPUT_JOYSTICK is not set
 # CONFIG_INPUT_TOUCHSCREEN is not set
 # CONFIG_INPUT_MISC is not set
+
+#
+# Hardware I/O ports
+#
+CONFIG_SERIO=y
+# CONFIG_SERIO_I8042 is not set
+CONFIG_SERIO_SERPORT=y
+# CONFIG_SERIO_LIBPS2 is not set
+# CONFIG_SERIO_RAW is not set
+# CONFIG_GAMEPORT is not set
+CONFIG_SOUND_GAMEPORT=y
 
 #
 # Character devices
@@ -450,7 +459,6 @@ CONFIG_DS1302=y
 #
 # Ftape, the floppy tape device driver
 #
-# CONFIG_AGP is not set
 # CONFIG_DRM is not set
 
 #
@@ -458,6 +466,10 @@ CONFIG_DS1302=y
 #
 # CONFIG_SYNCLINK_CS is not set
 # CONFIG_RAW_DRIVER is not set
+
+#
+# TPM devices
+#
 
 #
 # I2C support
@@ -503,8 +515,14 @@ CONFIG_VIDEO_M32R_AR_M64278=y
 # Graphics support
 #
 CONFIG_FB=y
+# CONFIG_FB_CFB_FILLRECT is not set
+# CONFIG_FB_CFB_COPYAREA is not set
+# CONFIG_FB_CFB_IMAGEBLIT is not set
+# CONFIG_FB_SOFT_CURSOR is not set
+# CONFIG_FB_MACMODES is not set
 # CONFIG_FB_MODE_HELPERS is not set
 # CONFIG_FB_TILEBLITTING is not set
+# CONFIG_FB_S1D13XXX is not set
 # CONFIG_FB_VIRTUAL is not set
 
 #
@@ -524,6 +542,7 @@ CONFIG_LOGO=y
 CONFIG_LOGO_LINUX_MONO=y
 CONFIG_LOGO_LINUX_VGA16=y
 CONFIG_LOGO_LINUX_CLUT224=y
+# CONFIG_BACKLIGHT_LCD_SUPPORT is not set
 
 #
 # Sound
@@ -542,6 +561,16 @@ CONFIG_LOGO_LINUX_CLUT224=y
 # CONFIG_USB_GADGET is not set
 
 #
+# MMC/SD Card support
+#
+# CONFIG_MMC is not set
+
+#
+# InfiniBand support
+#
+# CONFIG_INFINIBAND is not set
+
+#
 # File systems
 #
 CONFIG_EXT2_FS=y
@@ -558,6 +587,10 @@ CONFIG_REISERFS_FS=m
 # CONFIG_REISERFS_PROC_INFO is not set
 # CONFIG_REISERFS_FS_XATTR is not set
 # CONFIG_JFS_FS is not set
+
+#
+# XFS support
+#
 # CONFIG_XFS_FS is not set
 # CONFIG_MINIX_FS is not set
 # CONFIG_ROMFS_FS is not set
@@ -628,7 +661,6 @@ CONFIG_NFS_V3=y
 CONFIG_ROOT_NFS=y
 CONFIG_LOCKD=y
 CONFIG_LOCKD_V4=y
-# CONFIG_EXPORTFS is not set
 CONFIG_SUNRPC=y
 # CONFIG_RPCSEC_GSS_KRB5 is not set
 # CONFIG_RPCSEC_GSS_SPKM3 is not set
@@ -696,8 +728,10 @@ CONFIG_NLS_DEFAULT="iso8859-1"
 #
 # Kernel hacking
 #
+# CONFIG_PRINTK_TIME is not set
 # CONFIG_DEBUG_KERNEL is not set
-# CONFIG_DEBUG_SPINLOCK_SLEEP is not set
+CONFIG_LOG_BUF_SHIFT=14
+# CONFIG_DEBUG_BUGVERBOSE is not set
 # CONFIG_FRAME_POINTER is not set
 
 #
@@ -710,6 +744,10 @@ CONFIG_NLS_DEFAULT="iso8859-1"
 # Cryptographic options
 #
 # CONFIG_CRYPTO is not set
+
+#
+# Hardware crypto devices
+#
 
 #
 # Library routines

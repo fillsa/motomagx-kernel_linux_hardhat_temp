@@ -108,7 +108,6 @@ static struct
 
 static struct ip6t_table packet_raw = { 
 	.name = "raw", 
-	.table = &initial_table.repl,
 	.valid_hooks = RAW_VALID_HOOKS, 
 	.lock = RW_LOCK_UNLOCKED, 
 	.me = THIS_MODULE
@@ -130,13 +129,15 @@ static struct nf_hook_ops ip6t_ops[] = {
 	  .hook = ip6t_hook, 
 	  .pf = PF_INET6,
 	  .hooknum = NF_IP6_PRE_ROUTING,
-	  .priority = NF_IP6_PRI_FIRST
+	  .priority = NF_IP6_PRI_FIRST,
+	  .owner = THIS_MODULE,
 	},
 	{
 	  .hook = ip6t_hook, 
 	  .pf = PF_INET6, 
 	  .hooknum = NF_IP6_LOCAL_OUT,
-	  .priority = NF_IP6_PRI_FIRST
+	  .priority = NF_IP6_PRI_FIRST,
+	  .owner = THIS_MODULE,
 	},
 };
 
@@ -145,7 +146,7 @@ static int __init init(void)
 	int ret;
 
 	/* Register table */
-	ret = ip6t_register_table(&packet_raw);
+	ret = ip6t_register_table(&packet_raw, &initial_table.repl);
 	if (ret < 0)
 		return ret;
 

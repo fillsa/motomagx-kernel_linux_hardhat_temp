@@ -3,7 +3,7 @@
  * differently than every other instruction, so it is set to 0 (write)
  * even though the instructions are read instructions. This means that
  * during an abort the instructions will be treated as a write and the
- * handler will raise a signal from unwriteable locations if they 
+ * handler will raise a signal from unwriteable locations if they
  * fault. We have to specifically check for these instructions
  * from the abort handlers to treat them properly.
  *
@@ -23,7 +23,7 @@ not_thumb:
 	.endm
 
 /*
- * We check for the following insturction encoding for LDRD. 
+ * We check for the following insturction encoding for LDRD.
  *
  * [27:25] == 0
  *   [7:4] == 1101

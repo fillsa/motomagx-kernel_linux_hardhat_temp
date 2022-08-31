@@ -84,16 +84,16 @@ static inline void snd_ymfpci_writel(ymfpci_t *chip, u32 offset, u32 val)
 
 static int snd_ymfpci_codec_ready(ymfpci_t *chip, int secondary)
 {
-	signed long end_time;
+	unsigned long end_time;
 	u32 reg = secondary ? YDSXGR_SECSTATUSADR : YDSXGR_PRISTATUSADR;
 	
-	end_time = (jiffies + ((3 * HZ) / 4)) + 1;
+	end_time = jiffies + msecs_to_jiffies(750);
 	do {
 		if ((snd_ymfpci_readw(chip, reg) & 0x8000) == 0)
 			return 0;
 		set_current_state(TASK_UNINTERRUPTIBLE);
 		schedule_timeout(1);
-	} while (end_time - (signed long)jiffies >= 0);
+	} while (time_before(jiffies, end_time));
 	snd_printk("codec_ready: codec %i is not ready [0x%x]\n", secondary, snd_ymfpci_readw(chip, reg));
 	return -EBUSY;
 }
@@ -258,7 +258,7 @@ static int voice_alloc(ymfpci_t *chip, ymfpci_voice_type_t type, int pair, ymfpc
 	return -ENOMEM;
 }
 
-int snd_ymfpci_voice_alloc(ymfpci_t *chip, ymfpci_voice_type_t type, int pair, ymfpci_voice_t **rvoice)
+static int snd_ymfpci_voice_alloc(ymfpci_t *chip, ymfpci_voice_type_t type, int pair, ymfpci_voice_t **rvoice)
 {
 	unsigned long flags;
 	int result;
@@ -278,7 +278,7 @@ int snd_ymfpci_voice_alloc(ymfpci_t *chip, ymfpci_voice_type_t type, int pair, y
 	return result;		
 }
 
-int snd_ymfpci_voice_free(ymfpci_t *chip, ymfpci_voice_t *pvoice)
+static int snd_ymfpci_voice_free(ymfpci_t *chip, ymfpci_voice_t *pvoice)
 {
 	unsigned long flags;
 	
@@ -829,10 +829,7 @@ static snd_pcm_hardware_t snd_ymfpci_capture =
 
 static void snd_ymfpci_pcm_free_substream(snd_pcm_runtime_t *runtime)
 {
-	ymfpci_pcm_t *ypcm = runtime->private_data;
-	
-	if (ypcm)
-		kfree(ypcm);
+	kfree(runtime->private_data);
 }
 
 static int snd_ymfpci_playback_open_1(snd_pcm_substream_t * substream)
@@ -1422,17 +1419,15 @@ static snd_kcontrol_new_t snd_ymfpci_drec_source __devinitdata = {
 
 static int snd_ymfpci_info_single(snd_kcontrol_t *kcontrol, snd_ctl_elem_info_t * uinfo)
 {
-	unsigned int mask = 1;
-
 	switch (kcontrol->private_value) {
 	case YDSXGR_SPDIFOUTCTRL: break;
 	case YDSXGR_SPDIFINCTRL: break;
 	default: return -EINVAL;
 	}
-	uinfo->type = mask == 1 ? SNDRV_CTL_ELEM_TYPE_BOOLEAN : SNDRV_CTL_ELEM_TYPE_INTEGER;
+	uinfo->type = SNDRV_CTL_ELEM_TYPE_BOOLEAN;
 	uinfo->count = 1;
 	uinfo->value.integer.min = 0;
-	uinfo->value.integer.max = mask;
+	uinfo->value.integer.max = 1;
 	return 0;
 }
 
@@ -1440,7 +1435,7 @@ static int snd_ymfpci_get_single(snd_kcontrol_t * kcontrol, snd_ctl_elem_value_t
 {
 	ymfpci_t *chip = snd_kcontrol_chip(kcontrol);
 	int reg = kcontrol->private_value;
-	unsigned int shift = 0, mask = 1, invert = 0;
+	unsigned int shift = 0, mask = 1;
 	
 	switch (kcontrol->private_value) {
 	case YDSXGR_SPDIFOUTCTRL: break;
@@ -1448,8 +1443,6 @@ static int snd_ymfpci_get_single(snd_kcontrol_t * kcontrol, snd_ctl_elem_value_t
 	default: return -EINVAL;
 	}
 	ucontrol->value.integer.value[0] = (snd_ymfpci_readl(chip, reg) >> shift) & mask;
-	if (invert)
-		ucontrol->value.integer.value[0] = mask - ucontrol->value.integer.value[0];
 	return 0;
 }
 
@@ -1457,7 +1450,7 @@ static int snd_ymfpci_put_single(snd_kcontrol_t * kcontrol, snd_ctl_elem_value_t
 {
 	ymfpci_t *chip = snd_kcontrol_chip(kcontrol);
 	int reg = kcontrol->private_value;
-	unsigned int shift = 0, mask = 1, invert = 0;
+	unsigned int shift = 0, mask = 1;
 	int change;
 	unsigned int val, oval;
 	
@@ -1467,8 +1460,6 @@ static int snd_ymfpci_put_single(snd_kcontrol_t * kcontrol, snd_ctl_elem_value_t
 	default: return -EINVAL;
 	}
 	val = (ucontrol->value.integer.value[0] & mask);
-	if (invert)
-		val = mask - val;
 	val <<= shift;
 	spin_lock_irq(&chip->reg_lock);
 	oval = snd_ymfpci_readl(chip, reg);
@@ -1488,14 +1479,13 @@ static int snd_ymfpci_put_single(snd_kcontrol_t * kcontrol, snd_ctl_elem_value_t
 static int snd_ymfpci_info_double(snd_kcontrol_t *kcontrol, snd_ctl_elem_info_t * uinfo)
 {
 	unsigned int reg = kcontrol->private_value;
-	unsigned int mask = 16383;
 
 	if (reg < 0x80 || reg >= 0xc0)
 		return -EINVAL;
-	uinfo->type = mask == 1 ? SNDRV_CTL_ELEM_TYPE_BOOLEAN : SNDRV_CTL_ELEM_TYPE_INTEGER;
+	uinfo->type = SNDRV_CTL_ELEM_TYPE_INTEGER;
 	uinfo->count = 2;
 	uinfo->value.integer.min = 0;
-	uinfo->value.integer.max = mask;
+	uinfo->value.integer.max = 16383;
 	return 0;
 }
 
@@ -1503,7 +1493,7 @@ static int snd_ymfpci_get_double(snd_kcontrol_t * kcontrol, snd_ctl_elem_value_t
 {
 	ymfpci_t *chip = snd_kcontrol_chip(kcontrol);
 	unsigned int reg = kcontrol->private_value;
-	unsigned int shift_left = 0, shift_right = 16, mask = 16383, invert = 0;
+	unsigned int shift_left = 0, shift_right = 16, mask = 16383;
 	unsigned int val;
 	
 	if (reg < 0x80 || reg >= 0xc0)
@@ -1513,10 +1503,6 @@ static int snd_ymfpci_get_double(snd_kcontrol_t * kcontrol, snd_ctl_elem_value_t
 	spin_unlock_irq(&chip->reg_lock);
 	ucontrol->value.integer.value[0] = (val >> shift_left) & mask;
 	ucontrol->value.integer.value[1] = (val >> shift_right) & mask;
-	if (invert) {
-		ucontrol->value.integer.value[0] = mask - ucontrol->value.integer.value[0];
-		ucontrol->value.integer.value[1] = mask - ucontrol->value.integer.value[1];
-	}
 	return 0;
 }
 
@@ -1524,7 +1510,7 @@ static int snd_ymfpci_put_double(snd_kcontrol_t * kcontrol, snd_ctl_elem_value_t
 {
 	ymfpci_t *chip = snd_kcontrol_chip(kcontrol);
 	unsigned int reg = kcontrol->private_value;
-	unsigned int shift_left = 0, shift_right = 16, mask = 16383, invert = 0;
+	unsigned int shift_left = 0, shift_right = 16, mask = 16383;
 	int change;
 	unsigned int val1, val2, oval;
 	
@@ -1532,10 +1518,6 @@ static int snd_ymfpci_put_double(snd_kcontrol_t * kcontrol, snd_ctl_elem_value_t
 		return -EINVAL;
 	val1 = ucontrol->value.integer.value[0] & mask;
 	val2 = ucontrol->value.integer.value[1] & mask;
-	if (invert) {
-		val1 = mask - val1;
-		val2 = mask - val2;
-	}
 	val1 <<= shift_left;
 	val2 <<= shift_right;
 	spin_lock_irq(&chip->reg_lock);
@@ -1714,12 +1696,17 @@ int __devinit snd_ymfpci_mixer(ymfpci_t *chip, int rear_switch)
 	if ((err = snd_ac97_bus(chip->card, 0, &ops, chip, &chip->ac97_bus)) < 0)
 		return err;
 	chip->ac97_bus->private_free = snd_ymfpci_mixer_free_ac97_bus;
+	chip->ac97_bus->no_vra = 1; /* YMFPCI doesn't need VRA */
 
 	memset(&ac97, 0, sizeof(ac97));
 	ac97.private_data = chip;
 	ac97.private_free = snd_ymfpci_mixer_free_ac97;
 	if ((err = snd_ac97_mixer(chip->ac97_bus, &ac97, &chip->ac97)) < 0)
 		return err;
+
+	/* to be sure */
+	snd_ac97_update_bits(chip->ac97, AC97_EXTENDED_STATUS,
+			     AC97_EA_VRA|AC97_EA_VRM, 0);
 
 	for (idx = 0; idx < ARRAY_SIZE(snd_ymfpci_controls); idx++) {
 		if ((err = snd_ctl_add(chip->card, snd_ctl_new1(&snd_ymfpci_controls[idx], chip))) < 0)
@@ -2065,8 +2052,7 @@ static int snd_ymfpci_free(ymfpci_t *chip)
 #endif
 
 #ifdef CONFIG_PM
-	if (chip->saved_regs)
-		vfree(chip->saved_regs);
+	vfree(chip->saved_regs);
 #endif
 	if (chip->mpu_res) {
 		release_resource(chip->mpu_res);
@@ -2076,14 +2062,7 @@ static int snd_ymfpci_free(ymfpci_t *chip)
 		release_resource(chip->fm_res);
 		kfree_nocheck(chip->fm_res);
 	}
-#ifdef SUPPORT_JOYSTICK
-	if (chip->joystick_res) {
-		if (chip->gameport.io)
-			gameport_unregister_port(&chip->gameport);
-		release_resource(chip->joystick_res);
-		kfree_nocheck(chip->joystick_res);
-	}
-#endif
+	snd_ymfpci_free_gameport(chip);
 	if (chip->reg_area_virt)
 		iounmap(chip->reg_area_virt);
 	if (chip->work_ptr.area)
@@ -2139,7 +2118,7 @@ static int saved_regs_index[] = {
 };
 #define YDSXGR_NUM_SAVED_REGS	ARRAY_SIZE(saved_regs_index)
 
-static int snd_ymfpci_suspend(snd_card_t *card, unsigned int state)
+static int snd_ymfpci_suspend(snd_card_t *card, pm_message_t state)
 {
 	ymfpci_t *chip = card->pm_private_data;
 	unsigned int i;
@@ -2155,11 +2134,10 @@ static int snd_ymfpci_suspend(snd_card_t *card, unsigned int state)
 	snd_ymfpci_writel(chip, YDSXGR_NATIVEDACOUTVOL, 0);
 	snd_ymfpci_disable_dsp(chip);
 	pci_disable_device(chip->pci);
-	snd_power_change_state(card, SNDRV_CTL_POWER_D3hot);
 	return 0;
 }
 
-static int snd_ymfpci_resume(snd_card_t *card, unsigned int state)
+static int snd_ymfpci_resume(snd_card_t *card)
 {
 	ymfpci_t *chip = card->pm_private_data;
 	unsigned int i;
@@ -2183,7 +2161,6 @@ static int snd_ymfpci_resume(snd_card_t *card, unsigned int state)
 		chip->active_bank = snd_ymfpci_readl(chip, YDSXGR_CTRLSELECT);
 		spin_unlock_irq(&chip->reg_lock);
 	}
-	snd_power_change_state(card, SNDRV_CTL_POWER_D0);
 	return 0;
 }
 #endif /* CONFIG_PM */
@@ -2265,12 +2242,12 @@ int __devinit snd_ymfpci_create(snd_card_t * card,
 	snd_card_set_pm_callback(card, snd_ymfpci_suspend, snd_ymfpci_resume, chip);
 #endif
 
-	snd_ymfpci_proc_init(card, chip);
-
 	if ((err = snd_device_new(card, SNDRV_DEV_LOWLEVEL, chip, &ops)) < 0) {
 		snd_ymfpci_free(chip);
 		return err;
 	}
+
+	snd_ymfpci_proc_init(card, chip);
 
 	snd_card_set_dev(card, &pci->dev);
 

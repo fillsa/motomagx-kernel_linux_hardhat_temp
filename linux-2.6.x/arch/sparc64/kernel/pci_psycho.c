@@ -433,7 +433,7 @@ enum psycho_error_type {
 #define  PSYCHO_STCLINE_VALID	 0x0000000000000002UL	/* Valid */
 #define  PSYCHO_STCLINE_FOFN	 0x0000000000000001UL	/* Fetch Outstanding / Flush Necessary */
 
-static spinlock_t stc_buf_lock = SPIN_LOCK_UNLOCKED;
+static DEFINE_SPINLOCK(stc_buf_lock);
 static unsigned long stc_error_buf[128];
 static unsigned long stc_tag_buf[16];
 static unsigned long stc_line_buf[16];
@@ -453,9 +453,9 @@ static void __psycho_check_one_stc(struct pci_controller_info *p,
 		tag_base = regbase + PSYCHO_STC_TAG_A;
 		line_base = regbase + PSYCHO_STC_LINE_A;
 	} else {
-		err_base = regbase + PSYCHO_STC_ERR_A;
-		tag_base = regbase + PSYCHO_STC_TAG_A;
-		line_base = regbase + PSYCHO_STC_LINE_A;
+		err_base = regbase + PSYCHO_STC_ERR_B;
+		tag_base = regbase + PSYCHO_STC_TAG_B;
+		line_base = regbase + PSYCHO_STC_LINE_B;
 	}
 
 	spin_lock(&stc_buf_lock);
@@ -1133,7 +1133,7 @@ static void __init psycho_base_address_update(struct pci_dev *pdev, int resource
 	       (((u32)(res->start - root->start)) & ~size));
 	if (resource == PCI_ROM_RESOURCE) {
 		reg |= PCI_ROM_ADDRESS_ENABLE;
-		res->flags |= PCI_ROM_ADDRESS_ENABLE;
+		res->flags |= IORESOURCE_ROM_ENABLE;
 	}
 	pci_write_config_dword(pdev, where, reg);
 
@@ -1212,7 +1212,7 @@ static void __init psycho_iommu_init(struct pci_controller_info *p)
 
 	/* Setup initial software IOMMU state. */
 	spin_lock_init(&iommu->lock);
-	iommu->iommu_cur_ctx = 0;
+	iommu->ctx_lowest_free = 1;
 
 	/* Register addresses. */
 	iommu->iommu_control  = p->pbm_A.controller_regs + PSYCHO_IOMMU_CONTROL;
@@ -1303,8 +1303,7 @@ static void psycho_controller_hwinit(struct pci_controller_info *p)
 {
 	u64 tmp;
 
-	/* PROM sets the IRQ retry value too low, increase it. */
-	psycho_write(p->pbm_A.controller_regs + PSYCHO_IRQ_RETRY, 0xff);
+	psycho_write(p->pbm_A.controller_regs + PSYCHO_IRQ_RETRY, 5);
 
 	/* Enable arbiter for all PCI slots. */
 	tmp = psycho_read(p->pbm_A.controller_regs + PSYCHO_PCIA_CTRL);

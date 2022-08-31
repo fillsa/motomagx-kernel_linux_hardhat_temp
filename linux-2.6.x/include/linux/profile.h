@@ -10,8 +10,8 @@
 #include <linux/kernel_stat.h>
 #include <asm/errno.h>
 
-#define CPU_PROFILING		1
-#define SCHED_PROFILING		2
+#define CPU_PROFILING	1
+#define SCHED_PROFILING	2
 #define PREEMPT_PROFILING	3
 
 struct proc_dir_entry;

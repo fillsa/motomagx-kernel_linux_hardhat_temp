@@ -11,7 +11,11 @@
  * 
  */
 
+#include <asm/bug.h>
+#include <linux/compiler.h>
 #include <linux/config.h>
+#include <linux/netdevice.h>
+#include <net/addrconf.h>
 #include <net/xfrm.h>
 #include <net/ip.h>
 #include <net/ipv6.h>
@@ -35,26 +39,6 @@ static int xfrm6_dst_lookup(struct xfrm_dst **dst, struct flowi *fl)
 	return err;
 }
 
-/* Check that the bundle accepts the flow and its components are
- * still valid.
- */
-
-static int __xfrm6_bundle_ok(struct xfrm_dst *xdst, struct flowi *fl)
-{
-	do {
-		if (xdst->u.dst.ops != &xfrm6_dst_ops)
-			return 1;
-
-		if (!xfrm_selector_match(&xdst->u.dst.xfrm->sel, fl, AF_INET6))
-			return 0;
-		if (xdst->u.dst.xfrm->km.state != XFRM_STATE_VALID ||
-		    xdst->u.dst.path->obsolete > 0)
-			return 0;
-		xdst = (struct xfrm_dst*)xdst->u.dst.child;
-	} while (xdst);
-	return 0;
-}
-
 static struct dst_entry *
 __xfrm6_find_bundle(struct flowi *fl, struct xfrm_policy *policy)
 {
@@ -73,7 +57,7 @@ __xfrm6_find_bundle(struct flowi *fl, struct xfrm_policy *policy)
 				 xdst->u.rt6.rt6i_src.plen);
 		if (ipv6_addr_equal(&xdst->u.rt6.rt6i_dst.addr, &fl_dst_prefix) &&
 		    ipv6_addr_equal(&xdst->u.rt6.rt6i_src.addr, &fl_src_prefix) &&
-		    __xfrm6_bundle_ok(xdst, fl)) {
+		    xfrm_bundle_ok(xdst, fl, AF_INET6)) {
 			dst_clone(dst);
 			break;
 		}
@@ -95,18 +79,30 @@ __xfrm6_bundle_create(struct xfrm_policy *policy, struct xfrm_state **xfrm, int 
 	struct rt6_info *rt  = rt0;
 	struct in6_addr *remote = &fl->fl6_dst;
 	struct in6_addr *local  = &fl->fl6_src;
+	struct flowi fl_tunnel = {
+		.nl_u = {
+			.ip6_u = {
+				.saddr = *local,
+				.daddr = *remote
+			}
+		}
+	};
 	int i;
 	int err = 0;
 	int header_len = 0;
 	int trailer_len = 0;
 
 	dst = dst_prev = NULL;
+	dst_hold(&rt->u.dst);
 
 	for (i = 0; i < nx; i++) {
 		struct dst_entry *dst1 = dst_alloc(&xfrm6_dst_ops);
+		struct xfrm_dst *xdst;
+		int tunnel = 0;
 
 		if (unlikely(dst1 == NULL)) {
 			err = -ENOBUFS;
+			dst_release(&rt->u.dst);
 			goto error;
 		}
 
@@ -117,10 +113,18 @@ __xfrm6_bundle_create(struct xfrm_policy *policy, struct xfrm_state **xfrm, int 
 			dst1->flags |= DST_NOHASH;
 			dst_clone(dst1);
 		}
+
+		xdst = (struct xfrm_dst *)dst1;
+		xdst->route = &rt->u.dst;
+		if (rt->rt6i_node)
+			xdst->route_cookie = rt->rt6i_node->fn_sernum;
+
+		dst1->next = dst_prev;
 		dst_prev = dst1;
 		if (xfrm[i]->props.mode) {
 			remote = (struct in6_addr*)&xfrm[i]->id.daddr;
 			local  = (struct in6_addr*)&xfrm[i]->props.saddr;
+			tunnel = 1;
 #ifdef CONFIG_IPV6_MIP6
 		} else if (xfrm[i]->id.proto == IPPROTO_ROUTING) {
 			remote = (struct in6_addr*)xfrm[i]->coaddr;
@@ -130,36 +134,38 @@ __xfrm6_bundle_create(struct xfrm_policy *policy, struct xfrm_state **xfrm, int 
 		}
 		header_len += xfrm[i]->props.header_len;
 		trailer_len += xfrm[i]->props.trailer_len;
+
+		if (tunnel) {
+			struct flowi fl_tunnel; // netu v 2.6
+			struct inet6_ifaddr *ifa; // netu v 2.6
+
+			ipv6_addr_copy(&fl_tunnel.fl6_dst, remote);
+			ipv6_addr_copy(&fl_tunnel.fl6_src, local);
+
+			ifa = ipv6_get_ifaddr(local, NULL, 0); // netu v 2.6
+			if (ifa) { // netu v 2.6
+				fl_tunnel.oif = ifa->idev->dev->ifindex; // netu v 2.6
+				in6_ifa_put(ifa); // netu v 2.6
+			} // netu v 2.6
+			err = xfrm_dst_lookup((struct xfrm_dst **) &rt,
+					      &fl_tunnel, AF_INET6);
+			if (err)
+				goto error;
+		} else
+			dst_hold(&rt->u.dst);
 	}
 
-#ifdef CONFIG_IPV6_MIP6
-	if (!ipv6_addr_equal(remote, &fl->fl6_dst) ||
-	    !ipv6_addr_equal(local, &fl->fl6_src)) {
-#else
-	if (!ipv6_addr_equal(remote, &fl->fl6_dst)) {
-#endif
-		struct flowi fl_tunnel;
-		struct inet6_ifaddr *ifa;
-
-		memset(&fl_tunnel, 0, sizeof(fl_tunnel));
-		ipv6_addr_copy(&fl_tunnel.fl6_dst, remote);
-		ipv6_addr_copy(&fl_tunnel.fl6_src, local);
-
-		ifa = ipv6_get_ifaddr(local, NULL, 0);
-		if (ifa) {
-			fl_tunnel.oif = ifa->idev->dev->ifindex;
-			in6_ifa_put(ifa);
-		}
-		err = xfrm_dst_lookup((struct xfrm_dst **) &rt,
-				      &fl_tunnel, AF_INET6);
-		if (err)
-			goto error;
-	} else {
-		dst_hold(&rt->u.dst);
-	}
 	dst_prev->child = &rt->u.dst;
+	dst->path = &rt->u.dst;
+	if (rt->rt6i_node)
+		((struct xfrm_dst *)dst)->path_cookie = rt->rt6i_node->fn_sernum;
+
+	*dst_p = dst;
+	dst = dst_prev;
+
+	dst_prev = *dst_p;
 	i = 0;
-	for (dst_prev = dst; dst_prev != &rt->u.dst; dst_prev = dst_prev->child) {
+	for (; dst_prev != &rt->u.dst; dst_prev = dst_prev->child) {
 		struct xfrm_dst *x = (struct xfrm_dst*)dst_prev;
 
 		dst_prev->xfrm = xfrm[i++];
@@ -171,8 +177,7 @@ __xfrm6_bundle_create(struct xfrm_policy *policy, struct xfrm_state **xfrm, int 
 		dst_prev->lastuse	= jiffies;
 		dst_prev->header_len	= header_len;
 		dst_prev->trailer_len	= trailer_len;
-		memcpy(&dst_prev->metrics, &rt->u.dst.metrics, sizeof(dst_prev->metrics));
-		dst_prev->path		= &rt->u.dst;
+		memcpy(&dst_prev->metrics, &x->route->metrics, sizeof(dst_prev->metrics));
 
 		/* Copy neighbour for reachability confirmation */
 		dst_prev->neighbour	= neigh_clone(rt->u.dst.neighbour);
@@ -187,6 +192,8 @@ __xfrm6_bundle_create(struct xfrm_policy *policy, struct xfrm_state **xfrm, int 
 		memcpy(&x->u.rt6.rt6i_gateway, &rt0->rt6i_gateway, sizeof(x->u.rt6.rt6i_gateway)); 
 		x->u.rt6.rt6i_dst      = rt0->rt6i_dst;
 		x->u.rt6.rt6i_src      = rt0->rt6i_src;	
+		x->u.rt6.rt6i_idev     = rt0->rt6i_idev;
+		in6_dev_hold(rt0->rt6i_idev);
 		header_len -= x->u.dst.xfrm->props.header_len;
 		trailer_len -= x->u.dst.xfrm->props.trailer_len;
 	}
@@ -203,7 +210,8 @@ __xfrm6_bundle_create(struct xfrm_policy *policy, struct xfrm_state **xfrm, int 
 	}
 	printk("\n");
 #endif
-	*dst_p = dst;
+
+	xfrm_init_pmtu(dst);
 	return 0;
 
 error:
@@ -308,12 +316,45 @@ static inline int xfrm6_garbage_collect(void)
 
 static void xfrm6_update_pmtu(struct dst_entry *dst, u32 mtu)
 {
-	struct dst_entry *path = dst->path;
+	struct xfrm_dst *xdst = (struct xfrm_dst *)dst;
+	struct dst_entry *path = xdst->route;
 
-	if (mtu >= IPV6_MIN_MTU && mtu < dst_pmtu(dst))
-		path->ops->update_pmtu(path, mtu);
-	
-	return;
+	path->ops->update_pmtu(path, mtu);
+}
+
+static void xfrm6_dst_destroy(struct dst_entry *dst)
+{
+	struct xfrm_dst *xdst = (struct xfrm_dst *)dst;
+
+	if (likely(xdst->u.rt6.rt6i_idev))
+		in6_dev_put(xdst->u.rt6.rt6i_idev);
+	xfrm_dst_destroy(xdst);
+}
+
+static void xfrm6_dst_ifdown(struct dst_entry *dst, struct net_device *dev,
+			     int unregister)
+{
+	struct xfrm_dst *xdst;
+
+	if (!unregister)
+		return;
+
+	xdst = (struct xfrm_dst *)dst;
+	if (xdst->u.rt6.rt6i_idev->dev == dev) {
+		struct inet6_dev *loopback_idev = in6_dev_get(&loopback_dev);
+		BUG_ON(!loopback_idev);
+
+		do {
+			in6_dev_put(xdst->u.rt6.rt6i_idev);
+			xdst->u.rt6.rt6i_idev = loopback_idev;
+			in6_dev_hold(loopback_idev);
+			xdst = (struct xfrm_dst *)xdst->u.dst.child;
+		} while (xdst->u.dst.xfrm);
+
+		__in6_dev_put(loopback_idev);
+	}
+
+	xfrm_dst_ifdown(dst, dev);
 }
 
 static struct dst_ops xfrm6_dst_ops = {
@@ -321,6 +362,8 @@ static struct dst_ops xfrm6_dst_ops = {
 	.protocol =		__constant_htons(ETH_P_IPV6),
 	.gc =			xfrm6_garbage_collect,
 	.update_pmtu =		xfrm6_update_pmtu,
+	.destroy =		xfrm6_dst_destroy,
+	.ifdown =		xfrm6_dst_ifdown,
 	.gc_thresh =		1024,
 	.entry_size =		sizeof(struct xfrm_dst),
 };

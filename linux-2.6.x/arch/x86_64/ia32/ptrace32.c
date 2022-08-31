@@ -43,11 +43,11 @@ static int putreg32(struct task_struct *child, unsigned regno, u32 val)
 	switch (regno) {
 	case offsetof(struct user32, regs.fs):
 		if (val && (val & 3) != 3) return -EIO; 
-		child->thread.fs = val & 0xffff; 
+		child->thread.fsindex = val & 0xffff;
 		break;
 	case offsetof(struct user32, regs.gs):
 		if (val && (val & 3) != 3) return -EIO; 
-		child->thread.gs = val & 0xffff;
+		child->thread.gsindex = val & 0xffff;
 		break;
 	case offsetof(struct user32, regs.ds):
 		if (val && (val & 3) != 3) return -EIO; 
@@ -138,10 +138,10 @@ static int getreg32(struct task_struct *child, unsigned regno, u32 *val)
 
 	switch (regno) {
 	case offsetof(struct user32, regs.fs):
-	        *val = child->thread.fs; 
+	        *val = child->thread.fsindex;
 		break;
 	case offsetof(struct user32, regs.gs):
-		*val = child->thread.gs;
+		*val = child->thread.gsindex;
 		break;
 	case offsetof(struct user32, regs.ds):
 		*val = child->thread.ds;
@@ -358,14 +358,14 @@ asmlinkage long sys32_ptrace(long request, u32 pid, u32 addr, u32 data)
 			break;
 		/* no checking to be bug-to-bug compatible with i386 */
 		__copy_from_user(&child->thread.i387.fxsave, u, sizeof(*u));
-		child->used_math = 1;
+		set_stopped_child_used_math(child);
 		child->thread.i387.fxsave.mxcsr &= mxcsr_feature_mask;
 		ret = 0; 
 		break;
 	}
 
 	case PTRACE_GETEVENTMSG:
-		ret = put_user(child->ptrace_message,(unsigned int __user *)(u64)data);
+		ret = put_user(child->ptrace_message,(unsigned int __user *)compat_ptr(data));
 		break;
 
 	default:

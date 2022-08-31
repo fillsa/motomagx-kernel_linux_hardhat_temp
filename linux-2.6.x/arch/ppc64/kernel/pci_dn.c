@@ -21,20 +21,13 @@
  */
 #include <linux/kernel.h>
 #include <linux/pci.h>
-#include <linux/delay.h>
 #include <linux/string.h>
 #include <linux/init.h>
-#include <linux/bootmem.h>
 
 #include <asm/io.h>
-#include <asm/pgtable.h>
-#include <asm/irq.h>
 #include <asm/prom.h>
-#include <asm/machdep.h>
 #include <asm/pci-bridge.h>
-#include <asm/ppcdebug.h>
-#include <asm/naca.h>
-#include <asm/iommu.h>
+#include <asm/pSeries_reconfig.h>
 
 #include "pci.h"
 
@@ -45,6 +38,7 @@
 static void * __devinit update_dn_pci_info(struct device_node *dn, void *data)
 {
 	struct pci_controller *phb = data;
+	int *type = (int *)get_property(dn, "ibm,pci-config-space-type", NULL);
 	u32 *regs;
 
 	dn->phb = phb;
@@ -54,6 +48,8 @@ static void * __devinit update_dn_pci_info(struct device_node *dn, void *data)
 		dn->busno = (regs[0] >> 16) & 0xff;
 		dn->devfn = (regs[0] >> 8) & 0xff;
 	}
+
+	dn->pci_ext_config_space = (type && *type == 1);
 	return NULL;
 }
 
@@ -166,6 +162,25 @@ struct device_node *fetch_dev_dn(struct pci_dev *dev)
 }
 EXPORT_SYMBOL(fetch_dev_dn);
 
+static int pci_dn_reconfig_notifier(struct notifier_block *nb, unsigned long action, void *node)
+{
+	struct device_node *np = node;
+	int err = NOTIFY_OK;
+
+	switch (action) {
+	case PSERIES_RECONFIG_ADD:
+		update_dn_pci_info(np, np->parent->phb);
+		break;
+	default:
+		err = NOTIFY_DONE;
+		break;
+	}
+	return err;
+}
+
+static struct notifier_block pci_dn_reconfig_nb = {
+	.notifier_call = pci_dn_reconfig_notifier,
+};
 
 /*
  * Actually initialize the phbs.
@@ -178,30 +193,6 @@ void __init pci_devs_phb_init(void)
 	/* This must be done first so the device nodes have valid pci info! */
 	list_for_each_entry_safe(phb, tmp, &hose_list, list_node)
 		pci_devs_phb_init_dynamic(phb);
-}
 
-
-static void __init pci_fixup_bus_sysdata_list(struct list_head *bus_list)
-{
-	struct pci_bus *bus;
-
-	list_for_each_entry(bus, bus_list, node) {
-		if (bus->self)
-			bus->sysdata = bus->self->sysdata;
-		pci_fixup_bus_sysdata_list(&bus->children);
-	}
-}
-
-/*
- * Fixup the bus->sysdata ptrs to point to the bus' device_node.
- * This is done late in pcibios_init().  We do this mostly for
- * sanity, but pci_dma.c uses these at DMA time so they must be
- * correct.
- * To do this we recurse down the bus hierarchy.  Note that PHB's
- * have bus->self == NULL, but fortunately bus->sysdata is already
- * correct in this case.
- */
-void __init pci_fix_bus_sysdata(void)
-{
-	pci_fixup_bus_sysdata_list(&pci_root_buses);
+	pSeries_reconfig_notifier_register(&pci_dn_reconfig_nb);
 }

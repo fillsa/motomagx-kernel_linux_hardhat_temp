@@ -20,6 +20,7 @@
  */
 #ifndef IEEE80211_H
 #define IEEE80211_H
+
 #include <linux/if_ether.h> /* ETH_ALEN */
 #include <linux/kernel.h>   /* ARRAY_SIZE */
 #include <linux/wireless.h>
@@ -850,4 +851,5 @@ static inline const char *escape_essid(const char *essid, u8 essid_len) {
 	*d = '\0';
 	return escaped;
 }
+
 #endif /* IEEE80211_H */

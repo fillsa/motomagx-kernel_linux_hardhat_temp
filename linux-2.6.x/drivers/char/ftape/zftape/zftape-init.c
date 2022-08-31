@@ -23,7 +23,6 @@
 #include <linux/config.h>
 #include <linux/module.h>
 #include <linux/errno.h>
-#include <linux/version.h>
 #include <linux/fs.h>
 #include <linux/kernel.h>
 #include <linux/signal.h>
@@ -45,10 +44,6 @@
 #include "../zftape/zftape-write.h"
 #include "../zftape/zftape-ctl.h"
 #include "../zftape/zftape-buffers.h"
-
-char zft_src[] __initdata = "$Source: /homes/cvs/ftape-stacked/ftape/zftape/zftape-init.c,v $";
-char zft_rev[] __initdata = "$Revision: 1.8 $";
-char zft_dat[] __initdata = "$Date: 1997/11/06 00:48:56 $";
 
 MODULE_AUTHOR("(c) 1996, 1997 Claus-Justus Heine "
 	      "(claus@momo.math.rwth-aachen.de)");
@@ -104,7 +99,7 @@ static struct file_operations zft_cdev =
 	.release	= zft_close,
 };
 
-static struct class_simple *zft_class;
+static struct class *zft_class;
 
 /*      Open floppy tape device
  */
@@ -278,15 +273,6 @@ int zft_cmpr_register(struct zft_cmpr_ops *new_ops)
 	}
 }
 
-struct zft_cmpr_ops *zft_cmpr_unregister(void)
-{
-	struct zft_cmpr_ops *old_ops = zft_cmpr_ops;
-	TRACE_FUN(ft_t_flow);
-
-	zft_cmpr_ops = NULL;
-	TRACE_EXIT old_ops;
-}
-
 /*  lock the zft-compressor() module.
  */
 int zft_cmpr_lock(int try_to_load)
@@ -332,42 +318,40 @@ KERN_INFO
 KERN_INFO
 "Support for QIC-113 compatible volume table, dynamic memory allocation\n"
 KERN_INFO
-"and builtin compression (lzrw3 algorithm).\n"
-KERN_INFO
-"Compiled for Linux version %s\n", UTS_RELEASE);
+"and builtin compression (lzrw3 algorithm).\n");
         }
 #else /* !MODULE */
 	/* print a short no-nonsense boot message */
-	printk(KERN_INFO ZFTAPE_VERSION " for Linux " UTS_RELEASE "\n");
+	printk(KERN_INFO ZFTAPE_VERSION "\n");
 #endif /* MODULE */
 	TRACE(ft_t_info, "zft_init @ 0x%p", zft_init);
 	TRACE(ft_t_info,
 	      "installing zftape VFS interface for ftape driver ...");
 	TRACE_CATCH(register_chrdev(QIC117_TAPE_MAJOR, "zft", &zft_cdev),);
 
-	zft_class = class_simple_create(THIS_MODULE, "zft");
+	zft_class = class_create(THIS_MODULE, "zft");
 	for (i = 0; i < 4; i++) {
-		class_simple_device_add(zft_class, MKDEV(QIC117_TAPE_MAJOR, i), NULL, "qft%i", i);
+		class_device_create(zft_class, MKDEV(QIC117_TAPE_MAJOR, i), NULL, "qft%i", i);
 		devfs_mk_cdev(MKDEV(QIC117_TAPE_MAJOR, i),
 				S_IFCHR | S_IRUSR | S_IWUSR,
 				"qft%i", i);
-		class_simple_device_add(zft_class, MKDEV(QIC117_TAPE_MAJOR, i + 4), NULL, "nqft%i", i);
+		class_device_create(zft_class, MKDEV(QIC117_TAPE_MAJOR, i + 4), NULL, "nqft%i", i);
 		devfs_mk_cdev(MKDEV(QIC117_TAPE_MAJOR, i + 4),
 				S_IFCHR | S_IRUSR | S_IWUSR,
 				"nqft%i", i);
-		class_simple_device_add(zft_class, MKDEV(QIC117_TAPE_MAJOR, i + 16), NULL, "zqft%i", i);
+		class_device_create(zft_class, MKDEV(QIC117_TAPE_MAJOR, i + 16), NULL, "zqft%i", i);
 		devfs_mk_cdev(MKDEV(QIC117_TAPE_MAJOR, i + 16),
 				S_IFCHR | S_IRUSR | S_IWUSR,
 				"zqft%i", i);
-		class_simple_device_add(zft_class, MKDEV(QIC117_TAPE_MAJOR, i + 20), NULL, "nzqft%i", i);
+		class_device_create(zft_class, MKDEV(QIC117_TAPE_MAJOR, i + 20), NULL, "nzqft%i", i);
 		devfs_mk_cdev(MKDEV(QIC117_TAPE_MAJOR, i + 20),
 				S_IFCHR | S_IRUSR | S_IWUSR,
 				"nzqft%i", i);
-		class_simple_device_add(zft_class, MKDEV(QIC117_TAPE_MAJOR, i + 32), NULL, "rawqft%i", i);
+		class_device_create(zft_class, MKDEV(QIC117_TAPE_MAJOR, i + 32), NULL, "rawqft%i", i);
 		devfs_mk_cdev(MKDEV(QIC117_TAPE_MAJOR, i + 32),
 				S_IFCHR | S_IRUSR | S_IWUSR,
 				"rawqft%i", i);
-		class_simple_device_add(zft_class, MKDEV(QIC117_TAPE_MAJOR, i + 36), NULL, "nrawrawqft%i", i);
+		class_device_create(zft_class, MKDEV(QIC117_TAPE_MAJOR, i + 36), NULL, "nrawrawqft%i", i);
 		devfs_mk_cdev(MKDEV(QIC117_TAPE_MAJOR, i + 36),
 				S_IFCHR | S_IRUSR | S_IWUSR,
 				"nrawqft%i", i);
@@ -397,19 +381,19 @@ static void zft_exit(void)
 	}
         for (i = 0; i < 4; i++) {
 		devfs_remove("qft%i", i);
-		class_simple_device_remove(MKDEV(QIC117_TAPE_MAJOR, i));
+		class_device_destroy(zft_class, MKDEV(QIC117_TAPE_MAJOR, i));
 		devfs_remove("nqft%i", i);
-		class_simple_device_remove(MKDEV(QIC117_TAPE_MAJOR, i + 4));
+		class_device_destroy(zft_class, MKDEV(QIC117_TAPE_MAJOR, i + 4));
 		devfs_remove("zqft%i", i);
-		class_simple_device_remove(MKDEV(QIC117_TAPE_MAJOR, i + 16));
+		class_device_destroy(zft_class, MKDEV(QIC117_TAPE_MAJOR, i + 16));
 		devfs_remove("nzqft%i", i);
-		class_simple_device_remove(MKDEV(QIC117_TAPE_MAJOR, i + 20));
+		class_device_destroy(zft_class, MKDEV(QIC117_TAPE_MAJOR, i + 20));
 		devfs_remove("rawqft%i", i);
-		class_simple_device_remove(MKDEV(QIC117_TAPE_MAJOR, i + 32));
+		class_device_destroy(zft_class, MKDEV(QIC117_TAPE_MAJOR, i + 32));
 		devfs_remove("nrawqft%i", i);
-		class_simple_device_remove(MKDEV(QIC117_TAPE_MAJOR, i + 36));
+		class_device_destroy(zft_class, MKDEV(QIC117_TAPE_MAJOR, i + 36));
 	}
-	class_simple_destroy(zft_class);
+	class_destroy(zft_class);
 	zft_uninit_mem(); /* release remaining memory, if any */
         printk(KERN_INFO "zftape successfully unloaded.\n");
 	TRACE_EXIT;

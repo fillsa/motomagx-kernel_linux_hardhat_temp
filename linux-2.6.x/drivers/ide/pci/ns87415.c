@@ -195,7 +195,7 @@ static int ns87415_ide_dma_check (ide_drive_t *drive)
 	return __ide_dma_check(drive);
 }
 
-static void __init init_hwif_ns87415 (ide_hwif_t *hwif)
+static void __devinit init_hwif_ns87415 (ide_hwif_t *hwif)
 {
 	struct pci_dev *dev = hwif->pci_dev;
 	unsigned int ctrl, using_inta;
@@ -288,8 +288,7 @@ static ide_pci_device_t ns87415_chipset __devinitdata = {
 
 static int __devinit ns87415_init_one(struct pci_dev *dev, const struct pci_device_id *id)
 {
-	ide_setup_pci_device(dev, &ns87415_chipset);
-	return 0;
+	return ide_setup_pci_device(dev, &ns87415_chipset);
 }
 
 static struct pci_device_id ns87415_pci_tbl[] = {

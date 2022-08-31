@@ -95,6 +95,7 @@ CONFIG_PCI_VR41XX=y
 # CONFIG_SNI_RM200_PCI is not set
 # CONFIG_TOSHIBA_RBTX4927 is not set
 CONFIG_RWSEM_GENERIC_SPINLOCK=y
+CONFIG_GENERIC_CALIBRATE_DELAY=y
 CONFIG_HAVE_DEC_LOCK=y
 CONFIG_DMA_NONCOHERENT=y
 CONFIG_CPU_LITTLE_ENDIAN=y
@@ -139,6 +140,20 @@ CONFIG_PCI_NAMES=y
 CONFIG_MMU=y
 
 #
+# PCCARD (PCMCIA/CardBus) support
+#
+# CONFIG_PCCARD is not set
+
+#
+# PC-card bridges
+#
+
+#
+# PCI Hotplug Support
+#
+# CONFIG_HOTPLUG_PCI is not set
+
+#
 # Executable file formats
 #
 CONFIG_BINFMT_ELF=y
@@ -154,6 +169,7 @@ CONFIG_TRAD_SIGNALS=y
 #
 CONFIG_STANDALONE=y
 CONFIG_PREVENT_FIRMWARE_BUILD=y
+# CONFIG_FW_LOADER is not set
 
 #
 # Memory Technology Devices (MTD)
@@ -177,11 +193,13 @@ CONFIG_PREVENT_FIRMWARE_BUILD=y
 # CONFIG_BLK_CPQ_CISS_DA is not set
 # CONFIG_BLK_DEV_DAC960 is not set
 # CONFIG_BLK_DEV_UMEM is not set
+# CONFIG_BLK_DEV_COW_COMMON is not set
 CONFIG_BLK_DEV_LOOP=m
 # CONFIG_BLK_DEV_CRYPTOLOOP is not set
 CONFIG_BLK_DEV_NBD=m
 # CONFIG_BLK_DEV_SX8 is not set
 CONFIG_BLK_DEV_RAM=y
+CONFIG_BLK_DEV_RAM_COUNT=16
 CONFIG_BLK_DEV_RAM_COUNT=16
 CONFIG_BLK_DEV_RAM_SIZE=4096
 # CONFIG_BLK_DEV_INITRD is not set
@@ -198,6 +216,7 @@ CONFIG_IOSCHED_NOOP=y
 CONFIG_IOSCHED_AS=y
 CONFIG_IOSCHED_DEADLINE=y
 CONFIG_IOSCHED_CFQ=y
+CONFIG_ATA_OVER_ETH=m
 
 #
 # ATA/ATAPI/MFM/RLL support
@@ -339,6 +358,7 @@ CONFIG_EEPRO100=y
 # CONFIG_FEALNX is not set
 # CONFIG_NATSEMI is not set
 # CONFIG_NE2K_PCI is not set
+# CONFIG_VIA_VELOCITY is not set
 # CONFIG_8139CP is not set
 # CONFIG_8139TOO is not set
 # CONFIG_SIS900 is not set
@@ -436,6 +456,7 @@ CONFIG_SERIO_I8042=y
 CONFIG_SERIO_SERPORT=y
 # CONFIG_SERIO_CT82C710 is not set
 # CONFIG_SERIO_PCIPS2 is not set
+# CONFIG_SERIO_LIBPS2 is not set
 CONFIG_SERIO_RAW=m
 
 #
@@ -521,12 +542,14 @@ CONFIG_LEGACY_PTY_COUNT=256
 # Graphics support
 #
 # CONFIG_FB is not set
+# CONFIG_FB is not set
 
 #
 # Console display driver support
 #
 # CONFIG_VGA_CONSOLE is not set
 CONFIG_DUMMY_CONSOLE=y
+# CONFIG_BACKLIGHT_LCD_SUPPORT is not set
 
 #
 # Sound
@@ -545,9 +568,23 @@ CONFIG_USB_ARCH_HAS_OHCI=y
 #
 
 #
+# NOTE: USB_STORAGE enables SCSI, and 'SCSI disk support' may also be needed; see USB_STORAGE Help for more information
+#
+
+#
 # USB Gadget Support
 #
 # CONFIG_USB_GADGET is not set
+
+#
+# MMC/SD Card support
+#
+# CONFIG_MMC is not set
+
+#
+# InfiniBand support
+#
+# CONFIG_INFINIBAND is not set
 
 #
 # MMC/SD Card support
@@ -569,6 +606,7 @@ CONFIG_FS_MBCACHE=y
 # CONFIG_REISERFS_FS is not set
 CONFIG_JFS_FS=m
 # CONFIG_JFS_POSIX_ACL is not set
+# CONFIG_JFS_SECURITY is not set
 # CONFIG_JFS_DEBUG is not set
 # CONFIG_JFS_STATISTICS is not set
 CONFIG_XFS_FS=y

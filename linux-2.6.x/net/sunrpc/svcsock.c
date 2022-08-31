@@ -31,7 +31,6 @@
 #include <linux/slab.h>
 #include <linux/netdevice.h>
 #include <linux/skbuff.h>
-#include <linux/suspend.h>
 #include <net/sock.h>
 #include <net/checksum.h>
 #include <net/ip.h>
@@ -587,7 +586,7 @@ svc_udp_recvfrom(struct svc_rqst *rqstp)
 	}
 	if (skb->stamp.tv_sec == 0) {
 		skb->stamp.tv_sec = xtime.tv_sec; 
-		skb->stamp.tv_usec = xtime.tv_nsec * 1000; 
+		skb->stamp.tv_usec = xtime.tv_nsec / NSEC_PER_USEC; 
 		/* Don't enable netstamp, sunrpc doesn't 
 		   need that much accuracy */
 	}
@@ -1077,7 +1076,7 @@ static void
 svc_tcp_init(struct svc_sock *svsk)
 {
 	struct sock	*sk = svsk->sk_sk;
-	struct tcp_opt  *tp = tcp_sk(sk);
+	struct tcp_sock *tp = tcp_sk(sk);
 
 	svsk->sk_recvfrom = svc_tcp_recvfrom;
 	svsk->sk_sendto = svc_tcp_sendto;
@@ -1186,7 +1185,8 @@ svc_recv(struct svc_serv *serv, struct svc_rqst *rqstp, long timeout)
 	arg->page_len = (pages-2)*PAGE_SIZE;
 	arg->len = (pages-1)*PAGE_SIZE;
 	arg->tail[0].iov_len = 0;
-	
+
+	try_to_freeze();
 	if (signalled())
 		return -EINTR;
 
@@ -1227,8 +1227,7 @@ svc_recv(struct svc_serv *serv, struct svc_rqst *rqstp, long timeout)
 
 		schedule_timeout(timeout);
 
-		if (current->flags & PF_FREEZE)
-			refrigerator(PF_FREEZE);
+		try_to_freeze();
 
 		spin_lock_bh(&serv->sv_lock);
 		remove_wait_queue(&rqstp->rq_wait, &wait);

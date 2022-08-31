@@ -240,9 +240,9 @@ static void inline arm11_check_ctrs(void)
 		}
 	}
 
-	pmnc &= ~(PMU_ENABLE | pmu->cnt_ovf[PMN0] | pmu->cnt_ovf[PMN1] |
-		  pmu->cnt_ovf[CCNT]);
-	write_pmnc(pmnc);
+	/* Write the value back to clear the overflow flags. Overflow */
+	/* flags remain in pmnc for use below */
+	write_pmnc(pmnc & ~PMU_ENABLE);
 }
 
 /*!
@@ -250,8 +250,7 @@ static void inline arm11_check_ctrs(void)
  */
 static irqreturn_t arm11_pmu_interrupt(int irq, void *arg, struct pt_regs *regs)
 {
-	unsigned long pc = profile_pc(regs);
-	int i, is_kernel = !user_mode(regs);
+	int i;
 	u32 pmnc;
 
 	arm11_check_ctrs();
@@ -262,7 +261,7 @@ static irqreturn_t arm11_pmu_interrupt(int irq, void *arg, struct pt_regs *regs)
 
 		pr_debug("arm11_pmu_interrupt: writing to file\n");
 		write_counter(i, -(u32) results[i].reset_counter);
-		oprofile_add_sample(pc, is_kernel, i, smp_processor_id());
+		oprofile_add_sample(regs, i);
 		results[i].ovf--;
 	}
 

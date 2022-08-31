@@ -129,9 +129,9 @@ bad_clone_list[] __initdata = {
 #define NESM_START_PG	0x40	/* First page of TX buffer */
 #define NESM_STOP_PG	0x80	/* Last page +1 of RX ring */
 
-#ifdef CONFIG_PLAT_MAPPI
+#if defined(CONFIG_PLAT_MAPPI)
 #  define DCR_VAL 0x4b
-#elif CONFIG_PLAT_OAKS32R
+#elif defined(CONFIG_PLAT_OAKS32R)
 #  define DCR_VAL 0x48
 #else
 #  define DCR_VAL 0x49
@@ -229,12 +229,7 @@ struct net_device * __init ne_probe(int unit)
 	err = do_ne_probe(dev);
 	if (err)
 		goto out;
-	err = register_netdev(dev);
-	if (err)
-		goto out1;
 	return dev;
-out1:
-	cleanup_card(dev);
 out:
 	free_netdev(dev);
 	return ERR_PTR(err);
@@ -534,8 +529,14 @@ static int __init ne_probe1(struct net_device *dev, int ioaddr)
 	dev->poll_controller = ei_poll;
 #endif
 	NS8390_init(dev, 0);
+
+	ret = register_netdev(dev);
+	if (ret)
+		goto out_irq;
 	return 0;
 
+out_irq:
+	free_irq(dev->irq, dev);
 err_out:
 	release_region(ioaddr, NE_IO_EXTENT);
 	return ret;
@@ -800,9 +801,9 @@ static int io[MAX_NE_CARDS];
 static int irq[MAX_NE_CARDS];
 static int bad[MAX_NE_CARDS];	/* 0xbad = bad sig or no reset ack */
 
-MODULE_PARM(io, "1-" __MODULE_STRING(MAX_NE_CARDS) "i");
-MODULE_PARM(irq, "1-" __MODULE_STRING(MAX_NE_CARDS) "i");
-MODULE_PARM(bad, "1-" __MODULE_STRING(MAX_NE_CARDS) "i");
+module_param_array(io, int, NULL, 0);
+module_param_array(irq, int, NULL, 0);
+module_param_array(bad, int, NULL, 0);
 MODULE_PARM_DESC(io, "I/O base address(es),required");
 MODULE_PARM_DESC(irq, "IRQ number(s)");
 MODULE_PARM_DESC(bad, "Accept card(s) with bad signatures");
@@ -826,11 +827,8 @@ int init_module(void)
 		dev->mem_end = bad[this_dev];
 		dev->base_addr = io[this_dev];
 		if (do_ne_probe(dev) == 0) {
-			if (register_netdev(dev) == 0) {
-				dev_ne[found++] = dev;
-				continue;
-			}
-			cleanup_card(dev);
+			dev_ne[found++] = dev;
+			continue;
 		}
 		free_netdev(dev);
 		if (found)

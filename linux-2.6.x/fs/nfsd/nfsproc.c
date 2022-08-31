@@ -137,7 +137,7 @@ nfsd_proc_read(struct svc_rqst *rqstp, struct nfsd_readargs *argp,
 	svc_reserve(rqstp, (19<<2) + argp->count + 4);
 
 	resp->count = argp->count;
-	nfserr = nfsd_read(rqstp, fh_copy(&resp->fh, &argp->fh),
+	nfserr = nfsd_read(rqstp, fh_copy(&resp->fh, &argp->fh), NULL,
 				  argp->offset,
 			   	  argp->vec, argp->vlen,
 				  &resp->count);
@@ -160,7 +160,7 @@ nfsd_proc_write(struct svc_rqst *rqstp, struct nfsd_writeargs *argp,
 		SVCFH_fmt(&argp->fh),
 		argp->len, argp->offset);
 
-	nfserr = nfsd_write(rqstp, fh_copy(&resp->fh, &argp->fh),
+	nfserr = nfsd_write(rqstp, fh_copy(&resp->fh, &argp->fh), NULL,
 				   argp->offset,
 				   argp->vec, argp->vlen,
 				   argp->len,
@@ -540,7 +540,7 @@ static struct svc_procedure		nfsd_procedures2[18] = {
   PROC(symlink,	 symlinkargs,	void,		none,		RC_REPLSTAT, ST),
   PROC(mkdir,	 createargs,	diropres,	fhandle,	RC_REPLBUFF, ST+FH+AT),
   PROC(rmdir,	 diropargs,	void,		none,		RC_REPLSTAT, ST),
-  PROC(readdir,	 readdirargs,	readdirres,	none,		RC_REPLBUFF, 0),
+  PROC(readdir,	 readdirargs,	readdirres,	none,		RC_NOCACHE, 0),
   PROC(statfs,	 fhandle,	statfsres,	none,		RC_NOCACHE, ST+5),
 };
 
@@ -586,11 +586,12 @@ nfserrno (int errno)
 		{ nfserr_dquot, -EDQUOT },
 #endif
 		{ nfserr_stale, -ESTALE },
-		{ nfserr_jukebox, -EWOULDBLOCK },
 		{ nfserr_jukebox, -ETIMEDOUT },
 		{ nfserr_dropit, -EAGAIN },
 		{ nfserr_dropit, -ENOMEM },
 		{ nfserr_badname, -ESRCH },
+		{ nfserr_io, -ETXTBSY },
+		{ nfserr_notsupp, -EOPNOTSUPP },
 		{ -1, -EIO }
 	};
 	int	i;

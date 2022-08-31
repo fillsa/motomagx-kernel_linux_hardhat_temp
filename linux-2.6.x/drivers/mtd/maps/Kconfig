@@ -208,16 +208,6 @@ config MTD_SBC_GXX
 	  More info at
 	  <http://www.arcomcontrols.com/products/icp/pc104/processors/SBC_GX1.htm>.
 
-config MTD_ELAN_104NC
-	tristate "CFI Flash device mapped on Arcom ELAN-104NC"
-	depends on X86 && MTD_CFI_INTELEXT && MTD_PARTITIONS && MTD_COMPLEX_MAPPINGS
-	help
-	  This provides a driver for the on-board flash of the Arcom Control
-	  System's ELAN-104NC development board. By default the flash
-	  is split into 3 partitions which are accessed as separate MTD
-	  devices. This board utilizes Intel StrataFlash. More info at
-	  <http://www.arcomcontrols.com/products/icp/pc104/processors/ELAN104NC.htm>.
-
 config MTD_LUBBOCK
 	tristate "CFI Flash device mapped on Intel Lubbock XScale eval board"
 	depends on ARCH_LUBBOCK && MTD_CFI_INTELEXT && MTD_PARTITIONS

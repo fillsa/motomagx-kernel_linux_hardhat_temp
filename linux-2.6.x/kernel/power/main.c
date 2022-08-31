@@ -55,7 +55,11 @@
 #include <linux/mpm.h>
 #endif
 
+
 #include "power.h"
+
+/*This is just an arbitrary number */
+#define FREE_PAGE_NUMBER (100)
 
 DECLARE_MUTEX(pm_sem);
 
@@ -221,6 +225,7 @@ static void resume_remount_rw(void)
 static int suspend_prepare(suspend_state_t state)
 {
 	int error = 0;
+	unsigned int free_pages;
 
 	if (!pm_ops || !pm_ops->enter)
 		return -EPERM;
@@ -232,6 +237,15 @@ static int suspend_prepare(suspend_state_t state)
 	 */
 	pm_prepare_console();
 #endif
+	disable_nonboot_cpus();
+
+#ifndef CONFIG_MOT_FEAT_PM
+	if (num_online_cpus() != 1) {
+		error = -EPERM;
+		goto Enable_cpu;
+	}
+
+#endif
 
 #ifndef CONFIG_MOT_FEAT_PM
 	if (freeze_processes()) {
@@ -239,6 +253,16 @@ static int suspend_prepare(suspend_state_t state)
 		goto Thaw;
 	}
 #endif
+	if ((free_pages = nr_free_pages()) < FREE_PAGE_NUMBER) {
+		pr_debug("PM: free some memory\n");
+		shrink_all_memory(FREE_PAGE_NUMBER - free_pages);
+		if (nr_free_pages() < FREE_PAGE_NUMBER) {
+			error = -ENOMEM;
+			printk(KERN_ERR "PM: No enough memory\n");
+			goto Thaw;
+		}
+	}
+
 
 	susp_remount_all_ro();
 
@@ -250,22 +274,24 @@ static int suspend_prepare(suspend_state_t state)
 #ifdef CONFIG_MOT_FEAT_PM_STATS
         MPM_REPORT_TEST_POINT(1, MPM_TEST_DEVICE_SUSPEND_START);
 #endif
-	if ((error = device_suspend(state))) {
+	if ((error = device_suspend(state))) { //2.6	if ((error = device_suspend(PMSG_SUSPEND))) {
+		printk(KERN_ERR "Some devices failed to suspend\n");
 #ifdef CONFIG_MOT_FEAT_PM_STATS
                 MPM_REPORT_TEST_POINT(1, MPM_TEST_DEVICE_SUSPEND_DONE);
 #endif
 		goto Finish;
-        }
+	}
 	return 0;
  Finish:
 	if (pm_ops->finish)
 		pm_ops->finish(state);
-
  Remount:
 	resume_remount_rw();
  Thaw:
 #ifndef CONFIG_MOT_FEAT_PM
 	thaw_processes();
+ Enable_cpu:
+	enable_nonboot_cpus();
 	pm_restore_console();
 #endif
 	return error;
@@ -280,7 +306,7 @@ suspend_state_t pm_state_resumed(void)
 }
 
 
-static int suspend_enter(u32 state)
+static int suspend_enter(suspend_state_t state)
 {
 	int error = 0;
 	unsigned long flags;
@@ -306,15 +332,17 @@ static int suspend_enter(u32 state)
          * Motorola split this operation to make the function call first,
          * then check the error value after reporting an mpm test point.
          */
-	error = device_power_down(state);
+	error = device_power_down(PMSG_SUSPEND);
 
 #ifdef CONFIG_MOT_FEAT_PM_STATS
         MPM_REPORT_TEST_POINT(1, MPM_TEST_DEVICE_SUSPEND_INTERRUPTS_DISABLED_DONE);
         MPM_REPORT_TEST_POINT(1, MPM_TEST_DEVICE_SUSPEND_DONE);
 #endif
 
-	if (error)
-	        goto Done;
+	if (error){
+		printk(KERN_ERR "Some devices failed to power down\n");
+		goto Done;
+	}
 
 again:
 	last_suspend_state = state;
@@ -335,7 +363,6 @@ again:
 #endif /* endif CONFIG_MOT_FEAT_PM */
 
 	device_power_up();
-
  Done:
 	local_irq_restore(flags);
 	return error;
@@ -347,7 +374,7 @@ again:
  *	@state:		State we're coming out of.
  *
  *	Call platform code to clean up, restart processes, and free the 
- *	console that we've allocated.
+ *	console that we've allocated. This is not called for suspend-to-disk.
  */
 
 static void suspend_finish(suspend_state_t state)
@@ -359,6 +386,7 @@ static void suspend_finish(suspend_state_t state)
 	resume_remount_rw();
 #ifndef CONFIG_MOT_FEAT_PM
 	thaw_processes();
+	enable_nonboot_cpus();
 	pm_restore_console();
 #endif
 }
@@ -366,7 +394,7 @@ static void suspend_finish(suspend_state_t state)
 
 
 
-char * pm_states[] = {
+static char * pm_states[] = {
 	[PM_SUSPEND_STANDBY]	= "standby",
 	[PM_SUSPEND_MEM]	= "mem",
 	[PM_SUSPEND_DISK]	= "disk",
@@ -392,25 +420,19 @@ static int enter_state(suspend_state_t state)
 	if (down_trylock(&pm_sem))
 		return -EBUSY;
 
-	/* Suspend is hard to get right on SMP. */
-	if (num_online_cpus() != 1) {
-		error = -EPERM;
-		goto Unlock;
-	}
-
 	if (state == PM_SUSPEND_DISK) {
 		error = pm_suspend_disk();
 		goto Unlock;
 	}
 
-	pr_debug("PM: Preparing system for suspend\n");
+	pr_debug("PM: Preparing system for %s sleep\n", pm_states[state]);
 	if ((error = suspend_prepare(state)))
 		goto Unlock;
 
-	pr_debug("PM: Entering state.\n");
+	pr_debug("PM: Entering %s sleep\n", pm_states[state]);
 	error = suspend_enter(state);
 
-	pr_debug("PM: Finishing up.\n");
+	pr_debug("PM: Finishing wakeup.\n");
 	suspend_finish(state);
  Unlock:
 	up(&pm_sem);
@@ -443,7 +465,7 @@ int software_suspend(void)
 
 int pm_suspend(suspend_state_t state)
 {
-	if (state > PM_SUSPEND_ON && state < PM_SUSPEND_MAX)
+	if (state > PM_SUSPEND_ON && state <= PM_SUSPEND_MAX)
 		return enter_state(state);
 	return -EINVAL;
 }

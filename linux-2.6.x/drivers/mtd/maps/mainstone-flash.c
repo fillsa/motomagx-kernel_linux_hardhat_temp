@@ -31,7 +31,8 @@
 
 #define WINDOW_SIZE 	0x04000000
 
-static void mainstone_map_inval_cache(struct map_info *map, unsigned long from, ssize_t len)
+static void mainstone_map_inval_cache(struct map_info *map, unsigned long from,
+				      ssize_t len)
 {
 	consistent_sync((char *)map->cached + from, len, DMA_FROM_DEVICE);
 }
@@ -86,19 +87,25 @@ static int __init mainstone_flash_probe(struct device *_dev)
 	       mainstone_maps[0].name);
 
 	for (i = 0; i < 1 /*2*/; i++) {
-		mainstone_maps[i].virt = ioremap(mainstone_maps[i].phys, WINDOW_SIZE);
+		mainstone_maps[i].virt = ioremap(mainstone_maps[i].phys,
+						 WINDOW_SIZE);
 		if (!mainstone_maps[i].virt) {
-			printk(KERN_WARNING "Failed to ioremap %s\n", mainstone_maps[i].name);
+			printk(KERN_WARNING "Failed to ioremap %s\n", 
+			       mainstone_maps[i].name);
 			if (!ret)
 				ret = -ENOMEM;
 			continue;
 		}
-		mainstone_maps[i].cached = ioremap_cached(mainstone_maps[i].phys, WINDOW_SIZE);
+		mainstone_maps[i].cached = 
+			ioremap_cached(mainstone_maps[i].phys, WINDOW_SIZE);
 		if (!mainstone_maps[i].cached)
-			printk(KERN_WARNING "Failed to ioremap cached %s\n", mainstone_maps[i].name);
+			printk(KERN_WARNING "Failed to ioremap cached %s\n",
+			       mainstone_maps[i].name);
 		simple_map_init(&mainstone_maps[i]);
 
-		printk(KERN_NOTICE "Probing %s at physical address 0x%08lx (%d-bit bankwidth)\n",
+		printk(KERN_NOTICE 
+		       "Probing %s at physical address 0x%08lx"
+		       " (%d-bit bankwidth)\n",
 		       mainstone_maps[i].name, mainstone_maps[i].phys, 
 		       mainstone_maps[i].bankwidth * 8);
 
@@ -126,18 +133,22 @@ static int __init mainstone_flash_probe(struct device *_dev)
 	
 	for (i = 0; i < 2; i++) {
 		if (!mymtds[i]) {
-			printk(KERN_WARNING "%s is absent. Skipping\n", mainstone_maps[i].name);
+			printk(KERN_WARNING "%s is absent. Skipping\n", 
+			       mainstone_maps[i].name);
 		} else if (nr_parsed_parts[i]) {
-			add_mtd_partitions(mymtds[i], parsed_parts[i], nr_parsed_parts[i]);
+			add_mtd_partitions(mymtds[i], parsed_parts[i], 
+					   nr_parsed_parts[i]);
 		} else if (!i) {
-			printk("Using static partitions on %s\n", mainstone_maps[i].name);
-			add_mtd_partitions(mymtds[i], mainstone_partitions, ARRAY_SIZE(mainstone_partitions));
+			printk("Using static partitions on %s\n",
+			       mainstone_maps[i].name);
+			add_mtd_partitions(mymtds[i], mainstone_partitions, 
+					   ARRAY_SIZE(mainstone_partitions));
 		} else {
-			printk("Registering %s as whole device\n", mainstone_maps[i].name);
+			printk("Registering %s as whole device\n", 
+			       mainstone_maps[i].name);
 			add_mtd_device(mymtds[i]);
 		}
 	}
-
 	return 0;
 }
 
@@ -151,13 +162,12 @@ static int mainstone_flash_remove(struct device *_dev)
 		if (nr_parsed_parts[i] || !i)
 			del_mtd_partitions(mymtds[i]);
 		else
-			del_mtd_device(mymtds[i]);			
+			del_mtd_device(mymtds[i]);
 
 		map_destroy(mymtds[i]);
 		iounmap((void *)mainstone_maps[i].virt);
 		if (mainstone_maps[i].cached)
 			iounmap(mainstone_maps[i].cached);
-
 		if (parsed_parts[i])
 			kfree(parsed_parts[i]);
 	}

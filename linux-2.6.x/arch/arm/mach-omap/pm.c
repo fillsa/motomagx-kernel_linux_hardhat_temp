@@ -45,6 +45,8 @@
 
 #include <asm/io.h>
 #include <asm/mach-types.h>
+#include <asm/arch/tc.h>
+#include <asm/arch/tc.h>
 #include <asm/arch/omap16xx.h>
 #include <asm/arch/pm.h>
 #include <asm/arch/mux.h>
@@ -81,6 +83,12 @@ void omap_pm_idle(void)
 	if (need_resched()) {
 		local_fiq_enable();
 		local_irq_enable();
+
+#if defined(CONFIG_OMAP_32K_TIMER) && defined(CONFIG_NO_IDLE_HZ)
+	/* Override timer to use VST for the next cycle */
+	omap_32k_timer_next_vst_interrupt();
+#endif
+
 		return;
 	}
 	mask32 = omap_readl(ARM_SYSST);

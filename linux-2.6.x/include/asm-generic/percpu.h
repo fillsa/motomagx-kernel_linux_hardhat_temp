@@ -45,7 +45,7 @@ do {								\
     spinlock_t per_cpu_lock__##name##_locked = SPIN_LOCK_UNLOCKED; \
     __typeof__(type) per_cpu__##name##_locked
 
-#define per_cpu(var, cpu)			(*((void)cpu, &per_cpu__##var))
+#define per_cpu(var, cpu)			(*((void)(cpu), &per_cpu__##var))
 #define __get_cpu_var(var)			per_cpu__##var
 #define __get_cpu_lock(var, cpu)		per_cpu_lock__##var##_locked
 #define __get_cpu_var_locked(var, cpu)		per_cpu__##var##_locked

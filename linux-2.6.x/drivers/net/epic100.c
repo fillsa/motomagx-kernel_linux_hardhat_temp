@@ -149,10 +149,10 @@ MODULE_AUTHOR("Donald Becker <becker@scyld.com>");
 MODULE_DESCRIPTION("SMC 83c170 EPIC series Ethernet driver");
 MODULE_LICENSE("GPL");
 
-MODULE_PARM(debug, "i");
-MODULE_PARM(rx_copybreak, "i");
-MODULE_PARM(options, "1-" __MODULE_STRING(MAX_UNITS) "i");
-MODULE_PARM(full_duplex, "1-" __MODULE_STRING(MAX_UNITS) "i");
+module_param(debug, int, 0);
+module_param(rx_copybreak, int, 0);
+module_param_array(options, int, NULL, 0);
+module_param_array(full_duplex, int, NULL, 0);
 MODULE_PARM_DESC(debug, "EPIC/100 debug level (0-5)");
 MODULE_PARM_DESC(options, "EPIC/100: Bits 0-3: media type, bit 4: full duplex");
 MODULE_PARM_DESC(rx_copybreak, "EPIC/100 copy breakpoint for copy-only-tiny-frames");
@@ -1003,7 +1003,7 @@ static void epic_init_ring(struct net_device *dev)
 		skb->dev = dev;			/* Mark as being used by this device. */
 		skb_reserve(skb, 2);	/* 16 byte align the IP header. */
 		ep->rx_ring[i].bufaddr = pci_map_single(ep->pci_dev, 
-			skb->tail, ep->rx_buf_sz, PCI_DMA_FROMDEVICE);
+			skb->data, ep->rx_buf_sz, PCI_DMA_FROMDEVICE);
 		ep->rx_ring[i].rxstatus = cpu_to_le32(DescOwn);
 	}
 	ep->dirty_rx = (unsigned int)(i - RX_RING_SIZE);
@@ -1274,7 +1274,7 @@ static int epic_rx(struct net_device *dev, int budget)
 							    ep->rx_ring[entry].bufaddr,
 							    ep->rx_buf_sz,
 							    PCI_DMA_FROMDEVICE);
-				eth_copy_and_sum(skb, ep->rx_skbuff[entry]->tail, pkt_len, 0);
+				eth_copy_and_sum(skb, ep->rx_skbuff[entry]->data, pkt_len, 0);
 				skb_put(skb, pkt_len);
 				pci_dma_sync_single_for_device(ep->pci_dev,
 							       ep->rx_ring[entry].bufaddr,
@@ -1308,7 +1308,7 @@ static int epic_rx(struct net_device *dev, int budget)
 			skb->dev = dev;			/* Mark as being used by this device. */
 			skb_reserve(skb, 2);	/* Align IP on 16 byte boundaries */
 			ep->rx_ring[entry].bufaddr = pci_map_single(ep->pci_dev, 
-				skb->tail, ep->rx_buf_sz, PCI_DMA_FROMDEVICE);
+				skb->data, ep->rx_buf_sz, PCI_DMA_FROMDEVICE);
 			work_done++;
 		}
 		ep->rx_ring[entry].rxstatus = cpu_to_le32(DescOwn);
@@ -1624,7 +1624,7 @@ static void __devexit epic_remove_one (struct pci_dev *pdev)
 
 #ifdef CONFIG_PM
 
-static int epic_suspend (struct pci_dev *pdev, u32 state)
+static int epic_suspend (struct pci_dev *pdev, pm_message_t state)
 {
 	struct net_device *dev = pci_get_drvdata(pdev);
 	long ioaddr = dev->base_addr;

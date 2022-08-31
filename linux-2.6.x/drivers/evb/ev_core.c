@@ -74,7 +74,7 @@ spinlock_t EventAllocLock = SPIN_LOCK_UNLOCKED;
 EvPacket_t *EvFreeList;
 int EvMajor;
 
-static struct class_simple *evb_class;
+static struct class *evb_class;
 static int LocalUserID;
 static unsigned short GroupID;
 
@@ -117,7 +117,7 @@ static int __init event_init(void)
 		return -ENODEV;
 	}
 
-	evb_class = class_simple_create(THIS_MODULE, "evb");
+	evb_class = class_create(THIS_MODULE, "evb");
 
 	if (IS_ERR(evb_class)) {
 		printk(KERN_ERR "Error creating evb class.\n");
@@ -125,7 +125,7 @@ static int __init event_init(void)
 		return PTR_ERR(evb_class);
 	}
 
-	class_simple_device_add(evb_class, MKDEV(EvMajor, 0),
+	class_device_create(evb_class, MKDEV(EvMajor, 0),
 		NULL, "evb");
 
 

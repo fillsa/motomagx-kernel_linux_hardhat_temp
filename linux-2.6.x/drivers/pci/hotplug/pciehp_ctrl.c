@@ -23,7 +23,7 @@
  * along with this program; if not, write to the Free Software
  * Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
  *
- * Send feedback to <greg@kroah.com>, <dely.l.sy@intel.com>
+ * Send feedback to <greg@kroah.com>, <kristen.c.accardi@intel.com>
  *
  */
 
@@ -49,7 +49,7 @@ static int configure_new_function( struct controller *ctrl, struct pci_func *fun
 static void interrupt_event_handler(struct controller *ctrl);
 
 static struct compat_semaphore event_semaphore;	/* mutex for process loop (up if something to process) */
-static struct compat_semaphore event_exit;	/* guard ensure thread has exited before calling it quits */
+static struct compat_semaphore event_exit;		/* guard ensure thread has exited before calling it quits */
 static int event_finished;
 static unsigned long pushbutton_pending;	/* = 0 */
 static unsigned long surprise_rm_pending;	/* = 0 */
@@ -1354,10 +1354,11 @@ static u32 remove_board(struct pci_func *func, struct controller *ctrl)
 				dbg("PCI Bridge Hot-Remove s:b:d:f(%02x:%02x:%02x:%02x)\n", 
 					ctrl->seg, func->bus, func->device, func->function);
 				bridge_slot_remove(func);
-			} else
+			} else {
 				dbg("PCI Function Hot-Remove s:b:d:f(%02x:%02x:%02x:%02x)\n", 
 					ctrl->seg, func->bus, func->device, func->function);
 				slot_remove(func);
+			}
 
 			func = pciehp_slot_find(ctrl->slot_bus, device, 0);
 		}

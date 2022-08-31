@@ -37,7 +37,7 @@
 
 
 /*
- * These are the page tables (2MB each) covering uncached, DMA consistent allocations
+ * This is the page table (2MB) covering uncached, DMA consistent allocations
  */
 static pte_t *consistent_pte[NUM_CONSISTENT_PTES];
 static DEFINE_SPINLOCK(consistent_lock);
@@ -342,7 +342,7 @@ EXPORT_SYMBOL(dma_mmap_writecombine);
 void dma_free_coherent(struct device *dev, size_t size, void *cpu_addr, dma_addr_t handle)
 {
 	struct vm_region *c;
-	unsigned long flags;
+	unsigned long flags, addr;
 	pte_t *ptep;
 	int idx;
 	u32 off;
@@ -365,11 +365,13 @@ void dma_free_coherent(struct device *dev, size_t size, void *cpu_addr, dma_addr
 	idx = CONSISTENT_PTE_INDEX(c->vm_start);
 	off = CONSISTENT_OFFSET(c->vm_start) & (PTRS_PER_PTE-1);
 	ptep = consistent_pte[idx] + off;
+	addr = c->vm_start;
 	do {
-		pte_t pte = ptep_get_and_clear(ptep);
+		pte_t pte = ptep_get_and_clear(&init_mm, addr, ptep);
 		unsigned long pfn;
 
 		ptep++;
+		addr += PAGE_SIZE;
 		off++;
 		if (off >= PTRS_PER_PTE) {
 			off = 0;

@@ -42,7 +42,7 @@ static struct pci_device_id i82092aa_pci_ids[] = {
 };
 MODULE_DEVICE_TABLE(pci, i82092aa_pci_ids);
 
-static int i82092aa_socket_suspend (struct pci_dev *dev, u32 state)
+static int i82092aa_socket_suspend (struct pci_dev *dev, pm_message_t state)
 {
 	return pcmcia_socket_dev_suspend(&dev->dev, state);
 }
@@ -65,7 +65,6 @@ static struct pci_driver i82092aa_pci_drv = {
 /* the pccard structure and its functions */
 static struct pccard_operations i82092aa_operations = {
 	.init 		 	= i82092aa_init,
-	.suspend	   	= i82092aa_suspend,
 	.get_status		= i82092aa_get_status,
 	.get_socket		= i82092aa_get_socket,
 	.set_socket		= i82092aa_set_socket,
@@ -81,7 +80,7 @@ struct socket_info {
 				    1 = empty socket, 
 				    2 = card but not initialized,
 				    3 = operational card */
-	int 	io_base; 	/* base io address of the socket */
+	kio_addr_t io_base; 	/* base io address of the socket */
 	
 	struct pcmcia_socket socket;
 	struct pci_dev *dev;	/* The PCI device for the socket */
@@ -122,7 +121,7 @@ static int __devinit i82092aa_pci_probe(struct pci_dev *dev, const struct pci_de
 	}
 	printk(KERN_INFO "i82092aa: configured as a %d socket device.\n", socket_count);
 
-	if (request_region(pci_resource_start(dev, 0), 2, "i82092aa")) {
+	if (!request_region(pci_resource_start(dev, 0), 2, "i82092aa")) {
 		ret = -EBUSY;
 		goto err_out_disable;
 	}
@@ -162,6 +161,7 @@ static int __devinit i82092aa_pci_probe(struct pci_dev *dev, const struct pci_de
 	for (i = 0; i<socket_count; i++) {
 		sockets[i].socket.dev.dev = &dev->dev;
 		sockets[i].socket.ops = &i82092aa_operations;
+		sockets[i].socket.resource_ops = &pccard_nonstatic_ops;
 		ret = pcmcia_register_socket(&sockets[i].socket);
 		if (ret) {
 			goto err_out_free_sockets;
@@ -439,15 +439,6 @@ static int i82092aa_init(struct pcmcia_socket *sock)
 	return 0;
 }
                                                                                                                                                                                                                                               
-static int i82092aa_suspend(struct pcmcia_socket *sock)
-{
-	int retval;
-	enter("i82092aa_suspend");
-        retval =  i82092aa_set_socket(sock, &dead_socket);
-        leave("i82092aa_suspend");
-        return retval;
-}
-       
 static int i82092aa_get_status(struct pcmcia_socket *socket, u_int *value)
 {
 	unsigned int sock = container_of(socket, struct socket_info, socket)->number;

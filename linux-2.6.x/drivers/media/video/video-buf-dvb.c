@@ -1,5 +1,5 @@
 /*
- * $Id: video-buf-dvb.c,v 1.5 2004/11/07 13:17:15 kraxel Exp $
+ * $Id: video-buf-dvb.c,v 1.7 2004/12/09 12:51:35 kraxel Exp $
  *
  * some helper function for simple DVB cards which simply DMA the
  * complete transport stream and let the computer sort everything else
@@ -35,7 +35,7 @@ module_param(debug, int, 0644);
 MODULE_PARM_DESC(debug,"enable debug messages");
 
 #define dprintk(fmt, arg...)	if (debug)			\
-	printk(KERN_DEBUG "%s/dvb: " fmt, dvb->name, ## arg)
+	printk(KERN_DEBUG "%s/dvb: " fmt, dvb->name , ## arg)
 
 /* ------------------------------------------------------------------ */
 
@@ -62,8 +62,7 @@ static int videobuf_dvb_thread(void *data)
 			break;
 		if (kthread_should_stop())
 			break;
-		if (current->flags & PF_FREEZE)
-			refrigerator(PF_FREEZE);
+		try_to_freeze();
 
 		/* feed buffer data to demux */
 		if (buf->state == STATE_DONE)
@@ -134,22 +133,25 @@ static int videobuf_dvb_stop_feed(struct dvb_demux_feed *feed)
 
 /* ------------------------------------------------------------------ */
 
-int videobuf_dvb_register(struct videobuf_dvb *dvb)
+int videobuf_dvb_register(struct videobuf_dvb *dvb,
+			  struct module *module,
+			  void *adapter_priv)
 {
 	int result;
 
 	init_MUTEX(&dvb->lock);
 
 	/* register adapter */
-	result = dvb_register_adapter(&dvb->adapter, dvb->name, THIS_MODULE);
+	result = dvb_register_adapter(&dvb->adapter, dvb->name, module);
 	if (result < 0) {
 		printk(KERN_WARNING "%s: dvb_register_adapter failed (errno = %d)\n",
 		       dvb->name, result);
 		goto fail_adapter;
 	}
+	dvb->adapter.priv = adapter_priv;
 
 	/* register frontend */
-	result = dvb_register_frontend(dvb->adapter, dvb->frontend);
+	result = dvb_register_frontend(&dvb->adapter, dvb->frontend);
 	if (result < 0) {
 		printk(KERN_WARNING "%s: dvb_register_frontend failed (errno = %d)\n",
 		       dvb->name, result);
@@ -175,7 +177,7 @@ int videobuf_dvb_register(struct videobuf_dvb *dvb)
 	dvb->dmxdev.filternum    = 256;
 	dvb->dmxdev.demux        = &dvb->demux.dmx;
 	dvb->dmxdev.capabilities = 0;
-	result = dvb_dmxdev_init(&dvb->dmxdev, dvb->adapter);
+	result = dvb_dmxdev_init(&dvb->dmxdev, &dvb->adapter);
 	if (result < 0) {
 		printk(KERN_WARNING "%s: dvb_dmxdev_init failed (errno = %d)\n",
 		       dvb->name, result);
@@ -206,7 +208,7 @@ int videobuf_dvb_register(struct videobuf_dvb *dvb)
 	}
 
 	/* register network adapter */
-	dvb_net_init(dvb->adapter, &dvb->net, &dvb->demux.dmx);
+	dvb_net_init(&dvb->adapter, &dvb->net, &dvb->demux.dmx);
 	return 0;
 
 fail_fe_conn:
@@ -220,7 +222,7 @@ fail_dmxdev:
 fail_dmx:
 	dvb_unregister_frontend(dvb->frontend);
 fail_frontend:
-	dvb_unregister_adapter(dvb->adapter);
+	dvb_unregister_adapter(&dvb->adapter);
 fail_adapter:
 	return result;
 }
@@ -233,7 +235,7 @@ void videobuf_dvb_unregister(struct videobuf_dvb *dvb)
 	dvb_dmxdev_release(&dvb->dmxdev);
 	dvb_dmx_release(&dvb->demux);
 	dvb_unregister_frontend(dvb->frontend);
-	dvb_unregister_adapter(dvb->adapter);
+	dvb_unregister_adapter(&dvb->adapter);
 }
 
 EXPORT_SYMBOL(videobuf_dvb_register);

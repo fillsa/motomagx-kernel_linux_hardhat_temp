@@ -4,7 +4,7 @@
  *
  * (C) 2000 Red Hat. GPL'd
  *
- * $Id: cfi_cmdset_0001.c,v 1.177 2005/05/19 17:01:57 nico Exp $
+ * $Id: cfi_cmdset_0001.c,v 1.178 2005/05/19 17:05:43 nico Exp $
  *
  * 
  * 10/10/2000	Nicolas Pitre <nico@cam.org>
@@ -134,7 +134,7 @@ static void cfi_tell_features(struct cfi_pri_intelext *extp)
 	
 	printk("  Block Status Register Mask: %4.4X\n", extp->BlkStatusRegMask);
 	printk("     - Lock Bit Active:      %s\n", extp->BlkStatusRegMask&1?"yes":"no");
-	printk("     - Lock-Down Bit Active: %s\n", extp->BlkStatusRegMask&2?"yes":"no");
+	printk("     - Lock-Down Bit Active:     %s\n", extp->BlkStatusRegMask&2?"yes":"no");
 	for (i=2; i<3; i++) {
 		if (extp->BlkStatusRegMask & (1<<i))
 			printk("     - Unknown Bit %X Active: yes\n",i);
@@ -891,7 +891,7 @@ static void __xipram xip_enable(struct map_info *map, struct flchip *chip,
 		chip->state = FL_READY;
 	}
 	(void) map_read(map, adr);
-	asm volatile (".rep 8; nop; .endr"); /* fill instruction prefetch */
+	xip_iprefetch();
 	local_irq_enable();
 }
 
@@ -1262,14 +1262,9 @@ static int __xipram do_write_oneword(struct map_info *map, struct flchip *chip,
 	/* Let's determine those according to the interleave only once */
 	status_OK = CMD(0x80);
 	switch (mode) {
-	case FL_WRITING:
-		write_cmd = (cfi->cfiq->P_ID != 0x0200) ? CMD(0x40) : CMD(0x41);
-		break;
-	case FL_OTP_WRITE:
-		write_cmd = CMD(0xc0);
-		break;
-	default:
-		return -EINVAL;
+	case FL_WRITING:   write_cmd = (cfi->cfiq->P_ID != 0x0200) ? CMD(0x40) : CMD(0x41); break;
+	case FL_OTP_WRITE: write_cmd = CMD(0xc0); break;
+	default: return -EINVAL;
 	}
 
 	spin_lock(chip->mutex);
@@ -1340,8 +1335,9 @@ static int __xipram do_write_oneword(struct map_info *map, struct flchip *chip,
 	if (map_word_bitsset(map, status, CMD(0x1a))) {
 		unsigned long chipstatus = MERGESTATUS(status);
 
-		/* reset status */
+		/* clear status */
 		map_write(map, CMD(0x50), adr);
+		/* put back into read status register mode */
 		map_write(map, CMD(0x70), adr);
 		xip_enable(map, chip, adr);
 
@@ -1361,6 +1357,7 @@ static int __xipram do_write_oneword(struct map_info *map, struct flchip *chip,
 	xip_enable(map, chip, adr);
  out:	put_chip(map, chip, adr);
 	spin_unlock(chip->mutex);
+
 	return ret;
 }
 
@@ -1449,8 +1446,7 @@ static int cfi_intelext_write_words (struct mtd_info *mtd, loff_t to , size_t le
 
 
 static int __xipram do_write_buffer(struct map_info *map, struct flchip *chip, 
-				    unsigned long adr, const struct kvec **pvec,
-				    unsigned long *pvec_seek, int len)
+				    unsigned long adr, const struct kvec **pvec, unsigned long *pvec_seek, int len)
 {
 	struct cfi_private *cfi = map->fldrv_priv;
 	map_word status, status_OK, write_cmd, datum;
@@ -1478,7 +1474,7 @@ static int __xipram do_write_buffer(struct map_info *map, struct flchip *chip,
 	ENABLE_VPP(map);
 	xip_disable(map, chip, cmd_adr);
 
-	/* §4.8 of the 28FxxxJ3A datasheet says "Any time SR.4 and/or SR.5 is set
+	/* \A74.8 of the 28FxxxJ3A datasheet says "Any time SR.4 and/or SR.5 is set
 	   [...], the device will not accept any more Write to Buffer commands". 
 	   So we must check here and reset those bits if they're set. Otherwise
 	   we're just pissing in the wind */
@@ -1603,6 +1599,7 @@ static int __xipram do_write_buffer(struct map_info *map, struct flchip *chip,
 			map_write(map, CMD(0x70), cmd_adr);
 			chip->state = FL_STATUS;
 			xip_enable(map, chip, cmd_adr);
+//2.6			printk(KERN_ERR "waiting for chip to be ready timed out in bufwrite\n");
 			printk(KERN_ERR "%s: buffer write error (status timeout)\n", map->name);
 			ret = -EIO;
 			goto out;
@@ -1627,8 +1624,9 @@ static int __xipram do_write_buffer(struct map_info *map, struct flchip *chip,
 	if (map_word_bitsset(map, status, CMD(0x1a))) {
 		unsigned long chipstatus = MERGESTATUS(status);
 
-		/* reset status */
+		/* clear status */
 		map_write(map, CMD(0x50), cmd_adr);
+		/* put back into read status register mode */
 		map_write(map, CMD(0x70), cmd_adr);
 		xip_enable(map, chip, cmd_adr);
 
@@ -1651,8 +1649,8 @@ static int __xipram do_write_buffer(struct map_info *map, struct flchip *chip,
 	return ret;
 }
 
-static int cfi_intelext_writev (struct mtd_info *mtd, const struct kvec *vecs,
-				unsigned long count, loff_t to, size_t *retlen)
+static int cfi_intelext_writev (struct mtd_info *mtd, const struct kvec *vecs, 
+				       unsigned long count, loff_t to, size_t *retlen)
 {
 	struct map_info *map = mtd->priv;
 	struct cfi_private *cfi = map->fldrv_priv;
@@ -1670,7 +1668,7 @@ static int cfi_intelext_writev (struct mtd_info *mtd, const struct kvec *vecs,
 		return 0;
 
 	chipnum = to >> cfi->chipshift;
-	ofs = to - (chipnum << cfi->chipshift);
+	ofs = to  - (chipnum << cfi->chipshift);
 	vec_seek = 0;
 
 	do {
@@ -1695,7 +1693,6 @@ static int cfi_intelext_writev (struct mtd_info *mtd, const struct kvec *vecs,
 				return 0;
 		}
 	} while (len);
-
 	return 0;
 }
 
@@ -1781,6 +1778,7 @@ static int __xipram do_erase_oneblock(struct map_info *map, struct flchip *chip,
 			map_write(map, CMD(0x70), adr);
 			chip->state = FL_STATUS;
 			xip_enable(map, chip, adr);
+//2.6	 			printk(KERN_ERR "waiting for erase at %08lx to complete timed out. status = %lx, Xstatus = %lx.\n",			
 			printk(KERN_ERR "%s: block erase error: (status timeout)\n", map->name);
 			ret = -EIO;
 			goto out;
@@ -1797,12 +1795,14 @@ static int __xipram do_erase_oneblock(struct map_info *map, struct flchip *chip,
 
 	/* check for errors */
 	if (map_word_bitsset(map, status, CMD(0x3a))) {
-		unsigned long chipstatus = MERGESTATUS(status);
+		unsigned long chipstatus;
 
 		/* Reset the error bits */
 		map_write(map, CMD(0x50), adr);
 		map_write(map, CMD(0x70), adr);
 		xip_enable(map, chip, adr);
+
+		chipstatus = MERGESTATUS(status);
 
 		if ((chipstatus & 0x30) == 0x30) {
 			printk(KERN_ERR "%s: block erase error: (bad command sequence, status 0x%lx)\n", map->name, chipstatus);
@@ -1815,11 +1815,11 @@ static int __xipram do_erase_oneblock(struct map_info *map, struct flchip *chip,
 			printk(KERN_ERR "%s: block erase error: (bad VPP)\n", map->name);
 			ret = -EIO;
 		} else if (chipstatus & 0x20 && retries--) {
-			printk(KERN_DEBUG "block erase failed at 0x%08lx: status 0x%lx. Retrying...\n", adr, chipstatus);
-			timeo = jiffies + HZ;
-			put_chip(map, chip, adr);
-			spin_unlock(chip->mutex);
-			goto retry;
+				printk(KERN_DEBUG "block erase failed at 0x%08lx: status 0x%lx. Retrying...\n", adr, chipstatus);
+				timeo = jiffies + HZ;
+				put_chip(map, chip, adr);
+				spin_unlock(chip->mutex);
+				goto retry;
 		} else {
 			printk(KERN_ERR "%s: block erase failed at 0x%08lx (status 0x%lx)\n", map->name, adr, chipstatus);
 			ret = -EIO;
@@ -1827,8 +1827,8 @@ static int __xipram do_erase_oneblock(struct map_info *map, struct flchip *chip,
 
 		goto out;
 	}
+		xip_enable(map, chip, adr);
 
-	xip_enable(map, chip, adr);
  out:	put_chip(map, chip, adr);
 	spin_unlock(chip->mutex);
 	return ret;
@@ -1902,8 +1902,9 @@ static int __xipram do_printlockstatus_oneblock(struct map_info *map,
 	struct cfi_private *cfi = map->fldrv_priv;
 	int status, ofs_factor = cfi->interleave * cfi->device_type;
 
+	adr += chip->start;
 	xip_disable(map, chip, adr+(2*ofs_factor));
-	cfi_send_gen_cmd(0x90, 0x55, 0, map, cfi, cfi->device_type, NULL);
+	map_write(map, CMD(0x90), adr+(2*ofs_factor));
 	chip->state = FL_JEDEC_QUERY;
 	status = cfi_read_query(map, adr+(2*ofs_factor));
 	xip_enable(map, chip, 0);
@@ -1973,6 +1974,7 @@ static int __xipram do_xxlock_oneblock(struct map_info *map, struct flchip *chip
 			map_write(map, CMD(0x70), adr);
 			chip->state = FL_STATUS;
 			xip_enable(map, chip, adr);
+//2.6.	 			printk(KERN_ERR "waiting for unlock to complete timed out. status = %lx, Xstatus = %lx.\n",
 			printk(KERN_ERR "%s: block unlock error: (status timeout)\n", map->name);
 			put_chip(map, chip, adr);
 			spin_unlock(chip->mutex);
@@ -2320,6 +2322,10 @@ static void cfi_intelext_save_locks(struct mtd_info *mtd)
 
 		if (region->lockmap ||
 		    (region->lockmap = kmalloc(mapsize, GFP_KERNEL))) {
+	XIP_INVAL_CACHED_RANGE(map, adr, len);
+	ENABLE_VPP(map);
+	xip_disable(map, chip, cmd_adr);
+
 			int block;
 
 			memset(region->lockmap, 0, mapsize);
@@ -2419,6 +2425,7 @@ static int cfi_intelext_suspend(struct mtd_info *mtd)
 
 static void cfi_intelext_restore_locks(struct mtd_info *mtd)
 {
+			xip_enable(map, chip, cmd_adr);
 	struct map_info *map = mtd->priv;
 	struct cfi_private *cfi = map->fldrv_priv;
 	int ofs_factor = cfi->interleave * cfi->device_type;
@@ -2528,9 +2535,9 @@ static void cfi_intelext_destroy(struct mtd_info *mtd)
 	kfree(mtd->eraseregions);
 }
 
-static char im_name_0001[] = "cfi_cmdset_0001";
-static char im_name_0003[] = "cfi_cmdset_0003";
-static char im_name_0200[] = "cfi_cmdset_0200";
+static char im_name_0001[]="cfi_cmdset_0001";
+static char im_name_0003[]="cfi_cmdset_0003";
+static char im_name_0200[]="cfi_cmdset_0200";
 
 static int __init cfi_intelext_init(void)
 {

@@ -48,6 +48,7 @@
 #include <asm/bootinfo.h>
 #include <asm/ppc4xx_pic.h>
 #include <asm/ppcboot.h>
+#include <asm/tlbflush.h>
 
 #include <syslib/gen550.h>
 #include <syslib/ibm440gx_common.h>
@@ -227,9 +228,8 @@ ocotea_setup_hose(void)
 	hose->io_space.end = OCOTEA_PCI_UPPER_IO;
 	hose->mem_space.start = OCOTEA_PCI_LOWER_MEM;
 	hose->mem_space.end = OCOTEA_PCI_UPPER_MEM;
-	isa_io_base =
-		(unsigned long)ioremap64(OCOTEA_PCI_IO_BASE, OCOTEA_PCI_IO_SIZE);
-	hose->io_base_virt = (void *)isa_io_base;
+	hose->io_base_virt = ioremap64(OCOTEA_PCI_IO_BASE, OCOTEA_PCI_IO_SIZE);
+	isa_io_base = (unsigned long) hose->io_base_virt;
 
 	setup_indirect_pci(hose,
 			OCOTEA_PCI_CFGA_PLB32,
@@ -261,12 +261,17 @@ ocotea_early_serial_map(void)
 	port.line = 0;
 
 #ifdef CONFIG_SERIAL_8250
-	if (early_serial_setup(&port) != 0)
+	if (early_serial_setup(&port) != 0) {
 		printk("Early serial init of port 0 failed\n");
+	}
 #endif
-#ifdef CONFIG_SERIAL_TEXT_DEBUG
+
+#if defined(CONFIG_SERIAL_TEXT_DEBUG)
 	/* Configure debug serial access */
 	gen550_init(0, &port);
+
+	/* Purge TLB entry added in head_44x.S for early serial access */
+	_tlbie(UART0_IO_BASE);
 #endif
 #ifdef CONFIG_KGDB_8250
 	kgdb8250_add_port(0, &port);
@@ -278,10 +283,12 @@ ocotea_early_serial_map(void)
 	port.line = 1;
 
 #ifdef CONFIG_SERIAL_8250
-	if (early_serial_setup(&port) != 0)
+	if (early_serial_setup(&port) != 0) {
 		printk("Early serial init of port 1 failed\n");
+	}
 #endif
-#ifdef CONFIG_SERIAL_TEXT_DEBUG
+
+#if defined(CONFIG_SERIAL_TEXT_DEBUG)
 	/* Configure debug serial access */
 	gen550_init(1, &port);
 #endif

@@ -1,6 +1,8 @@
 #ifndef __V850_PGTABLE_H__
 #define __V850_PGTABLE_H__
 
+#include <asm-generic/4level-fixup.h>
+
 #include <linux/config.h>
 #include <asm/page.h>
 
@@ -20,6 +22,8 @@
 #define __swp_entry(typ,off)	((swp_entry_t) { ((typ) | ((off) << 7)) })
 #define __pte_to_swp_entry(pte)	((swp_entry_t) { pte_val(pte) })
 #define __swp_entry_to_pte(x)	((pte_t) { (x).val })
+
+static inline int pte_file (pte_t pte) { return 0; }
 
 
 /* These mean nothing to !CONFIG_MMU.  */

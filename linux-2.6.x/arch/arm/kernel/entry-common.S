@@ -337,6 +337,10 @@ sys_fstatfs64_wrapper:
 		moveq	r1, #84
 		b	sys_fstatfs64
 
+sys_futex_wrapper:
+		str	r5, [sp, #4]		@ push sixth arg
+		b	sys_futex
+
 /*
  * Note: off_4k (r5) is always units of 4K.  If we can't do the requested
  * offset, we return EINVAL.

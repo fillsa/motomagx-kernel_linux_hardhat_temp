@@ -161,6 +161,7 @@
 #include <linux/string.h>
 #include <linux/init.h>
 #include <linux/bitops.h>
+#include <linux/delay.h>
 
 #include <asm/system.h>
 #ifdef CONFIG_MOT_FEAT_BRDREV
@@ -201,6 +202,13 @@ static unsigned int cs8900_irq_map[] = {1,0,0,0};
 #include <asm/irq.h>
 static unsigned int netcard_portlist[] __initdata = {IXDP2X01_CS8900_VIRT_BASE, 0};
 static unsigned int cs8900_irq_map[] = {IRQ_IXDP2X01_CS8900, 0, 0, 0};
+#elif defined(CONFIG_ARCH_PNX0105)
+#include <asm/irq.h>
+#include <asm/arch/gpio.h>
+#define CIRRUS_DEFAULT_BASE	IO_ADDRESS(EXT_STATIC2_s0_BASE + 0x200000)	/* = Physical address 0x48200000 */
+#define CIRRUS_DEFAULT_IRQ	VH_INTC_INT_NUM_CASCADED_INTERRUPT_1 /* Event inputs bank 1 - ID 35/bit 3 */
+static unsigned int netcard_portlist[] __initdata = {CIRRUS_DEFAULT_BASE, 0};
+static unsigned int cs8900_irq_map[] = {CIRRUS_DEFAULT_IRQ, 0, 0, 0};
 #elif defined(CONFIG_ARCH_MXC)
 /*! Null terminated portlist used to probe for the CS8900A device on ISA Bus */
 static unsigned int netcard_portlist[] = {CS8900A_BASE_ADDRESS, 0};
@@ -358,7 +366,7 @@ static int __init media_fn(char *str)
 
 __setup("cs89x0_media=", media_fn);
 
-
+
 /* Check for a network adaptor of this type, and return '0' iff one exists.
    If dev->base_addr == 0, probe all likely locations.
    If dev->base_addr == 1, always return failure.
@@ -408,13 +416,7 @@ struct net_device * __init cs89x0_probe(int unit)
 	}
 	if (err)
 		goto out;
-	err = register_netdev(dev);
-	if (err)
-		goto out1;
 	return dev;
-out1:
-	outw(PP_ChipID, dev->base_addr + ADD_PORT);
-	release_region(dev->base_addr, NETCARD_IO_EXTENT);
 out:
 	free_netdev(dev);
 	printk(KERN_WARNING "cs89x0: no cs8900 or cs8920 detected.  Be sure to disable PnP with SETUP\n");
@@ -628,6 +630,7 @@ cs89x0_probe1(struct net_device *dev, int ioaddr, int modular)
 	struct net_local *lp = netdev_priv(dev);
 	static unsigned version_printed;
 	int i;
+	int tmp;
 	unsigned rev_type = 0;
 	int eeprom_buff[CHKSUM_LEN];
 	int retval;
@@ -648,6 +651,30 @@ cs89x0_probe1(struct net_device *dev, int ioaddr, int modular)
 		lp->force = g_cs89x0_media__force;
 #endif
         }
+
+#ifdef CONFIG_ARCH_PNX0105
+	initialize_ebi();
+
+	/* Map GPIO registers for the pins connected to the CS8900a. */
+	if (map_cirrus_gpio() < 0)
+		return -ENODEV;
+
+	reset_cirrus();
+
+	/* Map event-router registers. */
+	if (map_event_router() < 0)
+		return -ENODEV;
+
+	enable_cirrus_irq();
+
+	unmap_cirrus_gpio();
+	unmap_event_router();
+
+	dev->base_addr = ioaddr;
+
+	for (i = 0 ; i < 3 ; i++)
+		readreg(dev, 0);
+#endif
 
 	/* Grab the region so we can find another board if autoIRQ fails. */
 	/* WTF is going on here? */
@@ -679,14 +706,17 @@ cs89x0_probe1(struct net_device *dev, int ioaddr, int modular)
 				goto out2;
 			}
 	}
-printk("PP_addr=0x%x\n", inw(ioaddr + ADD_PORT));
+	printk(KERN_DEBUG "PP_addr at %x: 0x%x\n",
+			ioaddr + ADD_PORT, inw(ioaddr + ADD_PORT));
 
 	ioaddr &= ~3;
 	outw(PP_ChipID, ioaddr + ADD_PORT);
 
-	if (inw(ioaddr + DATA_PORT) != CHIP_EISA_ID_SIG) {
-		printk(KERN_ERR "%s: incorrect signature 0x%x\n",
-			dev->name, inw(ioaddr + DATA_PORT));
+	tmp = inw(ioaddr + DATA_PORT);
+	if (tmp != CHIP_EISA_ID_SIG) {
+		printk(KERN_DEBUG "%s: incorrect signature at %x: 0x%x!="
+			CHIP_EISA_ID_SIG_STR "\n",
+			dev->name, ioaddr + DATA_PORT, tmp);
   		retval = -ENODEV;
   		goto out2;
 	}
@@ -896,7 +926,7 @@ printk("PP_addr=0x%x\n", inw(ioaddr + ADD_PORT));
 	} else {
 		i = lp->isa_config & INT_NO_MASK;
 		if (lp->chip_type == CS8900) {
-#if defined(CONFIG_ARCH_IXDP2X01) || defined(CONFIG_ARCH_MXC)
+#if defined(CONFIG_ARCH_IXDP2X01) || defined(CONFIG_ARCH_PNX0105) || defined(CONFIG_ARCH_MXC)
 		        i = cs8900_irq_map[0];
 #else
 			/* Translate the IRQ using the IRQ mapping table. */
@@ -956,14 +986,20 @@ printk("PP_addr=0x%x\n", inw(ioaddr + ADD_PORT));
 	printk("\n");
 	if (net_debug)
 		printk("cs89x0_probe1() successful\n");
+
+	retval = register_netdev(dev);
+	if (retval)
+		goto out3;
 	return 0;
+out3:
+	outw(PP_ChipID, dev->base_addr + ADD_PORT);
 out2:
 	release_region(ioaddr & ~3, NETCARD_IO_EXTENT);
 out1:
 	return retval;
 }
 
-
+
 /*********************************
  * This page contains DMA routines
 **********************************/
@@ -1132,8 +1168,7 @@ void  __init reset_chip(struct net_device *dev)
 	writereg(dev, PP_SelfCTL, readreg(dev, PP_SelfCTL) | POWER_ON_RESET);
 
 	/* wait 30 ms */
-	current->state = TASK_INTERRUPTIBLE;
-	schedule_timeout(30*HZ/1000);
+	msleep(30);
 
 #ifndef CONFIG_ARCH_IXDP2X01
 	if (lp->chip_type != CS8900) {
@@ -1155,7 +1190,7 @@ void  __init reset_chip(struct net_device *dev)
 #endif
 }
 
-
+
 static void
 control_dc_dc(struct net_device *dev, int on_not_off)
 {
@@ -1369,7 +1404,7 @@ net_open(struct net_device *dev)
 	int i;
 	int ret;
 
-#ifndef CONFIG_SH_HICOSH4 /* uses irq#1, so this won't work */
+#if !defined(CONFIG_SH_HICOSH4) && !defined(CONFIG_ARCH_PNX0105) /* uses irq#1, so this won't work */
 	if (dev->irq < 2) {
 		/* Allow interrupts to be generated by the chip */
 /* Cirrus' release had this: */
@@ -1400,7 +1435,7 @@ net_open(struct net_device *dev)
 	else
 #endif
 	{
-#if !defined(CONFIG_ARCH_IXDP2X01) && !defined(CONFIG_ARCH_MXC)
+#if !defined(CONFIG_ARCH_IXDP2X01) && !defined(CONFIG_ARCH_PNX0105) && !defined(CONFIG_ARCH_MXC)
 		if (((1 << dev->irq) & lp->irq_map) == 0) {
 			printk(KERN_ERR "%s: IRQ %d is not in our map of allowable IRQs, which is %x\n",
                                dev->name, dev->irq, lp->irq_map);
@@ -1489,6 +1524,9 @@ net_open(struct net_device *dev)
 	case A_CNF_MEDIA_10B_2: result = lp->adapter_cnf & A_CNF_10B_2; break;
         default: result = lp->adapter_cnf & (A_CNF_10B_T | A_CNF_AUI | A_CNF_10B_2);
         }
+#ifdef CONFIG_ARCH_PNX0105
+	result = A_CNF_10B_T;
+#endif
         if (!result) {
                 printk(KERN_ERR "%s: EEPROM is configured for unavailable media\n", dev->name);
         release_irq:
@@ -1649,6 +1687,7 @@ static int net_send_packet(struct sk_buff *skb, struct net_device *dev)
 	/* Write the contents of the packet */
 	outsw(dev->base_addr + TX_FRAME_PORT,skb->data,(skb->len+1) >>1);
 	spin_unlock_irq(&lp->lock);
+	lp->stats.tx_bytes += skb->len;
 	dev->trans_start = jiffies;
 	dev_kfree_skb (skb);
 
@@ -1665,7 +1704,7 @@ static int net_send_packet(struct sk_buff *skb, struct net_device *dev)
 
 	return 0;
 }
-
+
 /* The typical workload of the driver:
    Handle the network interface interrupts. */
    
@@ -1950,14 +1989,14 @@ static int use_dma;			/* These generate unused var warnings if ALLOW_DMA = 0 */
 static int dma;
 static int dmasize=16;			/* or 64 */
 
-MODULE_PARM(io, "i");
-MODULE_PARM(irq, "i");
-MODULE_PARM(debug, "i");
-MODULE_PARM(media, "c8");
-MODULE_PARM(duplex, "i");
-MODULE_PARM(dma , "i");
-MODULE_PARM(dmasize , "i");
-MODULE_PARM(use_dma , "i");
+module_param(io, int, 0);
+module_param(irq, int, 0);
+module_param(debug, int, 0);
+module_param_string(media, media, sizeof(media), 0);
+module_param(duplex, int, 0);
+module_param(dma , int, 0);
+module_param(dmasize , int, 0);
+module_param(use_dma , int, 0);
 MODULE_PARM_DESC(io, "cs89x0 I/O base address");
 MODULE_PARM_DESC(irq, "cs89x0 IRQ number");
 #if DEBUGGING
@@ -2071,13 +2110,6 @@ init_module(void)
 	if (ret)
 		goto out;
 
-        if (register_netdev(dev) != 0) {
-                printk(KERN_ERR "cs89x0.c: No card found at 0x%x\n", io);
-                ret = -ENXIO;
-		outw(PP_ChipID, dev->base_addr + ADD_PORT);
-		release_region(dev->base_addr, NETCARD_IO_EXTENT);
-		goto out;
-        }
 	dev_cs89x0 = dev;
 	return 0;
 out:
@@ -2094,7 +2126,7 @@ cleanup_module(void)
 	free_netdev(dev_cs89x0);
 }
 #endif /* MODULE */
-
+
 /*
  * Local variables:
  *  version-control: t

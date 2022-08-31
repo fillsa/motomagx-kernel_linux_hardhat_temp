@@ -72,16 +72,16 @@ static int tx_coalesce=16;	/* HW xmit count each TxDMAComplete */
 MODULE_AUTHOR ("Edward Peng");
 MODULE_DESCRIPTION ("D-Link DL2000-based Gigabit Ethernet Adapter");
 MODULE_LICENSE("GPL");
-MODULE_PARM (mtu, "1-" __MODULE_STRING (MAX_UNITS) "i");
-MODULE_PARM (media, "1-" __MODULE_STRING (MAX_UNITS) "s");
-MODULE_PARM (vlan, "1-" __MODULE_STRING (MAX_UNITS) "i");
-MODULE_PARM (jumbo, "1-" __MODULE_STRING (MAX_UNITS) "i");
-MODULE_PARM (tx_flow, "i");
-MODULE_PARM (rx_flow, "i");
-MODULE_PARM (copy_thresh, "i");
-MODULE_PARM (rx_coalesce, "i");	/* Rx frame count each interrupt */
-MODULE_PARM (rx_timeout, "i");	/* Rx DMA wait time in 64ns increments */
-MODULE_PARM (tx_coalesce, "i"); /* HW xmit count each TxDMAComplete */
+module_param_array(mtu, int, NULL, 0);
+module_param_array(media, charp, NULL, 0);
+module_param_array(vlan, int, NULL, 0);
+module_param_array(jumbo, int, NULL, 0);
+module_param(tx_flow, int, 0);
+module_param(rx_flow, int, 0);
+module_param(copy_thresh, int, 0);
+module_param(rx_coalesce, int, 0);	/* Rx frame count each interrupt */
+module_param(rx_timeout, int, 0);	/* Rx DMA wait time in 64ns increments */
+module_param(tx_coalesce, int, 0); /* HW xmit count each TxDMAComplete */
 
 
 /* Enable the default interrupts */
@@ -547,7 +547,7 @@ rio_timer (unsigned long data)
 				skb_reserve (skb, 2);
 				np->rx_ring[entry].fraginfo =
 				    cpu_to_le64 (pci_map_single
-					 (np->pdev, skb->tail, np->rx_buf_sz,
+					 (np->pdev, skb->data, np->rx_buf_sz,
 					  PCI_DMA_FROMDEVICE));
 			}
 			np->rx_ring[entry].fraginfo |=
@@ -618,7 +618,7 @@ alloc_list (struct net_device *dev)
 		/* Rubicon now supports 40 bits of addressing space. */
 		np->rx_ring[i].fraginfo =
 		    cpu_to_le64 ( pci_map_single (
-			 	  np->pdev, skb->tail, np->rx_buf_sz,
+			 	  np->pdev, skb->data, np->rx_buf_sz,
 				  PCI_DMA_FROMDEVICE));
 		np->rx_ring[i].fraginfo |= cpu_to_le64 (np->rx_buf_sz) << 48;
 	}
@@ -906,7 +906,7 @@ receive_packet (struct net_device *dev)
 				/* 16 byte align the IP header */
 				skb_reserve (skb, 2);
 				eth_copy_and_sum (skb,
-						  np->rx_skbuff[entry]->tail,
+						  np->rx_skbuff[entry]->data,
 						  pkt_len, 0);
 				skb_put (skb, pkt_len);
 				pci_dma_sync_single_for_device(np->pdev,
@@ -950,7 +950,7 @@ receive_packet (struct net_device *dev)
 			skb_reserve (skb, 2);
 			np->rx_ring[entry].fraginfo =
 			    cpu_to_le64 (pci_map_single
-					 (np->pdev, skb->tail, np->rx_buf_sz,
+					 (np->pdev, skb->data, np->rx_buf_sz,
 					  PCI_DMA_FROMDEVICE));
 		}
 		np->rx_ring[entry].fraginfo |=
@@ -1199,7 +1199,7 @@ set_multicast (struct net_device *dev)
 static void rio_get_drvinfo(struct net_device *dev, struct ethtool_drvinfo *info)
 {
 	struct netdev_private *np = netdev_priv(dev);
-	strcpy(info->driver, "DL2K");
+	strcpy(info->driver, "dl2k");
 	strcpy(info->version, DRV_VERSION);
 	strcpy(info->bus_info, pci_name(np->pdev));
 }	

@@ -92,7 +92,6 @@ static struct i2c_driver mt9v111_i2c_driver = {
 
 static struct i2c_client mt9v111_i2c_client = {
 	.name = "mt9v111 I2C dev",
-	.id = 1,
 	.addr = MT9V111_I2C_ADDRESS,
 	.driver = &mt9v111_i2c_driver,
 };
