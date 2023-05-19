@@ -1,7 +1,7 @@
 #ifndef _ASMARM_BUG_H
 #define _ASMARM_BUG_H
 
-/* Copyright (C) 2007 Motorola, Inc. 
+/* Copyright 2007 Motorola, Inc. 
  * 
  * Date         Author         Comment
  * ==========   ===========    ===================================

@@ -34,8 +34,6 @@ Change log:
 
 #define	MAX_BSSID_PER_CHANNEL		16
 
-#define MAX_NUM_IN_TX_Q			3
-
 /* For the extended Scan */
 #define MAX_EXTENDED_SCAN_BSSID_LIST    MAX_BSSID_PER_CHANNEL * \
 						MRVDRV_MAX_CHANNEL_SIZE + 1
@@ -92,30 +90,25 @@ typedef struct _wlan_802_11_security_t
 } wlan_802_11_security_t;
 
 /** Current Basic Service Set State Structure */
-typedef struct CurrentBSSParams
+typedef struct
 {
-
     BSSDescriptor_t BSSDescriptor;
-        /** bssid */
-    u8 bssid[MRVDRV_ETH_ADDR_LEN];
-        /** ssid */
-    WLAN_802_11_SSID ssid;
 
         /** band */
     u8 band;
-        /** channel */
-    u8 channel;
+
         /** number of rates supported */
     int NumOfRates;
+
         /** supported rates*/
     u8 DataRates[WLAN_SUPPORTED_RATES];
+
         /** wmm enable? */
     u8 wmm_enabled;
-        /** wmm queue priority table*/
-    u8 wmm_queue_prio[MAX_AC_QUEUES];
-        /** uapse enable?*/
+
+        /** uapsd enable?*/
     u8 wmm_uapsd_enabled;
-} CurrentBSSParams;
+} CurrentBSSParams_t;
 
 /** sleep_params */
 typedef struct SleepParams
@@ -135,6 +128,8 @@ typedef struct SleepPeriod
     u16 reserved;
 } SleepPeriod;
 
+#define DBG_CMD_NUM	5
+
 /** info for debug purpose */
 typedef struct _wlan_dbg
 {
@@ -151,8 +146,13 @@ typedef struct _wlan_dbg
     u32 num_cmd_timeout;
     u16 TimeoutCmdId;
     u16 TimeoutCmdAct;
-    u16 LastCmdId;
-    u16 LastCmdRespId;
+    u16 LastCmdId[DBG_CMD_NUM];
+    u16 LastCmdAct[DBG_CMD_NUM];
+    u16 LastCmdIndex;
+    u16 LastCmdRespId[DBG_CMD_NUM];
+    u16 LastCmdRespIndex;
+    u16 LastEvent[DBG_CMD_NUM];
+    u16 LastEventIndex;
 } wlan_dbg;
 
 /** Data structure for the Marvell WLAN device */
@@ -181,6 +181,13 @@ typedef struct _wlan_dev
     u8 dnld_sent;
 } wlan_dev_t, *pwlan_dev_t;
 
+/* Data structure for WPS information */
+typedef struct
+{
+    IEEEtypes_VendorSpecific_t wpsIe;
+    BOOLEAN SessionEnable;
+} wps_t;
+
 /** Private structure for the MV device */
 struct _wlan_private
 {
@@ -192,9 +199,11 @@ struct _wlan_private
     struct net_device_stats stats;
 
     struct iw_statistics wstats;
+#ifdef CONFIG_PROC_FS
     struct proc_dir_entry *proc_entry;
     struct proc_dir_entry *proc_dev;
     struct proc_dir_entry *proc_firmware;
+#endif
 
         /** thread to service interrupts */
     wlan_thread MainThread;
@@ -246,7 +255,7 @@ struct _wlan_adapter
 
 #ifdef REASSOCIATION
         /**Reassociation timer*/
-    BOOLEAN TimerIsSet;
+    BOOLEAN ReassocTimerIsSet;
     WLAN_DRV_TIMER MrvDrvTimer __ATTRIB_ALIGN__;
 #endif                          /* REASSOCIATION */
 
@@ -255,24 +264,15 @@ struct _wlan_adapter
 
     u8 HisRegCpy;
 
-#ifdef MFG_CMD_SUPPORT
-        /** manf command related cmd variable*/
-    u32 mfg_cmd_len;
-    int mfg_cmd_flag;
-    u32 mfg_cmd_resp_len;
-    u8 *mfg_cmd;
-    wait_queue_head_t mfg_cmd_q;
-#endif
-
-        /** bg scan related variable */
-    pHostCmd_DS_802_11_BG_SCAN_CONFIG bgScanConfig;
+    /** bg scan related variable */
+    HostCmd_DS_802_11_BG_SCAN_CONFIG *bgScanConfig;
     u32 bgScanConfigSize;
 
-        /** WMM related variable*/
+    /** WMM related variable*/
     WMM_DESC wmm;
 
         /** current ssid/bssid related parameters*/
-    CurrentBSSParams CurBssParams;
+    CurrentBSSParams_t CurBssParams;
 
     WLAN_802_11_NETWORK_INFRASTRUCTURE InfrastructureMode;
 
@@ -295,9 +295,6 @@ struct _wlan_adapter
     u8 AdhocCreate;
     BOOLEAN AdhocLinkSensed;
 
-        /** Capability Info used in Association, start, join */
-    IEEEtypes_CapInfo_t capInfo;
-
 #ifdef REASSOCIATION
         /** Reassociation on and off */
     BOOLEAN Reassoc_on;
@@ -311,9 +308,6 @@ struct _wlan_adapter
     u8 MulticastList[MRVDRV_MAX_MULTICAST_LIST_SIZE]
         [MRVDRV_ETH_ADDR_LEN];
     u32 NumOfMulticastMACAddr;
-
-        /** 802.11 statistics */
-    HostCmd_DS_802_11_GET_STAT wlan802_11Stat;
 
     u16 HWRateDropMode;
     u16 RateBitmap;
@@ -333,27 +327,20 @@ struct _wlan_adapter
     BOOLEAN Is_DataRate_Auto;
 
         /** number of association attempts for the current SSID cmd */
-    u32 m_NumAssociationAttemp;
     u16 ListenInterval;
-    u16 Prescan;
     u8 TxRetryCount;
 
         /** Tx-related variables (for single packet tx) */
-    spinlock_t TxSpinLock __ATTRIB_ALIGN__;
     struct sk_buff *CurrentTxSkb;
     struct sk_buff RxSkbQ;
-    struct sk_buff TxSkbQ;
-    u32 TxSkbNum;
     BOOLEAN TxLockFlag;
     u16 gen_null_pkg;
     spinlock_t CurrentTxLock __ATTRIB_ALIGN__;
 
         /** NIC Operation characteristics */
-    u32 LinkSpeed;
     u16 CurrentPacketFilter;
     u32 MediaConnectStatus;
     u16 RegionCode;
-    u16 RegionTableIndex;
     u16 TxPowerLevel;
     u8 MaxTxPowerLevel;
     u8 MinTxPowerLevel;
@@ -375,36 +362,48 @@ struct _wlan_adapter
     u16 AdhocAwakePeriod;
     u16 fwWakeupMethod;
     BOOLEAN IsDeepSleep;
-        /** Host wakeup parameter */
+    BOOLEAN IsAutoDeepSleepEnabled;
     BOOLEAN bWakeupDevRequired;
+    u32 WakeupTries;
     BOOLEAN bHostSleepConfigured;
     HostCmd_DS_802_11_HOST_SLEEP_CFG HSCfg;
         /** ARP filter related variable */
     u8 ArpFilter[ARP_FILTER_MAX_BUF_SIZE];
     u32 ArpFilterSize;
-    u32 WakeupTries;
 
         /** Encryption parameter */
     wlan_802_11_security_t SecInfo;
 
     MRVL_WEP_KEY WepKey[MRVL_NUM_WEP_KEY];
     u16 CurrentWepKeyIndex;
-    u8 mrvlTlvBuffer[256];
-    u8 mrvlTlvBufferLen;
 
+    /** Buffer for TLVs passed from the application to be inserted into the
+     *    association request to firmware 
+     */
+    u8 mrvlAssocTlvBuffer[MRVDRV_ASSOC_TLV_BUF_SIZE];
+
+    /** Length of the data stored in mrvlAssocTlvBuffer*/
+    u8 mrvlAssocTlvBufferLen;
+
+    /** Buffer to store the association response for application retrieval */
     u8 assocRspBuffer[MRVDRV_ASSOC_RSP_BUF_SIZE];
+
+    /** Length of the data stored in assocRspBuffer */
     int assocRspSize;
-    u8 genIeBuffer[256];
+
+    /** Generice IEEE IEs passed from the application to be inserted into the
+     *    association request to firmware 
+     */
+    u8 genIeBuffer[MRVDRV_GENIE_BUF_SIZE];
+
+    /** Length of the data stored in genIeBuffer */
     u8 genIeBufferLen;
-    WLAN_802_11_ENCRYPTION_STATUS EncryptionStatus;
 
     BOOLEAN IsGTK_SET;
 
         /** Encryption Key*/
     u8 Wpa_ie[256];
     u8 Wpa_ie_len;
-
-    MRVL_WPA_KEY WpaPwkKey, WpaGrpKey;
 
     HostCmd_DS_802_11_KEY_MATERIAL aeskey;
 
@@ -429,7 +428,6 @@ struct _wlan_adapter
     u16 RxPDRate;
 
     BOOLEAN RadioOn;
-    u32 Preamble;
 
         /** Blue Tooth Co-existence Arbitration */
     HostCmd_DS_802_11_BCA_TIMESHARE bca_ts;
@@ -452,8 +450,6 @@ struct _wlan_adapter
 
         /** FSM variable for 11d support */
     wlan_802_11d_state_t State11D;
-    int reassocAttempt;
-    WLAN_802_11_MAC_ADDRESS reassocCurrentAp;
     u8 beaconBuffer[MAX_SCAN_BEACON_BUFFER];
     u8 *pBeaconBufEnd;
 
@@ -461,10 +457,6 @@ struct _wlan_adapter
     /* Card Information Structure */
     u8 CisInfoBuf[512];
     u16 CisInfoLen;
-    u8 *pRdeeprom;
-    wlan_offset_value OffsetValue;
-
-    wait_queue_head_t cmd_get_log;
 
     HostCmd_DS_802_11_GET_LOG LogMsg;
     u16 ScanProbes;
@@ -478,9 +470,7 @@ struct _wlan_adapter
     FW_STATE fwstate;
     u16 TxRate;
 
-    WLAN_802_11_SSID wildcardssid;
-    u8 wildcardssidlen;         //1-32 -- the max length of wildcardssid.
-    // > 32 -- wildcard char
+    wps_t wps;
 
     wlan_dbg dbg;
     wlan_subscribe_event subevent;

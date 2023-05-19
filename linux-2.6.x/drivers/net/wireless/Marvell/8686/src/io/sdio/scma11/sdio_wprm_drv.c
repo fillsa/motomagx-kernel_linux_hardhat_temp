@@ -5,7 +5,7 @@
 /** 
   * @section copyright_sec Copyright
   *
-  * (c) Copyright Motorola 2006-2008
+  * (c) Copyright Motorola 2006-2007
   *
   * This file is free software; you can redistribute it and/or modify
   * it under the terms of the GNU General Public License as published by
@@ -24,7 +24,7 @@
   *                                     Use define for SDHC module number
   * Motorola         21-Dec-2006     Remove build warning.  
   * Motorola         26-Feb-2007     Correct bad compilation switch for P3A wingboards.  
-  * Motorola         15-Jan-2008     Supporting BT/WLAN single antenna solution (HW_BT_WLAN_SINGLE_ANTENNA)
+  * Motorola         20-Aug-2007     Add build support for next platform.  
   */
 
 
@@ -32,7 +32,11 @@
 #include <asm/system.h>
 #include <asm/boardrev.h>
 #include <asm/mot-gpio.h>
+#ifndef V9_ON_LJ63
+#include <power_ic/power_ic.h>
+#else
 #include <linux/power_ic.h>
+#endif
 #include <linux/delay.h>
 #include "sdhc.h"
 #include "sdio_wprm_drv.h"
@@ -66,38 +70,6 @@ void wprm_wlan_power_supply(POWER_IC_PERIPH_ONOFF_T onoff);
 
 #define SET_ATLAS_BIT_TO_1             1 
 #define SET_ATLAS_BIT_TO_0             0 
-
-
-#ifdef  CONFIG_MOT_FEAT_BT_WLAN_SINGLE_ANTENNA
-/* Definitions for controlling the antenna switch controlled by wlan device */
-/* For BT/Wlan single antenna solution */
-#define ANTENNA_REQUIRED               1
-#define ANTENNA_NOT_REQUIRED           0
-
-/* antenna_status 
- * Description:
- *     Checks whether other device is using the antenna. For BT/WLAN single
- *     antenna solutions, the antenna switch must be kept in default state
- * Parameters:
- *     None 
- * Return Value:
- *     1 - Antenna is being used by Bluetooth
- *     0 - Antenna is not used by Bluetooth
- */
-static int antenna_status(void)
-{
-    /* If the BT device is enabled it might need the switch supply to be kept on */
-    if(gpio_bluetooth_power_get_data() == GPIO_DATA_HIGH)
-    {
-        /* BT device enabled. 
-          This solutions impacts current SW at a minimum. 
-          This might leave the antenna switch supply on for
-          FM, but this is drawing very little power (<20uA for 88W8686) */
-        return(ANTENNA_REQUIRED);
-    }
-    return ANTENNA_NOT_REQUIRED;
-}
-#endif /* CONFIG_MOT_FEAT_BT_WLAN_SINGLE_ANTENNA */
 
 
 /* wprm_wlan_power_supply --- WLAN module power supply turn on/off
@@ -169,7 +141,7 @@ void wprm_wlan_power_supply(POWER_IC_PERIPH_ONOFF_T onoff)
     {		    
         /* If phone is a winboard P3A or older (Marco is P3A close phone < P3AW)*/
         if((boardrev() == BOARDREV_P3AW) || (boardrev() == BOARDREV_P2BW)) {
-
+	
             /* Set VMMC2EN bit to 0 to power off VMMC2 regulator */
             power_ic_set_reg_value( POWER_IC_REG_ATLAS_REG_MODE_1, ATLAS_START_CHANGE_BIT_21 ,
                                 SET_ATLAS_BIT_TO_0, NB_BITS_TO_CHANGE_1);
@@ -186,14 +158,8 @@ void wprm_wlan_power_supply(POWER_IC_PERIPH_ONOFF_T onoff)
                                SET_ATLAS_BIT_TO_0 , NB_BITS_TO_CHANGE_1);
 
             /* Set VMMC2EN bit to 0 to power off VMMC2 regulator */
-#ifdef CONFIG_MOT_FEAT_BT_WLAN_SINGLE_ANTENNA
-            /* Set VMMC2EN bit to 0 if Bluetooth is OFF (for BT/WLAN single antenna solutions especially) */
-            if(antenna_status() == ANTENNA_NOT_REQUIRED)  
-#endif /* CONFIG_MOT_FEAT_BT_WLAN_SINGLE_ANTENNA */
-            {
-                power_ic_set_reg_value( POWER_IC_REG_ATLAS_REG_MODE_1 , ATLAS_START_CHANGE_BIT_21,
-                                  SET_ATLAS_BIT_TO_0, NB_BITS_TO_CHANGE_1);
-            }
+            power_ic_set_reg_value( POWER_IC_REG_ATLAS_REG_MODE_1 , ATLAS_START_CHANGE_BIT_21,
+                               SET_ATLAS_BIT_TO_0, NB_BITS_TO_CHANGE_1);
                             
         }
     }

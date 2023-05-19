@@ -487,7 +487,7 @@ wlan_parse_domain_info_11d(IEEEtypes_CountryInfoFullSet_t * CountryInfo,
 
             lastChan = curChan;
 
-            /*step5: We don't need to check if curChan is supported by mrvl in region */
+            /*step5: We don't need to Check if curChan is supported by mrvl in region */
             parsed_region_chan->chanPwr[idx].chan = curChan;
             parsed_region_chan->chanPwr[idx].pwr =
                 CountryInfo->Subband[j].MaxTxPwr;
@@ -767,8 +767,7 @@ wlan_ret_802_11d_domain_info(wlan_private * priv, HostCmd_DS_COMMAND * resp)
 
     ENTER();
 
-    HEXDUMP("11D DOMAIN Info Rsp Data:", (u8 *) resp,
-            (int) wlan_le16_to_cpu(resp->Size));
+    HEXDUMP("11D DOMAIN Info Rsp Data:", (u8 *) resp, resp->Size);
 
     NoOfSubband =
         (wlan_le16_to_cpu(domain->Header.Len) -
@@ -810,6 +809,12 @@ wlan_parse_dnld_countryinfo_11d(wlan_private * priv)
     wlan_adapter *Adapter = priv->adapter;
 
     ENTER();
+
+    if (Adapter->MediaConnectStatus == WlanMediaStateConnected) {
+        /* Skip new 11d download when roaming */
+        return WLAN_STATUS_SUCCESS;
+    }
+
     if (wlan_get_state_11d(priv) == ENABLE_11D) {
 
         memset(&Adapter->parsed_region_chan, 0,

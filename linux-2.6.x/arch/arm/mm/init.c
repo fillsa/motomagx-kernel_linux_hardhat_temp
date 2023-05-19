@@ -2,7 +2,7 @@
  *  linux/arch/arm/mm/init.c
  *
  *  Copyright (C) 1995-2002 Russell King
- *  Copyright (C) 2006-2008 Motorola, Inc.
+ *  Copyright (C) 2006-2007 Motorola, Inc.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 as
@@ -14,10 +14,9 @@
  * ----------   --------  -------------------
  * 11/16/2006   Motorola  Hardware Config Framework
  * 01/20/2007   Motorola  Added support for dynamic IPU memory pool size.
- * 10/15/2007   Motorola  FIQ related modified.
- * 04/23/2008   Motorola  Added IPU memory for new display
- * 08/28/2008   Motorola  Increase IPU reserved memory
- *
+ * 09/20/2007   Motorola  Increased IPU memory.
+ * 10/05/2007   Motorola  Implement the IPU FIQ solution code in kernel and module layer.
+ * 12/14/2007   Motorola  Add support for new keypad
  */
 #include <linux/config.h>
 #include <linux/kernel.h>
@@ -58,11 +57,13 @@ extern u32 phys_flat_dev_tree_size;
 
 #ifdef CONFIG_MOT_FEAT_IPU_MEM_ADDR
 extern unsigned long ipu_mem_addr;
-#ifdef CONFIG_MOT_FEAT_DISPLAY_EPSON
-unsigned long ipu_mem_size = (SZ_1M + SZ_1M + SZ_1M + SZ_1M + SZ_1M + SZ_1M + SZ_1M + SZ_1M + SZ_1M);
+#if defined(CONFIG_MOT_FEAT_IPU_MEM_SIZE)
+unsigned long ipu_mem_size = (SZ_2M + SZ_4M);
+#elif defined(CONFIG_MACH_ELBA) || defined(CONFIG_MACH_PIANOSA)
+unsigned long ipu_mem_size = (SZ_1M);
 #else
-unsigned long ipu_mem_size = (SZ_1M + SZ_1M);
-#endif
+unsigned long ipu_mem_size = (SZ_1M + SZ_4M);
+#endif /* CONFIG_MOT_FEAT_IPU_MEM_SIZE */
 int ipu_dynamic_pool = 0;
 #endif /* CONFIG_MOT_FEAT_IPU_MEM_ADDR */
 

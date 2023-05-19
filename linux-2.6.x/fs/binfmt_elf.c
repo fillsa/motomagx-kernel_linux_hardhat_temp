@@ -7,12 +7,13 @@
  * Tools".
  *
  * Copyright 1993, 1994: Eric Youngdale (ericy@cais.com).
- * Copyright (C) 2008 Motorola, Inc.
- * 
- * Date              Author          Comment
- * 2008-02-27      Motorola        Fix full coredump core pattern issue
+ * Copyright (C) 2007 Motorola, Inc.
+ *
+ * Date     Author     Comment
+ * 02/2007  Motorola   Change the PT_GNU_STACK section to allow executable 
+ *                     permission on all sections, not just the stack
+ * 12/2007  Motorola   Fix full coredump core pattern issue
  */
- 
 
 #include <linux/module.h>
 #include <linux/kernel.h>
@@ -888,8 +889,19 @@ static int load_elf_binary(struct linux_binprm * bprm, struct pt_regs * regs)
 	elf_ppnt = elf_phdata;
 	for (i = 0; i < loc->elf_ex.e_phnum; i++, elf_ppnt++)
 		if (elf_ppnt->p_type == PT_GNU_STACK) {
-			if (elf_ppnt->p_flags & PF_X)
+			if (elf_ppnt->p_flags & PF_X) 
+#ifdef CONFIG_MOT_WFN422
+			{
 				executable_stack = EXSTACK_ENABLE_X;
+				/*
+				 * Set the default prot flags for this process to 
+				 * enable execute permissions for all data sections
+				 */	
+				def_flags |= PROT_EXEC;
+			}
+#else
+				executable_stack = EXSTACK_ENABLE_X;
+#endif /* CONFIG_MOT_WFN422 */
 			else
 				executable_stack = EXSTACK_DISABLE_X;
 			break;
@@ -1335,7 +1347,6 @@ out:
  * Jeremy Fitzhardinge <jeremy@sw.oz.au>
  */
 
-
 #ifdef CONFIG_MOT_FEAT_APP_DUMP
 static int last_dump_failed = 0;
 
@@ -1346,7 +1357,7 @@ static int last_dump_failed = 0;
  */
 int elf_get_last_dump_status(void)
 {
-        return last_dump_failed;
+	return last_dump_failed;
 }
 
 /*
@@ -1355,14 +1366,12 @@ int elf_get_last_dump_status(void)
  */
 void elf_clear_last_dump_status(void)
 {
-        last_dump_failed = 0;
-
+	last_dump_failed = 0;
         return;
 }
 
 #endif /* CONFIG_MOT_FEAT_APP_DUMP */
-
-
+ 
 /*
  * These are the only things you should do on a core-file: use only these
  * functions to write out all the necessary info.
@@ -1370,19 +1379,15 @@ void elf_clear_last_dump_status(void)
 static int dump_write(struct file *file, const void *addr, int nr)
 {
 #ifdef CONFIG_MOT_FEAT_APP_DUMP
-        int ret;
+	int ret;
 
-        ret = (file->f_op->write(file, addr, nr, &file->f_pos) == nr);
-        if(!ret)
-        {
-            last_dump_failed = -1;
-        }
-        return ret;
+	ret = (file->f_op->write(file, addr, nr, &file->f_pos) == nr);
+	if(!ret)
+		last_dump_failed = -1;
+	return ret;
 #else
-        return file->f_op->write(file, addr, nr, &file->f_pos) == nr;
+	return file->f_op->write(file, addr, nr, &file->f_pos) == nr;
 #endif /* CONFIG_MOT_FEAT_APP_DUMP */
-
-
 }
 
 static int dump_seek(struct file *file, off_t off)

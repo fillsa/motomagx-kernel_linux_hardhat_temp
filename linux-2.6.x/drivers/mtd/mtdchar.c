@@ -12,13 +12,13 @@
  * 05-20-2006	Motorola  added CONFIG_MOT_FEAT_NAND_RDDIST feature.
  *			  3 new ioctls used by CONFIG_MOT_FEAT_NAND_RDDIST feature
  *			  are implemented.
- *
  * 06-10-2006   Motorola  added CONFIG_MOT_FEAT_SECURE_DRM feature.
  *              	  make sure "user" and "pds" partitions are handled 
  *			  as protected device.
- * 03-15-2007   Motorola  added 'rsv' partition as a protected device.
- *
- * 04-15-2007   Motorola  added reason_code: RDDIST_CNTFIX to read_distfix while 
+ * 02-23-2007   Motorla   Renamed MOT_FEAT_SECURE_DRM feature to 
+ *                        MOT_FEAT_SECURE_MTD
+ * 03-15-2007  Motorola   added 'rsv' partition as a protected device.
+ * 04-15-2007  Motorola   added reason_code: RDDIST_CNTFIX to read_distfix while 
  *			  user invoke ioctl on RDDIST_FIXBLOCK.
  *
  * 06-15-2007   Motorola  update read disturb max value for threshold from 2^8 to 2^16.
@@ -62,7 +62,7 @@ extern int nand_ecc_flag;
 
 static struct class_simple *mtd_class;
 
-#ifdef CONFIG_MOT_FEAT_SECURE_DRM
+#ifdef CONFIG_MOT_FEAT_SECURE_MTD
 static inline int is_protected_device (struct mtd_info *mtd)
 {
         return ((mtd->name) && 
@@ -71,7 +71,7 @@ static inline int is_protected_device (struct mtd_info *mtd)
 		 (strcmp(mtd->name, "rsv") == 0)));
 
 }
-#endif /* CONFIG_MOT_FEAT_SECURE_DRM */
+#endif /* CONFIG_MOT_FEAT_SECURE_MTD */
 
 static void mtd_notify_add(struct mtd_info* mtd)
 {
@@ -233,12 +233,12 @@ static ssize_t mtd_read(struct file *file, char __user *buf, size_t count,loff_t
 	
 	DEBUG(MTD_DEBUG_LEVEL1,"MTD_read\n");
 
-#ifdef CONFIG_MOT_FEAT_SECURE_DRM
+#ifdef CONFIG_MOT_FEAT_SECURE_MTD
 	if (is_protected_device(mtd))
 	{
 		return -EPERM;
 	}
-#endif /* CONFIG_MOT_FEAT_SECURE_DRM */
+#endif /* CONFIG_MOT_FEAT_SECURE_MTD */
 
 	if (*ppos + count > mtd->size)
 		count = mtd->size - *ppos;
@@ -310,12 +310,12 @@ static ssize_t mtd_write(struct file *file, const char __user *buf, size_t count
 
 	DEBUG(MTD_DEBUG_LEVEL1,"MTD_write\n");
 	
-#ifdef CONFIG_MOT_FEAT_SECURE_DRM
+#ifdef CONFIG_MOT_FEAT_SECURE_MTD
 	if (is_protected_device(mtd))
 	{
 		return -EPERM;
 	}
-#endif /* CONFIG_MOT_FEAT_SECURE_DRM */
+#endif /* CONFIG_MOT_FEAT_SECURE_MTD */
 
 	if (*ppos == mtd->size)
 		return -ENOSPC;
@@ -437,12 +437,12 @@ static int mtd_ioctl(struct inode *inode, struct file *file,
 		if(!(file->f_mode & 2))
 			return -EPERM;
 
-#ifdef CONFIG_MOT_FEAT_SECURE_DRM
+#ifdef CONFIG_MOT_FEAT_SECURE_MTD
 		if (is_protected_device(mtd))
 		{
 			return -EPERM;
 		}
-#endif /* CONFIG_MOT_FEAT_SECURE_DRM */
+#endif /* CONFIG_MOT_FEAT_SECURE_MTD */
 
 		erase=kmalloc(sizeof(struct erase_info),GFP_KERNEL);
 		if (!erase)
@@ -498,12 +498,12 @@ static int mtd_ioctl(struct inode *inode, struct file *file,
 		if(!(file->f_mode & 2))
 			return -EPERM;
 
-#ifdef CONFIG_MOT_FEAT_SECURE_DRM
+#ifdef CONFIG_MOT_FEAT_SECURE_MTD
 		if (is_protected_device(mtd))
 		{
 			return -EPERM;
 		}
-#endif /* CONFIG_MOT_FEAT_SECURE_DRM */
+#endif /* CONFIG_MOT_FEAT_SECURE_MTD */
 
 		if (copy_from_user(&buf, argp, sizeof(struct mtd_oob_buf)))
 			return -EFAULT;
@@ -640,12 +640,12 @@ static int mtd_ioctl(struct inode *inode, struct file *file,
 		if (copy_from_user(&offs, argp, sizeof(loff_t)))
 			return -EFAULT;
 
-#ifdef CONFIG_MOT_FEAT_SECURE_DRM
+#ifdef CONFIG_MOT_FEAT_SECURE_MTD
 		if (is_protected_device(mtd))
 		{
 			return -EPERM;
 		}
-#endif /* CONFIG_MOT_FEAT_SECURE_DRM */
+#endif /* CONFIG_MOT_FEAT_SECURE_MTD */
 
 		if (!mtd->block_markbad)
 			ret = -EOPNOTSUPP;

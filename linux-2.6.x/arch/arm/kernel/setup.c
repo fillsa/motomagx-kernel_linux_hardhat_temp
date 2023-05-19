@@ -2,7 +2,7 @@
  *  linux/arch/arm/kernel/setup.c
  *
  *  Copyright (C) 1995-2001 Russell King
- *  Copyright(C) 2006-2007 Motorola, Inc.
+ *  Copyright (C) 2006-2007 Motorola, Inc.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 as
@@ -744,10 +744,10 @@ static int __init parse_tag_logo_version(const struct tag *tag)
          * physical pointer (if logo_version is not NULL).  The size
          * is correct in both cases.
          */
-//        if (tag->u.logo_version.logo_version == NULL)
+        if (tag->u.logo_version.logo_version == NULL)
 	    p = (u8 *)tag->u.logo_version.logo_version_string;
-//        else
-//            p = phys_to_virt((unsigned long)tag->u.logo_version.logo_version);
+        else
+            p = phys_to_virt((unsigned long)tag->u.logo_version.logo_version);
 
         mot_set_logo_version(p, tag->u.logo_version.logo_version_max_length);
 

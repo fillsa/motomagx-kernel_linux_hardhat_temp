@@ -25,6 +25,7 @@ Change log:
 ********************************************************/
 #include 	"include.h"
 
+#ifdef CONFIG_PROC_FS
 /********************************************************
 		Local Variables
 ********************************************************/
@@ -34,11 +35,6 @@ static char *szModes[] = {
     "Managed",
     "Auto",
     "Unknown"
-};
-
-static char *szStates[] = {
-    "Disconnected",
-    "Connected"
 };
 
 /********************************************************
@@ -64,7 +60,6 @@ static int
 wlan_proc_read(char *page, char **start, off_t offset,
                int count, int *eof, void *data)
 {
-#ifdef CONFIG_PROC_FS
     int i;
     char *p = page;
     struct net_device *netdev = data;
@@ -73,7 +68,6 @@ wlan_proc_read(char *page, char **start, off_t offset,
     wlan_private *priv = netdev->priv;
     wlan_adapter *Adapter = priv->adapter;
     ulong flags;
-#endif
 
     if (offset != 0) {
         *eof = 1;
@@ -86,15 +80,20 @@ wlan_proc_read(char *page, char **start, off_t offset,
     p += sprintf(p, "driver_version = %s", fmt);
     p += sprintf(p, "\nInterfaceName=\"%s\"\n", netdev->name);
     p += sprintf(p, "Mode=\"%s\"\n", szModes[Adapter->InfrastructureMode]);
-    p += sprintf(p, "State=\"%s\"\n", szStates[Adapter->MediaConnectStatus]);
+    p += sprintf(p, "State=\"%s\"\n",
+                 ((Adapter->MediaConnectStatus ==
+                   WlanMediaStateDisconnected) ? "Disconnected" :
+                  "Connected"));
     p += sprintf(p, "MACAddress=\"%02x:%02x:%02x:%02x:%02x:%02x\"\n",
                  netdev->dev_addr[0], netdev->dev_addr[1],
                  netdev->dev_addr[2], netdev->dev_addr[3],
                  netdev->dev_addr[4], netdev->dev_addr[5]);
 
     p += sprintf(p, "MCCount=\"%d\"\n", netdev->mc_count);
-    p += sprintf(p, "ESSID=\"%s\"\n", (u8 *) Adapter->CurBssParams.ssid.Ssid);
-    p += sprintf(p, "Channel=\"%d\"\n", Adapter->CurBssParams.channel);
+    p += sprintf(p, "ESSID=\"%s\"\n",
+                 (u8 *) Adapter->CurBssParams.BSSDescriptor.Ssid.Ssid);
+    p += sprintf(p, "Channel=\"%d\"\n",
+                 Adapter->CurBssParams.BSSDescriptor.Channel);
     p += sprintf(p, "region_code = \"%02x\"\n", (u32) Adapter->RegionCode);
 
     /*
@@ -220,7 +219,6 @@ void
 wlan_proc_entry(wlan_private * priv, struct net_device *dev)
 {
 
-#ifdef	CONFIG_PROC_FS
     struct proc_dir_entry *r;
     PRINTM(INFO, "Creating Proc Interface\n");
 
@@ -239,7 +237,6 @@ wlan_proc_entry(wlan_private * priv, struct net_device *dev)
                 PRINTM(MSG, "Fail to create proc genevt\n");
         }
     }
-#endif
 }
 
 /** 
@@ -251,11 +248,45 @@ wlan_proc_entry(wlan_private * priv, struct net_device *dev)
 void
 wlan_proc_remove(wlan_private * priv)
 {
-#ifdef CONFIG_PROC_FS
+
     if (priv->proc_entry) {
         remove_proc_entry("info", priv->proc_entry);
         remove_proc_entry("genevt", priv->proc_entry);
     }
     remove_proc_entry("wlan", proc_net);
-#endif
+
 }
+
+/** 
+ *  @brief convert string to number
+ *
+ *  @param s   	   pointer to numbered string
+ *  @return 	   converted number from string s
+ */
+int
+string_to_number(char *s)
+{
+    int r = 0;
+    int base = 0;
+
+    if ((strncmp(s, "0x", 2) == 0) || (strncmp(s, "0X", 2) == 0))
+        base = 16;
+    else
+        base = 10;
+    if (base == 16)
+        s += 2;
+    for (s = s; *s != 0; s++) {
+        if ((*s >= 48) && (*s <= 57))
+            r = (r * base) + (*s - 48);
+        else if ((*s >= 65) && (*s <= 70))
+            r = (r * base) + (*s - 55);
+        else if ((*s >= 97) && (*s <= 102))
+            r = (r * base) + (*s - 87);
+        else
+            break;
+    }
+
+    return r;
+}
+
+#endif

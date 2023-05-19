@@ -20,10 +20,11 @@
  *                              Added mxc_dma_reset support.
  *                              Fixed bug documented by WFN445.
  *                              Applied FSL bug fix related to WFN444.
+ * 02/05/2007    Motorola       Applied SDMA SuperGem changes for WFN483
+ * 03/06/2007    Motorola       Applied FSL IPCv2 changes for WFN487
  * 03/14/2007    Motorola       Fixed audio clipping issue when other applications
  *                              using sdma channel at the same time.
  * 08/01/2008    Motorola       Add protection for channel 0 to fix dropped WiFi call issue.
- * 08/11/2008    Motorola       Protect variable ipai_SDMAintr with spin lock to fix MMC log stop issue. 
  *
  */
 
@@ -46,6 +47,11 @@
 #include <asm/irq.h>
 #include <asm/arch/hardware.h>
 #include <asm/arch/clock.h>
+
+#include <linux/delay.h>
+#include <linux/module.h>
+#include <linux/devfs_fs_kernel.h>
+
 
 #include <asm/semaphore.h>
 #include <linux/spinlock.h>
@@ -73,10 +79,6 @@
  * SDMA status mutex
  */
 static struct semaphore sdma_status_mutex;
-
-/* Spinlock for critical section*/
-static spinlock_t sdma_spinlock;
-unsigned long flags;
 
 /*!
  * SDMA channel sleep queues
@@ -160,22 +162,6 @@ extern void mxc_sdma_get_script_info(sdma_script_start_addrs * sdma_script_add);
 static void sdma_init_sleep(int channel)
 {
 	init_waitqueue_head(&sdma_sleep_queue[channel]);
-}
-
-/*!
- * Acquires the iapi_SDMAIntr spinlock
- */
-void acquire_sleep_lock(void)
-{
-	spin_lock_irqsave(&sdma_spinlock, flags);
-}
-
-/*!
- * Releases the iapi_SDMAIntr spinlock
- */
-void release_sleep_lock(void)
-{
-	spin_unlock_irqrestore(&sdma_spinlock , flags);
 }
 
 /*!
@@ -834,6 +820,32 @@ int mxc_dma_get_config(int channel, dma_request_t * p, int bd_index)
 	return err;
 }
 
+#ifdef CONFIG_MOT_WFN487
+/*!
+ * This function is used by MXC IPC's write_ex2. It passes the pointer to the 
+ * data control structure to iapi_write_ipcv2()
+ *
+ * @param channel  SDMA channel number
+ * @param ctrl_ptr Data Control structure pointer
+ */
+int mxc_sdma_write_ipcv2(int channel, void *ctrl_ptr)
+{
+    return iapi_Write_ipcv2(sdma_data[channel].cd, ctrl_ptr);
+}
+
+/*!
+ * This function is used by MXC IPC's read_ex2. It passes the pointer to the 
+ * data control structure to iapi_read_ipcv2()
+ *
+ * @param channel   SDMA channel number
+ * @param ctrl_ptr  Data Control structure pointer
+ */
+int mxc_sdma_read_ipcv2(int channel, void *ctrl_ptr)
+{
+    return iapi_Read_ipcv2(sdma_data[channel].cd, ctrl_ptr);
+}
+#endif
+
 /*!
  * Starts dma channel.
  *
@@ -982,9 +994,13 @@ static int getChannel(int channel)
 			return -EBUSY;
 		}
 	} else {
+#ifdef CONFIG_MOT_WFN487
 		if (down_interruptible(&sdma_synch_mutex[channel])) {
 			return -EBUSY;
 		}
+#else
+		down_interruptible(&sdma_synch_mutex[channel]);
+#endif
 	}
 
 	return 0;
@@ -1049,9 +1065,6 @@ static void __init init_iapi_struct(void)
 	iapi_EnableInterrupts = &unmask_sdma_interrupt;
 	iapi_DisableInterrupts = &mask_sdma_interrupt;
 
-	iapi_AcquireLock = &acquire_sleep_lock;
-	iapi_ReleaseLock = &release_sleep_lock;
-	
 	cd = kmalloc(sizeof(channelDescriptor), GFP_KERNEL);
 
 	memset(cd, 0, sizeof(channelDescriptor));
@@ -1187,6 +1200,10 @@ int __init sdma_init(void)
 {
 	int res = 0;
 	configs_data confreg_data;
+#ifdef CONFIG_MOT_WFN483
+        channelDescriptor * cd;
+#endif
+
 
 	/* Initialize to the default values */
 	confreg_data = iapi_ConfigDefaults;
@@ -1209,7 +1226,7 @@ int __init sdma_init(void)
 	}
 
 	init_mutexes();
-	spin_lock_init(&sdma_spinlock);
+
 	init_iapi_struct();
 
 	mxc_sdma_get_script_info(&sdma_script_addrs);
@@ -1224,9 +1241,62 @@ int __init sdma_init(void)
 		goto sdma_init_fail;
 	}
 
-	init_priorities();
+#ifdef CONFIG_MOT_WFN483
+	printk(KERN_INFO "SUPERGEM:iapi_Open\n");
 
+        res = iapi_Open (sdma_data[0].cd, SUPER_GEM_CH );
+	printk(KERN_INFO "SUPERGEM:iapi_Open : Res = %d\n",res);
+        if (res < 0) {
+		free_irq(INT_SDMA, 0);
+		goto sdma_init_fail;
+	}
+ 
+        cd = CHAD(SUPER_GEM_CH);
+
+
+	printk(KERN_INFO "SUPERGEM:iapi_AssignScript\n");
+	{ 	script_data context;
+	  memset(&context, 0, sizeof(script_data));
+	  context.load_address = sdma_script_addrs.mxc_sdma_utra_addr;
+	  context.wml = M3_BASE_ADDRESS;
+
+        res = iapi_AssignScript(cd, &context);
+	}
+	printk(KERN_INFO "SUPERGEM:iapi_AssignScript -  res=%d\n",res);
+
+	if (res < 0) {
+		free_irq(INT_SDMA, 0);
+		goto sdma_init_fail;
+	}
+
+	printk(KERN_INFO "SUPERGEM:iapi_IoCtl - IAPI_CHANGE_OWNERSHIP\n");
+        res = iapi_IoCtl (cd, IAPI_CHANGE_OWNERSHIP, (OWN_CHANNEL << CH_OWNSHP_OFFSET_EVT) | (DONT_OWN_CHANNEL << CH_OWNSHP_OFFSET_MCU) | (OWN_CHANNEL<<CH_OWNSHP_OFFSET_DSP));
+	printk(KERN_INFO "SUPERGEM:iapi_IoCtl - IAPI_CHANGE_OWNERSHIP - res=%d\n",res);
+       if (res < 0) {
+           free_irq(INT_SDMA, 0);
+           goto sdma_init_fail;
+       }
+
+       /* Set EP=1, which is required to start SuperGem script the first time */
+       /* This can be done only on the AP side */
+	printk(KERN_INFO "SUPERGEM:SDMA_H_EVTPEND\n");
+	SDMA_H_EVTPEND  |= 1 << SUPER_GEM_CH ;
+#endif
+
+	init_priorities();
+	
 	init_event_table();
+
+#ifdef CONFIG_MOT_WFN483
+	/*Warning : The above call forces all event to zero, so the GEM event shall be set after */
+
+        res = iapi_SetChannelEventMapping(DMA_REQ_GEM, 1<<SUPER_GEM_CH);
+
+	if (res < 0) {
+		free_irq(INT_SDMA, 0);
+		goto sdma_init_fail;
+	}
+#endif
 
 	init_proc_fs();
 
@@ -1245,6 +1315,10 @@ EXPORT_SYMBOL(mxc_free_dma);
 EXPORT_SYMBOL(mxc_dma_setup_channel);
 EXPORT_SYMBOL(mxc_dma_set_config);
 EXPORT_SYMBOL(mxc_dma_get_config);
+#ifdef CONFIG_MOT_WFN487
+EXPORT_SYMBOL(mxc_sdma_write_ipcv2);
+EXPORT_SYMBOL(mxc_sdma_read_ipcv2);
+#endif
 EXPORT_SYMBOL(mxc_dma_start);
 #ifdef CONFIG_MOT_WFN409
 EXPORT_SYMBOL(mxc_dma_reset);

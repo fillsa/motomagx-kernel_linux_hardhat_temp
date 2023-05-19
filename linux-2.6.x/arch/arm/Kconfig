@@ -34,7 +34,6 @@
 # 12/02/2006         Motorola         Add source "arch/arm/Kconfig.wfn"
 # 07/02/2007         Motorola         Add comments.
 # 08/18/2007         Motorola         Add comments.
-# 10/15/2007         Motorola         FIQ related modified.
 #
 # For a description of the syntax of this configuration file,
 # see Documentation/kbuild/kconfig-language.txt.
@@ -436,7 +435,7 @@ config ISA_DMA
 
 config FIQ
 	bool
-	depends on ARCH_ACORN || ARCH_L7200 || ARCH_MXC91231
+	depends on ARCH_ACORN || ARCH_L7200
 	default y
 
 # Compressed boot loader in ROM.  Yes, we really want to ask about
@@ -900,21 +899,11 @@ source "drivers/misc/Kconfig"
 
 source "drivers/usb/Kconfig"
 
-source "drivers/otg/Kconfig"
-
 source "drivers/ssi/Kconfig"
-
-source "drivers/mmc/Kconfig"
 
 source "drivers/profiler/Kconfig"
 
-source "drivers/power_ic/Kconfig"
-
-source "drivers/keyv/Kconfig"
-
 source "drivers/aplogger/Kconfig"
-
-source "drivers/sim/Kconfig"
 
 endmenu
 

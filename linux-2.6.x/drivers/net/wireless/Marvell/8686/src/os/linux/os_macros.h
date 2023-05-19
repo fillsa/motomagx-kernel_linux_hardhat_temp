@@ -16,7 +16,6 @@
  * this warranty disclaimer.
  *
  */
-
 #ifndef	_OS_MACROS_H
 #define _OS_MACROS_H
 
@@ -79,7 +78,6 @@ CopyMulticastAddrs(wlan_adapter * Adapter, struct net_device *dev)
     }
 
     return i;
-
 }
 
 static inline u32
@@ -121,25 +119,26 @@ os_free_tx_packet(wlan_private * priv)
     }
 }
 
-/* netif carrier_on/off and start(wake)/stop_queue handling
-		carrier_on	carrier_off	start_queue	stop_queue
- open		x(connect)	x(disconnect)	x
- close				x				x
- assoc		x				x
- deauth				x				x
- adhoc-start
- adhoc-join
- adhoc-link	x				x
- adhoc-bcnlost			x				x
- scan-begin			x				x
- scan-end	x				x
- ds-enter			x				x
- ds-exit	x				x
- xmit								x
- xmit-done					x
- tx-timeout
+/*
+ *  netif carrier_on/off and start(wake)/stop_queue handling
+ *
+ *           carrier_on      carrier_off     start_queue     stop_queue
+ * open           x(connect)      x(disconnect)   x
+ * close                          x                               x
+ * assoc          x                               x
+ * deauth                         x                               x
+ * adhoc-start
+ * adhoc-join
+ * adhoc-link     x                               x
+ * adhoc-bcnlost                  x                               x
+ * scan-begin                     x                               x
+ * scan-end       x                               x
+ * ds-enter                       x                               x
+ * ds-exit        x                               x
+ * xmit                                                           x
+ * xmit-done                                      x
+ * tx-timeout
  */
-
 static inline void
 os_carrier_on(wlan_private * priv)
 {
@@ -154,8 +153,9 @@ os_carrier_on(wlan_private * priv)
 static inline void
 os_carrier_off(wlan_private * priv)
 {
-    if (netif_carrier_ok(priv->wlan_dev.netdev))
+    if (netif_carrier_ok(priv->wlan_dev.netdev)) {
         netif_carrier_off(priv->wlan_dev.netdev);
+    }
 }
 
 static inline void
@@ -175,13 +175,6 @@ os_stop_queue(wlan_private * priv)
     if (!netif_queue_stopped(priv->wlan_dev.netdev)) {
         netif_stop_queue(priv->wlan_dev.netdev);
     }
-}
-
-static inline int
-os_queue_is_active(wlan_private * priv)
-{
-    return (netif_carrier_ok(priv->wlan_dev.netdev)
-            && !netif_queue_stopped(priv->wlan_dev.netdev));
 }
 
 #endif /* _OS_MACROS_H */

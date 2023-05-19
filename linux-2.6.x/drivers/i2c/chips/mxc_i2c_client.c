@@ -1,6 +1,6 @@
 /*
- * Copyright 2004 Freescale Semiconductor, Inc. All Rights Reserved.
  * Copyright (C) 2006 Motorola, Inc.
+ * Copyright 2004 Freescale Semiconductor, Inc. All Rights Reserved.
  */
 
 /* 

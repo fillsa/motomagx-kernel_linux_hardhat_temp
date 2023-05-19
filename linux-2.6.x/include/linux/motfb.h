@@ -1,8 +1,8 @@
-/*
+/* 
  * motfb.h
- *
+ * 
  * Copyright 2004 Freescale Semiconductor, Inc.
- * Copyright 2006, 2008 Motorola, Inc.
+ * Copyright 2006-2007 Motorola, Inc.
  *
  * The code contained herein is licensed under the GNU General Public
  * License. You may obtain a copy of the GNU General Public License
@@ -12,14 +12,10 @@
  * http://www.gnu.org/copyleft/gpl.html
  *
  * Date     Author    Comment
- * 10/2006  Motorola  Initial version.  Added Motorola specific IOCTL
+ * 10/2006  Motorola  Initial version.  Added Motorola specific IOCTL 
  *                    interfaces and type definitions for both the MXCFB and
  *                    MXCFB_HVGA framebuffer drivers.
- * 02/2007  Motorola  Refactored driver for multiple display devices
- * 03/2007  Motorola  Added extern mxcfb_set_static_mode
- * 04/2007  Motorola  Added FBIOROTATEIMAGE ioctl
- * 04/2007  Motorola  Removed support for HVGA driver
- * 07/2008  Motorola  Added APP coredump prompt support
+ * 06/2007  Motorola  Removed support for HVGA driver.
  */
 
 #ifndef __LINUX_MOTFB_H__
@@ -27,12 +23,7 @@
 
 /* Panic text on display */
 #if !defined(__KERNEL__) || defined(CONFIG_MOT_FEAT_FB_PANIC_TEXT)
-#if defined(CONFIG_MOT_FEAT_APP_COREDUMP_DISPLAY)
-/* Limit of 32 characters is to prompt more specific coredump */
-#define PANIC_MAX_STR_LEN       32
-#else
 #define PANIC_MAX_STR_LEN       16
-#endif /* defined(CONFIG_MOT_FEAT_APP_COREDUMP_DISPLAY) */
 #define FBIOPANICTEXT		_IOW('M', 0xb3, char *)
 #endif
 
@@ -115,63 +106,6 @@ struct fb_ovl2_mapinfo {
 #define FBIO_QUERY_DISPLAY_TYPE _IOR('M', 0xd5, display_type_t)
 #endif
 
-#if 0 // Removed support for HVGA driver
-
-#if !defined(__KERNEL__) || defined(CONFIG_FB_MXC_HVGA_PANEL)
-
-/* color depth : high or low color mode */
-typedef enum {
-	low_power_monochrome, /* monochrome color mode for power-savings */
-	low_power_color, /* low color mode for power-savings */
-	full_color, /* normal full color */
-} color_depth_t;
-
-/* 
- * Partial mode coordinates. On the HVGA TMD display, the start_x and 
- * end_x values are ignored. 
- */
-struct partial_mode_info {
-	uint32_t start_x;
-	uint32_t start_y;
-	uint32_t end_x;
-	uint32_t end_y;
-};
-
-/* 
- * Static-mode state. When static mode is ENABLED, DMA transfer to the 
- * particular panel is DISABLED. When static mode is DISABLED, pixel data 
- * is once again sent to the panel. This mode is intended for use on SMART 
- * displays where the panel will refresh the pixels using its internal 
- * memory and oscillator.
- */
-typedef enum {
-	ENTER_STATIC_MODE,
-	EXIT_STATIC_MODE,
-	UPDATE_STATIC_IMAGE,
-} static_state_t;
-
-typedef enum {
-	IMAGE_ROTATE_0,
-	IMAGE_ROTATE_180,
-} image_rotate_t;
-
-typedef enum {
-        FB_FLIP_OPEN,
-        FB_FLIP_CLOSE,
-}fb_flip_state_t;
-
-#define FBIOSET_OVERLAY_PANEL   _IOW('M', 0xe0, panel_t)
-#define FBIOGET_CURRENT_PANEL   _IOR('M', 0xe1, unsigned long)
-#define FBIOSWAP_BUFFERS        _IO('M', 0xe2)
-
-#define FBIOROTATEIMAGE         _IOW('M', 0xe5, image_rotate_t)
-#define FBIOPARTIALMODE         _IOW('M', 0xe6, struct partial_mode_info)
-#define FBIOSTATICIMAGE         _IOW('M', 0xea, static_state_t)
-#define FBIOSET_COLOR_DEPTH     _IOW('M', 0xef, color_depth_t)
-#define FBIO_STORE_USER_BRIGHTNESS_PREF   _IOW('M', 0xf0, __u8)
-#endif
-#endif // #if 0 // Removed support for HVGA driver
-
 #if defined(__KERNEL__)
 
 #if defined(CONFIG_MOT_FEAT_IPU_IOCTL_EZX_COMPAT)
@@ -185,38 +119,6 @@ typedef enum {
 #define BACKLIGHT_ON		0x1
 #define DISPLAY_ON    		0x2
 
-#if 0 // Removed support for HVGA driver
-
-#if defined(CONFIG_FB_MXC_HVGA_PANEL)
-/* 
- * Mask for defining the refresh mode. While in full refresh mode, data will be
- * continuously sent to the display at refresh_rate times per second.  This state
- * is used when reconfiguring the DMA channel to decide which DMA mode we are in.
- *
- * Possible DMA modes are:
- *   1. Full HVGA DMA of both MAIN and CLI pixel data. 
- *   2. QVGA DMA of the MAIN pixel data. The CLI is either OFF or in STATIC mode.
- *   3. QVGA DMA of the CLI pixel data. The MAIN is either OFF or in STATIC mode.
- *   4. No active DMA. 
- *  
- * While in (1) full HVGA refresh, the MAIN panel's pixel data is sent first, 
- * followed by the CLI pixel data.
- */
-typedef enum {
-	REFRESH_OFF = 0x00,
-	MAIN_FULL_REFRESH = 0x01,
-	CLI_FULL_REFRESH = 0x02,
-} refresh_mode_t;
-
-typedef enum {
-	NO_STATIC_MODE,
-	MAIN_STATIC_MODE,
-	CLI_STATIC_MODE,
-} static_image_mode_state_t;
-
-extern int mxcfb_set_static_mode(panel_t, static_state_t);
-#endif
-#endif // #if 0 // Removed support for HVGA driver
 
 /* Holds global information about the state of the panel */
 struct global_state {
@@ -224,25 +126,6 @@ struct global_state {
 	uint32_t brightness; /* Current brightness setting of the display */
 	bklight_state_t backlight_state; /* Backlight ON/OFF state */
 	struct backlight_brightness_range bklight_range; /* MIN and MAX backlight brightness levels */
-
-#if 0 // Removed support for HVGA driver
-#if defined(CONFIG_FB_MXC_HVGA_PANEL)
-	panel_t panel_state; /* The panel ON/OFF state. This says nothing about DMA */
-	panel_t overlay_panel; /* The panel the overlay is currently enabled on */
-	refresh_mode_t refresh_mode; /* The current DMA mode */
-	static_image_mode_state_t static_image_mode_state; /* Maintains static image mode for both main and CLI */
-	color_depth_t curr_color_depth; /* Full 18-bit color or low-power 8-bit color */
-	color_depth_t main_color_depth; /* Full 18-bit color or low-power 8-bit color */
-	color_depth_t cli_color_depth; /* Full 18-bit color or low-power 8-bit color */
-	struct partial_mode_info partial_coords; /* CLI panel's partial mode coordinates */
-	unsigned long buffers_swapped; /* True if MAIN and CLI images are swapped */
-	image_rotate_t main_rotation_value;
-	image_rotate_t cli_rotation_value;
-        uint32_t fb_flip_status;
-	uint32_t user_brightness_pref; /* Current User brightness preference setting */
-#endif
-#endif // #if 0 // Removed support for HVGA driver
-
 #if defined(CONFIG_MOT_FEAT_IPU_IOCTL_EZX_COMPAT)
 	unsigned char dbuffer_enabled; /* True if Double Buffering is enabled */
 #endif

@@ -2,15 +2,10 @@
  *  linux/kernel/exit.c
  *
  *  Copyright (C) 1991, 1992  Linus Torvalds
- *  Copyright (c) 2006, 2008  Motorola
+ *  Copyright (c) 2006-2007, Motorola
  */
 
-/* Date         Author          Comment
- * ===========  ==============  ==============================================
- * 26-Sep-2008  Motorola        Dump out the exit process infomation in do_exit()
- * 06-12-2020	fill.sa		Delet Dump out the exit process infomation in do_exit()
- */
-
+#include <linux/module.h>
 #include <linux/config.h>
 #include <linux/mm.h>
 #include <linux/slab.h>
@@ -261,6 +256,8 @@ void reparent_to_init(void)
 	write_unlock_irq(&tasklist_lock);
 	switch_uid(INIT_USER);
 }
+EXPORT_SYMBOL(reparent_to_init);
+
 
 void __set_special_pids(pid_t session, pid_t pgrp)
 {
@@ -801,11 +798,6 @@ fastcall NORET_TYPE void do_exit(long code)
 
 #ifdef CONFIG_MOT_FEAT_ANTIVIRUS_HOOKS
 	fsh_task_detach(tsk);
-#endif
-
-#ifdef DEBUG
-	printk("do_exit: process:%s pid:[%d], code:[%d]\n",
-                                tsk->comm, tsk->pid, code);
 #endif
 
 	profile_task_exit(tsk);

@@ -1,6 +1,7 @@
 /*
  * JFFS2 -- Journalling Flash File System, Version 2.
  *
+ * Copyright (C) 2007 Motorola, Inc.
  * Copyright (C) 2001-2003 Red Hat, Inc.
  *
  * Created by David Woodhouse <dwmw2@infradead.org>
@@ -10,17 +11,10 @@
  * $Id: file.c,v 1.101 2005/05/20 15:26:45 gleixner Exp $
  *
  */
-
-
-
-/*
- * Copyright (C) 2007 Motorola, Inc.
- * ChangeLog:
+/* ChangeLog:
  * (mm-dd-yyyy) Author    Comment
- * 10-11-2007   Motorola  Change inode information when update for LJ6.1
- * 11-06-2007   Motorola  Upmerge from 6.1. (Change inode information when update)
+ * 10-11-2007   Motorola  Change inode information when update
  */
-
 
 #include <linux/kernel.h>
 #include <linux/slab.h>
@@ -198,7 +192,7 @@ static int jffs2_prepare_write (struct file *filp, struct page *pg,
 		}
 		jffs2_complete_reservation(c);
 		inode->i_size = pageofs;
-                inode->i_blocks = (inode->i_size + 511) >> 9;
+		inode->i_blocks = (inode->i_size + 511) >> 9;
 		up(&f->sem);
 	}
 	
@@ -278,11 +272,9 @@ static int jffs2_commit_write (struct file *filp, struct page *pg,
 			inode->i_size = (pg->index << PAGE_CACHE_SHIFT) + start + writtenlen;
 		}
 	}
-
-          /* update inode information accordingly */
-        inode->i_blocks = (inode->i_size + 511) >> 9;
-        inode->i_ctime = inode->i_mtime = ITIME(je32_to_cpu(ri->ctime));
-
+	/* update inode information accordingly */
+	inode->i_blocks = (inode->i_size + 511) >> 9;
+	inode->i_ctime = inode->i_mtime = ITIME(je32_to_cpu(ri->ctime));
 
 	jffs2_free_raw_inode(ri);
 

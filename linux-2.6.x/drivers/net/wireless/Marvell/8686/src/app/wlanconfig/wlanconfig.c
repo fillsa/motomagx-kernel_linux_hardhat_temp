@@ -21,7 +21,7 @@
 Change log:
 	10/12/05: Add Doxygen format comments
 	11/03/05: Load priv ioctls on demand, ifdef code for features in driver
-	 
+	11/04/05: Add crypto_test 
 	12/14/05: Support wildcard SSID in BGSCAN	
 	01/11/06: Add getscantable, setuserscan, setmrvltlv, getassocrsp 
 	01/31/06: Add support to selectively enabe the FW Scan channel filter	
@@ -32,6 +32,7 @@ Change log:
 		  implementation through generic hostcmd API
 	05/03/06: Add auto_tx hostcmd
 	05/15/06: Support EMBEDDED_TCPIP with Linux 2.6.9
+	08/28/06: Add LED_CTRL hostcmd
 ********************************************************/
 
 #include    <stdio.h>
@@ -51,7 +52,7 @@ Change log:
 #include    <linux/byteorder/swab.h>
 #include    <errno.h>
 
-#define WLANCONFIG_VER "1.01"   /* wlanconfig Version number */
+#define WLANCONFIG_VER "2.03"   /* wlanconfig Version number */
 
 #ifdef 	BYTE_SWAP
 #define 	cpu_to_le16(x)	__swab16(x)
@@ -84,7 +85,6 @@ Change log:
 #include	"host.h"
 #include	"hostcmd.h"
 #include    "wlan_scan.h"
-#include    "wlan_join.h"
 #include	"wlan_wext.h"
 #include	"wlanconfig.h"
 
@@ -112,13 +112,10 @@ enum COMMANDS
     CMD_QCONFIG,
     CMD_QSTATS,
     CMD_WMM_QSTATUS,
-    CMD_WMM_ACK_POLICY,
-    CMD_WMM_AC_WPAIE,
+    CMD_TX_PKT_STATS,
     CMD_CAL_DATA_EXT,
-    CMD_GETRATE,
     CMD_SLEEPPARAMS,
     CMD_BCA_TS,
-    CMD_REASSOCIATE,
     CMD_EXTSCAN,
     CMD_SCAN_LIST,
     CMD_SET_GEN_IE,
@@ -126,7 +123,9 @@ enum COMMANDS
     CMD_SET_USER_SCAN,
     CMD_SET_MRVL_TLV,
     CMD_GET_ASSOC_RSP,
+    CMD_GET_TSF,
     CMD_GET_CFP_TABLE,
+    CMD_GET_FW_MEM,
     CMD_ARPFILTER,
 };
 
@@ -154,13 +153,10 @@ static s8 *commands[] = {
     "qconfig",
     "qstats",
     "qstatus",
-    "wmm_ack_policy",
-    "wmmparaie",
+    "txpktstats",
     "caldataext",
-    "getrate",
     "sleepparams",
     "bca-ts",
-    "reassociate",
     "extscan",
     "getscanlist",
     "setgenie",
@@ -168,7 +164,9 @@ static s8 *commands[] = {
     "setuserscan",
     "setmrvltlv",
     "getassocrsp",
+    "gettsf",
     "getcfptable",
+    "getfwmem",
     "arpfilter",
 };
 
@@ -181,16 +179,17 @@ static s8 *usage[] = {
     "	cmd	: hostcmd, rdmac, wrmac, rdbbp, wrbbp, rdrf, wrrf",
     "		: sdcmd52r, sdcmd52w, sdcmd53r",
     "		: caldataext",
-    "		: rdeeprom,sleepparams",
+    "		: rdeeprom, sleepparams",
     "		: bca-ts",
     "		: bgscanconfig",
-    "		: qstatus, wmmparaie, wmm_ack_policy",
+    "		: qstatus",
     "		: addts, delts, qconfig, qstats",
-    "		: reassociate",
+    "		: txpktstats",
     "		: setgenie",
     "		: getscantable, setuserscan",
     "		: setmrvltlv, getassocrsp",
     "		: getcfptable",
+    "		: getfwmem",
     "		: arpfilter",
     "	[...]	: additional parameters for read registers are",
     "		:	<offset>",
@@ -200,9 +199,8 @@ static s8 *usage[] = {
     "		: 	<filename> <cmd>",
     "		: addition parameters for caldataext",
     "		: 	<filename>",
-    "		: additional parameters for reassociate are:",
-    "		:	XX:XX:XX:XX:XX:XX YY:YY:YY:YY:YY:YY < string max 32>",
-    "		:	< Current BSSID > < Desired BSSID > < Desired SSID >",
+    "		: additional parameters for getfwmem are:"
+        "		:	<StartAddr> <Len>",
     "		: additonal parameter for arpfilter",
     "		: 	<filename>",
 };
@@ -221,11 +219,30 @@ static u16 TLVSnrSize;
 static u16 TLVBcProbeSize;
 static u16 TLVNumSsidProbeSize;
 static u16 TLVStartBGScanLaterSize;
+static u16 TLVBssidFilterSize;
 static u16 ActualPos = sizeof(HostCmd_DS_802_11_BG_SCAN_CONFIG);
 
 char rate_bitmap[16][16] =
     { "1", "2", "5.5", "11", "reserved", "6", "9", "12", "18", "24", "36",
 "48", "54", "reserved", "reserved", "reserved" };
+
+char fw_state[9][32] = { "Disconnected",
+    "Scanning",
+    "Connected-Awake",
+    "Connected-Sleep",
+    "Deep Sleep",
+    "Connected-Single",
+    "Disconnected-Link Loss",
+    "Disconnected-Disassociated",
+    "Exception"
+};
+char led_state[3][16] = { "Steady OFF",
+    "Steady ON",
+    "Blinking"
+};
+char led_duty_factor[5][8] = { "1/2", "1/4", "1/8", "1/16", "1/32" };
+char led_blink_period[6][8] =
+    { "37ms", "74ms", "149ms", "298ms", "596ms", "1192ms" };
 
 static s8 *wlan_config_get_line(s8 * s, s32 size, FILE * stream, int *line);
 
@@ -328,10 +345,13 @@ a2hex(s8 * s)
 static u32
 a2hex_or_atoi(s8 * value)
 {
-    if (value[0] == '0' && (value[1] == 'X' || value[1] == 'x'))
+    if (value[0] == '0' && (value[1] == 'X' || value[1] == 'x')) {
         return a2hex(value + 2);
-    else
+    } else if (isdigit(*value)) {
         return atoi(value);
+    } else {
+        return *value;
+    }
 }
 
 /** 
@@ -479,7 +499,7 @@ marvell_get_ioctl_no(const s8 * ifname,
 /** 
  *  @brief Retrieve the ioctl and sub-ioctl numbers for the given ioctl string
  *   
- *  @param ifname       Private IOCTL string name
+ *  @param ioctl_name   Private IOCTL string name
  *  @param ioctl_val    A pointer to return ioctl number
  *  @param subioctl_val A pointer to return sub-ioctl number
  *
@@ -537,47 +557,6 @@ get_range(void)
     printf("Driver build with Wireless Extension %d\n",
            range->we_version_compiled);
     free(range);
-    return WLAN_STATUS_SUCCESS;
-}
-
-#define WLAN_MAX_RATES	14
-#define	GIGA		1e9
-#define	MEGA		1e6
-#define	KILO		1e3
-
-/** 
- *  @brief print bit rate
- *   
- *  @param rate  	rate to be print
- *  @param current      if current is TRUE, data rate not need convert
- *  @param fixed        not used
- *  @return 	        WLAN_STATUS_SUCCESS
- */
-static int
-print_bitrate(double rate, s32 current, s32 fixed)
-{
-    s8 scale = 'k', buf[128];
-    s32 divisor = KILO;
-
-    if (!current)
-        rate *= 500000;
-
-    if (rate >= GIGA) {
-        scale = 'G';
-        divisor = GIGA;
-    } else if (rate >= MEGA) {
-        scale = 'M';
-        divisor = MEGA;
-    }
-
-    snprintf(buf, sizeof(buf), "%g %cb/s", rate / divisor, scale);
-
-    if (current) {
-        printf("\t  Current Bit Rate%c%s\n\n", (fixed) ? '=' : ':', buf);
-    } else {
-        printf("\t  %s\n", buf);
-    }
-
     return WLAN_STATUS_SUCCESS;
 }
 
@@ -662,6 +641,16 @@ wlan_get_hostcmd_data(FILE * fp, int *ln, u8 * buf, u16 * size)
             buf += len + *tlvlen;
         } else {
             u32 value = a2hex_or_atoi(pos2);
+            switch (len) {
+            case 2:
+                value = wlan_cpu_to_le16(value);
+                break;
+            case 4:
+                value = wlan_cpu_to_le32(value);
+                break;
+            default:
+                break;
+            }
             while (len--) {
                 *buf++ = (u8) (value & 0xff);
                 value >>= 8;
@@ -712,8 +701,9 @@ process_host_cmd(int argc, char *argv[])
         printf("Error: allocate memory for hostcmd failed\n");
         return -ENOMEM;
     }
+
     memset(buf, 0, MRVDRV_SIZE_OF_CMD_BUFFER);
-    hostcmd = (PHostCmd_DS_GEN) buf;
+    hostcmd = (HostCmd_DS_GEN *) buf;
 
     hostcmd->Command = 0xffff;
 
@@ -776,8 +766,8 @@ process_host_cmd(int argc, char *argv[])
         switch (hostcmd->Command) {
         case HostCmd_RET_MEM_ACCESS:
             {
-                PHostCmd_DS_MEM_ACCESS ma =
-                    (PHostCmd_DS_MEM_ACCESS) (buf + S_DS_GEN);
+                HostCmd_DS_MEM_ACCESS *ma =
+                    (HostCmd_DS_MEM_ACCESS *) (buf + S_DS_GEN);
                 if (ma->Action == HostCmd_ACT_GET) {
                     printf("Address: %#08lx   Value=%#08lx\n", ma->Addr,
                            ma->Value);
@@ -786,8 +776,9 @@ process_host_cmd(int argc, char *argv[])
             }
         case HostCmd_RET_802_11_POWER_ADAPT_CFG_EXT:
             {
-                PHostCmd_DS_802_11_POWER_ADAPT_CFG_EXT pace =
-                    (PHostCmd_DS_802_11_POWER_ADAPT_CFG_EXT) (buf + S_DS_GEN);
+                HostCmd_DS_802_11_POWER_ADAPT_CFG_EXT *pace =
+                    (HostCmd_DS_802_11_POWER_ADAPT_CFG_EXT *) (buf +
+                                                               S_DS_GEN);
                 int i, j;
                 printf("EnablePA=%#04x\n", pace->EnablePA);
                 for (i = 0;
@@ -826,13 +817,13 @@ process_host_cmd(int argc, char *argv[])
                         switch (header->Type) {
                         case TLV_TYPE_RSSI_LOW:
                             {
-                                MrvlIEtypes_RssiParamSet_t *LowRssi =
-                                    (MrvlIEtypes_RssiParamSet_t *) (buf +
-                                                                    len);
+                                MrvlIEtypes_RssiThreshold_t *LowRssi =
+                                    (MrvlIEtypes_RssiThreshold_t *) (buf +
+                                                                     len);
                                 printf("Low RSSI\t%d\t%d\t%s\n",
                                        LowRssi->RSSIValue, LowRssi->RSSIFreq,
                                        (se->Events & 0x0001) ? "yes" : "no");
-                                len += sizeof(MrvlIEtypes_RssiParamSet_t);
+                                len += sizeof(MrvlIEtypes_RssiThreshold_t);
                                 break;
                             }
                         case TLV_TYPE_SNR_LOW:
@@ -871,14 +862,14 @@ process_host_cmd(int argc, char *argv[])
                             }
                         case TLV_TYPE_RSSI_HIGH:
                             {
-                                MrvlIEtypes_RssiParamSet_t *HighRssi =
-                                    (MrvlIEtypes_RssiParamSet_t *) (buf +
-                                                                    len);
+                                MrvlIEtypes_RssiThreshold_t *HighRssi =
+                                    (MrvlIEtypes_RssiThreshold_t *) (buf +
+                                                                     len);
                                 printf("High RSSI\t%d\t%d\t%s\n",
                                        HighRssi->RSSIValue,
                                        HighRssi->RSSIFreq,
                                        (se->Events & 0x0010) ? "yes" : "no");
-                                len += sizeof(MrvlIEtypes_RssiParamSet_t);
+                                len += sizeof(MrvlIEtypes_RssiThreshold_t);
                                 break;
                             }
                         case TLV_TYPE_SNR_HIGH:
@@ -905,8 +896,8 @@ process_host_cmd(int argc, char *argv[])
             }
         case HostCmd_RET_802_11_AUTO_TX:
             {
-                PHostCmd_DS_802_11_AUTO_TX at =
-                    (PHostCmd_DS_802_11_AUTO_TX) (buf + S_DS_GEN);
+                HostCmd_DS_802_11_AUTO_TX *at =
+                    (HostCmd_DS_802_11_AUTO_TX *) (buf + S_DS_GEN);
                 if (at->Action == HostCmd_ACT_GET) {
                     if (S_DS_GEN + sizeof(at->Action) == hostcmd->Size) {
                         printf("auto_tx not configured\n");
@@ -944,6 +935,73 @@ process_host_cmd(int argc, char *argv[])
                 }
                 break;
             }
+        case HostCmd_RET_802_11_LED_CONTROL:
+            {
+                HostCmd_DS_802_11_LED_CTRL *led =
+                    (HostCmd_DS_802_11_LED_CTRL *) (buf + S_DS_GEN);
+
+                if (led->Action == HostCmd_ACT_GET) {
+                    MrvlIEtypesHeader_t *header = &led->LedGpio.Header;
+
+                    printf("LedNums=%d\n", led->LedNums);
+                    if ((S_DS_GEN + sizeof(led->Action) + sizeof(led->LedNums)
+                         == hostcmd->Size) || !led->LedNums ||
+                        (led->LedNums > MAX_LEDS)
+                        || (led->LedNums != header->Len / sizeof(LedGpio_t))) {
+                        printf("LED CTRL not configured\n");
+                    } else {
+                        if (header->Type == TLV_TYPE_LED_GPIO) {
+                            int i;
+
+                            for (i = 0; i < led->LedNums; i++) {
+                                LedGpio_t *ledgpio = &led->LedGpio.LedGpio[i];
+
+                                if (ledgpio->GpioNum > 0 &&
+                                    ledgpio->GpioNum < LED_DISABLED)
+                                    printf
+                                        ("LED #%d is mapped to GPIO pin #%d\n",
+                                         ledgpio->LedNum, ledgpio->GpioNum);
+                                else
+                                    printf("LED #%d is disabled\n",
+                                           ledgpio->LedNum);
+                            }
+                        } else if (header->Type == MRVL_TERMINATE_TLV_ID)
+                            break;
+                        else
+                            printf("incorrect LED_GPIO TLV type\n");
+
+                        char *pos =
+                            (char *) (&led->LedGpio.LedGpio[0]) + header->Len;
+                        char *end = (char *) (buf + hostcmd->Size);
+                        printf
+                            ("\nLED#\tLEDState\tDutyFactor\tBlinkPeriod\tFirmwareState\n");
+                        while (end - pos >= sizeof(MrvlIEtypes_LedBehavior_t)) {
+                            MrvlIEtypes_LedBehavior_t *ledb =
+                                (MrvlIEtypes_LedBehavior_t *) pos;
+
+                            if (ledb->Header.Type == TLV_TYPE_LEDBEHAVIOR) {
+                                printf("%d\t%s\t%s\t\t%s\t\t%s\n",
+                                       ledb->LedNum,
+                                       led_state[ledb->LedState],
+                                       (ledb->LedState == LED_BLINKING) ?
+                                       led_duty_factor[ledb->
+                                                       LedArgs >> 4] : "N/A",
+                                       (ledb->LedState ==
+                                        LED_BLINKING) ?
+                                       led_blink_period[ledb->
+                                                        LedArgs & 0x0f] :
+                                       "N/A", fw_state[ledb->FirmwareState]);
+                            } else if (header->Type == MRVL_TERMINATE_TLV_ID)
+                                break;
+                            else
+                                printf("incorrect LEDBEHAVIOR TLV type\n");
+
+                            pos += sizeof(MrvlIEtypes_LedBehavior_t);
+                        }
+                    }
+                }
+                break;
+            }
         default:
             printf("HOSTCMD_RESP: ReturnCode=%#04x, Result=%#04x\n",
                    hostcmd->Command, hostcmd->Result);
@@ -957,52 +1015,6 @@ process_host_cmd(int argc, char *argv[])
   _exit_:
     if (buf)
         free(buf);
-
-    return WLAN_STATUS_SUCCESS;
-}
-
-/** 
- *  @brief Get Rate
- *   
- *  @return      WLAN_STATUS_SUCCESS--success, otherwise --fail
- */
-static int
-process_get_rate(void)
-{
-    u32 bitrate[WLAN_MAX_RATES];
-    struct iwreq iwr;
-    s32 i = 0;
-    int ioctl_val, subioctl_val;
-
-    if (get_priv_ioctl("getrate",
-                       &ioctl_val, &subioctl_val) == WLAN_STATUS_FAILURE) {
-        return -EOPNOTSUPP;
-    }
-
-    memset(&iwr, 0, sizeof(iwr));
-    strncpy(iwr.ifr_name, dev_name, IFNAMSIZ);
-    iwr.u.data.pointer = (caddr_t) bitrate;
-    iwr.u.data.length = sizeof(bitrate);
-    iwr.u.data.flags = subioctl_val;
-
-    if (ioctl(sockfd, ioctl_val, &iwr) < 0) {
-        perror("wlanconfig");
-        return WLAN_STATUS_FAILURE;
-    }
-
-    printf("%-8.16s  %d available bit-rates :\n",
-           dev_name, iwr.u.data.length);
-
-    for (i = 0; i < iwr.u.data.length; i++) {
-        print_bitrate(bitrate[i], 0, 0);
-    }
-
-    if (ioctl(sockfd, SIOCGIWRATE, &iwr)) {
-        perror("wlanconfig");
-        return WLAN_STATUS_FAILURE;
-    }
-
-    print_bitrate(iwr.u.bitrate.value, 1, iwr.u.bitrate.fixed);
 
     return WLAN_STATUS_SUCCESS;
 }
@@ -1249,115 +1261,35 @@ process_bca_ts(int argc, char *argv[])
 }
 
 /** 
- *  @brief Process reassoication
- *
- *  @param argc     number of arguments
- *  @param argv     A pointer to arguments array    
- *
- *  @return         WLAN_STATUS_SUCCESS--success, otherwise--fail
- */
-static int
-process_reassociation(int argc, char *argv[])
-{
-    wlan_ioctl_reassociation_info reassocInfo;
-    struct iwreq iwr;
-    unsigned int mac[MRVDRV_ETH_ADDR_LEN];
-    u32 idx;
-    s32 numToks;
-    int ioctl_val, subioctl_val;
-
-    if (get_priv_ioctl("reassociate",
-                       &ioctl_val, &subioctl_val) == WLAN_STATUS_FAILURE) {
-        return -EOPNOTSUPP;
-    }
-
-    /*
-     * Reassociation request is expected to be in the following format:
-     *
-     *      <xx:xx:xx:xx:xx:xx>      <yy:yy:yy:yy:yy:yy>  <ssid string>
-     *
-     *      where xx..xx is the current AP BSSID to be included in the reassoc req
-     *                yy..yy is the desired AP to send the reassoc req to
-     *                <ssid string> is the desired AP SSID to send the reassoc req to.
-     *
-     *      The current and desired AP BSSIDs are required.  
-     *      The SSID string can be omitted if the desired BSSID is provided.
-     *
-     *      If we fail to find the desired BSSID, we attempt the SSID.
-     *      If the desired BSSID is set to all 0's, the ssid string is used.
-     *      
-     */
-
-    /* Verify the number of arguments is either 5 or 6 */
-    if (argc != 5 && argc != 6) {
-        fprintf(stderr, "Invalid number of parameters!\n");
-        return -EINVAL;
-    }
-
-    memset(&iwr, 0, sizeof(iwr));
-    memset(&reassocInfo, 0x00, sizeof(reassocInfo));
-
-    /*
-     *      Scan in and set the current AP BSSID
-     */
-    numToks = sscanf(argv[3], "%2x:%2x:%2x:%2x:%2x:%2x",
-                     mac + 0, mac + 1, mac + 2, mac + 3, mac + 4, mac + 5);
-
-    if (numToks != 6) {
-        fprintf(stderr, "Invalid number of parameters!\n");
-        return -EINVAL;
-    }
-
-    for (idx = 0; idx < NELEMENTS(mac); idx++) {
-        reassocInfo.CurrentBSSID[idx] = (u8) mac[idx];
-    }
-
-    /*
-     *      Scan in and set the desired AP BSSID
-     */
-    numToks = sscanf(argv[4], "%2x:%2x:%2x:%2x:%2x:%2x",
-                     mac + 0, mac + 1, mac + 2, mac + 3, mac + 4, mac + 5);
-
-    if (numToks != 6) {
-        fprintf(stderr, "Invalid number of parameters!\n");
-        return -EINVAL;
-    }
-
-    for (idx = 0; idx < NELEMENTS(mac); idx++) {
-        reassocInfo.DesiredBSSID[idx] = (u8) mac[idx];
-    }
-
-    /*
-     * If the ssid string is provided, save it; otherwise it is an empty string
-     */
-    if (argc == 6) {
-        strcpy(reassocInfo.DesiredSSID, argv[5]);
-    }
-
-    /* 
-     * Set up and execute the ioctl call
-     */
-    strncpy(iwr.ifr_name, dev_name, IFNAMSIZ);
-    iwr.u.data.pointer = (caddr_t) & reassocInfo;
-    iwr.u.data.length = sizeof(reassocInfo);
-    iwr.u.data.flags = subioctl_val;
-
-    if (ioctl(sockfd, ioctl_val, &iwr) < 0) {
-        perror("wlanconfig: reassociate ioctl");
-        return -EFAULT;
-    }
-
-    /* No error return */
-    return WLAN_STATUS_SUCCESS;
-}
-
-/** 
  *  @brief Provision the driver with a IEEE IE for use in the next join cmd
  *
  *    Test function used to check the ioctl and driver funcionality 
  *  
  *  @return WLAN_STATUS_SUCCESS or ioctl error code
  */
+#if (WIRELESS_EXT >= 18)
+static int
+process_setgenie(void)
+{
+    struct iwreq iwr;
+
+    u8 testIE[] = { 0xdd, 0x09,
+        0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77, 0x88, 0x99
+    };
+
+    memset(&iwr, 0x00, sizeof(iwr));
+    strncpy(iwr.ifr_name, dev_name, IFNAMSIZ);
+    iwr.u.data.pointer = (caddr_t) testIE;
+    iwr.u.data.length = sizeof(testIE);
+
+    if (ioctl(sockfd, SIOCSIWGENIE, &iwr) < 0) {
+        perror("wlanconfig: setgenie ioctl");
+        return -EFAULT;
+    }
+
+    return WLAN_STATUS_SUCCESS;
+}
+#else
 static int
 process_setgenie(void)
 {
@@ -1385,6 +1317,216 @@ process_setgenie(void)
 
     return WLAN_STATUS_SUCCESS;
 }
+#endif
+
+/**
+ *  @brief Helper function for process_getscantable_idx
+ *
+ */
+static void
+dump_scan_elems(const u8 * pBuf, uint buf_len)
+{
+    uint idx;
+    uint marker = 2 + pBuf[1];
+
+    for (idx = 0; idx < buf_len; idx++) {
+        if (idx % 0x10 == 0) {
+            printf("\n%04x: ", idx);
+        }
+
+        if (idx == marker) {
+            printf("|");
+            marker = idx + pBuf[idx + 1] + 2;
+        } else {
+            printf(" ");
+        }
+
+        printf("%02x ", pBuf[idx]);
+    }
+
+    printf("\n");
+}
+
+/**
+ *  @brief Helper function for process_getscantable_idx
+ *
+ */
+static int
+scantable_elem_next(IEEEtypes_Generic_t ** pp_ie_out, int *p_buf_left)
+{
+    IEEEtypes_Generic_t *pIeGen;
+    u8 *p_next;
+
+    if (*p_buf_left < 2) {
+        return -1;
+    }
+
+    pIeGen = *pp_ie_out;
+
+    p_next = (u8 *) pIeGen + (pIeGen->IeeeHdr.Len + sizeof(pIeGen->IeeeHdr));
+    *p_buf_left -= (p_next - (u8 *) pIeGen);
+
+    *pp_ie_out = (IEEEtypes_Generic_t *) p_next;
+
+    if (*p_buf_left <= 0) {
+        return -1;
+    }
+
+    return 0;
+}
+
+/**
+ *  @brief Helper function for process_getscantable_idx
+ *
+ */
+static int
+scantable_find_elem(u8 * ie_buf,
+                    unsigned int ie_buf_len,
+                    IEEEtypes_ElementId_e ie_type,
+                    IEEEtypes_Generic_t ** ppIeOut)
+{
+    int found;
+    unsigned int ie_buf_left;
+
+    ie_buf_left = ie_buf_len;
+
+    found = FALSE;
+
+    *ppIeOut = (IEEEtypes_Generic_t *) ie_buf;
+
+    do {
+        found = ((*ppIeOut)->IeeeHdr.ElementId == ie_type);
+
+    } while (!found &&
+             (scantable_elem_next(ppIeOut, (int *) &ie_buf_left) == 0));
+
+    if (!found) {
+        *ppIeOut = NULL;
+    }
+
+    return (found ? 0 : -1);
+}
+
+/**
+ *  @brief Helper function for process_getscantable_idx
+ *
+ */
+static int
+scantable_get_ssid_from_ie(u8 * ie_buf,
+                           unsigned int ie_buf_len,
+                           u8 * pSsid, unsigned int ssid_buf_max)
+{
+    int retval;
+    IEEEtypes_Generic_t *pIeGen;
+
+    retval = scantable_find_elem(ie_buf, ie_buf_len, SSID, &pIeGen);
+
+    memcpy(pSsid, pIeGen->Data, MIN(pIeGen->IeeeHdr.Len, ssid_buf_max));
+
+    return retval;
+}
+
+/** 
+ *  @brief Provision the driver with a IEEE IE for use in the next join cmd
+ *
+ *  @return         WLAN_STATUS_SUCCESS--success, otherwise--fail
+ */
+static int
+process_getscantable_idx(int tableIdx)
+{
+    int ioctl_val, subioctl_val;
+    struct iwreq iwr;
+    u8 *pCurrent;
+    int bssInfoLen;
+    char ssid[33];
+    u16 tmp_cap;
+    u8 tsf[8];
+    u16 beaconInterval;
+    u8 scanRspBuffer[500];      /* Stack buffer can be as large as ioctl allows */
+    IEEEtypes_CapInfo_t capInfo;
+    wlan_ioctl_get_scan_table_info *pRspInfo;
+    wlan_ioctl_get_scan_table_entry *pRspEntry;
+
+    memset(ssid, 0x00, sizeof(ssid));
+
+    pRspInfo = (wlan_ioctl_get_scan_table_info *) scanRspBuffer;
+
+    pRspInfo->scanNumber = tableIdx;
+
+    if (get_priv_ioctl("getscantable",
+                       &ioctl_val, &subioctl_val) == WLAN_STATUS_FAILURE) {
+        return -EOPNOTSUPP;
+    }
+
+    /* 
+     * Set up and execute the ioctl call
+     */
+    strncpy(iwr.ifr_name, dev_name, IFNAMSIZ);
+    iwr.u.data.pointer = (caddr_t) pRspInfo;
+    iwr.u.data.length = sizeof(scanRspBuffer);
+    iwr.u.data.flags = subioctl_val;
+
+    if (ioctl(sockfd, ioctl_val, &iwr) < 0) {
+        perror("wlanconfig: getscantable ioctl");
+        return -EFAULT;
+    }
+
+    pRspEntry
+        =
+        (wlan_ioctl_get_scan_table_entry *) pRspInfo->scan_table_entry_buffer;
+
+    if (pRspInfo->scanNumber == 0) {
+        printf("wlanconfig: getscantable ioctl - index out of range\n");
+        return -EINVAL;
+    }
+
+    pCurrent = pRspInfo->scan_table_entry_buffer;
+    pCurrent += (sizeof(pRspEntry->fixedFieldLength) +
+                 pRspEntry->fixedFieldLength);
+
+    bssInfoLen = pRspEntry->bssInfoLength;
+    pCurrent += sizeof(pRspEntry->bssInfoLength);
+
+    /* time stamp is 8 byte long */
+    memcpy(tsf, pCurrent, sizeof(tsf));
+    pCurrent += sizeof(tsf);
+    bssInfoLen -= sizeof(tsf);
+
+    /* beacon interval is 2 byte long */
+    memcpy(&beaconInterval, pCurrent, sizeof(beaconInterval));
+    pCurrent += sizeof(beaconInterval);
+    bssInfoLen -= sizeof(beaconInterval);
+
+    /* capability information is 2 byte long */
+    memcpy(&capInfo, pCurrent, sizeof(capInfo));
+    pCurrent += sizeof(capInfo);
+    bssInfoLen -= sizeof(capInfo);
+
+    scantable_get_ssid_from_ie(pCurrent,
+                               bssInfoLen, (u8 *) ssid, sizeof(ssid));
+
+    printf("\n*** [%s], %02x:%02x:%02x:%02x:%02x:%2x\n",
+           ssid,
+           pRspEntry->fixedFields.bssid[0], pRspEntry->fixedFields.bssid[1],
+           pRspEntry->fixedFields.bssid[2], pRspEntry->fixedFields.bssid[3],
+           pRspEntry->fixedFields.bssid[4], pRspEntry->fixedFields.bssid[5]);
+    memcpy(&tmp_cap, &capInfo, sizeof(tmp_cap));
+    printf("Channel = %d, SS = %d, CapInfo = 0x%04x, BcnIntvl = %d\n",
+           pRspEntry->fixedFields.channel,
+           255 - pRspEntry->fixedFields.rssi, tmp_cap, beaconInterval);
+
+    printf("TSF Values: AP(0x%02x%02x%02x%02x%02x%02x%02x%02x), ",
+           tsf[7], tsf[6], tsf[5], tsf[4], tsf[3], tsf[2], tsf[1], tsf[0]);
+
+    printf("Network(0x%016llx)\n", pRspEntry->fixedFields.networkTSF);
+    printf("\n");
+    printf("Element Data (%d bytes)\n", bssInfoLen);
+    printf("------------");
+    dump_scan_elems(pCurrent, bssInfoLen);
+    printf("\n");
+
+    return 0;
+}
 
 /**
  *  @brief Retrieve and display the contents of the driver scan table.
@@ -1407,8 +1549,8 @@ process_getscantable(int argc, char *argv[])
     struct iwreq iwr;
     u8 scanRspBuffer[500];      /* Stack buffer can be as large as ioctl allows */
 
-    uint scanStart;
-    uint idx;
+    unsigned int scanStart;
+    unsigned int idx;
 
     u8 *pCurrent;
     u8 *pNext;
@@ -1416,12 +1558,26 @@ process_getscantable(int argc, char *argv[])
     u8 *pElementLen;
     int bssInfoLen;
     int ssidIdx;
-    u16 tmpCap;
     u8 *pByte;
+    char ssid[33];
+    int ssidLen = 0;
 
     IEEEtypes_CapInfo_t capInfo = { 0 };
     u8 tsf[8];
     u16 beaconInterval;
+
+    IEEEtypes_VendorSpecific_t *pWpaIe;
+    const u8 wpa_oui[4] = { 0x00, 0x50, 0xf2, 0x01 };
+
+    IEEEtypes_WmmParameter_t *pWmmIe;
+    const u8 wmm_oui[4] = { 0x00, 0x50, 0xf2, 0x02 };
+    char wmmCap;
+    char wscCap;
+    char dot11kCap;
+    char dot11rCap;
+    char privCap;
+
+    int displayedInfo;
 
     wlan_ioctl_get_scan_table_info *pRspInfo;
     wlan_ioctl_get_scan_table_entry *pRspEntry;
@@ -1433,11 +1589,22 @@ process_getscantable(int argc, char *argv[])
         return -EOPNOTSUPP;
     }
 
-    scanStart = 0;
+    if (argc > 3 && (strcmp(argv[3], "tsf") != 0)
+        && (strcmp(argv[3], "help") != 0)) {
+
+        idx = strtol(argv[3], NULL, 10);
+
+        if (idx >= 0) {
+            return process_getscantable_idx(idx);
+        }
+    }
+
+    displayedInfo = FALSE;
+    scanStart = 1;
 
     printf("---------------------------------------");
     printf("---------------------------------------\n");
-    printf("# | ch  | ss  |       bssid       |   cap    |   SSID \n");
+    printf("# | ch  | ss  |       bssid       |   cap   |   SSID \n");
     printf("---------------------------------------");
     printf("---------------------------------------\n");
 
@@ -1473,13 +1640,15 @@ process_getscantable(int argc, char *argv[])
             printf("%02u| %03d | %03d | %02x:%02x:%02x:%02x:%02x:%02x |",
                    scanStart + idx,
                    pRspEntry->fixedFields.channel,
-                   pRspEntry->fixedFields.rssi,
+                   255 - pRspEntry->fixedFields.rssi,
                    pRspEntry->fixedFields.bssid[0],
                    pRspEntry->fixedFields.bssid[1],
                    pRspEntry->fixedFields.bssid[2],
                    pRspEntry->fixedFields.bssid[3],
                    pRspEntry->fixedFields.bssid[4],
                    pRspEntry->fixedFields.bssid[5]);
+
+            displayedInfo = TRUE;
 
 #if 0
             printf("fixed = %u, bssInfo = %u\n",
@@ -1508,19 +1677,17 @@ process_getscantable(int argc, char *argv[])
 
                 /* capability information is 2 byte long */
                 memcpy(&capInfo, pCurrent, sizeof(capInfo));
-                memcpy(&tmpCap, pCurrent, sizeof(tmpCap));
                 pCurrent += sizeof(capInfo);
                 bssInfoLen -= sizeof(capInfo);
-
-                printf(" %04x-", tmpCap);
-
-                printf("%c%c%c | ",
-                       capInfo.Ibss ? 'A' : 'I',
-                       capInfo.Privacy ? 'P' : ' ',
-                       capInfo.SpectrumMgmt ? 'S' : ' ');
-            } else {
-                printf("          | ");
             }
+
+            wmmCap = ' ';       /* M (WMM), C (WMM-Call Admission Control) */
+            wscCap = ' ';       /* "S" */
+            dot11kCap = ' ';    /* "K" */
+            dot11rCap = ' ';    /* "R" */
+
+            /* "P" for Privacy (WEP) since "W" is WPA, and "2" is RSN/WPA2 */
+            privCap = capInfo.Privacy ? 'P' : ' ';
 
             while (bssInfoLen >= 2) {
                 pElementId = (IEEEtypes_ElementId_e *) pCurrent;
@@ -1532,14 +1699,41 @@ process_getscantable(int argc, char *argv[])
                 case SSID:
                     if (*pElementLen &&
                         *pElementLen <= MRVDRV_MAX_SSID_LENGTH) {
-                        for (ssidIdx = 0; ssidIdx < *pElementLen; ssidIdx++) {
-                            if (isprint(*(pCurrent + ssidIdx))) {
-                                printf("%c", *(pCurrent + ssidIdx));
+                        memcpy(ssid, pCurrent, *pElementLen);
+                        ssidLen = *pElementLen;
+                    }
+                    break;
+
+                case WPA_IE:
+                    pWpaIe = (IEEEtypes_VendorSpecific_t *) pElementId;
+                    if ((memcmp
+                         (pWpaIe->VendHdr.Oui, wpa_oui,
+                          sizeof(pWpaIe->VendHdr.Oui)) == 0)
+                        && (pWpaIe->VendHdr.OuiType == wpa_oui[3])) {
+                        /* WPA IE found, 'W' for WPA */
+                        privCap = 'W';
+                    } else {
+                        pWmmIe = (IEEEtypes_WmmParameter_t *) pElementId;
+                        if ((memcmp(pWmmIe->VendHdr.Oui,
+                                    wmm_oui,
+                                    sizeof(pWmmIe->VendHdr.Oui)) == 0)
+                            && (pWmmIe->VendHdr.OuiType == wmm_oui[3])) {
+                            /* Check the subtype: 1 == parameter, 0 == info */
+                            if ((pWmmIe->VendHdr.OuiSubtype == 1)
+                                && pWmmIe->AcParams[WMM_AC_VO].AciAifsn.Acm) {
+                                /* Call admission on VO; 'C' for CAC */
+                                wmmCap = 'C';
                             } else {
-                                printf("\\%02x", *(pCurrent + ssidIdx));
+                                /* No CAC; 'M' for uh, WMM */
+                                wmmCap = 'M';
                             }
                         }
                     }
+                    break;
+
+                case RSN_IE:
+                    /* RSN IE found; '2' for WPA2 (RSN) */
+                    privCap = '2';
                     break;
 
                 default:
@@ -1554,9 +1748,28 @@ process_getscantable(int argc, char *argv[])
                 bssInfoLen -= (2 + *pElementLen);
             }
 
+            /* "A" for Adhoc 
+             * "I" for Infrastructure,
+             * "D" for DFS (Spectrum Mgmt)
+             */
+            printf(" %c%c%c%c%c%c%c | ", capInfo.Ibss ? 'A' : 'I', privCap,     /* P (WEP), W (WPA), 2 (WPA2) */
+                   capInfo.SpectrumMgmt ? 'D' : ' ', wmmCap,    /* M (WMM), C (WMM-Call Admission Control) */
+                   dot11kCap,   /* K */
+                   dot11rCap,   /* R */
+                   wscCap);     /* S */
+
+            /* Print out the ssid or the hex values if non-printable */
+            for (ssidIdx = 0; ssidIdx < ssidLen; ssidIdx++) {
+                if (isprint(ssid[ssidIdx])) {
+                    printf("%c", ssid[ssidIdx]);
+                } else {
+                    printf("\\%02x", ssid[ssidIdx]);
+                }
+            }
+
             printf("\n");
 
-            if (argc > 3) {
+            if (argc > 3 && strcmp(argv[3], "tsf") == 0) {
                 /* TSF is a u64, some formatted printing libs have
                  *   trouble printing long longs, so cast and dump as bytes
                  */
@@ -1570,6 +1783,24 @@ process_getscantable(int argc, char *argv[])
         scanStart += pRspInfo->scanNumber;
 
     } while (pRspInfo->scanNumber);
+
+    if (displayedInfo == TRUE) {
+        if (argc > 3 && strcmp(argv[3], "help") == 0) {
+            printf("\n\n"
+                   "Capability Legend (Not all may be supported)\n"
+                   "-----------------\n"
+                   " I [ Infrastructure ]\n"
+                   " A [ Ad-hoc ]\n"
+                   " W [ WPA IE ]\n"
+                   " 2 [ WPA2/RSN IE ]\n"
+                   " M [ WMM IE ]\n"
+                   " C [ Call Admission Control - WMM IE, VO ACM set ]\n"
+                   " D [ Spectrum Management - DFS (11h) ]\n"
+                   " K [ 11k ]\n" " R [ 11r ]\n" " S [ WSC ]\n" "\n\n");
+        }
+    } else {
+        printf("< No Scan Results >\n");
+    }
 
     return WLAN_STATUS_SUCCESS;
 }
@@ -1617,12 +1848,14 @@ process_setuserscan(int argc, char *argv[])
     char chanScratch[10];
     char *pScratch;
     int tmpIdx;
-    unsigned int mac[MRVDRV_ETH_ADDR_LEN];
     int scanTime;
+    int numSsid;
+    unsigned int mac[MRVDRV_ETH_ADDR_LEN];
 
     memset(&scanReq, 0x00, sizeof(scanReq));
     chanCmdIdx = 0;
     scanTime = 0;
+    numSsid = 0;
 
     if (get_priv_ioctl("setuserscan",
                        &ioctl_val, &subioctl_val) == WLAN_STATUS_FAILURE) {
@@ -1701,8 +1934,43 @@ process_setuserscan(int argc, char *argv[])
             /* 
              *  "ssid" token string handler
              */
-            strncpy(scanReq.specificSSID, argv[argIdx] + strlen("ssid="),
-                    sizeof(scanReq.specificSSID));
+            if (numSsid < MRVDRV_MAX_SSID_LIST_LENGTH) {
+                strncpy(scanReq.ssidList[numSsid].ssid,
+                        argv[argIdx] + strlen("ssid="),
+                        sizeof(scanReq.ssidList[numSsid].ssid));
+
+                scanReq.ssidList[numSsid].maxLen = 0;
+
+                numSsid++;
+            }
+        } else if (strncmp(argv[argIdx], "wc=", strlen("wc=")) == 0) {
+
+            if (numSsid < MRVDRV_MAX_SSID_LIST_LENGTH) {
+                /* 
+                 *  "wc" token string handler
+                 */
+                pScratch = rindex(argv[argIdx], ',');
+
+                if (pScratch) {
+                    *pScratch = 0;
+                    pScratch++;
+
+                    if (isdigit(*pScratch)) {
+                        scanReq.ssidList[numSsid].maxLen = atoi(pScratch);
+                    } else {
+                        scanReq.ssidList[numSsid].maxLen = *pScratch;
+                    }
+                } else {
+                    /* Standard wildcard matching */
+                    scanReq.ssidList[numSsid].maxLen = 0xFF;
+                }
+
+                strncpy(scanReq.ssidList[numSsid].ssid,
+                        argv[argIdx] + strlen("wc="),
+                        sizeof(scanReq.ssidList[numSsid].ssid));
+
+                numSsid++;
+            }
         } else if (strncmp(argv[argIdx], "probes=", strlen("probes=")) == 0) {
             /* 
              *  "probes" token string handler
@@ -1824,6 +2092,34 @@ process_getassocrsp(void)
     } else {
         printf("getassocrsp: <empty>\n");
     }
+
+    return WLAN_STATUS_SUCCESS;
+}
+
+static int
+process_gettsf(void)
+{
+    int ioctl_val, subioctl_val;
+    struct iwreq iwr;
+    u8 tsf[8];
+
+    if (get_priv_ioctl("gettsf",
+                       &ioctl_val, &subioctl_val) == WLAN_STATUS_FAILURE) {
+        return -EOPNOTSUPP;
+    }
+
+    strncpy(iwr.ifr_name, dev_name, IFNAMSIZ);
+    iwr.u.data.pointer = (caddr_t) tsf;
+    iwr.u.data.length = sizeof(u64);
+    iwr.u.data.flags = subioctl_val;
+
+    if (ioctl(sockfd, ioctl_val, &iwr) < 0) {
+        perror("gettsf ioctl");
+        return -1;
+    }
+
+    printf("TSF=%02x%02x%02x%02x%02x%02x%02x%02x\n",
+           tsf[7], tsf[6], tsf[5], tsf[4], tsf[3], tsf[2], tsf[1], tsf[0]);
 
     return WLAN_STATUS_SUCCESS;
 }
@@ -2014,7 +2310,7 @@ parse_scan_info(WCON_HANDLE * pHandle, u8 buffer[], s32 length)
  *  @return      	WLAN_STATUS_SUCCESS--success, otherwise--fail
  */
 static int
-process_scan_results(int argc, char *argv[])
+process_scanlist(int argc, char *argv[])
 {
     u8 *buffer = NULL;
     u8 *newbuf = NULL;
@@ -2336,18 +2632,18 @@ process_wmm_qstatus(int argc, char *argv[])
         return -EFAULT;
     }
 
-    for (acVal = AC_PRIO_BK; acVal <= AC_PRIO_VO; acVal++) {
+    for (acVal = WMM_AC_BK; acVal <= WMM_AC_VO; acVal++) {
         switch (acVal) {
-        case AC_PRIO_BK:
+        case WMM_AC_BK:
             printf("BK: ");
             break;
-        case AC_PRIO_BE:
+        case WMM_AC_BE:
             printf("BE: ");
             break;
-        case AC_PRIO_VI:
+        case WMM_AC_VI:
             printf("VI: ");
             break;
-        case AC_PRIO_VO:
+        case WMM_AC_VO:
             printf("VO: ");
             break;
         default:
@@ -2355,84 +2651,10 @@ process_wmm_qstatus(int argc, char *argv[])
         }
 
         printf("ACM[%c], FlowReq[%c], FlowCreated[%c], Enabled[%c]\n",
-               (qstatus.acStatus[acVal].wmmACM ? 'X' : ' '),
+               (qstatus.acStatus[acVal].wmmAcm ? 'X' : ' '),
                (qstatus.acStatus[acVal].flowRequired ? 'X' : ' '),
                (qstatus.acStatus[acVal].flowCreated ? 'X' : ' '),
                (qstatus.acStatus[acVal].disabled ? ' ' : 'X'));
-    }
-
-    return WLAN_STATUS_SUCCESS;
-}
-
-/* 
- *  @brief Get/Set WMM ack policy
- *  
- *  @param argc		number of arguments
- *  @param argv         A pointer to arguments array    
- *  @return      	WLAN_STATUS_SUCCESS--success, otherwise--fail
- */
-static int
-process_wmm_ack_policy(int argc, char *argv[])
-{
-    u8 buf[(WMM_ACK_POLICY_PRIO * 2) + 3];
-    s32 count, i;
-    struct ifreq userdata;
-    int ioctl_val, subioctl_val;
-
-    if (get_priv_ioctl("setgetconf",
-                       &ioctl_val, &subioctl_val) == WLAN_STATUS_FAILURE) {
-        return -EOPNOTSUPP;
-    }
-
-    if ((argc != 3) && (argc != 5)) {
-        printf("Error: invalid no of arguments\n");
-        printf("Syntax: ./wlanconfig eth1 wmm_ack_policy\n");
-        printf("Syntax: ./wlanconfig eth1 wmm_ack_policy <AC> <POLICY>\n");
-        exit(1);
-    }
-
-    memset(buf, 0, (WMM_ACK_POLICY_PRIO * 2) + 3);
-
-    buf[0] = WMM_ACK_POLICY;
-
-    if (argc == 5) {
-        buf[1] = HostCmd_ACT_SET;
-        buf[2] = 0;
-
-        buf[3] = atoi(argv[3]);
-        if (buf[3] > WMM_ACK_POLICY_PRIO - 1) {
-            printf("Invalid Priority. Should be between 0 and %d\n",
-                   WMM_ACK_POLICY_PRIO - 1);
-            exit(1);
-        }
-
-        buf[4] = atoi(argv[4]);
-        if (buf[4] > 1) {
-            printf("Invalid Ack Policy. Should be 1 or 0\n");
-            exit(1);
-        }
-
-        count = 5;
-    } else {
-        count = 2;
-        buf[1] = HostCmd_ACT_GET;
-    }
-
-    strncpy(userdata.ifr_name, dev_name, IFNAMSIZ);
-    userdata.ifr_data = buf;
-
-    if (ioctl(sockfd, ioctl_val, &userdata)) {
-        fprintf(stderr, "wlanconfig: %s not supported by %s\n",
-                argv[2], dev_name);
-        return WLAN_STATUS_FAILURE;
-    }
-
-    if (buf[1] == HostCmd_ACT_GET) {
-        printf("AC Value    Priority\n");
-        for (i = 0; i < WMM_ACK_POLICY_PRIO; ++i) {
-            count = SKIP_TYPE_ACTION + (i * 2);
-            printf("%4x       %5x\n", buf[count], buf[count + 1]);
-        }
     }
 
     return WLAN_STATUS_SUCCESS;
@@ -2493,7 +2715,7 @@ fparse_for_cmd_and_hex(FILE * fp, u8 * dst, u8 * cmd)
                 if (!(ptr = readCurCmd(ptr, curCmd)))
                     return WLAN_STATUS_FAILURE;
 
-                if (strcasecmp(curCmd, cmd))    /* Not equal */
+                if (strcasecmp(curCmd, (char *) cmd))   /* Not equal */
                     isCurCmd = 0;
                 else
                     isCurCmd = 1;
@@ -2517,64 +2739,6 @@ fparse_for_cmd_and_hex(FILE * fp, u8 * dst, u8 * cmd)
     }
 
     return WLAN_STATUS_FAILURE;
-}
-
-/* 
- *  @brief Config WMM parameters
- *  
- *  @param argc		number of arguments
- *  @param argv         A pointer to arguments array    
- *  @return      	WLAN_STATUS_SUCCESS--success, otherwise--fail
- */
-static int
-process_wmm_para_conf(int argc, char *argv[], s32 cmd)
-{
-    s32 count;
-    FILE *fp;
-    s8 buf[256];
-    s8 filename[48] = "";
-    struct ifreq userdata;
-    int ioctl_val, subioctl_val;
-
-    if (get_priv_ioctl("setgetconf",
-                       &ioctl_val, &subioctl_val) == WLAN_STATUS_FAILURE) {
-        return -EOPNOTSUPP;
-    }
-
-    if (argc != 4) {
-        printf("Error: invalid no of arguments\n");
-        printf("Syntax: ./wlanconfig eth1 %s <filename>\n", argv[2]);
-        exit(1);
-    }
-
-    strncpy(filename, argv[3], MIN(sizeof(filename) - 1, strlen(argv[3])));
-    if ((fp = fopen(filename, "r")) == NULL) {
-        fprintf(stderr, "Cannot open file %s\n", argv[3]);
-        exit(1);
-    }
-
-    count = fparse_for_cmd_and_hex(fp, buf + SKIP_TYPE, argv[2]);
-    if (count < 0) {
-        printf("Invalid command parsing failed !!!\n");
-        return -EINVAL;
-    }
-
-    /* This will set the type of command sent */
-    buf[0] = (cmd - CMD_WMM_ACK_POLICY) + WMM_ACK_POLICY;
-
-    hexdump(argv[2], buf, count + SKIP_TYPE, ' ');
-    strncpy(userdata.ifr_name, dev_name, IFNAMSIZ);
-    userdata.ifr_data = buf;
-
-    if (ioctl(sockfd, ioctl_val, &userdata)) {
-        fprintf(stderr, "wlanconfig: %s not supported by %s\n",
-                argv[2], dev_name);
-        return WLAN_STATUS_FAILURE;
-    }
-
-    hexdump(argv[2], buf, count + SKIP_TYPE, ' ');
-
-    return WLAN_STATUS_SUCCESS;
 }
 
 /**
@@ -2630,7 +2794,8 @@ process_addts(int argc, char *argv[])
 
     sprintf(config_id, "tspec%d", atoi(argv[4]));
 
-    ieBytes = fparse_for_cmd_and_hex(fp, addtsReq.tspecData, config_id);
+    ieBytes =
+        fparse_for_cmd_and_hex(fp, addtsReq.tspecData, (u8 *) config_id);
 
     if (ieBytes > 0) {
         printf("Found %d bytes in the %s section of conf file %s\n",
@@ -2722,7 +2887,8 @@ process_delts(int argc, char *argv[])
 
     sprintf(config_id, "tspec%d", atoi(argv[4]));
 
-    ieBytes = fparse_for_cmd_and_hex(fp, deltsReq.tspecData, config_id);
+    ieBytes =
+        fparse_for_cmd_and_hex(fp, deltsReq.tspecData, (u8 *) config_id);
 
     if (ieBytes > 0) {
         printf("Found %d bytes in the %s section of conf file %s\n",
@@ -2803,8 +2969,8 @@ process_qconfig(int argc, char *argv[])
         /*    3     4    5   */
         /* qconfig get [qid] */
         if (argc == 4) {
-            ac_idx_start = AC_PRIO_BK;
-            ac_idx_stop = AC_PRIO_VO;
+            ac_idx_start = WMM_AC_BK;
+            ac_idx_stop = WMM_AC_VO;
         } else if (argc == 5) {
             ac_idx_start = atoi(argv[4]);
             ac_idx_stop = ac_idx_start;
@@ -2831,8 +2997,8 @@ process_qconfig(int argc, char *argv[])
             /*    3     4    5     6      7   */
             /* qconfig set msdu <value> [qid] */
             if (argc == 6) {
-                ac_idx_start = AC_PRIO_BK;
-                ac_idx_stop = AC_PRIO_VO;
+                ac_idx_start = WMM_AC_BK;
+                ac_idx_stop = WMM_AC_VO;
             } else if (argc == 7) {
                 ac_idx_start = atoi(argv[6]);
                 ac_idx_stop = ac_idx_start;
@@ -2864,8 +3030,8 @@ process_qconfig(int argc, char *argv[])
         /*    3     4    5   */
         /* qconfig def [qid] */
         if (argc == 4) {
-            ac_idx_start = AC_PRIO_BK;
-            ac_idx_stop = AC_PRIO_VO;
+            ac_idx_start = WMM_AC_BK;
+            ac_idx_stop = WMM_AC_VO;
         } else if (argc == 5) {
             ac_idx_start = atoi(argv[4]);
             ac_idx_stop = ac_idx_start;
@@ -2944,8 +3110,8 @@ process_qstats(int argc, char *argv[])
 
     if ((argc > 3) && strcmp(argv[3], "on") == 0) {
         if (argc == 4) {
-            ac_idx_start = AC_PRIO_BK;
-            ac_idx_stop = AC_PRIO_VO;
+            ac_idx_start = WMM_AC_BK;
+            ac_idx_stop = WMM_AC_VO;
         } else if (argc == 5) {
             ac_idx_start = atoi(argv[4]);
             ac_idx_stop = ac_idx_start;
@@ -2953,7 +3119,6 @@ process_qstats(int argc, char *argv[])
             fprintf(stderr, "Invalid number of parameters!\n");
             return -EINVAL;
         }
-
         queue_stats_cmd.action = WMM_STATS_ACTION_START;
         for (ac_idx = ac_idx_start; ac_idx <= ac_idx_stop; ac_idx++) {
             queue_stats_cmd.accessCategory = ac_idx;
@@ -2966,8 +3131,8 @@ process_qstats(int argc, char *argv[])
         }
     } else if ((argc > 3) && strcmp(argv[3], "off") == 0) {
         if (argc == 4) {
-            ac_idx_start = AC_PRIO_BK;
-            ac_idx_stop = AC_PRIO_VO;
+            ac_idx_start = WMM_AC_BK;
+            ac_idx_stop = WMM_AC_VO;
         } else if (argc == 5) {
             ac_idx_start = atoi(argv[4]);
             ac_idx_stop = ac_idx_start;
@@ -2996,8 +3161,8 @@ process_qstats(int argc, char *argv[])
         printf("----------------------------------"
                "---------------------------------------------\n");
         if ((argc == 4) || (argc == 3)) {
-            ac_idx_start = AC_PRIO_BK;
-            ac_idx_stop = AC_PRIO_VO;
+            ac_idx_start = WMM_AC_BK;
+            ac_idx_stop = WMM_AC_VO;
         } else if (argc == 5) {
             ac_idx_start = atoi(argv[4]);
             ac_idx_stop = ac_idx_start;
@@ -3032,6 +3197,86 @@ process_qstats(int argc, char *argv[])
         fprintf(stderr, "Invalid qstats command;\n");
         return -EINVAL;
     }
+    printf("\n");
+
+    return 0;
+}
+
+/**
+ *  @brief Retrieve and clear the TX Packet statistics
+ *
+ *  @param argc     number of arguments
+ *  @param argv     A pointer to arguments array    
+ *
+ *  @return         WLAN_STATUS_SUCCESS--success, otherwise--fail
+ */
+static int
+process_txpktstats(int argc, char *argv[])
+{
+    int ioctl_val, subioctl_val;
+    struct iwreq iwr;
+    HostCmd_DS_TX_PKT_STATS tx_pkt_stats;
+    u32 totInit, totSuccess, totAttempts, totFailRetry, totFailExpiry;
+    int idx;
+
+    totInit = totSuccess = totAttempts = totFailRetry = totFailExpiry = 0;
+
+    const char *rateIdStr[] = { "1", "2", "5.5", "11", "--",
+        "6", "9", "12", "18", "24", "36", "48", "54", "--"
+    };
+
+    if (argc != 3) {
+        fprintf(stderr, "Invalid number of parameters!\n");
+        return -EINVAL;
+    }
+
+    if (get_priv_ioctl("txpktstats",
+                       &ioctl_val, &subioctl_val) == WLAN_STATUS_FAILURE) {
+        return -EOPNOTSUPP;
+    }
+
+    printf("\n");
+
+    memset(&tx_pkt_stats, 0x00, sizeof(tx_pkt_stats));
+    strncpy(iwr.ifr_name, dev_name, IFNAMSIZ);
+    iwr.u.data.pointer = (caddr_t) & tx_pkt_stats;
+    iwr.u.data.length = sizeof(tx_pkt_stats);
+    iwr.u.data.flags = subioctl_val;
+
+    if (ioctl(sockfd, ioctl_val, &iwr) < 0) {
+        perror("txpktstats ioctl");
+        return 0;
+    }
+
+    printf("  Rate    InitialTx    SuccessTx     Attempts"
+           "    FailRetry   FailExpiry\n");
+    printf("--------------------------------------------"
+           "---------------------------\n");
+
+    for (idx = 0; idx < NELEMENTS(tx_pkt_stats.StatEntry); idx++) {
+        printf(" %5s   %10u   %10u   %10u   %10u   %10u\n",
+               rateIdStr[idx],
+               (unsigned int) tx_pkt_stats.StatEntry[idx].PktInitCnt,
+               (unsigned int) tx_pkt_stats.StatEntry[idx].PktSuccessCnt,
+               (unsigned int) tx_pkt_stats.StatEntry[idx].TxAttempts,
+               (unsigned int) tx_pkt_stats.StatEntry[idx].RetryFailure,
+               (unsigned int) tx_pkt_stats.StatEntry[idx].ExpiryFailure);
+
+        totInit += tx_pkt_stats.StatEntry[idx].PktInitCnt;
+        totSuccess += tx_pkt_stats.StatEntry[idx].PktSuccessCnt;
+        totAttempts += tx_pkt_stats.StatEntry[idx].TxAttempts;
+        totFailRetry += tx_pkt_stats.StatEntry[idx].RetryFailure;
+        totFailExpiry += tx_pkt_stats.StatEntry[idx].ExpiryFailure;
+    }
+
+    printf("--------------------------------------------"
+           "---------------------------\n");
+    printf("         %10u   %10u   %10u   %10u   %10u\n",
+           (unsigned int) totInit,
+           (unsigned int) totSuccess,
+           (unsigned int) totAttempts,
+           (unsigned int) totFailRetry, (unsigned int) totFailExpiry);
+
     printf("\n");
 
     return 0;
@@ -3136,7 +3381,7 @@ hexstr2bin(const s8 * hex, u8 * buf, size_t len)
 {
     s32 i, a;
     const s8 *ipos = hex;
-    s8 *opos = buf;
+    s8 *opos = (s8 *) buf;
 
     for (i = 0; i < len; i++) {
         a = hex2byte(ipos);
@@ -3167,13 +3412,6 @@ wlan_config_parse_string(const s8 * value, s8 * str, size_t * len,
     if (p) {
         *maxlen = (u16) a2hex_or_atoi(p + 1);
         *p = '\0';
-    } else {
-#define WILDCARD_CHAR		'*'
-        p = strchr(value, WILDCARD_CHAR);
-        if (p)
-            *maxlen = (size_t) WILDCARD_CHAR;
-        else
-            *maxlen = 0;
     }
 
     if (*value == '"') {
@@ -3197,7 +3435,7 @@ wlan_config_parse_string(const s8 * value, s8 * str, size_t * len,
         *len = hlen / 2;
         if (str == NULL)
             return WLAN_STATUS_FAILURE;
-        if (hexstr2bin(value, str, *len)) {
+        if (hexstr2bin(value, (u8 *) str, *len)) {
             return WLAN_STATUS_FAILURE;
         }
 
@@ -3281,25 +3519,6 @@ bgscan_parse_channelsperscan(u8 * CmdBuf, s32 line, s8 * value)
 }
 
 /* 
- *  @brief parse bgscan discardwhenfull parameter
- *  
- *  @param CmdBuf	A pointer to command buffer
- *  @param line	        line number
- *  @param value	A pointer to channels per scan buffer
- *  @return      	WLAN_STATUS_SUCCESS
- */
-static int
-bgscan_parse_discardwhenfull(u8 * CmdBuf, s32 line, s8 * value)
-{
-    HostCmd_DS_802_11_BG_SCAN_CONFIG *bgscan_config =
-        (HostCmd_DS_802_11_BG_SCAN_CONFIG *) CmdBuf;
-
-    bgscan_config->DiscardWhenFull = (u8) a2hex_or_atoi(value);
-
-    return WLAN_STATUS_SUCCESS;
-}
-
-/* 
  *  @brief parse bgscan scan interval parameter
  *  
  *  @param CmdBuf	A pointer to command buffer
@@ -3357,87 +3576,66 @@ bgscan_parse_reportconditions(u8 * CmdBuf, s32 line, s8 * value)
 }
 
 /* 
- *  @brief parse bgscan max scan results parameter
- *  
- *  @param CmdBuf	A pointer to command buffer
- *  @param line	        line number
- *  @param value	A pointer to max scan results buffer
- *  @return      	WLAN_STATUS_SUCCESS
- */
-static int
-bgscan_parse_maxscanresults(u8 * CmdBuf, s32 line, s8 * value)
-{
-    HostCmd_DS_802_11_BG_SCAN_CONFIG *bgscan_config =
-        (HostCmd_DS_802_11_BG_SCAN_CONFIG *) CmdBuf;
-
-    bgscan_config->MaxScanResults = (u16) a2hex_or_atoi(value);
-
-    return WLAN_STATUS_SUCCESS;
-}
-
-/* 
  *  @brief parse bgscan ssid parameter
  *  
- *  @param CmdBuf	A pointer to command buffer
- *  @param line	        line number
- *  @param value	A pointer to ssid buffer
- *  @return      	WLAN_STATUS_SUCCESS or WLAN_STATUS_FAILURE
+ *  @param CmdBuf   A pointer to command buffer
+ *  @param line     line number
+ *  @param value    A pointer to ssid buffer
+ *  @return         WLAN_STATUS_SUCCESS or WLAN_STATUS_FAILURE
  */
 static int
 bgscan_parse_ssid(u8 * CmdBuf, s32 line, s8 * value)
 {
     static int ssidCnt;
-    MrvlIEtypes_SsIdParamSet_t *SsIdParamSet = NULL;
-    MrvlIEtypes_WildCardSsIdParamSet_t *WildcardSsIdParamSet = NULL;
+
     s8 *buf = NULL;
     size_t len = 0;
     size_t maxlen = 0;
 
-    SsIdParamSet = (MrvlIEtypes_SsIdParamSet_t *) (CmdBuf + ActualPos);
-    WildcardSsIdParamSet =
-        (MrvlIEtypes_WildCardSsIdParamSet_t *) (CmdBuf + ActualPos);
-
-    buf = (s8 *) malloc(strlen(value));
-    if (buf == NULL)
+    MrvlIEtypes_WildCardSsIdParamSet_t *WildcardSsIdParamSet = NULL;
+    WildcardSsIdParamSet = (MrvlIEtypes_WildCardSsIdParamSet_t *) (CmdBuf
+                                                                   +
+                                                                   ActualPos);
+    if (value != NULL) {
+        buf = (s8 *) malloc(strlen(value));
+        if (buf == NULL)
+            return WLAN_STATUS_FAILURE;
+    } else {
+        printf("Invalid SSID\n");
         return WLAN_STATUS_FAILURE;
+    }
     memset(buf, 0, strlen(value));
+
+    if (ssidCnt >= MRVDRV_MAX_SSID_LIST_LENGTH) {
+        printf("Too many SSIDs\n");
+        free(buf);
+        return WLAN_STATUS_FAILURE;
+    }
 
     if (wlan_config_parse_string(value, buf, &len, &maxlen)) {
         printf("Invalid SSID\n");
         free(buf);
         return WLAN_STATUS_FAILURE;
     }
-
     ssidCnt++;
-
     if (!strlen(buf)) {
         printf("The %dth SSID is NULL.\n", ssidCnt);
+        free(buf);
+        return WLAN_STATUS_FAILURE;
     }
+    //It will be treated as specific scan in firmware only if MaxSsidLength=0
+    WildcardSsIdParamSet->Header.Type = cpu_to_le16(TLV_TYPE_WILDCARDSSID);
+    WildcardSsIdParamSet->Header.Len =
+        strlen(buf) + sizeof(WildcardSsIdParamSet->MaxSsidLength);
+    WildcardSsIdParamSet->MaxSsidLength = maxlen;
+    TLVSsidSize +=
+        WildcardSsIdParamSet->Header.Len + sizeof(MrvlIEtypesHeader_t);
+    ActualPos +=
+        WildcardSsIdParamSet->Header.Len + sizeof(MrvlIEtypesHeader_t);
+    WildcardSsIdParamSet->Header.Len =
+        cpu_to_le16(WildcardSsIdParamSet->Header.Len);
+    memcpy(WildcardSsIdParamSet->SsId, buf, strlen(buf));
 
-    if (maxlen > len) {
-        WildcardSsIdParamSet->Header.Type =
-            cpu_to_le16(TLV_TYPE_WILDCARDSSID);
-        WildcardSsIdParamSet->Header.Len =
-            strlen(buf) + sizeof(WildcardSsIdParamSet->MaxSsidLength);
-        WildcardSsIdParamSet->MaxSsidLength = maxlen;
-        TLVSsidSize +=
-            WildcardSsIdParamSet->Header.Len + sizeof(MrvlIEtypesHeader_t);
-        ActualPos +=
-            WildcardSsIdParamSet->Header.Len + sizeof(MrvlIEtypesHeader_t);
-        WildcardSsIdParamSet->Header.Len =
-            cpu_to_le16(WildcardSsIdParamSet->Header.Len);
-        memcpy(WildcardSsIdParamSet->SsId, buf, strlen(buf));
-    } else {
-        SsIdParamSet->Header.Type = cpu_to_le16(TLV_TYPE_SSID); /*0x0000; */
-        SsIdParamSet->Header.Len = strlen(buf);
-        TLVSsidSize += SsIdParamSet->Header.Len + sizeof(MrvlIEtypesHeader_t);
-
-        ActualPos += SsIdParamSet->Header.Len + sizeof(MrvlIEtypesHeader_t);
-
-        SsIdParamSet->Header.Len = cpu_to_le16(SsIdParamSet->Header.Len);
-
-        memcpy(SsIdParamSet->SsId, buf, strlen(buf));
-    }
     free(buf);
     return WLAN_STATUS_SUCCESS;
 }
@@ -3455,7 +3653,7 @@ bgscan_parse_probes(u8 * CmdBuf, s32 line, s8 * value)
 {
     MrvlIEtypes_NumProbes_t *Probes = NULL;
 
-#define PROBES_PAYLOAD_SIZE	2
+#define PROBES_PAYLOAD_SIZE 2
 
     Probes = (MrvlIEtypes_NumProbes_t *) (CmdBuf + ActualPos);
 
@@ -3477,10 +3675,10 @@ bgscan_parse_probes(u8 * CmdBuf, s32 line, s8 * value)
 /* 
  *  @brief parse bgscan channel list parameter
  *  
- *  @param CmdBuf	A pointer to command buffer
- *  @param line	        line number
- *  @param value	A pointer to channel list buffer
- *  @return      	WLAN_STATUS_SUCCESS or WLAN_STATUS_FAILURE
+ *  @param CmdBuf   A pointer to command buffer
+ *  @param line     line number
+ *  @param value    A pointer to channel list buffer
+ *  @return         WLAN_STATUS_SUCCESS or WLAN_STATUS_FAILURE
  */
 static int
 bgscan_parse_channellist(u8 * CmdBuf, s32 line, s8 * value)
@@ -3494,8 +3692,9 @@ bgscan_parse_channellist(u8 * CmdBuf, s32 line, s8 * value)
     len = strlen(value) + 1;
     buf = malloc(len);
 
-    if (buf == NULL)
+    if (buf == NULL) {
         return WLAN_STATUS_FAILURE;
+    }
 
     memset(buf, 0, len);
     strcpy(buf, value);
@@ -3504,10 +3703,10 @@ bgscan_parse_channellist(u8 * CmdBuf, s32 line, s8 * value)
     grp1 = buf;
     idx = 0;
     while ((grp1 != NULL) && (*grp1 != 0)) {
+
         grp0 = strsep(&grp1, "\";");
 
         if ((grp0 != NULL) && (*grp0 != 0)) {
-
             char *ps8Resultstr = NULL;
 
             ps8Resultstr = strtok(grp0, ",");
@@ -3515,7 +3714,6 @@ bgscan_parse_channellist(u8 * CmdBuf, s32 line, s8 * value)
                 goto failure;
             }
             chan->ChanScanParam[idx].RadioType = atoi(ps8Resultstr);
-
             ps8Resultstr = strtok(NULL, ",");
             if (ps8Resultstr == NULL) {
                 goto failure;
@@ -3555,7 +3753,7 @@ bgscan_parse_channellist(u8 * CmdBuf, s32 line, s8 * value)
     return WLAN_STATUS_SUCCESS;
   failure:
     free(buf);
-    printf("Invalid string: Check the bg_scan config file\n");
+    printf("Invalid string:Check the bg_scan config file\n");
     return WLAN_STATUS_FAILURE;
 }
 
@@ -3563,7 +3761,7 @@ bgscan_parse_channellist(u8 * CmdBuf, s32 line, s8 * value)
  *  @brief parse bgscan snr threshold parameter
  *  
  *  @param CmdBuf	A pointer to command buffer
- *  @param line	        line number
+ *  @param line	    line number
  *  @param value	A pointer to bgscan snr threshold buffer
  *  @return      	WLAN_STATUS_SUCCESS
  */
@@ -3576,65 +3774,15 @@ bgscan_parse_snrthreshold(u8 * CmdBuf, s32 line, s8 * value)
     SnrThreshold = (MrvlIEtypes_SnrThreshold_t *) (CmdBuf + ActualPos);
 
     SnrThreshold->Header.Type = TLV_TYPE_SNR_LOW;
-    SnrThreshold->Header.Len = PROBES_PAYLOAD_SIZE;
+    SnrThreshold->Header.Len = (sizeof(MrvlIEtypes_SnrThreshold_t)
+                                - sizeof(SnrThreshold->Header));
 
     tmp = (u16) a2hex_or_atoi(value);
     SnrThreshold->SNRValue = tmp & 0xff;
     SnrThreshold->SNRFreq = (tmp >> 8) & 0xff;
 
-    TLVSnrSize += sizeof(MrvlIEtypesHeader_t) + SnrThreshold->Header.Len;
-    ActualPos += TLVSnrSize;
-    return WLAN_STATUS_SUCCESS;
-}
-
-/* 
- *  @brief parse bgscan broadcast probe parameter
- *  
- *  @param CmdBuf	A pointer to command buffer
- *  @param line	        line number
- *  @param value	A pointer to broadcast probe buffer
- *  @return      	WLAN_STATUS_SUCCESS
- */
-static int
-bgscan_parse_bcastprobe(u8 * CmdBuf, s32 line, s8 * value)
-{
-    MrvlIEtypes_BcastProbe_t *BcastProbe = NULL;
-
-    BcastProbe = (MrvlIEtypes_BcastProbe_t *) (CmdBuf + ActualPos);
-
-    BcastProbe->Header.Type = TLV_TYPE_BCASTPROBE;
-    BcastProbe->Header.Len = PROBES_PAYLOAD_SIZE;
-
-    BcastProbe->BcastProbe = (u16) a2hex_or_atoi(value);
-
-    TLVBcProbeSize = sizeof(MrvlIEtypesHeader_t) + BcastProbe->Header.Len;
-    ActualPos += TLVBcProbeSize;
-    return WLAN_STATUS_SUCCESS;
-}
-
-/* 
- *  @brief parse number ssid probe parameter
- *  
- *  @param CmdBuf	A pointer to command buffer
- *  @param line	        line number
- *  @param value	A pointer to number ssid probe buffer
- *  @return      	WLAN_STATUS_SUCCESS
- */
-static int
-bgscan_parse_numssidprobe(u8 * CmdBuf, s32 line, s8 * value)
-{
-    MrvlIEtypes_NumSSIDProbe_t *NumSSIDProbe = NULL;
-
-    NumSSIDProbe = (MrvlIEtypes_NumSSIDProbe_t *) (CmdBuf + ActualPos);
-
-    NumSSIDProbe->Header.Type = TLV_TYPE_NUMSSID_PROBE;
-    NumSSIDProbe->Header.Len = PROBES_PAYLOAD_SIZE;
-
-    NumSSIDProbe->NumSSIDProbe = (u16) a2hex_or_atoi(value);
-
-    TLVNumSsidProbeSize =
-        sizeof(MrvlIEtypesHeader_t) + NumSSIDProbe->Header.Len;
-    ActualPos += TLVNumSsidProbeSize;
+    TLVSnrSize += sizeof(MrvlIEtypes_SnrThreshold_t);
+    ActualPos += sizeof(MrvlIEtypes_SnrThreshold_t);
     return WLAN_STATUS_SUCCESS;
 }
 
@@ -3659,9 +3807,47 @@ bgscan_parse_startlater(u8 * CmdBuf, s32 line, s8 * value)
 
     StartBGScanLater->StartLater = (u16) a2hex_or_atoi(value);
 
-    TLVStartBGScanLaterSize =
-        sizeof(MrvlIEtypesHeader_t) + StartBGScanLater->Header.Len;
+    TLVStartBGScanLaterSize
+        = sizeof(MrvlIEtypesHeader_t) + StartBGScanLater->Header.Len;
     ActualPos += TLVStartBGScanLaterSize;
+    return WLAN_STATUS_SUCCESS;
+}
+
+/* 
+ *  @brief parse bgscan BSSID filter parameter
+ *  
+ *  @param CmdBuf	A pointer to command buffer
+ *  @param line  	line number
+ *  @param value 	A pointer to bgscan bssid filter buffer
+ *  @return      	WLAN_STATUS_SUCCESS
+ */
+static int
+bgscan_parse_bssidfilter(u8 * CmdBuf, s32 line, s8 * value)
+{
+    MrvlIEtypes_BssidFilter_t *BssidFilter = NULL;
+    unsigned int bssid[MRVDRV_ETH_ADDR_LEN], i;
+    static u32 bssidCnt = 0;
+
+    if (bssidCnt >= MRVDRV_MAX_SSID_LIST_LENGTH) {
+        printf("Too many BSSIDs\n");
+        return WLAN_STATUS_FAILURE;
+    }
+    bssidCnt++;
+
+    BssidFilter = (MrvlIEtypes_BssidFilter_t *) (CmdBuf + ActualPos);
+
+    BssidFilter->Header.Type = TLV_TYPE_BSSID_FILTER;
+    BssidFilter->Header.Len = (sizeof(MrvlIEtypes_BssidFilter_t)
+                               - sizeof(BssidFilter->Header));
+
+    sscanf(value, "%2x:%2x:%2x:%2x:%2x:%2x",
+           bssid, bssid + 1, bssid + 2, bssid + 3, bssid + 4, bssid + 5);
+    for (i = 0; i < NELEMENTS(bssid); i++) {
+        BssidFilter->Bssid[i] = (u8) bssid[i];
+    }
+
+    TLVBssidFilterSize += sizeof(MrvlIEtypes_BssidFilter_t);
+    ActualPos += sizeof(MrvlIEtypes_BssidFilter_t);
     return WLAN_STATUS_SUCCESS;
 }
 
@@ -3675,27 +3861,15 @@ static struct bgscan_fields
     "Enable", bgscan_parse_enable}, {
     "BssType", bgscan_parse_bsstype}, {
     "ChannelsPerScan", bgscan_parse_channelsperscan}, {
-    "DiscardWhenFull", bgscan_parse_discardwhenfull}, {
     "ScanInterval", bgscan_parse_scaninterval}, {
-    "StoreCondition", bgscan_parse_storecondition}, {
     "ReportConditions", bgscan_parse_reportconditions}, {
-    "MaxScanResults", bgscan_parse_maxscanresults}, {
-    "SSID1", bgscan_parse_ssid}, {
-    "SSID2", bgscan_parse_ssid}, {
-    "SSID3", bgscan_parse_ssid}, {
-    "SSID4", bgscan_parse_ssid}, {
-    "SSID5", bgscan_parse_ssid}, {
-    "SSID6", bgscan_parse_ssid}, {
-    "SSID7", bgscan_parse_ssid}, {
-    "SSID8", bgscan_parse_ssid}, {
-    "SSID9", bgscan_parse_ssid}, {
-    "SSID10", bgscan_parse_ssid}, {
+    "SSID", bgscan_parse_ssid}, {
     "Probes", bgscan_parse_probes}, {
     "ChannelList", bgscan_parse_channellist}, {
     "SnrThreshold", bgscan_parse_snrthreshold}, {
-    "BcastProbe", bgscan_parse_bcastprobe}, {
-    "NumSSIDProbe", bgscan_parse_numssidprobe}, {
-"StartLater", bgscan_parse_startlater},};
+    "StoreCondition", bgscan_parse_storecondition}, {
+    "StartLater", bgscan_parse_startlater}, {
+"BssidFilter", bgscan_parse_bssidfilter},};
 
 /* 
  *  @brief get bgscan data
@@ -3735,7 +3909,8 @@ wlan_get_bgscan_data(FILE * fp, int *line,
         }
 
         for (i = 0; i < NELEMENTS(bgscan_fields); i++) {
-            if (strcmp(pos, bgscan_fields[i].name) == 0) {
+            if (strncmp(pos, bgscan_fields[i].name,
+                        strlen(bgscan_fields[i].name)) == 0) {
                 if (bgscan_fields[i].parser((u8 *) bgscan_config,
                                             *line, pos2)) {
                     printf("Line %d: failed to parse %s"
@@ -3789,14 +3964,14 @@ process_bg_scan_config(int argc, char *argv[])
         fprintf(stderr, "Cannot open file %s\n", filename);
         exit(1);
     }
-#define BGSCANCFG_BUF_LEN	1024
-    buf = (u8 *) malloc(BGSCANCFG_BUF_LEN);
+
+    buf = (u8 *) malloc(MAX_SETGET_CONF_SIZE);
     if (buf == NULL) {
         printf("Error: allocate memory for bgscan fail\n");
         fclose(fp);
         return -ENOMEM;
     }
-    memset(buf, 0, BGSCANCFG_BUF_LEN);
+    memset(buf, 0, MAX_SETGET_CONF_SIZE);
 
     bgscan_config = (HostCmd_DS_802_11_BG_SCAN_CONFIG *)
         (buf + sizeof(s32) + sizeof(u16));
@@ -3814,9 +3989,10 @@ process_bg_scan_config(int argc, char *argv[])
     Action = bgscan_config->Action;
 
     Size = sizeof(HostCmd_DS_802_11_BG_SCAN_CONFIG) +
+        TLVStartBGScanLaterSize +
+        TLVBssidFilterSize +
         TLVSsidSize + TLVProbeSize + TLVChanSize + TLVSnrSize +
         TLVBcProbeSize + TLVNumSsidProbeSize;
-    Size += TLVStartBGScanLaterSize;
 
     memcpy(buf, &CmdNum, sizeof(s32));
     memcpy(buf + sizeof(s32), &Size, sizeof(u16));
@@ -3916,11 +4092,14 @@ process_cal_data_ext(int argc, char *argv[])
         exit(1);
     }
 
-    buf = malloc(sizeof(HostCmd_DS_802_11_CAL_DATA_EXT) + sizeof(s32));
-    if (buf == NULL)
+    buf = malloc(MAX_SETGET_CONF_SIZE);
+    if (buf == NULL) {
+        printf("Error: allocate memory for caldata fail\n");
+        fclose(fp);
         return WLAN_STATUS_FAILURE;
+    }
+    memset(buf, 0, MAX_SETGET_CONF_SIZE);
     pcal_data = (HostCmd_DS_802_11_CAL_DATA_EXT *) (buf + sizeof(s32));
-    memset(pcal_data, 0, sizeof(HostCmd_DS_802_11_CAL_DATA_EXT));
 
     count = fparse_for_hex(fp, (u8 *) pcal_data);
     fclose(fp);
@@ -3939,14 +4118,7 @@ process_cal_data_ext(int argc, char *argv[])
 
     if (action == HostCmd_ACT_GET) {
         printf("Cal Data revision: %04x\n", pcal_data->Revision);
-        printf("Cal Data length: %0d", pcal_data->CalDataLen);
-        for (count = 0; count < pcal_data->CalDataLen; count++) {
-            if ((count % 16) == 0) {
-                printf("\n");
-            }
-            printf("%02x ", pcal_data->CalData[count]);
-        }
-        printf("\n");
+        hexdump("Cal Data", pcal_data->CalData, pcal_data->CalDataLen, ' ');
     }
 
     free(buf);
@@ -4167,6 +4339,71 @@ process_getcfptable(int argc, char *argv[])
     return WLAN_STATUS_SUCCESS;
 }
 
+#define VITALS_DUMP	1
+#define TRACE_MEM	2
+/**
+ *  @brief Get the fw mem
+ *
+ *  @param argc     number of arguments
+ *  @param argv     A pointer to arguments array    
+ *
+ *  @return         WLAN_STATUS_SUCCESS--success, otherwise--fail
+ */
+static int
+process_getfwmem(int argc, char *argv[])
+{
+    HostCmd_DS_GET_MEM *pGetMem;
+    int ioctl_val, subioctl_val;
+    u32 StartAddr;
+    u16 Len;
+    struct iwreq iwr;
+
+    if (get_priv_ioctl("getmem",
+                       &ioctl_val, &subioctl_val) == WLAN_STATUS_FAILURE) {
+        return -EOPNOTSUPP;
+    }
+
+    if (argc != 5) {
+        printf("Error: invalid number of arguments\n");
+        printf("Syntax: ./wlanconfig ethX getfwmem <StartAddr> <Len>");
+        return -EINVAL;
+    }
+    StartAddr = a2hex_or_atoi(argv[3]);
+    Len = (u16) a2hex_or_atoi(argv[4]);
+    if ((StartAddr == VITALS_DUMP) || (StartAddr == TRACE_MEM))
+        Len = 0;
+    if (Len > (2000 - sizeof(HostCmd_DS_GET_MEM)))
+        Len = 2000 - sizeof(HostCmd_DS_GET_MEM);
+    pGetMem = (HostCmd_DS_GET_MEM *) malloc(2000);
+    if (pGetMem == NULL) {
+        printf("Error: allocate memory for getfwmem failed\n");
+        return -ENOMEM;
+    }
+    memset(pGetMem, 0, 2000);
+
+    pGetMem->StartAddr = StartAddr;
+    pGetMem->Len = Len;
+    strncpy(iwr.ifr_name, dev_name, IFNAMSIZ);
+    iwr.u.data.pointer = (u8 *) pGetMem;
+    iwr.u.data.length = sizeof(HostCmd_DS_GET_MEM);
+    iwr.u.data.flags = subioctl_val;
+
+    while (TRUE) {
+        if (ioctl(sockfd, ioctl_val, &iwr)) {
+            fprintf(stderr, "wlanconfig: getfwmem failed\n");
+            free(pGetMem);
+            return WLAN_STATUS_FAILURE;
+        }
+        hexdump("Fw Mem", (u8 *) pGetMem + sizeof(HostCmd_DS_GET_MEM),
+                iwr.u.data.length - sizeof(HostCmd_DS_GET_MEM), ' ');
+        if (pGetMem->StartAddr == 0)
+            break;
+    }
+
+    free(pGetMem);
+    return WLAN_STATUS_SUCCESS;
+}
+
 /** 
  *  @brief Process arpfilter
  *  @param argc     number of arguments
@@ -4329,11 +4566,8 @@ main(int argc, char *argv[])
     case CMD_WMM_QSTATUS:
         process_wmm_qstatus(argc, argv);
         break;
-    case CMD_WMM_ACK_POLICY:
-        process_wmm_ack_policy(argc, argv);
-        break;
-    case CMD_WMM_AC_WPAIE:
-        process_wmm_para_conf(argc, argv, cmd);
+    case CMD_TX_PKT_STATS:
+        process_txpktstats(argc, argv);
         break;
     case CMD_ADDTS:
         if (process_addts(argc, argv)) {
@@ -4359,7 +4593,7 @@ main(int argc, char *argv[])
         process_cal_data_ext(argc, argv);
         break;
     case CMD_RDEEPROM:
-        printf("proces read eeprom\n");
+        printf("process read eeprom\n");
 
         if (argc < 5) {
             fprintf(stderr, "Register offset, number of bytes required\n");
@@ -4369,13 +4603,6 @@ main(int argc, char *argv[])
 
         if (process_read_eeprom(argv[3], argv[4])) {
             fprintf(stderr, "EEPROM Read failed\n");
-            display_usage();
-            exit(1);
-        }
-        break;
-    case CMD_GETRATE:
-        if (process_get_rate()) {
-            fprintf(stderr, "Get Rate Failed\n");
             display_usage();
             exit(1);
         }
@@ -4394,11 +4621,6 @@ main(int argc, char *argv[])
             exit(1);
         }
         break;
-    case CMD_REASSOCIATE:
-        if (process_reassociation(argc, argv)) {
-            exit(1);
-        }
-        break;
     case CMD_EXTSCAN:
         if (process_extscan(argc, argv)) {
             fprintf(stderr, "ExtScan Failed\n");
@@ -4407,7 +4629,7 @@ main(int argc, char *argv[])
         }
         break;
     case CMD_SCAN_LIST:
-        if (process_scan_results(argc, argv)) {
+        if (process_scanlist(argc, argv)) {
             fprintf(stderr, "getscanlist Failed\n");
             display_usage();
             exit(1);
@@ -4441,8 +4663,18 @@ main(int argc, char *argv[])
             exit(1);
         }
         break;
+    case CMD_GET_TSF:
+        if (process_gettsf()) {
+            exit(1);
+        }
+        break;
     case CMD_GET_CFP_TABLE:
         if (process_getcfptable(argc, argv)) {
+            exit(1);
+        }
+        break;
+    case CMD_GET_FW_MEM:
+        if (process_getfwmem(argc, argv)) {
             exit(1);
         }
         break;

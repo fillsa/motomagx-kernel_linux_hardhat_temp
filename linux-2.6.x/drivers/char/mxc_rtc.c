@@ -4,7 +4,7 @@
  * Freescale MXC Real Time Clock interface for Linux
  *
  * Copyright 2006 Freescale Semiconductor, Inc. All Rights Reserved.
- * Copyright(C) 2006-2007 Motorola, Inc.
+ * Copyright 2006-2007 Motorola, Inc.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by

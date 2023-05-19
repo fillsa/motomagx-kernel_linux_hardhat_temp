@@ -1,6 +1,5 @@
 /*
  * Copyright 2005-2006 Freescale Semiconductor, Inc. All Rights Reserved.
- * Copyright (C) 2006-2007 Motorola, Inc.
  *
  * The code contained herein is licensed under the GNU General Public
  * License. You may obtain a copy of the GNU General Public License
@@ -11,16 +10,20 @@
  */
 
 /*
+ * Copyright 2006-2007 Motorola, Inc.
+ *                             
  * Date        Author            Comment
  * ==========  ================  ========================
  * 12/05/2006  Motorola          Dynamic PLL lock/unlock
- * 04/16/2007  Motorola          Additional clocks for USB and SSI splitting
- * 06/06/2007  Motorola          Added include of config.h
+ * 06/08/2007  Motorola          Clock split change and added config.h include
+ * 06/12/2007  Motorola          Add missing clock definitions
  */
 
 #ifndef __MXC_CLOCK_H_
 
 #define __MXC_CLOCK_H_
+
+#include <linux/config.h>
 
 /*!
  * @defgroup CLOCKS Clocking Setup and Retrieving
@@ -36,13 +39,6 @@
  *
  * @ingroup CLOCKS
  */
-
-/*
- * Include Files
- */
-
-#include <linux/config.h>
-
 
 #ifndef __ASSEMBLY__
 /*!
@@ -143,6 +139,14 @@ enum mxc_clocks {
 	MSTICK1_BAUD,
 	MSTICK2_BAUD,
 	ATA_CLK,
+#ifdef CONFIG_MOT_FEAT_PM
+        IIM_CLK,
+        SMC_CLK,
+        ECT_CLK,
+        RTRMCU_CLK,
+        EMI_CLK,
+        SAHARA_CLK,
+#endif
 };
 
 /*!

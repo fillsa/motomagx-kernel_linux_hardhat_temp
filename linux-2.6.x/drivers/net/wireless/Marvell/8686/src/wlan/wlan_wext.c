@@ -2,7 +2,7 @@
   * @brief This file contains ioctl functions
   * 
   * (c) Copyright © 2003-2007, Marvell International Ltd. 
-  * (c) Copyright © 2008, Motorola.
+  * (c) Copyright © 2007, Motorola.
   *
   * This software file (the "File") is distributed by Marvell International 
   * Ltd. under the terms of the GNU General Public License Version 2, June 1991 
@@ -32,18 +32,16 @@ Change log:
 	04/18/06: Remove old Subscrive Event and add new Subscribe Event
 	          implementation through generic hostcmd API
 	05/04/06: Add IBSS coalescing related new iwpriv command
+	08/29/06: Add ledgpio private command
 	10/23/06: Validate setbcnavg/setdataavg command parameters and
 	          return error if out of range
 ********************************************************/
-/*****************************************************
- Date         Author         Comment
- ==========   ===========    ==========================
- 21-Mar-2008  Motorola       Integrate Marvell recovery mechanism in getSNR
- 15-May-2008  Motorola       Allow sessiontype command in deepsleep mode.
- 21-May-2008  Motorola       Add MPM support.
- 04-Jun-2008  Motorola       WIFI driver :integrate Marvell 8686 release (81048p4_26340p77)
- 17-Jun-2008  Motorola       WIFI driver :integrate Marvell 8686 release (81048p5_26340p78)
-*******************************************************/
+
+/********************************************************
+ Revision History:
+  * Author           Date            Description
+  * Motorola         20-Oct-2007     Added FMA support  
+*********************************************************/
 
 #include	"include.h"
 
@@ -57,8 +55,6 @@ Change log:
 				IW_EV_QUAL_LEN + MRVDRV_MAX_SSID_LENGTH + \
 				IW_EV_PARAM_LEN + 40)   /* 40 for WPAIE */
 
-#define WAIT_FOR_SCAN_RRESULT_MAX_TIME (10 * HZ)
-
 typedef struct _ioctl_cmd
 {
     int cmd;
@@ -68,12 +64,10 @@ typedef struct _ioctl_cmd
 
 static ioctl_cmd Commands_Allowed_In_DeepSleep[] = {
     {.cmd = WLANDEEPSLEEP,.subcmd = 0,.fixsize = FALSE},
-    {.cmd = WLAN_SETNONE_GETWORDCHAR,.subcmd = WLANVERSION,.fixsize = FALSE},
+    {.cmd = WLAN_SETONEINT_GETWORDCHAR,.subcmd = WLANVERSION,.fixsize =
+     FALSE},
     {.cmd = WLAN_SETINT_GETINT,.subcmd = WLANSDIOCLOCK,.fixsize = TRUE},
     {.cmd = WLAN_SET_GET_2K,.subcmd = WLAN_GET_CFP_TABLE,.fixsize = FALSE},
-#ifdef WPRM_DRV    
-    {.cmd = WLAN_SET_GET_SIXTEEN_INT,.subcmd = WLAN_SESSIONTYPE,.fixsize = FALSE},
-#endif    
 #ifdef DEBUG_LEVEL1
     {.cmd = WLAN_SET_GET_SIXTEEN_INT,.subcmd = WLAN_DRV_DBG,.fixsize = FALSE},
 #endif
@@ -88,13 +82,13 @@ static ioctl_cmd Commands_Allowed_In_DeepSleep[] = {
 ********************************************************/
 #ifdef DEBUG_LEVEL1
 #ifdef DEBUG_LEVEL2
+#ifdef MOTO_PLATFORM
+#define DEFAULT_DEBUG_MASK	(DBG_MSG | DBG_FATAL | DBG_ERROR)
+#else
 #define	DEFAULT_DEBUG_MASK	(0xffffffff & ~DBG_EVENT)
-#else
-#ifdef MOTO_DBG
-#define DEFAULT_DEBUG_MASK	(DBG_MSG | DBG_FATAL | DBG_ERROR | DBG_MOTO_MSG)
-#else
-#define DEFAULT_DEBUG_MASK	(DBG_MSG | DBG_FATAL)
 #endif
+#else
+#define DEFAULT_DEBUG_MASK	(DBG_MSG | DBG_FATAL | DBG_ERROR)
 #endif
 u32 drvdbg = DEFAULT_DEBUG_MASK;
 u32 ifdbg = 0;
@@ -173,7 +167,7 @@ Is_Command_Allowed_In_Sleep(struct ifreq *req, int cmd,
 }
 
 /** 
- *  @brief This function checks if the commans is allowed.
+ *  @brief This function checks if the command is allowed.
  * 
  *  @param priv		A pointer to wlan_private structure
  *  @return		TRUE or FALSE
@@ -183,9 +177,11 @@ Is_Command_Allowed(wlan_private * priv)
 {
     BOOLEAN ret = TRUE;
 
-    if ((priv->adapter->IsDeepSleep == TRUE)) {
-        PRINTM(INFO, "IOCTLS called when station is in DeepSleep\n");
-        ret = FALSE;
+    if (!priv->adapter->IsAutoDeepSleepEnabled) {
+        if ((priv->adapter->IsDeepSleep == TRUE)) {
+            PRINTM(INFO, "IOCTLS called when station is in DeepSleep\n");
+            ret = FALSE;
+        }
     }
 
     return ret;
@@ -259,6 +255,37 @@ mw_to_dbm(int mw)
     else
         return 21;
 }
+
+/** 
+ *  @brief This function sends customized event to application.
+ *  
+ *  @param priv    A pointer to wlan_private structure
+ *  @para str	   A pointer to event string
+ *  @return 	   n/a
+ */
+void
+send_iwevcustom_event(wlan_private * priv, s8 * str)
+{
+    union iwreq_data iwrq;
+    u8 buf[50];
+
+    ENTER();
+
+    memset(&iwrq, 0, sizeof(union iwreq_data));
+    memset(buf, 0, sizeof(buf));
+
+    snprintf(buf, sizeof(buf) - 1, "%s", str);
+
+    iwrq.data.pointer = buf;
+    iwrq.data.length = strlen(buf) + 1 + IW_EV_LCP_LEN;
+
+    /* Send Event to upper layer */
+    wireless_send_event(priv->wlan_dev.netdev, IWEVCUSTOM, &iwrq, buf);
+    PRINTM(INFO, "Wireless event %s is sent to app\n", str);
+
+    LEAVE();
+    return;
+}
 #endif
 
 #define FIRST_VALID_CHANNEL	0xff
@@ -311,10 +338,10 @@ find_cfp_by_band_and_channel(wlan_adapter * adapter, u8 band, u16 channel)
 /** 
  *  @brief Find the channel frequency power info with specific frequency
  *   
- *  @param adapter 	A pointer to wlan_adapter structure
- *  @param band		it can be BAND_A, BAND_G or BAND_B
- *  @param freq	        the frequency for looking	
- *  @return 	   	A pointer to CHANNEL_FREQ_POWER structure or NULL if not find.
+ *  @param adapter  A pointer to wlan_adapter structure
+ *  @param band     it can be BAND_A, BAND_G or BAND_B
+ *  @param freq     the frequency for looking   
+ *  @return         Pointer to CHANNEL_FREQ_POWER structure; NULL if not found
  */
 static CHANNEL_FREQ_POWER *
 find_cfp_by_band_and_freq(wlan_adapter * adapter, u8 band, u32 freq)
@@ -355,79 +382,66 @@ find_cfp_by_band_and_freq(wlan_adapter * adapter, u8 band, u32 freq)
 /** 
  *  @brief Manufacturing command ioctl function
  *   
- *  @param priv 	A pointer to wlan_private structure
- *  @param userdata	A pointer to user buf
- *  @return 	   	WLAN_STATUS_SUCCESS--success, WLAN_STATUS_FAILURE--fail
+ *  @param priv		A pointer to wlan_private structure
+ *  @param wrq 		A pointer to iwreq structure
+ *  @return    		WLAN_STATUS_SUCCESS--success, otherwise--fail
  */
 static int
-wlan_mfg_command(wlan_private * priv, void *userdata)
+wlan_mfg_command(wlan_private * priv, struct iwreq *wrq)
 {
-    PkHeader *pkHdr;
-    int len, ret;
-    wlan_adapter *Adapter = priv->adapter;
+    HostCmd_DS_GEN *pCmdPtr;
+    u8 *mfg_cmd;
+    u16 mfg_cmd_len;
+    int ret;
 
     ENTER();
 
-    // creating the cmdbuf
-    if (Adapter->mfg_cmd == NULL) {
-        PRINTM(INFO, "Creating cmdbuf\n");
-        if (!
-            (Adapter->mfg_cmd =
-             kmalloc(MRVDRV_SIZE_OF_CMD_BUFFER, GFP_KERNEL))) {
-            PRINTM(INFO, "kmalloc failed!\n");
-            return WLAN_STATUS_FAILURE;
-        }
-        Adapter->mfg_cmd_len = MRVDRV_SIZE_OF_CMD_BUFFER;
+    /* allocate MFG command buffer */
+    if (!(mfg_cmd = kmalloc(MRVDRV_SIZE_OF_CMD_BUFFER, GFP_KERNEL))) {
+        PRINTM(INFO, "allocate MFG command buffer failed!\n");
+        return -ENOMEM;
     }
-    // get PktHdr from userdata
-    if (copy_from_user(Adapter->mfg_cmd, userdata, sizeof(PkHeader))) {
-        PRINTM(INFO, "copy from user failed :PktHdr\n");
-        ret = WLAN_STATUS_FAILURE;
+
+    /* get MFG command header */
+    if (copy_from_user(mfg_cmd, wrq->u.data.pointer, sizeof(HostCmd_DS_GEN))) {
+        PRINTM(INFO, "copy from user failed: MFG command header\n");
+        ret = -EFAULT;
         goto mfg_exit;
     }
-    // get the size
-    pkHdr = (PkHeader *) Adapter->mfg_cmd;
-    len = pkHdr->len;
 
-    PRINTM(INFO, "cmdlen = %d\n", (u32) len);
+    /* get the command size */
+    pCmdPtr = (HostCmd_DS_GEN *) mfg_cmd;
+    mfg_cmd_len = pCmdPtr->Size;
+    PRINTM(INFO, "MFG command len = %d\n", mfg_cmd_len);
 
-    while (len >= Adapter->mfg_cmd_len) {
-        kfree(Adapter->mfg_cmd);
-
-        if (!(Adapter->mfg_cmd = kmalloc(len + 256, GFP_KERNEL))) {
-            PRINTM(INFO, "kmalloc failed!\n");
-            return WLAN_STATUS_FAILURE;
-        }
-
-        Adapter->mfg_cmd_len = len + 256;
+    if (mfg_cmd_len > MRVDRV_SIZE_OF_CMD_BUFFER) {
+        ret = -EINVAL;
+        goto mfg_exit;
     }
 
-    // get the whole command from user
-    if (copy_from_user(Adapter->mfg_cmd, userdata, len)) {
-        PRINTM(INFO, "copy from user failed :PktHdr\n");
-        ret = WLAN_STATUS_FAILURE;
+    /* get the whole command from user */
+    if (copy_from_user(mfg_cmd, wrq->u.data.pointer, mfg_cmd_len)) {
+        PRINTM(INFO, "copy from user failed: MFG command\n");
+        ret = -EFAULT;
         goto mfg_exit;
     }
 
     ret = PrepareAndSendCommand(priv,
                                 HostCmd_CMD_MFG_COMMAND,
-                                0, HostCmd_OPTION_WAITFORRSP, 0, NULL);
+                                0, HostCmd_OPTION_WAITFORRSP, 0, mfg_cmd);
 
-    if (ret) {
-        goto mfg_exit;
-    }
-    // copy it back to user
-    if (Adapter->mfg_cmd_resp_len > 0) {
-        if (copy_to_user(userdata, Adapter->mfg_cmd, len)) {
-            PRINTM(INFO, "copy to user failed \n");
-            ret = WLAN_STATUS_FAILURE;
+    /* copy the response back to user */
+    if (!ret && pCmdPtr->Size) {
+        mfg_cmd_len = MIN(pCmdPtr->Size, mfg_cmd_len);
+        if (copy_to_user(wrq->u.data.pointer, mfg_cmd, mfg_cmd_len)) {
+            PRINTM(INFO, "copy to user failed: MFG command\n");
+            ret = -EFAULT;
         }
+        wrq->u.data.length = mfg_cmd_len;
     }
 
   mfg_exit:
-    kfree(Adapter->mfg_cmd);
-    Adapter->mfg_cmd = NULL;
-    Adapter->mfg_cmd_len = 0;
+    kfree(mfg_cmd);
     LEAVE();
     return ret;
 }
@@ -497,7 +511,7 @@ UpdateCurrentChannel(wlan_private * priv)
                                 HostCmd_OPTION_WAITFORRSP, 0, NULL);
 
     PRINTM(INFO, "Current Channel = %d\n",
-           priv->adapter->CurBssParams.channel);
+           priv->adapter->CurBssParams.BSSDescriptor.Channel);
 
     return ret;
 }
@@ -539,22 +553,24 @@ ChangeAdhocChannel(wlan_private * priv, int channel)
 
     UpdateCurrentChannel(priv);
 
-    if (Adapter->CurBssParams.channel == Adapter->AdhocChannel) {
+    if (Adapter->CurBssParams.BSSDescriptor.Channel == Adapter->AdhocChannel) {
         /* AdhocChannel is set to the current Channel already */
         LEAVE();
         return WLAN_STATUS_SUCCESS;
     }
 
     PRINTM(INFO, "Updating Channel from %d to %d\n",
-           Adapter->CurBssParams.channel, Adapter->AdhocChannel);
+           Adapter->CurBssParams.BSSDescriptor.Channel,
+           Adapter->AdhocChannel);
 
     SetCurrentChannel(priv, Adapter->AdhocChannel);
 
     UpdateCurrentChannel(priv);
 
-    if (Adapter->CurBssParams.channel != Adapter->AdhocChannel) {
+    if (Adapter->CurBssParams.BSSDescriptor.Channel != Adapter->AdhocChannel) {
         PRINTM(INFO, "Failed to updated Channel to %d, channel = %d\n",
-               Adapter->AdhocChannel, Adapter->CurBssParams.channel);
+               Adapter->AdhocChannel,
+               Adapter->CurBssParams.BSSDescriptor.Channel);
         LEAVE();
         return WLAN_STATUS_FAILURE;
     }
@@ -566,7 +582,8 @@ ChangeAdhocChannel(wlan_private * priv, int channel)
         PRINTM(INFO, "Channel Changed while in an IBSS\n");
 
         /* Copy the current ssid */
-        memcpy(&curAdhocSsid, &Adapter->CurBssParams.ssid,
+        memcpy(&curAdhocSsid,
+               &Adapter->CurBssParams.BSSDescriptor.Ssid,
                sizeof(WLAN_802_11_SSID));
 
         /* Exit Adhoc mode */
@@ -600,6 +617,75 @@ ChangeAdhocChannel(wlan_private * priv, int channel)
 }
 
 /** 
+ *  @brief Set/Get WPA IE   
+ *
+ *  @param priv         A pointer to wlan_private structure
+ *  @param ie_data_ptr  A pointer to IE
+ *  @param ie_len       Length of the IE
+ *
+ *  @return             WLAN_STATUS_SUCCESS --success, otherwise fail
+ */
+static int
+wlan_set_wpa_ie_helper(wlan_private * priv, u8 * ie_data_ptr, u16 ie_len)
+{
+    wlan_adapter *Adapter = priv->adapter;
+    int ret = WLAN_STATUS_SUCCESS;
+
+    ENTER();
+
+    if (ie_len) {
+        if (ie_len > sizeof(Adapter->Wpa_ie)) {
+            PRINTM(INFO, "failed to copy WPA IE, too big \n");
+            return -EFAULT;
+        }
+        if (copy_from_user(Adapter->Wpa_ie, ie_data_ptr, ie_len)) {
+            PRINTM(INFO, "failed to copy WPA IE \n");
+            return -EFAULT;
+        }
+        Adapter->Wpa_ie_len = ie_len;
+        PRINTM(INFO, "Set Wpa_ie_len=%d IE=%#x\n",
+               Adapter->Wpa_ie_len, Adapter->Wpa_ie[0]);
+        HEXDUMP("Wpa_ie", Adapter->Wpa_ie, Adapter->Wpa_ie_len);
+
+        if (Adapter->Wpa_ie[0] == WPA_IE) {
+            Adapter->SecInfo.WPAEnabled = TRUE;
+        } else if (Adapter->Wpa_ie[0] == RSN_IE) {
+            Adapter->SecInfo.WPA2Enabled = TRUE;
+        } else {
+            Adapter->SecInfo.WPAEnabled = FALSE;
+            Adapter->SecInfo.WPA2Enabled = FALSE;
+        }
+    } else {
+        memset(Adapter->Wpa_ie, 0, sizeof(Adapter->Wpa_ie));
+        Adapter->Wpa_ie_len = ie_len;
+        PRINTM(INFO, "Reset Wpa_ie_len=%d IE=%#x\n",
+               Adapter->Wpa_ie_len, Adapter->Wpa_ie[0]);
+        Adapter->SecInfo.WPAEnabled = FALSE;
+        Adapter->SecInfo.WPA2Enabled = FALSE;
+    }
+
+    LEAVE();
+    return ret;
+}
+
+/** 
+ *  @brief Set/Get WPA IE
+ *
+ *  @param priv         A pointer to wlan_private structure
+ *  @param req          A pointer to ifreq structure
+ *
+ *  @return             WLAN_STATUS_SUCCESS --success, otherwise fail
+ */
+static int
+wlan_set_wpa_ie_ioctl(wlan_private * priv, struct ifreq *req)
+{
+    struct iwreq *wrq = (struct iwreq *) req;
+
+    return wlan_set_wpa_ie_helper(priv,
+                                  wrq->u.data.pointer, wrq->u.data.length);
+}
+
+/** 
  *  @brief Set WPA key
  *   
  *  @param dev                  A pointer to net_device structure
@@ -615,7 +701,7 @@ wlan_set_encode_wpa(struct net_device *dev,
 {
     int ret = WLAN_STATUS_SUCCESS;
     wlan_private *priv = dev->priv;
-    PWLAN_802_11_KEY pKey;
+    WLAN_802_11_KEY *pKey;
 
     ENTER();
 
@@ -624,7 +710,7 @@ wlan_set_encode_wpa(struct net_device *dev,
         return -EBUSY;
     }
 
-    pKey = (PWLAN_802_11_KEY) extra;
+    pKey = (WLAN_802_11_KEY *) extra;
 
     HEXDUMP("Key buffer: ", extra, dwrq->length);
 
@@ -639,6 +725,7 @@ wlan_set_encode_wpa(struct net_device *dev,
                                 HostCmd_ACT_SET,
                                 HostCmd_OPTION_WAITFORRSP,
                                 KEY_INFO_ENABLED, pKey);
+
     if (ret) {
         LEAVE();
         return ret;
@@ -677,7 +764,6 @@ wlan_set_encode_nonwpa(struct net_device *dev,
     wlan_private *priv = dev->priv;
     wlan_adapter *Adapter = priv->adapter;
     MRVL_WEP_KEY *pWep;
-    WLAN_802_11_SSID ssid;
     int index, PrevAuthMode;
 
     ENTER();
@@ -711,7 +797,7 @@ wlan_set_encode_nonwpa(struct net_device *dev,
          * Check the size of the key 
          */
 
-        if (dwrq->length > MAX_KEY_SIZE) {
+        if (dwrq->length > MAX_WEP_KEY_SIZE) {
             return -EINVAL;
         }
 
@@ -735,11 +821,11 @@ wlan_set_encode_nonwpa(struct net_device *dev,
             memcpy(pWep->KeyMaterial, extra, dwrq->length);
 
             /* Set the length */
-            if (dwrq->length > MIN_KEY_SIZE) {
-                pWep->KeyLength = MAX_KEY_SIZE;
+            if (dwrq->length > MIN_WEP_KEY_SIZE) {
+                pWep->KeyLength = MAX_WEP_KEY_SIZE;
             } else {
                 if (dwrq->length > 0) {
-                    pWep->KeyLength = MIN_KEY_SIZE;
+                    pWep->KeyLength = MIN_WEP_KEY_SIZE;
                 } else {
                     /* Disable the key */
                     pWep->KeyLength = 0;
@@ -751,10 +837,8 @@ wlan_set_encode_nonwpa(struct net_device *dev,
                 /*
                  * The status is set as Key Absent 
                  * so as to make sure we display the 
-                 * keys when iwlist ethX key is 
-                 * used - MPS 
+                 * keys when iwlist ethX key is used
                  */
-
                 Adapter->SecInfo.WEPStatus = Wlan802_11WEPKeyAbsent;
             }
 
@@ -819,7 +903,10 @@ wlan_set_encode_nonwpa(struct net_device *dev,
         Adapter->CurrentPacketFilter &= ~HostCmd_ACT_MAC_WEP_ENABLE;
     }
 
-    SetMacPacketFilter(priv);
+    ret = PrepareAndSendCommand(priv,
+                                HostCmd_CMD_MAC_CONTROL,
+                                0, HostCmd_OPTION_WAITFORRSP,
+                                0, &Adapter->CurrentPacketFilter);
 
     if (dwrq->flags & IW_ENCODE_RESTRICTED) {
         /* iwconfig ethX restricted key [1] */
@@ -829,34 +916,6 @@ wlan_set_encode_nonwpa(struct net_device *dev,
         /* iwconfig ethX key [2] open */
         Adapter->SecInfo.AuthenticationMode = Wlan802_11AuthModeOpen;
         PRINTM(INFO, "Auth mode open!\n");
-    }
-
-    /*
-     * If authentication mode changed - de-authenticate, set authentication
-     * method and re-associate if we were previously associated.
-     */
-    if (Adapter->SecInfo.AuthenticationMode != PrevAuthMode) {
-        if (Adapter->MediaConnectStatus == WlanMediaStateConnected &&
-            Adapter->InfrastructureMode == Wlan802_11Infrastructure) {
-
-            /* keep a copy of the ssid associated with */
-            memcpy(&ssid, &Adapter->CurBssParams.ssid, sizeof(ssid));
-
-            /*
-             * De-authenticate from AP 
-             */
-
-            ret = SendDeauthentication(priv);
-
-            if (ret) {
-                LEAVE();
-                return ret;
-            }
-
-        } else {
-            /* reset ssid */
-            memset(&ssid, 0, sizeof(ssid));
-        }
     }
 
     LEAVE();
@@ -1058,9 +1117,9 @@ reassociation_off(wlan_private * priv)
 
     ENTER();
 
-    if (Adapter->TimerIsSet == TRUE) {
+    if (Adapter->ReassocTimerIsSet == TRUE) {
         CancelTimer(&Adapter->MrvDrvTimer);
-        Adapter->TimerIsSet = FALSE;
+        Adapter->ReassocTimerIsSet = FALSE;
     }
 
     Adapter->Reassoc_on = FALSE;
@@ -1087,7 +1146,6 @@ wlan_set_region(wlan_private * priv, u16 region_code)
     for (i = 0; i < MRVDRV_MAX_REGION_CODE; i++) {
         // use the region code to search for the index
         if (region_code == RegionCodeToIndex[i]) {
-            priv->adapter->RegionTableIndex = (u16) i;
             priv->adapter->RegionCode = region_code;
             break;
         }
@@ -1134,9 +1192,9 @@ CopyRates(u8 * dest, int pos, u8 * src, int len)
 /** 
  *  @brief Get active data rates
  *   
- *  @param Adapter              A pointer to wlan_adapter structure
- *  @param rate		        The buf to return the active rates
- *  @return 	   	        The number of Rates
+ *  @param Adapter          A pointer to wlan_adapter structure
+ *  @param rate             The buf to return the active rates
+ *  @return                 The number of Rates
  */
 static int
 get_active_data_rates(wlan_adapter * Adapter, WLAN_802_11_RATES rates)
@@ -1166,42 +1224,122 @@ get_active_data_rates(wlan_adapter * Adapter, WLAN_802_11_RATES rates)
 }
 
 /** 
- *  @brief Get/Set Firmware wakeup method
+ *  @brief Get/Set Per packet TX Control flags
  *  
- *  @param priv		A pointer to wlan_private structure
- *  @param wrq	   	A pointer to user data
- *  @return 	   	WLAN_STATUS_SUCCESS--success, otherwise fail
+ *  @param priv     A pointer to wlan_private structure
+ *  @param wrq      A pointer to user data
+ *  @return         WLAN_STATUS_SUCCESS--success, otherwise fail
  */
 static int
 wlan_txcontrol(wlan_private * priv, struct iwreq *wrq)
 {
     wlan_adapter *Adapter = priv->adapter;
-    int data;
+    int data[3];
+    int ret;
+
     ENTER();
 
-    if ((int) wrq->u.data.length == 0) {
-        if (copy_to_user
-            (wrq->u.data.pointer, &Adapter->PktTxCtrl, sizeof(u32))) {
-            PRINTM(MSG, "copy_to_user failed!\n");
-            return -EFAULT;
+    ret = WLAN_STATUS_SUCCESS;
+
+    switch (wrq->u.data.length) {
+    case 0:
+        /*
+         *  Get the Global setting for TxCtrl 
+         */
+        if (copy_to_user(wrq->u.data.pointer,
+                         &Adapter->PktTxCtrl, sizeof(u32))) {
+            PRINTM(INFO, "copy_to_user failed!\n");
+            ret = -EFAULT;
+        } else {
+            wrq->u.data.length = 1;
         }
-    } else {
-        if ((int) wrq->u.data.length > 1) {
-            PRINTM(MSG, "ioctl too many args!\n");
-            return -EFAULT;
-        }
+        break;
+
+    case 1:
+        /*
+         *  Set the Global setting for TxCtrl
+         */
         if (copy_from_user(&data, wrq->u.data.pointer, sizeof(int))) {
             PRINTM(INFO, "Copy from user failed\n");
-            return -EFAULT;
+            ret = -EFAULT;
+        } else {
+            Adapter->PktTxCtrl = data[0];
+            PRINTM(INFO, "PktTxCtrl set: 0x%08x\n", Adapter->PktTxCtrl);
         }
+        break;
 
-        Adapter->PktTxCtrl = (u32) data;
+    case 2:
+        /*
+         *  Get the per User Priority setting for TxCtrl for the given UP
+         */
+        if (copy_from_user(data, wrq->u.data.pointer, sizeof(int) * 2)) {
+            PRINTM(INFO, "Copy from user failed\n");
+            ret = -EFAULT;
+
+        } else if (data[1] >= NELEMENTS(Adapter->wmm.userPriPktTxCtrl)) {
+            /* Range check the UP input from user space */
+            PRINTM(INFO, "User priority out of range\n");
+            ret = -EINVAL;
+
+        } else if (Adapter->wmm.userPriPktTxCtrl[data[1]]) {
+            data[2] = Adapter->wmm.userPriPktTxCtrl[data[1]];
+
+            /* User priority setting is valid, return it */
+            if (copy_to_user(wrq->u.data.pointer, data, sizeof(int) * 3)) {
+                PRINTM(INFO, "copy_to_user failed!\n");
+                ret = -EFAULT;
+            } else {
+                wrq->u.data.length = 3;
+            }
+
+        } else {
+            /* Return the global setting since the UP set is zero */
+            data[2] = Adapter->PktTxCtrl;
+
+            if (copy_to_user(wrq->u.data.pointer, data, sizeof(int) * 3)) {
+                PRINTM(INFO, "copy_to_user failed!\n");
+                ret = -EFAULT;
+            } else {
+                wrq->u.data.length = 3;
+            }
+        }
+        break;
+
+    case 3:
+        /*
+         *  Set the per User Priority setting for TxCtrl for the given UP
+         */
+
+        if (copy_from_user(data, wrq->u.data.pointer, sizeof(int) * 3)) {
+            PRINTM(INFO, "Copy from user failed\n");
+            ret = -EFAULT;
+        } else if (data[1] >= NELEMENTS(Adapter->wmm.userPriPktTxCtrl)) {
+            PRINTM(INFO, "User priority out of range\n");
+            ret = -EINVAL;
+        } else {
+            Adapter->wmm.userPriPktTxCtrl[data[1]] = data[2];
+
+            if (Adapter->wmm.userPriPktTxCtrl[data[1]] == 0) {
+                /* Return the global setting since the UP set is zero */
+                data[2] = Adapter->PktTxCtrl;
+            }
+
+            if (copy_to_user(wrq->u.data.pointer, data, sizeof(int) * 3)) {
+                PRINTM(INFO, "copy_to_user failed!\n");
+                ret = -EFAULT;
+            } else {
+                wrq->u.data.length = 3;
+            }
+        }
+        break;
+
+    default:
+        ret = -EINVAL;
+        break;
     }
 
-    wrq->u.data.length = 1;
-
     LEAVE();
-    return WLAN_STATUS_SUCCESS;
+    return ret;
 }
 
 /** 
@@ -1374,6 +1512,53 @@ wlan_bcn_miss_timeout(wlan_private * priv, struct iwreq *wrq)
 }
 
 /** 
+ *  @brief Get/Set adhoc g proctection
+ *  @param priv                 A pointer to wlan_private structure
+ *  @param req			A pointer to ifreq structure
+ *  @return 	   		WLAN_STATUS_SUCCESS --success, otherwise fail
+ */
+static int
+wlan_adhoc_g_protection(wlan_private * priv, struct iwreq *wrq)
+{
+    int data;
+    int *val;
+    wlan_adapter *Adapter = priv->adapter;
+
+    ENTER();
+#define ADHOC_G_PROTECTION_ON		1
+#define ADHOC_G_PROTECTION_OFF		0
+    data = *((int *) (wrq->u.name + SUBCMD_OFFSET));
+
+    switch (data) {
+    case CMD_DISABLED:
+        Adapter->CurrentPacketFilter &=
+            ~HostCmd_ACT_MAC_ADHOC_G_PROTECTION_ON;
+        break;
+    case CMD_ENABLED:
+        Adapter->CurrentPacketFilter |= HostCmd_ACT_MAC_ADHOC_G_PROTECTION_ON;
+        break;
+
+    case CMD_GET:
+        if (Adapter->
+            CurrentPacketFilter & HostCmd_ACT_MAC_ADHOC_G_PROTECTION_ON)
+            data = ADHOC_G_PROTECTION_ON;
+        else
+            data = ADHOC_G_PROTECTION_OFF;
+        break;
+
+    default:
+        return -EINVAL;
+    }
+
+    val = (int *) wrq->u.name;
+    *val = data;
+
+    LEAVE();
+
+    return WLAN_STATUS_SUCCESS;
+}
+
+/** 
  *  @brief Get/Set sdio mode
  *  @param priv                 A pointer to wlan_private structure
  *  @param req			A pointer to ifreq structure
@@ -1527,12 +1712,6 @@ wlan_drv_dbg(wlan_private * priv, struct iwreq *wrq)
            (drvdbg & DBG_CMD_D) ? "X" : "");
     printk(KERN_ALERT "DAT_D (%08x) %s\n", DBG_DAT_D,
            (drvdbg & DBG_DAT_D) ? "X" : "");
-#ifdef MOTO_DBG
-    printk(KERN_ALERT "MOTO_DEBUG (%08x) %s\n", DBG_MOTO_DEBUG,
-           (drvdbg & DBG_MOTO_DEBUG) ? "X" : "");
-    printk(KERN_ALERT "MOTO_MSG   (%08x) %s\n", DBG_MOTO_MSG,
-           (drvdbg & DBG_MOTO_MSG) ? "X" : "");
-#endif
     printk(KERN_ALERT "INTR  (%08x) %s\n", DBG_INTR,
            (drvdbg & DBG_INTR) ? "X" : "");
     printk(KERN_ALERT "EVENT (%08x) %s\n", DBG_EVENT,
@@ -1596,11 +1775,6 @@ wlan_get_name(struct net_device *dev, struct iw_request_info *info,
 
     ENTER();
 
-#ifdef MOTO_DBG
-    PRINTM(MOTO_DEBUG,
-           "SIOCGIWNAME (wlan_get_name) ioctl called by upper layer.\n");
-#endif
-
     strcpy(cwrq, mrvl);
 
     cp = strstr(driver_version, comm);
@@ -1641,23 +1815,20 @@ wlan_get_freq(struct net_device *dev, struct iw_request_info *info,
 
     ENTER();
 
-#ifdef MOTO_DBG
-    PRINTM(MOTO_DEBUG,
-           "SIOCGIWFREQ (wlan_get_freq) ioctl called by upper layer.\n");
-#endif
-
     if (!Is_Command_Allowed(priv)) {
         PRINTM(MSG, "%s: not allowed\n", __FUNCTION__);
         return -EBUSY;
     }
 
     cfp = find_cfp_by_band_and_channel(Adapter, 0,
-                                       (u16) Adapter->CurBssParams.channel);
+                                       (u16) Adapter->CurBssParams.
+                                       BSSDescriptor.Channel);
 
     if (!cfp) {
-        if (Adapter->CurBssParams.channel)
+        if (Adapter->CurBssParams.BSSDescriptor.Channel) {
             PRINTM(INFO, "Invalid channel=%d\n",
-                   Adapter->CurBssParams.channel);
+                   Adapter->CurBssParams.BSSDescriptor.Channel);
+        }
         return -EINVAL;
     }
 
@@ -1689,7 +1860,8 @@ wlan_get_wap(struct net_device *dev, struct iw_request_info *info,
     ENTER();
 
     if (Adapter->MediaConnectStatus == WlanMediaStateConnected) {
-        memcpy(awrq->sa_data, Adapter->CurBssParams.bssid, ETH_ALEN);
+        memcpy(awrq->sa_data,
+               Adapter->CurBssParams.BSSDescriptor.MacAddress, ETH_ALEN);
     } else {
         memset(awrq->sa_data, 0, ETH_ALEN);
     }
@@ -2081,11 +2253,6 @@ wlan_get_encode(struct net_device *dev,
            extra[0], extra[1], extra[2],
            extra[3], extra[4], extra[5], dwrq->length);
 
-    if (adapter->EncryptionStatus == Wlan802_11Encryption2Enabled
-        && !dwrq->length) {
-        dwrq->length = MAX_KEY_SIZE;
-    }
-
     PRINTM(INFO, "Return flags=0x%x\n", dwrq->flags);
 
     LEAVE();
@@ -2231,6 +2398,8 @@ wlan_get_retry(struct net_device *dev, struct iw_request_info *info,
         vwrq->flags = IW_RETRY_LIMIT;
         /* Get Tx retry count */
         vwrq->value = Adapter->TxRetryCount;
+//in 71.01.8BR  /* Subtract 1 to convert try count to retry count */
+//in 71.01.8BR  vwrq->value = Adapter->TxRetryCount - 1;
     }
 
     LEAVE();
@@ -2296,11 +2465,6 @@ wlan_get_range(struct net_device *dev, struct iw_request_info *info,
     WLAN_802_11_RATES rates;
 
     ENTER();
-
-#ifdef MOTO_DBG
-    PRINTM(MOTO_DEBUG,
-           "SIOCGIWRANGE (wlan_get_range) ioctl called by upper layer.\n");
-#endif
 
     dwrq->length = sizeof(struct iw_range);
     memset(range, 0, sizeof(struct iw_range));
@@ -2388,10 +2552,16 @@ wlan_get_range(struct net_device *dev, struct iw_request_info *info,
     range->num_encoding_sizes = 2;
     range->max_encoding_tokens = 4;
 
-    range->min_pmp = 1000000;
-    range->max_pmp = 120000000;
-    range->min_pmt = 1000;
-    range->max_pmt = 1000000;
+#define IW_POWER_PERIOD_MIN 1000000     /* 1 sec */
+#define IW_POWER_PERIOD_MAX 120000000   /* 2 min */
+#define IW_POWER_TIMEOUT_MIN 1000       /* 1 ms  */
+#define IW_POWER_TIMEOUT_MAX 1000000    /* 1 sec */
+
+    /* Power Management duration & timeout */
+    range->min_pmp = IW_POWER_PERIOD_MIN;
+    range->max_pmp = IW_POWER_PERIOD_MAX;
+    range->min_pmt = IW_POWER_TIMEOUT_MIN;
+    range->max_pmt = IW_POWER_TIMEOUT_MAX;
     range->pmp_flags = IW_POWER_PERIOD;
     range->pmt_flags = IW_POWER_TIMEOUT;
     range->pm_capa = IW_POWER_PERIOD | IW_POWER_TIMEOUT | IW_POWER_ALL_R;
@@ -2418,11 +2588,17 @@ wlan_get_range(struct net_device *dev, struct iw_request_info *info,
     /*
      * need to put the right values here 
      */
-    range->max_qual.qual = 10;
+#define IW_MAX_QUAL_PERCENT 100
+#define IW_AVG_QUAL_PERCENT 70
+    range->max_qual.qual = IW_MAX_QUAL_PERCENT;
     range->max_qual.level = 0;
     range->max_qual.noise = 0;
-    range->sensitivity = 0;
 
+    range->avg_qual.qual = IW_AVG_QUAL_PERCENT;
+    range->avg_qual.level = 0;
+    range->avg_qual.noise = 0;
+
+    range->sensitivity = 0;
     /*
      * Setup the supported power level ranges 
      */
@@ -2564,33 +2740,179 @@ wlan_get_sens(struct net_device *dev,
     return WLAN_STATUS_FAILURE;
 }
 
+/** 
+ *  @brief  Append/Reset IE buffer. 
+ *   
+ *  Pass an opaque block of data, expected to be IEEE IEs, to the driver 
+ *    for eventual passthrough to the firmware in an associate/join 
+ *    (and potentially start) command.  This function is the main body
+ *    for both wlan_set_gen_ie_ioctl and wlan_set_gen_ie
+ *
+ *  Data is appended to an existing buffer and then wrapped in a passthrough
+ *    TLV in the command API to the firmware.  The firmware treats the data
+ *    as a transparent passthrough to the transmitted management frame.
+ *
+ *  @param Adapter      A pointer to wlan_private structure
+ *  @param ie_data_ptr  A pointer to iwreq structure
+ *  @param ie_len       Length of the IE or IE block passed in ie_data_ptr
+ *
+ *  @return             WLAN_STATUS_SUCCESS --success, otherwise fail
+ */
+static int
+wlan_set_gen_ie_helper(wlan_private * priv, u8 * ie_data_ptr, u16 ie_len)
+{
+    int ret = WLAN_STATUS_SUCCESS;
+    wlan_adapter *Adapter = priv->adapter;
+    IEEEtypes_VendorHeader_t *pVendorIe;
+    const u8 wpa_oui[] = { 0x00, 0x50, 0xf2, 0x01 };
+    const u8 wps_oui[] = { 0x00, 0x50, 0xf2, 0x04 };
+    /* If the passed length is zero, reset the buffer */
+    if (ie_len == 0) {
+        Adapter->genIeBufferLen = 0;
+
+    } else if (ie_data_ptr == NULL) {
+        /* NULL check */
+        ret = -EINVAL;
+    } else {
+
+        pVendorIe = (IEEEtypes_VendorHeader_t *) ie_data_ptr;
+
+        /* Test to see if it is a WPA IE, if not, then it is a gen IE */
+        if ((pVendorIe->ElementId == RSN_IE)
+            || ((pVendorIe->ElementId == WPA_IE)
+                && (pVendorIe->OuiType == wpa_oui[3])
+                && (memcmp(pVendorIe->Oui, wpa_oui, sizeof(pVendorIe->Oui)) ==
+                    0))) {
+
+            /* IE is a WPA/WPA2 IE so call set_wpa function */
+            ret = wlan_set_wpa_ie_helper(priv, ie_data_ptr, ie_len);
+        } else if ((pVendorIe->ElementId == WPS_IE)
+                   && (memcmp(pVendorIe->Oui, wps_oui, sizeof(pVendorIe->Oui))
+                       == 0)
+                   && (pVendorIe->OuiType == wps_oui[3])) {
+            /*
+             * Discard first two byte (Element ID and Length)
+             * because they are not needed in the case of setting WPS_IE
+             */
+            if (pVendorIe->Len > 4) {
+                memcpy((u8 *) & Adapter->wps.wpsIe, ie_data_ptr, ie_len);
+                HEXDUMP("wpsIe",
+                        (u8 *) & Adapter->wps.wpsIe,
+                        Adapter->wps.wpsIe.VendHdr.Len + 2);
+
+            } else {
+                /* Only wps oui exist, reset driver wps buffer */
+                memset((u8 *) & Adapter->wps.wpsIe,
+                       0x00, sizeof(Adapter->wps.wpsIe));
+                PRINTM(INFO, "wpsIe cleared\n");
+            }
+        } else {
+            /* 
+             * Verify that the passed length is not larger than the available 
+             *   space remaining in the buffer
+             */
+            if (ie_len < (sizeof(Adapter->genIeBuffer)
+                          - Adapter->genIeBufferLen)) {
+
+                /* Append the passed data to the end of the genIeBuffer */
+                if (copy_from_user((Adapter->genIeBuffer
+                                    + Adapter->genIeBufferLen),
+                                   ie_data_ptr, ie_len)) {
+                    PRINTM(INFO, "Copy from user failed\n");
+                    ret = -EFAULT;
+
+                } else {
+                    /* Increment the stored buffer length by the size passed */
+                    Adapter->genIeBufferLen += ie_len;
+                }
+
+            } else {
+                /* Passed data does not fit in the remaining buffer space */
+                ret = WLAN_STATUS_FAILURE;
+            }
+        }
+    }
+
+    /* Return WLAN_STATUS_SUCCESS, or < 0 for error case */
+    return ret;
+}
+
+/** 
+ *  @brief  Get IE buffer from driver 
+ *   
+ *  Used to pass an opaque block of data, expected to be IEEE IEs,
+ *    back to the application.  Currently the data block passed
+ *    back to the application is the saved association response retrieved 
+ *    from the firmware.
+ *
+ *  @param priv         A pointer to wlan_private structure
+ *  @param ie_data_ptr  A pointer to the IE or IE block
+ *  @param ie_len_ptr   In/Out parameter pointer for the buffer length passed 
+ *                      in ie_data_ptr and the resulting data length copied
+ *
+ *  @return             WLAN_STATUS_SUCCESS --success, otherwise fail
+ */
+static int
+wlan_get_gen_ie_helper(wlan_private * priv,
+                       u8 * ie_data_ptr, u16 * ie_len_ptr)
+{
+    wlan_adapter *Adapter = priv->adapter;
+    IEEEtypes_AssocRsp_t *pAssocRsp;
+    int copySize;
+
+    pAssocRsp = (IEEEtypes_AssocRsp_t *) Adapter->assocRspBuffer;
+
+    /*
+     * Set the amount to copy back to the application as the minimum of the 
+     *   available IE data or the buffer provided by the application
+     */
+    copySize = (Adapter->assocRspSize - sizeof(pAssocRsp->Capability) -
+                -sizeof(pAssocRsp->StatusCode) - sizeof(pAssocRsp->AId));
+    copySize = MIN(copySize, *ie_len_ptr);
+
+    /* Copy the IEEE TLVs in the assoc response back to the application */
+    if (copy_to_user(ie_data_ptr, (u8 *) pAssocRsp->IEBuffer, copySize)) {
+        PRINTM(INFO, "Copy to user failed\n");
+        return -EFAULT;
+    }
+
+    /* Returned copy length */
+    *ie_len_ptr = copySize;
+
+    /* No error on return */
+    return WLAN_STATUS_SUCCESS;
+}
+
 #if (WIRELESS_EXT >= 18)
 /** 
  *  @brief  Set IE 
+ *
+ *  Calls main function set_gen_ie_fuct that adds the inputted IE
+ *    to the genie buffer
  *   
  *  @param dev          A pointer to net_device structure
  *  @param info         A pointer to iw_request_info structure
- *  @param dwrq         A pointer to iw_param structure
+ *  @param dwrq         A pointer to iw_point structure
  *  @param extra        A pointer to extra data buf
  *  @return             WLAN_STATUS_SUCCESS --success, otherwise fail
  */
 static int
 wlan_set_gen_ie(struct net_device *dev,
                 struct iw_request_info *info,
-                struct iw_param *dwrq, char *extra)
+                struct iw_point *dwrq, char *extra)
 {
-    /*
-     ** Functionality to be added later
-     */
-    return WLAN_STATUS_SUCCESS;
+    return wlan_set_gen_ie_helper(dev->priv, dwrq->pointer, dwrq->length);
 }
 
 /** 
  *  @brief  Get IE 
+ *
+ *  Calls main function get_gen_ie_fuct that retrieves expected IEEE IEs
+ *    and places then in the iw_point structure
  *   
  *  @param dev          A pointer to net_device structure
  *  @param info         A pointer to iw_request_info structure
- *  @param dwrq         A pointer to iw_param structure
+ *  @param dwrq         A pointer to iw_point structure
  *  @param extra        A pointer to extra data buf
  *  @return             WLAN_STATUS_SUCCESS --success, otherwise fail
  */
@@ -2599,12 +2921,279 @@ wlan_get_gen_ie(struct net_device *dev,
                 struct iw_request_info *info,
                 struct iw_point *dwrq, char *extra)
 {
-    /*
-     ** Functionality to be added later
-     */
+    return wlan_get_gen_ie_helper(dev->priv, dwrq->pointer, &dwrq->length);
+}
+
+/** 
+ *  @brief Set authentication mode
+ *  @param priv                 A pointer to wlan_private structure
+ *  @param req			A pointer to ifreq structure
+ *  @return 	   		WLAN_STATUS_SUCCESS --success, otherwise fail
+ */
+static int
+wlan_setauthalg(wlan_private * priv, int alg)
+{
+    wlan_adapter *Adapter = priv->adapter;
+
+    ENTER();
+
+    PRINTM(INFO, "auth alg is %#x\n", alg);
+
+    switch (alg) {
+    case IW_AUTH_ALG_SHARED_KEY:
+        Adapter->SecInfo.AuthenticationMode = Wlan802_11AuthModeShared;
+        break;
+    case IW_AUTH_ALG_LEAP:
+        //clear WPA IE
+        wlan_set_wpa_ie_helper(priv, NULL, 0);
+        Adapter->SecInfo.AuthenticationMode = Wlan802_11AuthModeNetworkEAP;
+        break;
+    case IW_AUTH_ALG_OPEN_SYSTEM:
+    default:
+        Adapter->SecInfo.AuthenticationMode = Wlan802_11AuthModeOpen;
+        break;
+    }
+
+    LEAVE();
     return WLAN_STATUS_SUCCESS;
 }
-#endif
+
+/** 
+ *  @brief set authentication mode params
+ *   
+ *  @param dev                  A pointer to net_device structure
+ *  @param info			A pointer to iw_request_info structure
+ *  @param vwrq 		A pointer to iw_param structure
+ *  @param extra		A pointer to extra data buf
+ *  @return 	   		WLAN_STATUS_SUCCESS --success, otherwise fail
+ */
+static int
+wlan_set_auth(struct net_device *dev, struct iw_request_info *info,
+              struct iw_param *vwrq, char *extra)
+{
+    wlan_private *priv = dev->priv;
+    if (!Is_Command_Allowed(priv)) {
+        PRINTM(MSG, "%s: not allowed\n", __FUNCTION__);
+        return -EBUSY;
+    }
+    switch (vwrq->flags & IW_AUTH_INDEX) {
+    case IW_AUTH_CIPHER_PAIRWISE:
+    case IW_AUTH_CIPHER_GROUP:
+        if (vwrq->value & IW_AUTH_CIPHER_NONE)
+            priv->adapter->SecInfo.EncryptionMode = CIPHER_NONE;
+        else if (vwrq->value & IW_AUTH_CIPHER_WEP40)
+            priv->adapter->SecInfo.EncryptionMode = CIPHER_WEP40;
+        else if (vwrq->value & IW_AUTH_CIPHER_TKIP)
+            priv->adapter->SecInfo.EncryptionMode = CIPHER_TKIP;
+        else if (vwrq->value & IW_AUTH_CIPHER_CCMP)
+            priv->adapter->SecInfo.EncryptionMode = CIPHER_CCMP;
+        else if (vwrq->value & IW_AUTH_CIPHER_WEP104)
+            priv->adapter->SecInfo.EncryptionMode = CIPHER_WEP104;
+        break;
+    case IW_AUTH_80211_AUTH_ALG:
+        wlan_setauthalg(priv, vwrq->value);
+        break;
+    case IW_AUTH_WPA_ENABLED:
+        if (vwrq->value == FALSE)
+            wlan_set_wpa_ie_helper(priv, NULL, 0);
+        break;
+    case IW_AUTH_WPA_VERSION:
+    case IW_AUTH_KEY_MGMT:
+    case IW_AUTH_TKIP_COUNTERMEASURES:
+    case IW_AUTH_DROP_UNENCRYPTED:
+    case IW_AUTH_RX_UNENCRYPTED_EAPOL:
+    case IW_AUTH_ROAMING_CONTROL:
+    case IW_AUTH_PRIVACY_INVOKED:
+    default:
+        break;
+    }
+    return WLAN_STATUS_SUCCESS;
+}
+
+/** 
+ *  @brief  get authentication mode params 
+ *   
+ *  @param dev                  A pointer to net_device structure
+ *  @param info			A pointer to iw_request_info structure
+ *  @param vwrq 		A pointer to iw_param structure
+ *  @param extra		A pointer to extra data buf
+ *  @return 	   		WLAN_STATUS_SUCCESS --success, otherwise fail
+ */
+static int
+wlan_get_auth(struct net_device *dev, struct iw_request_info *info,
+              struct iw_param *vwrq, char *extra)
+{
+    wlan_private *priv = dev->priv;
+    wlan_adapter *Adapter = priv->adapter;
+    int ret = WLAN_STATUS_SUCCESS;
+    ENTER();
+    if (!Is_Command_Allowed(priv)) {
+        PRINTM(MSG, "%s: not allowed\n", __FUNCTION__);
+        return -EBUSY;
+    }
+    switch (vwrq->flags & IW_AUTH_INDEX) {
+    case IW_AUTH_CIPHER_PAIRWISE:
+    case IW_AUTH_CIPHER_GROUP:
+        if (priv->adapter->SecInfo.EncryptionMode == CIPHER_NONE)
+            vwrq->value = IW_AUTH_CIPHER_NONE;
+        else if (priv->adapter->SecInfo.EncryptionMode == CIPHER_WEP40)
+            vwrq->value = IW_AUTH_CIPHER_WEP40;
+        else if (priv->adapter->SecInfo.EncryptionMode == CIPHER_TKIP)
+            vwrq->value = IW_AUTH_CIPHER_TKIP;
+        else if (priv->adapter->SecInfo.EncryptionMode == CIPHER_CCMP)
+            vwrq->value = IW_AUTH_CIPHER_CCMP;
+        else if (priv->adapter->SecInfo.EncryptionMode == CIPHER_WEP104)
+            vwrq->value = IW_AUTH_CIPHER_WEP104;
+        break;
+    case IW_AUTH_80211_AUTH_ALG:
+        if (Adapter->SecInfo.AuthenticationMode == Wlan802_11AuthModeShared)
+            vwrq->value = IW_AUTH_ALG_SHARED_KEY;
+        else if (Adapter->SecInfo.AuthenticationMode ==
+                 Wlan802_11AuthModeNetworkEAP)
+            vwrq->value = IW_AUTH_ALG_LEAP;
+        else
+            vwrq->value = IW_AUTH_ALG_OPEN_SYSTEM;
+        break;
+    case IW_AUTH_WPA_ENABLED:
+        if (Adapter->Wpa_ie_len > 0)
+            vwrq->value = TRUE;
+        else
+            vwrq->value = FALSE;
+        break;
+    case IW_AUTH_WPA_VERSION:
+    case IW_AUTH_KEY_MGMT:
+    case IW_AUTH_TKIP_COUNTERMEASURES:
+    case IW_AUTH_DROP_UNENCRYPTED:
+    case IW_AUTH_RX_UNENCRYPTED_EAPOL:
+    case IW_AUTH_ROAMING_CONTROL:
+    case IW_AUTH_PRIVACY_INVOKED:
+    default:
+        ret = -EOPNOTSUPP;
+        break;
+    }
+    LEAVE();
+    return ret;
+}
+
+/** 
+ *  @brief  Request MLME operation 
+ *
+ *   
+ *  @param dev          A pointer to net_device structure
+ *  @param info         A pointer to iw_request_info structure
+ *  @param dwrq         A pointer to iw_point structure
+ *  @param extra        A pointer to extra data buf
+ *  @return             WLAN_STATUS_SUCCESS --success, otherwise fail
+ */
+static int
+wlan_set_mlme(struct net_device *dev,
+              struct iw_request_info *info,
+              struct iw_point *dwrq, char *extra)
+{
+    struct iw_mlme *mlme = (struct iw_mlme *) extra;
+    wlan_private *priv = dev->priv;
+    wlan_adapter *Adapter = priv->adapter;
+    if (!Is_Command_Allowed(priv)) {
+        PRINTM(MSG, "%s: not allowed\n", __FUNCTION__);
+        return -EBUSY;
+    }
+    if ((mlme->cmd == IW_MLME_DEAUTH) || (mlme->cmd == IW_MLME_DISASSOC)) {
+        if (Adapter->InfrastructureMode == Wlan802_11Infrastructure &&
+            Adapter->MediaConnectStatus == WlanMediaStateConnected) {
+            SendDeauthentication(priv);
+        } else if (Adapter->InfrastructureMode == Wlan802_11IBSS &&
+                   Adapter->MediaConnectStatus == WlanMediaStateConnected) {
+            StopAdhocNetwork(priv);
+        }
+    }
+    return WLAN_STATUS_SUCCESS;
+}
+
+/** 
+ *  @brief  Extended version of encoding configuration 
+ *
+ *   
+ *  @param dev          A pointer to net_device structure
+ *  @param info         A pointer to iw_request_info structure
+ *  @param dwrq         A pointer to iw_point structure
+ *  @param extra        A pointer to extra data buf
+ *  @return             WLAN_STATUS_SUCCESS --success, otherwise fail
+ */
+static int
+wlan_set_encode_ext(struct net_device *dev,
+                    struct iw_request_info *info,
+                    struct iw_point *dwrq, char *extra)
+{
+    struct iw_encode_ext *ext = (struct iw_encode_ext *) extra;
+    wlan_private *priv = dev->priv;
+    WLAN_802_11_KEY *pkey;
+    int keyindex;
+    u8 *pKeyMaterial = NULL;
+    if (!Is_Command_Allowed(priv)) {
+        PRINTM(MSG, "%s: not allowed\n", __FUNCTION__);
+        return -EBUSY;
+    }
+    keyindex = dwrq->flags & IW_ENCODE_INDEX;
+    if (keyindex > 4)
+        return -EINVAL;
+    if (ext->key_len > (dwrq->length - sizeof(struct iw_encode_ext)))
+        return -EINVAL;
+    pKeyMaterial = (u8 *) (ext + 1);
+    //Disable Key
+    if ((dwrq->flags & IW_ENCODE_DISABLED) && (ext->key_len == 0)) {
+        dwrq->length = 0;
+        wlan_set_encode_nonwpa(dev, info, dwrq, extra);
+        return WLAN_STATUS_SUCCESS;
+    }
+    //Set WEP key
+    if (ext->key_len <= MAX_WEP_KEY_SIZE) {
+        dwrq->length = ext->key_len;
+        wlan_set_encode_nonwpa(dev, info, dwrq, pKeyMaterial);
+        if (ext->ext_flags & IW_ENCODE_EXT_SET_TX_KEY) {
+            dwrq->length = 0;
+            wlan_set_encode_nonwpa(dev, info, dwrq, extra);
+        }
+    } else {
+        pkey = kmalloc(sizeof(WLAN_802_11_KEY) + ext->key_len, GFP_KERNEL);
+        if (!pkey) {
+            PRINTM(INFO, "allocate key buffer failed!\n");
+            return -ENOMEM;
+        }
+        memset(pkey, 0, sizeof(WLAN_802_11_KEY) + ext->key_len);
+        memcpy((u8 *) pkey->BSSID, (u8 *) ext->addr.sa_data, ETH_ALEN);
+        pkey->KeyLength = ext->key_len;
+        memcpy(pkey->KeyMaterial, pKeyMaterial, ext->key_len);
+        pkey->KeyIndex = keyindex - 1;
+        if (pkey->KeyIndex == 0)
+            pkey->KeyIndex = 0x40000000;
+        if (ext->ext_flags & IW_ENCODE_EXT_RX_SEQ_VALID)
+            memcpy((u8 *) & pkey->KeyRSC, ext->rx_seq,
+                   IW_ENCODE_SEQ_MAX_SIZE);
+        pkey->Length = sizeof(WLAN_802_11_KEY) + ext->key_len;
+        wlan_set_encode_wpa(dev, info, dwrq, (u8 *) pkey);
+        kfree(pkey);
+    }
+    return WLAN_STATUS_SUCCESS;
+}
+
+/** 
+ *  @brief  Extended version of encoding configuration 
+ *
+ *   
+ *  @param dev          A pointer to net_device structure
+ *  @param info         A pointer to iw_request_info structure
+ *  @param dwrq         A pointer to iw_point structure
+ *  @param extra        A pointer to extra data buf
+ *  @return             WLAN_STATUS_SUCCESS --success, otherwise fail
+ */
+static int
+wlan_get_encode_ext(struct net_device *dev,
+                    struct iw_request_info *info,
+                    struct iw_point *dwrq, char *extra)
+{
+    return -EOPNOTSUPP;
+}
+#endif /* #if (WIRELESS_EXT >= 18) */
 
 /** 
  *  @brief  Append/Reset IE buffer. 
@@ -2617,43 +3206,15 @@ wlan_get_gen_ie(struct net_device *dev,
  *    TLV in the command API to the firmware.  The firmware treats the data
  *    as a transparent passthrough to the transmitted management frame.
  *
- *  @param dev          A pointer to wlan_private structure
+ *  @param priv         A pointer to wlan_private structure
  *  @param wrq          A pointer to iwreq structure    
  *  @return             WLAN_STATUS_SUCCESS --success, otherwise fail
  */
 static int
 wlan_set_gen_ie_ioctl(wlan_private * priv, struct iwreq *wrq)
 {
-    wlan_adapter *Adapter = priv->adapter;
-    int ret = WLAN_STATUS_SUCCESS;
-
-    /* If the passed length is zero, reset the buffer */
-    if (wrq->u.data.length == 0) {
-        Adapter->genIeBufferLen = 0;
-    } else {
-        /* 
-         * Verify that the passed length is not larger than the available 
-         *   space remaining in the buffer
-         */
-        if (wrq->u.data.length <
-            (sizeof(Adapter->genIeBuffer) - Adapter->genIeBufferLen)) {
-            /* Append the passed data to the end of the genIeBuffer */
-            if (copy_from_user(Adapter->genIeBuffer + Adapter->genIeBufferLen,
-                               wrq->u.data.pointer, wrq->u.data.length)) {
-                PRINTM(INFO, "Copy from user failed\n");
-                return -EFAULT;
-            }
-
-            /* Increment the stored buffer length by the size passed */
-            Adapter->genIeBufferLen += wrq->u.data.length;
-        } else {
-            /* Passed data does not fit in the remaining buffer space */
-            ret = WLAN_STATUS_FAILURE;
-        }
-    }
-
-    /* Return 0 for success, -1 for error case */
-    return ret;
+    return wlan_set_gen_ie_helper(priv,
+                                  wrq->u.data.pointer, wrq->u.data.length);
 }
 
 /** 
@@ -2664,227 +3225,16 @@ wlan_set_gen_ie_ioctl(wlan_private * priv, struct iwreq *wrq)
  *    back to the application is the saved association response retrieved 
  *    from the firmware.
  *
- *  @param priv          A pointer to wlan_private structure
- *  @param wrq          A pointer to iwreq structure    
+ *  @param priv         A pointer to wlan_private structure
+ *  @param wrq          A pointer to iwreq structure
+ *
  *  @return             WLAN_STATUS_SUCCESS --success, otherwise fail
  */
 static int
 wlan_get_gen_ie_ioctl(wlan_private * priv, struct iwreq *wrq)
 {
-    int copySize = 0;
-    wlan_adapter *Adapter = priv->adapter;
-    IEEEtypes_AssocRsp_t *pAssocRsp;
-
-    pAssocRsp = (IEEEtypes_AssocRsp_t *) Adapter->assocRspBuffer;
-
-    /*
-     * Set the amount to copy back to the application as the minimum of the 
-     *       available IE data or the buffer provided by the application
-     */
-    copySize = (Adapter->assocRspSize - sizeof(pAssocRsp->Capability) -
-                -sizeof(pAssocRsp->StatusCode) - sizeof(pAssocRsp->AId));
-    copySize = MIN(copySize, wrq->u.data.length);
-
-    /* Copy the IEEE TLVs in the assoc response back to the application */
-    if (copy_to_user
-        (wrq->u.data.pointer, (u8 *) pAssocRsp->IEBuffer, copySize)) {
-        PRINTM(INFO, "Copy to user failed\n");
-        return -EFAULT;
-    }
-
-    /* Returned copy length */
-    wrq->u.data.length = copySize;
-
-    /* No error on return */
-    return WLAN_STATUS_SUCCESS;
-}
-
-/** 
- *  @brief  Set Reassociate Info
- *   
- *  @param dev          A pointer to net_device structure
- *  @param wrq          A pointer to iwreq structure
- *  @return 	   		WLAN_STATUS_SUCCESS--success, otherwise--fail
- */
-static int
-wlan_reassociate_ioctl(struct net_device *dev, struct iwreq *wrq)
-{
-    wlan_private *priv = dev->priv;
-    wlan_adapter *Adapter = priv->adapter;
-    wlan_ioctl_reassociation_info reassocInfo;
-    u8 zeroMac[] = { 0, 0, 0, 0, 0, 0 };
-    struct sockaddr bssidSockAddr;
-    struct iw_point dwrq;
-
-    int attemptBSSID = 0;
-    int attemptSSID = 0;
-    int retcode = 0;
-
-    ENTER();
-
-    Adapter->reassocAttempt = TRUE;
-
-    /* Fail if the data passed is not what we expect */
-    if (wrq->u.data.length != sizeof(reassocInfo)) {
-        retcode = -EINVAL;
-    } else if (copy_from_user(&reassocInfo, wrq->u.data.pointer,
-                              sizeof(reassocInfo)) != 0) {
-        /* copy_from_user failed  */
-        PRINTM(INFO, "Reassoc: copy from user failed\n");
-        retcode = -EFAULT;
-    } else {
-        /*
-         **  Copy the passed CurrentBSSID into the driver adapter structure.
-         **    This is later used in a TLV in the associate command to 
-         **    trigger the reassociation in firmware.
-         */
-        memcpy(Adapter->reassocCurrentAp, reassocInfo.CurrentBSSID,
-               sizeof(Adapter->reassocCurrentAp));
-
-        /* Check if the desired BSSID is non-zero */
-        if (memcmp(reassocInfo.DesiredBSSID, zeroMac, sizeof(zeroMac)) != 0) {
-            /* Set a flag for later processing */
-            attemptBSSID = TRUE;
-        }
-
-        /* Check if the desired SSID is set */
-        if (reassocInfo.DesiredSSID[0]) {
-            /* Make sure there is a null at the end of the SSID string */
-            reassocInfo.DesiredSSID[sizeof(reassocInfo.DesiredSSID) - 1] = 0;
-
-            /* Set a flag for later processing */
-            attemptSSID = TRUE;
-        }
-
-        /* 
-         **  Debug prints
-         */
-        PRINTM(INFO, "Reassoc: BSSID(%d), SSID(%d)\n",
-               attemptBSSID, attemptSSID);
-        PRINTM(INFO, "Reassoc: CBSSID(%02x:%02x:%02x:%02x:%02x:%02x)\n",
-               reassocInfo.CurrentBSSID[0],
-               reassocInfo.CurrentBSSID[1],
-               reassocInfo.CurrentBSSID[2],
-               reassocInfo.CurrentBSSID[3],
-               reassocInfo.CurrentBSSID[4], reassocInfo.CurrentBSSID[5]);
-        PRINTM(INFO, "Reassoc: DBSSID(%02x:%02x:%02x:%02x:%02x:%02x)\n",
-               reassocInfo.DesiredBSSID[0],
-               reassocInfo.DesiredBSSID[1],
-               reassocInfo.DesiredBSSID[2],
-               reassocInfo.DesiredBSSID[3],
-               reassocInfo.DesiredBSSID[4], reassocInfo.DesiredBSSID[5]);
-        PRINTM(INFO, "Reassoc: DSSID = %s\n", reassocInfo.DesiredSSID);
-
-        /*
-         **  If a BSSID was provided in the reassociation request, attempt
-         **    to reassociate to it first 
-         */
-        if (attemptBSSID) {
-            memset(bssidSockAddr.sa_data, 0x00,
-                   sizeof(bssidSockAddr.sa_data));
-            memcpy(bssidSockAddr.sa_data, reassocInfo.DesiredBSSID,
-                   sizeof(reassocInfo.DesiredBSSID));
-            bssidSockAddr.sa_family = ARPHRD_ETHER;
-
-            /* Attempt to reassociate to the BSSID passed */
-            retcode = wlan_set_wap(dev, NULL, &bssidSockAddr, NULL);
-        }
-
-        /*
-         **  If a SSID was provided, and either the BSSID failed or a BSSID
-         **    was not provided, attemtp to reassociate to the SSID
-         */
-        if (attemptSSID && (retcode != 0 || !attemptBSSID)) {
-            reassocInfo.DesiredSSID[sizeof(reassocInfo.DesiredSSID) - 1] = 0;
-            dwrq.length = strlen(reassocInfo.DesiredSSID) + 1;
-            dwrq.flags = 1;     /* set for a specific association */
-
-            /* Attempt to reassociate to the SSID passed */
-            retcode = wlan_set_essid(dev, NULL, &dwrq,
-                                     reassocInfo.DesiredSSID);
-        }
-
-        /* Reset the adapter control flag and current AP to zero */
-        memset(Adapter->reassocCurrentAp, 0x00,
-               sizeof(Adapter->reassocCurrentAp));
-        Adapter->reassocAttempt = FALSE;
-    }
-
-    return retcode;
-}
-
-#define WILDCARD_CHAR		'*'
-/** 
- *  @brief  Set wildcard ssid buffer to driver 
- *   
- *
- *  @param priv         A pointer to wlan_private structure
- *  @param wrq          A pointer to iwreq structure    
- *  @return             WLAN_STATUS_SUCCESS --success, otherwise fail
- */
-static int
-wlan_setwildcardssid(wlan_private * priv, struct iwreq *wrq)
-{
-    wlan_adapter *Adapter = priv->adapter;
-    char buf[64];
-    char ssid[32];
-    int ssidlen = 0;
-
-    memset(buf, 0, sizeof(buf));
-    memset(ssid, 0, sizeof(ssid));
-    if (wrq->u.data.length > 0) {
-        if (copy_from_user(buf, wrq->u.data.pointer,
-                           MIN(sizeof(buf) - 1, wrq->u.data.length))) {
-            PRINTM(INFO, "Copy from user failed\n");
-            return -EFAULT;
-        }
-        sscanf(buf, "%32s %d", ssid, &ssidlen);
-        if ((strlen(ssid) > WLAN_MAX_SSID_LENGTH) ||
-            (ssidlen && (ssidlen < strlen(ssid))))
-            return -EINVAL;
-        //pass max length of wildcard ssid (<=32) or wildcard char to firmware
-        if (ssidlen == 0)
-            ssidlen = (int) WILDCARD_CHAR;
-        memset(&Adapter->wildcardssid, 0, sizeof(Adapter->wildcardssid));
-        memcpy(Adapter->wildcardssid.Ssid, ssid, strlen(ssid));
-        Adapter->wildcardssid.SsidLength = strlen(ssid);
-        Adapter->wildcardssidlen = ssidlen;
-    } else {
-        memset(&Adapter->wildcardssid, 0, sizeof(Adapter->wildcardssid));
-        Adapter->wildcardssidlen = 0;
-    }
-    PRINTM(INFO, "ssid=%s, len=%d, wildcardlen=%d\n",
-           Adapter->wildcardssid.Ssid, Adapter->wildcardssid.SsidLength,
-           Adapter->wildcardssidlen);
-    return WLAN_STATUS_SUCCESS;
-}
-
-/** 
- *  @brief  Get wildcard ssid buffer from driver 
- *   
- *
- *  @param priv         A pointer to wlan_private structure
- *  @param wrq          A pointer to iwreq structure    
- *  @return             WLAN_STATUS_SUCCESS --success, otherwise fail
- */
-static int
-wlan_getwildcardssid(wlan_private * priv, struct iwreq *wrq)
-{
-    wlan_adapter *Adapter = priv->adapter;
-    char buf[64];
-
-    memset(buf, 0, sizeof(buf));
-    if (Adapter->wildcardssidlen == (u8) WILDCARD_CHAR)
-        sprintf(buf, "%s", Adapter->wildcardssid.Ssid);
-    else
-        sprintf(buf, "%s %d", Adapter->wildcardssid.Ssid,
-                Adapter->wildcardssidlen);
-    if (wrq->u.data.pointer) {
-        if (copy_to_user(wrq->u.data.pointer, &buf, strlen(buf)))
-            return -EFAULT;
-        wrq->u.data.length = strlen(buf);
-    }
-    return WLAN_STATUS_SUCCESS;
+    return wlan_get_gen_ie_helper(priv,
+                                  wrq->u.data.pointer, &wrq->u.data.length);
 }
 
 /*
@@ -2925,7 +3275,11 @@ static const iw_handler wlan_handler[] = {
 #endif /* WIRELESS_EXT > 15 */
     (iw_handler) wlan_set_wap,  /* SIOCSIWAP */
     (iw_handler) wlan_get_wap,  /* SIOCGIWAP */
+#if WIRELESS_EXT >= 18
+    (iw_handler) wlan_set_mlme, /* SIOCSIWMLME  */
+#else
     (iw_handler) NULL,          /* -- hole -- */
+#endif
     //(iw_handler) wlan_get_aplist,         /* SIOCGIWAPLIST */
     NULL,                       /* SIOCGIWAPLIST */
 #if WIRELESS_EXT > 13
@@ -2960,6 +3314,10 @@ static const iw_handler wlan_handler[] = {
     (iw_handler) NULL,          /* -- hole -- */
     (iw_handler) wlan_set_gen_ie,       /* SIOCSIWGENIE */
     (iw_handler) wlan_get_gen_ie,       /* SIOCGIWGENIE */
+    (iw_handler) wlan_set_auth, /* SIOCSIWAUTH  */
+    (iw_handler) wlan_get_auth, /* SIOCGIWAUTH  */
+    (iw_handler) wlan_set_encode_ext,   /* SIOCSIWENCODEEXT */
+    (iw_handler) wlan_get_encode_ext,   /* SIOCGIWENCODEEXT */
 #endif /* WIRELESSS_EXT >= 18 */
 };
 
@@ -3007,21 +3365,19 @@ static const struct iw_priv_args wlan_private_args[] = {
      "sdcmd53rw"},
     {
      WLAN_SETCONF_GETCONF,
-     IW_PRIV_TYPE_BYTE | 1280,
-     IW_PRIV_TYPE_BYTE | 1280,
+     IW_PRIV_TYPE_BYTE | MAX_SETGET_CONF_SIZE,
+     IW_PRIV_TYPE_BYTE | MAX_SETGET_CONF_SIZE,
      "setgetconf"},
     {
      WLANCISDUMP,
      IW_PRIV_TYPE_NONE,
      IW_PRIV_TYPE_BYTE | 512,
      "getcis"},
-
     {
      WLANSCAN_TYPE,
      IW_PRIV_TYPE_CHAR | 8,
      IW_PRIV_TYPE_CHAR | 8,
      "scantype"},
-
     {
      WLAN_SETINT_GETINT,
      IW_PRIV_TYPE_INT | IW_PRIV_SIZE_FIXED | 1,
@@ -3067,17 +3423,16 @@ static const struct iw_priv_args wlan_private_args[] = {
      IW_PRIV_TYPE_INT | IW_PRIV_SIZE_FIXED | 1,
      IW_PRIV_TYPE_INT | IW_PRIV_SIZE_FIXED | 1,
      "uapsdnullgen"},
-
-    {
-     WLAN_SUBCMD_SET_PRESCAN,
-     IW_PRIV_TYPE_INT | IW_PRIV_SIZE_FIXED | 1,
-     IW_PRIV_TYPE_INT | IW_PRIV_SIZE_FIXED | 1,
-     "prescan"},
     {
      WLANADHOCCSET,
      IW_PRIV_TYPE_INT | IW_PRIV_SIZE_FIXED | 1,
      IW_PRIV_TYPE_INT | IW_PRIV_SIZE_FIXED | 1,
      "setcoalescing"},
+    {
+     WLAN_ADHOC_G_PROT,
+     IW_PRIV_TYPE_INT | IW_PRIV_SIZE_FIXED | 1,
+     IW_PRIV_TYPE_INT | IW_PRIV_SIZE_FIXED | 1,
+     "adhocgprot"},
 #ifdef WPRM_DRV
     {
      WLANMOTOTM,
@@ -3085,6 +3440,16 @@ static const struct iw_priv_args wlan_private_args[] = {
      IW_PRIV_TYPE_INT | IW_PRIV_SIZE_FIXED | 1,
      "mototm"},
 #endif /* WPRM_DRV */
+
+#ifdef WFMA_SUPPORT
+    {
+    WLANFMASUPPORT,
+    IW_PRIV_TYPE_INT | IW_PRIV_SIZE_FIXED | 1,
+    IW_PRIV_TYPE_INT | IW_PRIV_SIZE_FIXED | 1,
+    "fmasupport"
+    },
+#endif /* WFMA_SUPPORT */
+
     {
      WLAN_SETONEINT_GETONEINT,
      IW_PRIV_TYPE_INT | 1,
@@ -3105,11 +3470,6 @@ static const struct iw_priv_args wlan_private_args[] = {
      IW_PRIV_TYPE_INT | 1,
      IW_PRIV_TYPE_INT | 1,
      "fwwakeupmethod"},
-    {
-     WLAN_TXCONTROL,
-     IW_PRIV_TYPE_INT | 1,
-     IW_PRIV_TYPE_INT | 1,
-     "txcontrol"},
     {
      WLAN_NULLPKTINTERVAL,
      IW_PRIV_TYPE_INT | 1,
@@ -3135,13 +3495,22 @@ static const struct iw_priv_args wlan_private_args[] = {
      IW_PRIV_TYPE_INT | 1,
      IW_PRIV_TYPE_INT | 1,
      "sdiomode"},
+    {
+     WLAN_AUTODEEPSLEEP,
+     IW_PRIV_TYPE_INT | 1,
+     IW_PRIV_TYPE_INT | 1,
+     "autodeepsleep"},
+    {
+     WLAN_WAKEUP_MT,
+     IW_PRIV_TYPE_INT | 1,
+     IW_PRIV_TYPE_INT | 1,
+     "wakeupmt"},
     /* Using iwpriv sub-command feature */
     {
      WLAN_SETONEINT_GETNONE,
      IW_PRIV_TYPE_INT | IW_PRIV_SIZE_FIXED | 1,
      IW_PRIV_TYPE_NONE,
      ""},
-
     {
      WLAN_SUBCMD_SETRXANTENNA,
      IW_PRIV_TYPE_INT | IW_PRIV_SIZE_FIXED | 1,
@@ -3189,6 +3558,11 @@ static const struct iw_priv_args wlan_private_args[] = {
      IW_PRIV_TYPE_INT | IW_PRIV_SIZE_FIXED | 1,
      IW_PRIV_TYPE_NONE,
      "setdataavg"},
+    {
+     WLANASSOCIATE,
+     IW_PRIV_TYPE_INT | IW_PRIV_SIZE_FIXED | 1,
+     IW_PRIV_TYPE_NONE,
+     "associate"},
     {
      WLAN_SETNONE_GETONEINT,
      IW_PRIV_TYPE_NONE,
@@ -3244,6 +3618,11 @@ static const struct iw_priv_args wlan_private_args[] = {
      IW_PRIV_TYPE_NONE,
      IW_PRIV_TYPE_CHAR | 12,
      "gettsf"},
+    {
+     WLAN_WPS_SESSION,
+     IW_PRIV_TYPE_NONE,
+     IW_PRIV_TYPE_CHAR | 12,
+     "wpssession"},
     {
      WLANDEEPSLEEP,
      IW_PRIV_TYPE_CHAR | 1,
@@ -3333,16 +3712,6 @@ static const struct iw_priv_args wlan_private_args[] = {
      IW_PRIV_TYPE_CHAR | 64,
      "getadhocstatus"},
     {
-     SET_WILDCARD_SSID,
-     IW_PRIV_TYPE_CHAR | 64,
-     IW_PRIV_TYPE_CHAR | 64,
-     "setwcssid"},
-    {
-     GET_WILDCARD_SSID,
-     IW_PRIV_TYPE_CHAR | 64,
-     IW_PRIV_TYPE_CHAR | 64,
-     "getwcssid"},
-    {
      WLAN_SET_GEN_IE,
      IW_PRIV_TYPE_CHAR | 64,
      IW_PRIV_TYPE_CHAR | 64,
@@ -3352,11 +3721,6 @@ static const struct iw_priv_args wlan_private_args[] = {
      IW_PRIV_TYPE_CHAR | 64,
      IW_PRIV_TYPE_CHAR | 64,
      "getgenie"},
-    {
-     WLAN_REASSOCIATE,
-     IW_PRIV_TYPE_CHAR | 64,
-     IW_PRIV_TYPE_CHAR | 64,
-     "reassociate"},
     {
      WLAN_WMM_QUEUE_STATUS,
      IW_PRIV_TYPE_CHAR | 64,
@@ -3373,20 +3737,25 @@ static const struct iw_priv_args wlan_private_args[] = {
      IW_PRIV_TYPE_NONE,
      "setaeskey"},
     {
-     WLAN_SETNONE_GETWORDCHAR,
-     IW_PRIV_TYPE_NONE,
+     WLAN_SETONEINT_GETWORDCHAR,
+     IW_PRIV_TYPE_INT | 1,
      IW_PRIV_TYPE_CHAR | 128,
      ""},
     {
      WLANGETADHOCAES,
-     IW_PRIV_TYPE_NONE,
+     IW_PRIV_TYPE_INT | 1,
      IW_PRIV_TYPE_CHAR | 128,
      "getaeskey"},
     {
      WLANVERSION,
-     IW_PRIV_TYPE_NONE,
+     IW_PRIV_TYPE_INT | 1,
      IW_PRIV_TYPE_CHAR | 128,
      "version"},
+    {
+     WLANVEREXT,
+     IW_PRIV_TYPE_INT | 1,
+     IW_PRIV_TYPE_CHAR | 128,
+     "verext"},
     {
      WLANSETWPAIE,
      IW_PRIV_TYPE_CHAR | IW_PRIV_SIZE_FIXED | 24,
@@ -3407,16 +3776,6 @@ static const struct iw_priv_args wlan_private_args[] = {
      IW_PRIV_TYPE_INT | 16,
      IW_PRIV_TYPE_INT | 16,
      "tpccfg"},
-    {
-     WLAN_AUTO_FREQ_SET,
-     IW_PRIV_TYPE_INT | 16,
-     IW_PRIV_TYPE_INT | 16,
-     "setafc"},
-    {
-     WLAN_AUTO_FREQ_GET,
-     IW_PRIV_TYPE_INT | 16,
-     IW_PRIV_TYPE_INT | 16,
-     "getafc"},
     {
      WLAN_SCANPROBES,
      IW_PRIV_TYPE_INT | 16,
@@ -3479,6 +3838,11 @@ static const struct iw_priv_args wlan_private_args[] = {
      IW_PRIV_TYPE_INT | 16,
      "dataevtcfg"},
     {
+     WLAN_TXCONTROL,
+     IW_PRIV_TYPE_INT | 16,
+     IW_PRIV_TYPE_INT | 16,
+     "txcontrol"},
+    {
      WLANHSCFG,
      IW_PRIV_TYPE_INT | 16,
      IW_PRIV_TYPE_INT | 16,
@@ -3488,6 +3852,11 @@ static const struct iw_priv_args wlan_private_args[] = {
      IW_PRIV_TYPE_INT | 16,
      IW_PRIV_TYPE_INT | 16,
      "inactoext"},
+    {
+     WLANDBGSCFG,
+     IW_PRIV_TYPE_INT | 16,
+     IW_PRIV_TYPE_INT | 16,
+     "dbgscfg"},
 #ifdef DEBUG_LEVEL1
     {
      WLAN_DRV_DBG,
@@ -3495,6 +3864,11 @@ static const struct iw_priv_args wlan_private_args[] = {
      IW_PRIV_TYPE_INT | 16,
      "drvdbg"},
 #endif
+    {
+     WLANBCNMONPD,
+     IW_PRIV_TYPE_INT | 16,
+     IW_PRIV_TYPE_INT | 16,
+     "bcnmonpd"},
 #ifdef WPRM_DRV
     {
      WLAN_SESSIONTYPE,
@@ -3502,12 +3876,12 @@ static const struct iw_priv_args wlan_private_args[] = {
      IW_PRIV_TYPE_INT | 16,
      "sessiontype"},
 #endif /* WPRM_DRV */
+
     {
      WLAN_SET_GET_2K,
      IW_PRIV_TYPE_BYTE | 2000,
      IW_PRIV_TYPE_BYTE | 2000,
      ""},
-
     {
      WLAN_SET_USER_SCAN,
      IW_PRIV_TYPE_BYTE | 2000,
@@ -3549,10 +3923,20 @@ static const struct iw_priv_args wlan_private_args[] = {
      IW_PRIV_TYPE_BYTE | 2000,
      "qstats"},
     {
+     WLAN_TX_PKT_STATS,
+     IW_PRIV_TYPE_BYTE | 2000,
+     IW_PRIV_TYPE_BYTE | 2000,
+     "txpktstats"},
+    {
      WLAN_GET_CFP_TABLE,
      IW_PRIV_TYPE_BYTE | 2000,
      IW_PRIV_TYPE_BYTE | 2000,
      "getcfptable"},
+    {
+     WLAN_GET_MEM,
+     IW_PRIV_TYPE_BYTE | 2000,
+     IW_PRIV_TYPE_BYTE | 2000,
+     "getmem"},
 };
 
 struct iw_handler_def wlan_handler_def = {
@@ -3637,16 +4021,17 @@ wlan_hostcmd_ioctl(struct net_device *dev, struct ifreq *req, int cmd)
     pCmdNode->pdata_buf = tempResponseBuffer;
     pCmdNode->CmdFlags |= CMD_F_HOSTCMD;
 
-    pCmdPtr->SeqNum = ++priv->adapter->SeqNum;
     pCmdPtr->Result = 0;
 
-    PRINTM(INFO, "HOSTCMD Command: 0x%04x Size: %d SeqNum: %d\n",
-           pCmdPtr->Command, pCmdPtr->Size, pCmdPtr->SeqNum);
+    PRINTM(INFO, "HOSTCMD Command: 0x%04x Size: %d\n",
+           pCmdPtr->Command, pCmdPtr->Size);
     HEXDUMP("Command Data", (u8 *) (pCmdPtr), MIN(32, pCmdPtr->Size));
     PRINTM(INFO, "Copying data from : (user)0x%p -> 0x%p(driver)\n",
            req->ifr_data, pCmdPtr);
 
     pCmdNode->CmdWaitQWoken = FALSE;
+    pCmdPtr->Command = wlan_cpu_to_le16(pCmdPtr->Command);
+    pCmdPtr->Size = wlan_cpu_to_le16(pCmdPtr->Size);
     QueueCmd(Adapter, pCmdNode, TRUE);
     wake_up_interruptible(&priv->MainThread.waitQ);
 
@@ -3761,11 +4146,6 @@ wlan_get_snr(wlan_private * priv, struct iwreq *wrq)
     int data[4];
 
     ENTER();
-
-#ifdef MOTO_DBG
-    PRINTM(MOTO_DEBUG, "getSNR ioctl called by upper layer\n");
-#endif
-
     memset(data, 0, sizeof(data));
     if (wrq->u.data.length) {
         if (copy_from_user
@@ -3779,13 +4159,10 @@ wlan_get_snr(wlan_private * priv, struct iwreq *wrq)
         if (Adapter->MediaConnectStatus == WlanMediaStateConnected) {
             ret = PrepareAndSendCommand(priv,
                                         HostCmd_CMD_802_11_RSSI,
-                                        0,
-                                        HostCmd_OPTION_WAITFORRSP |
-                                        HostCmd_OPTION_TIMEOUT, 0, NULL);
+                                        0, HostCmd_OPTION_WAITFORRSP,
+                                        0, NULL);
+
             if (ret) {
-                if (ret == WLAN_STATUS_CMD_TIME_OUT) {
-                    wlan_fatal_error_handle(priv);
-                }
                 LEAVE();
                 return ret;
             }
@@ -3840,12 +4217,53 @@ wlan_get_snr(wlan_private * priv, struct iwreq *wrq)
         return -ENOTSUPP;
     }
 
-#ifdef MOTO_DBG
-    PRINTM(MOTO_DEBUG, "getSNR ioctl end\n");
-#endif
-
     LEAVE();
     return WLAN_STATUS_SUCCESS;
+}
+
+/** 
+ *  @brief Get/Set IBSS Beacon Monitor Period 
+ *   
+ *  @param priv                 A pointer to wlan_private structure
+ *  @param wreq		        A pointer to iwreq structure
+ *  @return 	   		WLAN_STATUS_SUCCESS --success, otherwise fail
+ */
+static int
+wlan_ibss_bcnmonpd(wlan_private * priv, struct iwreq *wrq)
+{
+    int ret = WLAN_STATUS_SUCCESS;
+    HostCmd_DS_802_11_IBSS_BCN_MONITOR stIbssBcnMon = { 0 };
+
+    ENTER();
+
+    if (wrq->u.data.length > 0) {
+        if (copy_from_user
+            (&stIbssBcnMon.u32BcnMonpd, wrq->u.data.pointer, sizeof(u32))) {
+            PRINTM(INFO, "Copy from user failed\n");
+            return -EFAULT;
+        }
+        PRINTM(INFO, "IBSS BEACON MONITOR PERIOD SET: %d\n",
+               stIbssBcnMon.u32BcnMonpd);
+        stIbssBcnMon.Action = HostCmd_ACT_GEN_SET;
+    } else {
+        stIbssBcnMon.Action = HostCmd_ACT_GEN_GET;
+    }
+    ret = PrepareAndSendCommand(priv,
+                                Host_CMD_802_11_IBSS_BCN_MONITOR,
+                                stIbssBcnMon.Action,
+                                HostCmd_OPTION_WAITFORRSP,
+                                0, (void *) &stIbssBcnMon);
+
+    if (!ret && stIbssBcnMon.Action == HostCmd_ACT_GEN_GET) {
+        if (copy_to_user
+            (wrq->u.data.pointer, &stIbssBcnMon.u32BcnMonpd, sizeof(u32))) {
+            PRINTM(INFO, "Copy to user failed\n");
+            ret = -EFAULT;
+        }
+        wrq->u.data.length = 1;
+    }
+
+    return ret;
 }
 
 /** 
@@ -4022,6 +4440,7 @@ wlan_data_subscribe_event(wlan_private * priv, struct iwreq *wrq)
             PRINTM(INFO, "Copy from user failed\n");
             return -EFAULT;
         }
+        memset(&Adapter->subevent, 0, sizeof(Adapter->subevent));
         Adapter->subevent.EventsBitmap = (u16) data[0];
         Adapter->subevent.Rssi_low.value = (u8) data[1];
         Adapter->subevent.Rssi_low.Freq = (u8) data[2];
@@ -4353,6 +4772,55 @@ wlan_version_ioctl(wlan_private * priv, struct ifreq *req)
 }
 
 /** 
+ *  @brief Get Driver and FW version
+ *   
+ *  @param priv                 A pointer to wlan_private structure
+ *  @param wrq			A pointer to iwreq structure
+ *  @return 	   		WLAN_STATUS_SUCCESS --success, otherwise fail
+ */
+static int
+wlan_verext_ioctl(wlan_private * priv, struct iwreq *wrq)
+{
+    HostCmd_DS_VERSION_EXT versionExtCmd;
+    int len;
+
+    ENTER();
+
+    memset(&versionExtCmd, 0x00, sizeof(versionExtCmd));
+
+    if (wrq->u.data.flags == 0) {
+        //from iwpriv subcmd
+        versionExtCmd.versionStrSel =
+            *((int *) (wrq->u.name + SUBCMD_OFFSET));
+    } else {
+        if (copy_from_user(&versionExtCmd.versionStrSel,
+                           wrq->u.data.pointer,
+                           sizeof(versionExtCmd.versionStrSel))) {
+            PRINTM(INFO, "Copy from user failed\n");
+            return -EFAULT;
+        }
+    }
+
+    PrepareAndSendCommand(priv,
+                          HostCmd_CMD_VERSION_EXT, 0,
+                          HostCmd_OPTION_WAITFORRSP, 0, &versionExtCmd);
+
+    len = strlen(versionExtCmd.versionStr) + 1;
+    if (wrq->u.data.pointer) {
+        if (copy_to_user(wrq->u.data.pointer, versionExtCmd.versionStr, len)) {
+            PRINTM(INFO, "CopyToUser failed\n");
+            return -EFAULT;
+        }
+        wrq->u.data.length = len;
+    }
+
+    PRINTM(INFO, "Version: %s\n", versionExtCmd.versionStr);
+
+    LEAVE();
+    return WLAN_STATUS_SUCCESS;
+}
+
+/** 
  *  @brief Read/Write adapter registers
  *   
  *  @param priv                 A pointer to wlan_private structure
@@ -4364,7 +4832,7 @@ wlan_regrdwr_ioctl(wlan_private * priv, struct ifreq *req)
 {
     wlan_ioctl_regrdwr regrdwr;
     wlan_offset_value offval;
-    wlan_adapter *Adapter = priv->adapter;
+    u8 *pRdeeprom;
     int ret = WLAN_STATUS_SUCCESS;
 
     ENTER();
@@ -4377,52 +4845,38 @@ wlan_regrdwr_ioctl(wlan_private * priv, struct ifreq *req)
     }
 
     if (regrdwr.WhichReg == REG_EEPROM) {
-        PRINTM(MSG, "Inside RDEEPROM\n");
-        Adapter->pRdeeprom =
+        PRINTM(INFO, "Inside RDEEPROM\n");
+        pRdeeprom =
             (char *) kmalloc((regrdwr.NOB + sizeof(regrdwr)), GFP_KERNEL);
-        if (!Adapter->pRdeeprom)
+        if (!pRdeeprom) {
+            PRINTM(INFO, "allocate memory for EEPROM read failed\n");
             return -ENOMEM;
-        memcpy(Adapter->pRdeeprom, &regrdwr, sizeof(regrdwr));
-        /* +14 is for Action, Offset, and NOB in 
-         * response */
-        PRINTM(INFO, "Action:%d Offset: %x NOB: %02x\n",
+        }
+        memcpy(pRdeeprom, &regrdwr, sizeof(regrdwr));
+        PRINTM(INFO, "Action: %d, Offset: %x, NOB: %02x\n",
                regrdwr.Action, regrdwr.Offset, regrdwr.NOB);
 
         ret = PrepareAndSendCommand(priv,
                                     HostCmd_CMD_802_11_EEPROM_ACCESS,
                                     regrdwr.Action, HostCmd_OPTION_WAITFORRSP,
-                                    0, &regrdwr);
-
-        if (ret) {
-            if (Adapter->pRdeeprom)
-                kfree(Adapter->pRdeeprom);
-            LEAVE();
-            return ret;
-        }
-
-        mdelay(10);
+                                    0, pRdeeprom);
 
         /*
          * Return the result back to the user 
          */
-
-        if (regrdwr.Action == HostCmd_ACT_GEN_READ) {
+        if (!ret && regrdwr.Action == HostCmd_ACT_GEN_READ) {
             if (copy_to_user
-                (req->ifr_data, Adapter->pRdeeprom,
-                 sizeof(regrdwr) + regrdwr.NOB)) {
-                if (Adapter->pRdeeprom)
-                    kfree(Adapter->pRdeeprom);
+                (req->ifr_data, pRdeeprom, sizeof(regrdwr) + regrdwr.NOB)) {
                 PRINTM(INFO,
                        "copy of regrdwr for wlan_regrdwr_ioctl to user failed \n");
-                LEAVE();
-                return -EFAULT;
+                ret = -EFAULT;
             }
         }
 
-        if (Adapter->pRdeeprom)
-            kfree(Adapter->pRdeeprom);
+        kfree(pRdeeprom);
 
-        return WLAN_STATUS_SUCCESS;
+        LEAVE();
+        return ret;
     }
 
     offval.offset = regrdwr.Offset;
@@ -4443,28 +4897,20 @@ wlan_regrdwr_ioctl(wlan_private * priv, struct ifreq *req)
                                 regrdwr.Action, HostCmd_OPTION_WAITFORRSP,
                                 0, &offval);
 
-    if (ret) {
-        LEAVE();
-        return ret;
-    }
-
-    mdelay(10);
-
     /*
      * Return the result back to the user 
      */
-    regrdwr.Value = Adapter->OffsetValue.value;
-    if (regrdwr.Action == HostCmd_ACT_GEN_READ) {
+    if (!ret && regrdwr.Action == HostCmd_ACT_GEN_READ) {
+        regrdwr.Value = offval.value;
         if (copy_to_user(req->ifr_data, &regrdwr, sizeof(regrdwr))) {
             PRINTM(INFO,
                    "copy of regrdwr for wlan_regrdwr_ioctl to user failed \n");
-            LEAVE();
-            return -EFAULT;
+            ret = -EFAULT;
         }
     }
 
     LEAVE();
-    return WLAN_STATUS_SUCCESS;
+    return ret;
 }
 
 /** 
@@ -4681,108 +5127,6 @@ wlan_getadhocaes_ioctl(wlan_private * priv, struct ifreq *req)
 }
 
 /** 
- *  @brief Set/Get WPA IE   
- *  @param priv                 A pointer to wlan_private structure
- *  @param req			A pointer to ifreq structure
- *  @return 	   		WLAN_STATUS_SUCCESS --success, otherwise fail
- */
-static int
-wlan_setwpaie_ioctl(wlan_private * priv, struct ifreq *req)
-{
-    struct iwreq *wrq = (struct iwreq *) req;
-    wlan_adapter *Adapter = priv->adapter;
-    int ret = WLAN_STATUS_SUCCESS;
-
-    ENTER();
-
-    if (wrq->u.data.length) {
-        if (wrq->u.data.length > sizeof(Adapter->Wpa_ie)) {
-            PRINTM(INFO, "failed to copy WPA IE, too big \n");
-            return -EFAULT;
-        }
-        if (copy_from_user(Adapter->Wpa_ie, wrq->u.data.pointer,
-                           wrq->u.data.length)) {
-            PRINTM(INFO, "failed to copy WPA IE \n");
-            return -EFAULT;
-        }
-        Adapter->Wpa_ie_len = wrq->u.data.length;
-        PRINTM(INFO, "Set Wpa_ie_len=%d IE=%#x\n", Adapter->Wpa_ie_len,
-               Adapter->Wpa_ie[0]);
-        HEXDUMP("Wpa_ie", Adapter->Wpa_ie, Adapter->Wpa_ie_len);
-        if (Adapter->Wpa_ie[0] == WPA_IE)
-            Adapter->SecInfo.WPAEnabled = TRUE;
-        else if (Adapter->Wpa_ie[0] == WPA2_IE)
-            Adapter->SecInfo.WPA2Enabled = TRUE;
-        else {
-            Adapter->SecInfo.WPAEnabled = FALSE;
-            Adapter->SecInfo.WPA2Enabled = FALSE;
-        }
-    } else {
-        memset(Adapter->Wpa_ie, 0, sizeof(Adapter->Wpa_ie));
-        Adapter->Wpa_ie_len = wrq->u.data.length;
-        PRINTM(INFO, "Reset Wpa_ie_len=%d IE=%#x\n", Adapter->Wpa_ie_len,
-               Adapter->Wpa_ie[0]);
-        Adapter->SecInfo.WPAEnabled = FALSE;
-        Adapter->SecInfo.WPA2Enabled = FALSE;
-    }
-
-    // enable/disable RSN in firmware if WPA is enabled/disabled
-    // depending on variable Adapter->SecInfo.WPAEnabled is set or not
-    ret = PrepareAndSendCommand(priv, HostCmd_CMD_802_11_ENABLE_RSN,
-                                HostCmd_ACT_SET, HostCmd_OPTION_WAITFORRSP,
-                                0, NULL);
-
-    LEAVE();
-    return ret;
-}
-
-/** 
- *  @brief Set Auto Prescan
- *  @param priv                 A pointer to wlan_private structure
- *  @param wrq			A pointer to iwreq structure
- *  @return 	   		WLAN_STATUS_SUCCESS --success, otherwise fail
- */
-static int
-wlan_subcmd_setprescan_ioctl(wlan_private * priv, struct iwreq *wrq)
-{
-    int data;
-    wlan_adapter *Adapter = priv->adapter;
-    int *val;
-
-    ENTER();
-
-    data = *((int *) (wrq->u.name + SUBCMD_OFFSET));
-    PRINTM(INFO, "WLAN_SUBCMD_SET_PRESCAN %d\n", data);
-    switch (data) {
-    case CMD_ENABLED:
-#ifdef MOTO_DBG
-        PRINTM(MOTO_DEBUG, "WLAN_SUBCMD_SET_PRESCAN : enabled\n");
-#endif
-        Adapter->Prescan = TRUE;
-        break;
-    case CMD_DISABLED:
-#ifdef MOTO_DBG
-        PRINTM(MOTO_DEBUG, "WLAN_SUBCMD_SET_PRESCAN : disabled\n");
-#endif
-        Adapter->Prescan = FALSE;
-        break;
-    default:
-#ifdef MOTO_DBG
-        PRINTM(ERROR,
-               "WLAN_SUBCMD_SET_PRESCAN : Not supported parameter %d.\n",
-               data);
-#endif
-        break;
-    }
-
-    data = Adapter->Prescan;
-    val = (int *) wrq->u.name;
-    *val = data;
-    LEAVE();
-    return WLAN_STATUS_SUCCESS;
-}
-
-/** 
  *  @brief Set multiple dtim
  *  @param priv                 A pointer to wlan_private structure
  *  @param req			A pointer to ifreq structure
@@ -4993,6 +5337,42 @@ wlan_get_tsf_ioctl(wlan_private * priv, struct iwreq *wrq)
 }
 
 /** 
+ *  @brief  Control WPS Session Enable/Disable
+ *  @param priv         A pointer to wlan_private structure
+ *  @param req          A pointer to ifreq structure
+ *  @return             WLAN_STATUS_SUCCESS --success, otherwise fail
+ */
+static int
+wlan_do_wps_session_ioctl(wlan_private * priv, struct iwreq *req)
+{
+    wlan_adapter *Adapter = priv->adapter;
+    char buf[8];
+    struct iwreq *wrq = (struct iwreq *) req;
+
+    ENTER();
+
+    PRINTM(INFO, "WLAN_WPS_SESSION\n");
+
+    memset(buf, 0, sizeof(buf));
+    if (copy_from_user(buf, wrq->u.data.pointer,
+                       MIN(sizeof(buf) - 1, wrq->u.data.length))) {
+        PRINTM(INFO, "Copy from user failed\n");
+        return -EFAULT;
+    }
+
+    if (buf[0] == 1)
+        Adapter->wps.SessionEnable = TRUE;
+    else
+        Adapter->wps.SessionEnable = FALSE;
+
+    PRINTM(INFO, "Adapter->wps.SessionEnable = %d\n",
+           Adapter->wps.SessionEnable);
+
+    LEAVE();
+    return WLAN_STATUS_SUCCESS;
+}
+
+/** 
  *  @brief Get/Set DeepSleep mode
  *  @param priv                 A pointer to wlan_private structure
  *  @param req			A pointer to ifreq structure
@@ -5014,42 +5394,22 @@ wlan_deepsleep_ioctl(wlan_private * priv, struct ifreq *req)
     }
 
     if (*(char *) req->ifr_data == '0') {
-#ifdef MOTO_DBG
-        PRINTM(MOTO_MSG,
-               "Exit Deep Sleep Mode ioctl called by upper layer.\n");
-#else
         PRINTM(INFO, "Exit Deep Sleep Mode.\n");
-#endif
         sprintf(status, "setting to off ");
         SetDeepSleep(priv, FALSE);
     } else if (*(char *) req->ifr_data == '1') {
-#ifdef MOTO_DBG
-        PRINTM(MOTO_MSG,
-               "Enter Deep Sleep Mode ioctl called by upper layer.\n");
-#else
         PRINTM(INFO, "Enter Deep Sleep Mode.\n");
-#endif
         sprintf(status, "setting to on ");
         SetDeepSleep(priv, TRUE);
     } else if (*(char *) req->ifr_data == '2') {
-#ifdef MOTO_DBG
-        PRINTM(MOTO_DEBUG,
-               "Get Deep Sleep Mode ioctl called by upper layer.\n");
-#else
         PRINTM(INFO, "Get Deep Sleep Mode.\n");
-#endif
         if (Adapter->IsDeepSleep == TRUE) {
             sprintf(status, "on ");
         } else {
             sprintf(status, "off ");
         }
     } else {
-#ifdef MOTO_DBG
-        PRINTM(ERROR, "unknown deepsleep option = %d\n",
-               *(u8 *) req->ifr_data);
-#else
         PRINTM(INFO, "unknown option = %d\n", *(u8 *) req->ifr_data);
-#endif
         return -EINVAL;
     }
 
@@ -5058,9 +5418,6 @@ wlan_deepsleep_ioctl(wlan_private * priv, struct ifreq *req)
             return -EFAULT;
         wrq->u.data.length = strlen(status);
     }
-#ifdef MOTO_DBG
-    PRINTM(MOTO_DEBUG, "Deep Sleep ioctl end.\n");
-#endif
 
     LEAVE();
     return ret;
@@ -5076,48 +5433,56 @@ static int
 wlan_inactivity_timeout_ext(wlan_private * priv, struct iwreq *wrq)
 {
     int ret;
-    int data[3];
+    int data[4];
     HostCmd_DS_INACTIVITY_TIMEOUT_EXT inactivity_ext;
 
     ENTER();
-    if ((wrq->u.data.length != 3) && (wrq->u.data.length != 0))
-        return -ENOTSUPP;
-    memset(data, 0, sizeof(data));
-    memset(&inactivity_ext, 0, sizeof(inactivity_ext));
 
-    if (wrq->u.data.length == 0) {
-        /* Get */
-        inactivity_ext.Action = HostCmd_ACT_GET;
-        ret = PrepareAndSendCommand(priv,
-                                    HostCmd_CMD_INACTIVITY_TIMEOUT_EXT,
-                                    HostCmd_ACT_GET,
-                                    HostCmd_OPTION_WAITFORRSP, 0,
-                                    &inactivity_ext);
-        data[0] = (int) inactivity_ext.TimeoutUnit;
-        data[1] = (int) inactivity_ext.UnicastTimeout;
-        data[2] = (int) inactivity_ext.MulticastTimeout;
-        if (copy_to_user(wrq->u.data.pointer, data, sizeof(int) * 3)) {
-            PRINTM(INFO, "Copy to user failed\n");
-            return -EFAULT;
-        }
-    } else {
+    if ((wrq->u.data.length != 3) && (wrq->u.data.length != 4)
+        && (wrq->u.data.length != 0)) {
+
+        return -ENOTSUPP;
+    }
+
+    memset(data, 0x00, sizeof(data));
+    memset(&inactivity_ext, 0x00, sizeof(inactivity_ext));
+
+    if (wrq->u.data.length != 0) {
+
         /* Set */
-        if (copy_from_user(data, wrq->u.data.pointer, sizeof(int) * 3)) {
+        if (copy_from_user(data, wrq->u.data.pointer,
+                           wrq->u.data.length * sizeof(int))) {
             PRINTM(INFO, "Copy from user failed\n");
             return -EFAULT;
         }
+
         inactivity_ext.Action = HostCmd_ACT_SET;
         inactivity_ext.TimeoutUnit = (u16) data[0];
         inactivity_ext.UnicastTimeout = (u16) data[1];
         inactivity_ext.MulticastTimeout = (u16) data[2];
-        ret = PrepareAndSendCommand(priv,
-                                    HostCmd_CMD_INACTIVITY_TIMEOUT_EXT,
-                                    HostCmd_ACT_SET,
-                                    HostCmd_OPTION_WAITFORRSP, 0,
-                                    &inactivity_ext);
+        inactivity_ext.PsEntryTimeout = (u16) data[3];
+    } else {
+        inactivity_ext.Action = HostCmd_ACT_GET;
     }
 
-    wrq->u.data.length = 3;
+    ret = PrepareAndSendCommand(priv,
+                                HostCmd_CMD_INACTIVITY_TIMEOUT_EXT,
+                                HostCmd_ACT_GET, HostCmd_OPTION_WAITFORRSP,
+                                0, &inactivity_ext);
+
+    /* Copy back current values regardless of GET/SET */
+    data[0] = (int) inactivity_ext.TimeoutUnit;
+    data[1] = (int) inactivity_ext.UnicastTimeout;
+    data[2] = (int) inactivity_ext.MulticastTimeout;
+    data[3] = (int) inactivity_ext.PsEntryTimeout;
+
+    wrq->u.data.length = 4;
+
+    if (copy_to_user(wrq->u.data.pointer, data,
+                     wrq->u.data.length * sizeof(int))) {
+        PRINTM(INFO, "Copy to user failed\n");
+        return -EFAULT;
+    }
 
     LEAVE();
     return ret;
@@ -5154,12 +5519,8 @@ wlan_do_hostsleepcfg_ioctl(wlan_private * priv, struct iwreq *wrq)
         Adapter->HSCfg.gpio = (u8) gpio;
         Adapter->HSCfg.gap = (u8) gap;
     }
-#ifdef MOTO_DBG
-    PRINTM(MOTO_MSG,
-           "hostsleepcfg ioctl called by upper layer: cond=%#x gpio=%#x gap=%#x\n",
-#else
+
     PRINTM(INFO, "hostsleepcfg: cond=%#x gpio=%#x gap=%#x\n",
-#endif
            Adapter->HSCfg.conditions, Adapter->HSCfg.gpio,
            Adapter->HSCfg.gap);
 
@@ -5182,15 +5543,14 @@ static int
 wlan_hscfg_ioctl(wlan_private * priv, struct iwreq *wrq)
 {
     wlan_adapter *Adapter = priv->adapter;
-    u32 data[3] = { -1, 0xff, 0xff };
+    int data[3] = { -1, 0xff, 0xff };
     int ret = WLAN_STATUS_SUCCESS;
 
     ENTER();
 
     if (wrq->u.data.length >= 1 && wrq->u.data.length <= 3) {
         if (copy_from_user
-            (data, wrq->u.data.pointer,
-             sizeof(data[0]) * wrq->u.data.length)) {
+            (data, wrq->u.data.pointer, sizeof(int) * wrq->u.data.length)) {
             PRINTM(INFO, "Copy from user failed\n");
             return -EFAULT;
         }
@@ -5211,16 +5571,10 @@ wlan_hscfg_ioctl(wlan_private * priv, struct iwreq *wrq)
             Adapter->HSCfg.gap = (u8) data[2];
         }
     }
-#ifdef MOTO_DBG
-    PRINTM(MOTO_MSG,
-           "hscfg ioctl called by upper layer: nb_param=%d: cond=%#x gpio=%#x gap=%#x\n",
-           wrq->u.data.length, Adapter->HSCfg.conditions, Adapter->HSCfg.gpio,
-           Adapter->HSCfg.gap);
-#else
+
     PRINTM(INFO, "hscfg: cond=%#x gpio=%#x gap=%#x\n",
            Adapter->HSCfg.conditions, Adapter->HSCfg.gpio,
            Adapter->HSCfg.gap);
-#endif
 
     ret = PrepareAndSendCommand(priv,
                                 HostCmd_CMD_802_11_HOST_SLEEP_CFG,
@@ -5241,6 +5595,85 @@ wlan_hscfg_ioctl(wlan_private * priv, struct iwreq *wrq)
     return ret;
 }
 
+#define DESTINATION_HOST	0x01
+/** 
+ *  @brief Config Small Debug parameters
+ *   
+ *  @param priv		A pointer to wlan_private structure
+ *  @param wreq		A pointer to iwreq structure
+ *  @return    		WLAN_STATUS_SUCCESS --success, otherwise fail
+ */
+static int
+wlan_dbgs_cfg(wlan_private * priv, struct iwreq *wrq)
+{
+    int *data = NULL;
+    u8 buf[512];
+    DBGS_CFG_DATA *pDbgCfg = (DBGS_CFG_DATA *) buf;
+    DBGS_ENTRY_DATA *pEntry;
+    int ret = WLAN_STATUS_SUCCESS;
+    int i;
+
+    ENTER();
+
+#define MAX_DBGS_CFG_ENTRIES	0x7F
+    if (wrq->u.data.length < 3 ||
+        wrq->u.data.length > 3 + MAX_DBGS_CFG_ENTRIES * 2) {
+        PRINTM(MSG, "Invalid parameter number\n");
+        ret = -EFAULT;
+        goto dbgs_exit;
+    }
+
+    if (!(data = kmalloc(sizeof(int) * wrq->u.data.length, GFP_KERNEL))) {
+        PRINTM(INFO, "Allocate memory failed\n");
+        ret = -ENOMEM;
+        goto dbgs_exit;
+    }
+    memset(data, 0, sizeof(int) * wrq->u.data.length);
+    memset(buf, 0, sizeof(buf));
+
+    if (copy_from_user
+        (data, wrq->u.data.pointer, sizeof(int) * wrq->u.data.length)) {
+        PRINTM(INFO, "Copy from user failed\n");
+        ret = -EFAULT;
+        goto dbgs_exit;
+    }
+    if (wrq->u.data.length < (3 + (data[2] & 0x7f) * 2)) {
+        PRINTM(MSG, "Invalid parameter number\n");
+        ret = -EFAULT;
+        goto dbgs_exit;
+    }
+
+    pDbgCfg->data.Destination = (u8) data[0];
+#ifdef	DEBUG_LEVEL1
+    if (pDbgCfg->data.Destination & DESTINATION_HOST)
+        drvdbg |= DBG_FW_D;
+    else
+        drvdbg &= ~DBG_FW_D;
+#endif
+    pDbgCfg->data.ToAirChan = (u8) data[1];
+    pDbgCfg->data.En_NumEntries = (u8) data[2];
+    pDbgCfg->size =
+        sizeof(HostCmd_DS_DBGS_CFG) +
+        (pDbgCfg->data.En_NumEntries & 0x7f) * sizeof(DBGS_ENTRY_DATA);
+    pEntry = (DBGS_ENTRY_DATA *) (buf + sizeof(DBGS_CFG_DATA));
+    for (i = 0; i < (pDbgCfg->data.En_NumEntries & 0x7f); i++) {
+        pEntry->ModeAndMaskorID = (u16) data[3 + i * 2];
+        pEntry->BaseOrID = (u16) data[3 + i * 2 + 1];
+        pEntry->ModeAndMaskorID = wlan_cpu_to_le16(pEntry->ModeAndMaskorID);
+        pEntry->BaseOrID = wlan_cpu_to_le16(pEntry->BaseOrID);
+        pEntry++;
+    }
+    ret = PrepareAndSendCommand(priv,
+                                HostCmd_CMD_DBGS_CFG,
+                                0, HostCmd_OPTION_WAITFORRSP, 0, pDbgCfg);
+
+  dbgs_exit:
+    if (data)
+        kfree(data);
+    LEAVE();
+    return ret;
+}
+
 /** 
  *  @brief Get/Set Cal data ext
  *  @param priv                 A pointer to wlan_private structure
@@ -5256,17 +5689,15 @@ wlan_do_caldata_ext_ioctl(wlan_private * priv, struct ifreq *req)
 
     ENTER();
 
-    if (!
-        (pCalData =
-         kmalloc(sizeof(HostCmd_DS_802_11_CAL_DATA_EXT), GFP_KERNEL))) {
+    if (!(pCalData = kmalloc(MAX_SETGET_CONF_CMD_LEN, GFP_KERNEL))) {
         PRINTM(INFO, "Allocate memory failed\n");
         ret = -ENOMEM;
         goto calexit;
     }
-    memset(pCalData, 0, sizeof(HostCmd_DS_802_11_CAL_DATA_EXT));
+    memset(pCalData, 0, MAX_SETGET_CONF_CMD_LEN);
 
     if (copy_from_user(pCalData, req->ifr_data + SKIP_CMDNUM,
-                       sizeof(HostCmd_DS_802_11_CAL_DATA_EXT))) {
+                       MAX_SETGET_CONF_CMD_LEN)) {
         PRINTM(INFO, "Copy from user failed\n");
         kfree(pCalData);
         ret = -EFAULT;
@@ -5276,8 +5707,7 @@ wlan_do_caldata_ext_ioctl(wlan_private * priv, struct ifreq *req)
     action = (pCalData->Action == HostCmd_ACT_GEN_SET) ?
         HostCmd_ACT_GEN_SET : HostCmd_ACT_GEN_GET;
 
-    HEXDUMP("Cal data ext", (u8 *) pCalData,
-            sizeof(HostCmd_DS_802_11_CAL_DATA_EXT));
+    HEXDUMP("Cal data ext", (u8 *) pCalData, MAX_SETGET_CONF_CMD_LEN);
 
     PRINTM(INFO, "CalData Action = 0x%0X\n", action);
 
@@ -5288,7 +5718,7 @@ wlan_do_caldata_ext_ioctl(wlan_private * priv, struct ifreq *req)
 
     if (!ret && action == HostCmd_ACT_GEN_GET) {
         if (copy_to_user(req->ifr_data + SKIP_CMDNUM, pCalData,
-                         sizeof(HostCmd_DS_802_11_CAL_DATA_EXT))) {
+                         MAX_SETGET_CONF_CMD_LEN)) {
             PRINTM(INFO, "Copy to user failed\n");
             ret = -EFAULT;
         }
@@ -5323,7 +5753,7 @@ wlan_sleep_period(wlan_private * priv, struct iwreq *wrq)
     memset(&Adapter->sleep_period, 0, sizeof(SleepPeriod));
 
     if (wrq->u.data.length == 0) {
-        sleeppd.Action = wlan_cpu_to_le16(HostCmd_ACT_GEN_GET);
+        sleeppd.Action = HostCmd_ACT_GEN_GET;
     } else {
         if (copy_from_user(&data, wrq->u.data.pointer, sizeof(int))) {
             PRINTM(INFO, "Copy from user failed\n");
@@ -5338,7 +5768,7 @@ wlan_sleep_period(wlan_private * priv, struct iwreq *wrq)
             (data == 0)
             || (data == SLEEP_PERIOD_RESERVED_FF)       /* for UPSD certification tests */
             ) {
-            sleeppd.Action = wlan_cpu_to_le16(HostCmd_ACT_GEN_SET);
+            sleeppd.Action = HostCmd_ACT_GEN_SET;
             sleeppd.Period = data;
         } else
             return -EINVAL;
@@ -5514,8 +5944,7 @@ wlan_do_getlog_ioctl(wlan_private * priv, struct iwreq *wrq)
                 "rxfrag           %u\n"
                 "mcastrxframe     %u\n"
                 "fcserror         %u\n"
-                "txframe          %u\n"
-                "wepundecryptable %u\n",
+                "txframe          %u\n",
                 Adapter->LogMsg.mcasttxframe,
                 Adapter->LogMsg.failed,
                 Adapter->LogMsg.retry,
@@ -5526,8 +5955,7 @@ wlan_do_getlog_ioctl(wlan_private * priv, struct iwreq *wrq)
                 Adapter->LogMsg.ackfailure,
                 Adapter->LogMsg.rxfrag,
                 Adapter->LogMsg.mcastrxframe,
-                Adapter->LogMsg.fcserror,
-                Adapter->LogMsg.txframe, Adapter->LogMsg.wepundecryptable);
+                Adapter->LogMsg.fcserror, Adapter->LogMsg.txframe);
         wrq->u.data.length = strlen(buf) + 1;
         if (copy_to_user(wrq->u.data.pointer, buf, wrq->u.data.length)) {
             PRINTM(INFO, "Copy to user failed\n");
@@ -5678,12 +6106,7 @@ wlan_scan_type_ioctl(wlan_private * priv, struct iwreq *wrq)
     ENTER();
 
     if (wlan_get_state_11d(priv) == ENABLE_11D) {
-#ifdef MOTO_DBG
-        PRINTM(ERROR,
-               "Scantype: 11D: Cannot set scantype when 11D enabled\n");
-#else
         PRINTM(INFO, "11D: Cannot set scantype when 11D enabled\n");
-#endif
         return -EFAULT;
     }
 
@@ -5691,11 +6114,7 @@ wlan_scan_type_ioctl(wlan_private * priv, struct iwreq *wrq)
 
     if (copy_from_user(buf, wrq->u.data.pointer, MIN(sizeof(buf),
                                                      wrq->u.data.length))) {
-#ifdef MOTO_DBG
-        PRINTM(ERROR, "Scantype: Copy from user failed\n");
-#else
         PRINTM(INFO, "Copy from user failed\n");
-#endif
         return -EFAULT;
     }
 
@@ -5711,23 +6130,12 @@ wlan_scan_type_ioctl(wlan_private * priv, struct iwreq *wrq)
     switch (i) {
     case 0:
         Adapter->ScanType = HostCmd_SCAN_TYPE_ACTIVE;
-#ifdef MOTO_DBG
-        PRINTM(MOTO_DEBUG,
-               "scantype IOCTL called by upper layer. Set to active\n");
-#endif
         break;
     case 1:
         Adapter->ScanType = HostCmd_SCAN_TYPE_PASSIVE;
-#ifdef MOTO_DBG
-        PRINTM(MOTO_DEBUG,
-               "scantype IOCTL called by upper layer. Set to passive\n");
-#endif
         break;
     case 2:
-#ifdef MOTO_DBG
-        PRINTM(MOTO_DEBUG, "Scantype get.\n")
-#endif
-            wrq->u.data.length = strlen(option[Adapter->ScanType]) + 1;
+        wrq->u.data.length = strlen(option[Adapter->ScanType]) + 1;
 
         if (copy_to_user(wrq->u.data.pointer,
                          option[Adapter->ScanType], wrq->u.data.length)) {
@@ -5737,11 +6145,7 @@ wlan_scan_type_ioctl(wlan_private * priv, struct iwreq *wrq)
 
         break;
     default:
-#ifdef MOTO_DBG
-        PRINTM(ERROR, "Scantype: Invalid Scan Type Ioctl Option %s\n", buf);
-#else
         PRINTM(INFO, "Invalid Scan Type Ioctl Option\n");
-#endif
         ret = -EINVAL;
         break;
     }
@@ -5881,6 +6285,7 @@ wlan_cmd_fw_wakeup_method(wlan_private * priv, struct iwreq *wrq)
 
     if (wrq->u.data.length == 0 || !wrq->u.data.pointer) {
         action = HostCmd_ACT_GET;
+        method = Adapter->fwWakeupMethod;
     } else {
         action = HostCmd_ACT_SET;
         if (copy_from_user(&data, wrq->u.data.pointer, sizeof(int))) {
@@ -5890,13 +6295,13 @@ wlan_cmd_fw_wakeup_method(wlan_private * priv, struct iwreq *wrq)
 
         switch (data) {
         case 0:
-            Adapter->fwWakeupMethod = WAKEUP_FW_UNCHANGED;
+            method = WAKEUP_FW_UNCHANGED;
             break;
         case 1:
-            Adapter->fwWakeupMethod = WAKEUP_FW_THRU_INTERFACE;
+            method = WAKEUP_FW_THRU_INTERFACE;
             break;
         case 2:
-            Adapter->fwWakeupMethod = WAKEUP_FW_THRU_GPIO;
+            method = WAKEUP_FW_THRU_GPIO;
             break;
         default:
             return -EINVAL;
@@ -5904,9 +6309,8 @@ wlan_cmd_fw_wakeup_method(wlan_private * priv, struct iwreq *wrq)
     }
 
     ret = PrepareAndSendCommand(priv,
-                                HostCmd_CMD_802_11_FW_WAKEUP_METHOD, action,
-                                HostCmd_OPTION_WAITFORRSP, 0,
-                                &Adapter->fwWakeupMethod);
+                                HostCmd_CMD_802_11_FW_WAKE_METHOD, action,
+                                HostCmd_OPTION_WAITFORRSP, 0, &method);
 
     if (action == HostCmd_ACT_GET) {
         method = Adapter->fwWakeupMethod;
@@ -5919,6 +6323,58 @@ wlan_cmd_fw_wakeup_method(wlan_private * priv, struct iwreq *wrq)
 
     LEAVE();
     return ret;
+}
+
+/** 
+ *  @brief Get/Set Auto Deep Sleep mode
+ *  
+ *  @param priv		A pointer to wlan_private structure
+ *  @param wrq	   	A pointer to user data
+ *  @return 	   	WLAN_STATUS_SUCCESS--success, otherwise fail
+ */
+static int
+wlan_auto_deep_sleep(wlan_private * priv, struct iwreq *wrq)
+{
+    wlan_adapter *Adapter = priv->adapter;
+    int data;
+
+    ENTER();
+
+    if (wrq->u.data.length > 0 && wrq->u.data.pointer) {
+        if (copy_from_user(&data, wrq->u.data.pointer, sizeof(int))) {
+            PRINTM(INFO, "Copy from user failed\n");
+            return -EFAULT;
+        }
+
+        switch (data) {
+        case 0:
+            if (Adapter->IsAutoDeepSleepEnabled) {
+                Adapter->IsAutoDeepSleepEnabled = FALSE;
+                /* Try to exit DS if auto DS disabled */
+                SetDeepSleep(priv, FALSE);
+            }
+            break;
+        case 1:
+            if (!Adapter->IsAutoDeepSleepEnabled) {
+                Adapter->IsAutoDeepSleepEnabled = TRUE;
+                /* Wakeup main thread to enter DS if auto DS enabled */
+                wake_up_interruptible(&priv->MainThread.waitQ);
+            }
+            break;
+        default:
+            return -EINVAL;
+        }
+    }
+
+    data = Adapter->IsAutoDeepSleepEnabled;
+    if (copy_to_user(wrq->u.data.pointer, &data, sizeof(data))) {
+        PRINTM(INFO, "Copy to user failed\n");
+        return -EFAULT;
+    }
+    wrq->u.data.length = 1;
+
+    LEAVE();
+    return WLAN_STATUS_SUCCESS;
 }
 
 /**
@@ -5988,6 +6444,110 @@ wlan_get_cfp_table_ioctl(wlan_private * priv, struct iwreq *wrq)
     return ret;
 }
 
+/**
+ *  @brief Get firmware memory
+ *
+ *  @param priv     A pointer to wlan_private structure
+ *  @param wrq      A pointer to iwreq structure
+ *
+ *  @return         WLAN_STATUS_SUCCESS --success, otherwise fail
+ */
+int
+wlan_get_firmware_mem(wlan_private * priv, struct iwreq *wrq)
+{
+    HostCmd_DS_GET_MEM *pGetMem;
+    u8 *buf = NULL;
+    FW_MEM_DATA *pFwData;
+    int ret = WLAN_STATUS_SUCCESS;
+
+    ENTER();
+
+    if ((wrq->u.data.length < sizeof(HostCmd_DS_GET_MEM)) ||
+        !wrq->u.data.pointer) {
+        ret = -EINVAL;
+        LEAVE();
+        return ret;
+    }
+    if (!(buf = kmalloc(MRVDRV_SIZE_OF_CMD_BUFFER, GFP_KERNEL))) {
+        PRINTM(INFO, "allocate  buffer failed!\n");
+        LEAVE();
+        return -ENOMEM;
+    }
+    memset(buf, 0, MRVDRV_SIZE_OF_CMD_BUFFER);
+    pFwData = (FW_MEM_DATA *) buf;
+    pGetMem = &pFwData->data;
+
+    if (copy_from_user
+        (pGetMem, wrq->u.data.pointer, sizeof(HostCmd_DS_GET_MEM))) {
+        PRINTM(INFO, "Get Mem: copy from user failed\n");
+        ret = -EFAULT;
+        goto memexit;
+    }
+
+    ret = PrepareAndSendCommand(priv,
+                                HostCmd_CMD_GET_MEM, 0,
+                                HostCmd_OPTION_WAITFORRSP, 0, buf);
+    if (!ret) {
+        wrq->u.data.length = pFwData->size;
+        if (copy_to_user
+            (wrq->u.data.pointer, (u8 *) pGetMem, wrq->u.data.length)) {
+            PRINTM(INFO, "Get Mem: copy to user failed\n");
+            ret = -EFAULT;
+            goto memexit;
+        }
+    }
+  memexit:
+    kfree(buf);
+    LEAVE();
+    return ret;
+}
+
+/**
+ *  @brief  Retrieve transmit packet statistics from the firmware
+ *
+ *  @param priv     A pointer to wlan_private structure
+ *  @param wrq      A pointer to iwreq structure
+ *
+ *  @return         WLAN_STATUS_SUCCESS --success, otherwise fail
+ */
+int
+wlan_tx_pkt_stats_ioctl(wlan_private * priv, struct iwreq *wrq)
+{
+    HostCmd_DS_TX_PKT_STATS txPktStats;
+    int ret;
+
+    ENTER();
+
+    if (wrq->u.data.length == 0 || !wrq->u.data.pointer) {
+        LEAVE();
+        return -EINVAL;
+    }
+
+    if (wrq->u.data.length < sizeof(txPktStats)) {
+        LEAVE();
+        return -E2BIG;
+    }
+
+    memset(&txPktStats, 0x00, sizeof(txPktStats));
+
+    if ((ret = PrepareAndSendCommand(priv,
+                                     HostCmd_CMD_TX_PKT_STATS, 0,
+                                     HostCmd_OPTION_WAITFORRSP,
+                                     0, &txPktStats))) {
+        LEAVE();
+        return ret;
+    }
+
+    if (copy_to_user(wrq->u.data.pointer,
+                     (u8 *) & txPktStats, sizeof(txPktStats))) {
+        PRINTM(INFO, "TxPktStats: copy to user failed\n");
+        return -EFAULT;
+    }
+
+    LEAVE();
+    return WLAN_STATUS_SUCCESS;
+}
+
 /********************************************************
 		Global Functions
 ********************************************************/
@@ -6012,17 +6572,23 @@ wlan_do_ioctl(struct net_device *dev, struct ifreq *req, int cmd)
 
     ENTER();
 
-    if (Adapter->IsDeepSleep) {
-        int count = sizeof(Commands_Allowed_In_DeepSleep)
-            / sizeof(Commands_Allowed_In_DeepSleep[0]);
+    if (!Adapter->IsAutoDeepSleepEnabled) {
+        if (Adapter->IsDeepSleep) {
+            int count = sizeof(Commands_Allowed_In_DeepSleep)
+                / sizeof(Commands_Allowed_In_DeepSleep[0]);
 
-        if (!Is_Command_Allowed_In_Sleep
-            (req, cmd, Commands_Allowed_In_DeepSleep, count)) {
-            PRINTM(MSG,
-                   "():%s IOCTLS called when station is" " in DeepSleep\n",
-                   __FUNCTION__);
-            return -EBUSY;
+            if (!Is_Command_Allowed_In_Sleep
+                (req, cmd, Commands_Allowed_In_DeepSleep, count)) {
+                PRINTM(MSG,
+                       "():%s IOCTLS called when station is"
+                       " in DeepSleep\n", __FUNCTION__);
+                return -EBUSY;
+            }
         }
+    } else if (cmd == WLANDEEPSLEEP) {
+        PRINTM(MSG,
+               "DeepSleep command is not allowed in AutoDeepSleep mode\n");
+        return -EBUSY;
     }
 
     PRINTM(INFO, "wlan_do_ioctl: ioctl cmd = 0x%x\n", cmd);
@@ -6049,7 +6615,7 @@ wlan_do_ioctl(struct net_device *dev, struct ifreq *req, int cmd)
 #ifdef MFG_CMD_SUPPORT
     case WLANMANFCMD:
         PRINTM(INFO, "Entering the Manufacturing ioctl SIOCCFMFG\n");
-        ret = wlan_mfg_command(priv, (void *) req->ifr_data);
+        ret = wlan_mfg_command(priv, wrq);
 
         PRINTM(INFO, "Manufacturing Ioctl %s\n",
                (ret) ? "failed" : "success");
@@ -6074,12 +6640,15 @@ wlan_do_ioctl(struct net_device *dev, struct ifreq *req, int cmd)
     case WLAN_SETNONE_GETNONE: /* set WPA mode on/off ioctl #20 */
         switch (wrq->u.data.flags) {
         case WLANDEAUTH:
-#ifdef MOTO_DBG
-            PRINTM(MOTO_MSG, "Deauth IOCTL called by upper layer.\n");
-#else
             PRINTM(INFO, "Deauth\n");
-#endif
-            wlan_send_deauth(priv);
+            if (Adapter->InfrastructureMode == Wlan802_11Infrastructure &&
+                Adapter->MediaConnectStatus == WlanMediaStateConnected) {
+                SendDeauthentication(priv);
+            } else if (Adapter->InfrastructureMode == Wlan802_11IBSS &&
+                       Adapter->MediaConnectStatus ==
+                       WlanMediaStateConnected) {
+                StopAdhocNetwork(priv);
+            }
             break;
 
         case WLANADHOCSTOP:
@@ -6122,7 +6691,7 @@ wlan_do_ioctl(struct net_device *dev, struct ifreq *req, int cmd)
         }
         break;
 
-    case WLAN_SETNONE_GETWORDCHAR:
+    case WLAN_SETONEINT_GETWORDCHAR:
         switch (wrq->u.data.flags) {
         case WLANGETADHOCAES:
             ret = wlan_getadhocaes_ioctl(priv, req);
@@ -6130,11 +6699,14 @@ wlan_do_ioctl(struct net_device *dev, struct ifreq *req, int cmd)
         case WLANVERSION:      /* Get driver version */
             ret = wlan_version_ioctl(priv, req);
             break;
+        case WLANVEREXT:
+            ret = wlan_verext_ioctl(priv, wrq);
+            break;
         }
         break;
 
     case WLANSETWPAIE:
-        ret = wlan_setwpaie_ioctl(priv, req);
+        ret = wlan_set_wpa_ie_ioctl(priv, req);
         break;
     case WLAN_SETINT_GETINT:
         /* The first 4 bytes of req->ifr_data is sub-ioctl number
@@ -6155,32 +6727,18 @@ wlan_do_ioctl(struct net_device *dev, struct ifreq *req, int cmd)
                 data1 = *((int *) (wrq->u.name + SUBCMD_OFFSET));
                 switch (data1) {
                 case CMD_DISABLED:
-#ifdef MOTO_DBG
-                    PRINTM(MOTO_MSG,
-                           "Background scan: disabled by upper layer. \n");
-#else
                     PRINTM(INFO, "Background scan is set to disable\n");
-#endif
                     ret = wlan_bg_scan_enable(priv, FALSE);
                     val = (int *) wrq->u.name;
                     *val = data1;
                     break;
                 case CMD_ENABLED:
-#ifdef MOTO_DBG
-                    PRINTM(MOTO_MSG,
-                           "Background scan: enabled by upper layer. \n");
-#else
                     PRINTM(INFO, "Background scan is set to enable\n");
-#endif
                     ret = wlan_bg_scan_enable(priv, TRUE);
                     val = (int *) wrq->u.name;
                     *val = data1;
                     break;
                 case CMD_GET:
-#ifdef MOTO_DBG
-                    PRINTM(MOTO_DEBUG,
-                           "Background scan: get state called by upper layer. \n");
-#endif
                     data = (Adapter->bgScanConfig->Enable == TRUE) ?
                         CMD_ENABLED : CMD_DISABLED;
                     val = (int *) wrq->u.name;
@@ -6188,12 +6746,7 @@ wlan_do_ioctl(struct net_device *dev, struct ifreq *req, int cmd)
                     break;
                 default:
                     ret = -EINVAL;
-#ifdef MOTO_DBG
-                    PRINTM(ERROR, "Background scan: wrong parameter %d\n",
-                           data1);
-#else
                     PRINTM(INFO, "Background scan: wrong parameter\n");
-#endif
                     break;
                 }
             }
@@ -6235,11 +6788,11 @@ wlan_do_ioctl(struct net_device *dev, struct ifreq *req, int cmd)
             ret = wlan_null_pkg_gen(priv, wrq);
             /* enable/disable null pkg generation */
             break;
-        case WLAN_SUBCMD_SET_PRESCAN:
-            ret = wlan_subcmd_setprescan_ioctl(priv, wrq);
-            break;
         case WLANADHOCCSET:
             ret = wlan_set_coalescing_ioctl(priv, wrq);
+            break;
+        case WLAN_ADHOC_G_PROT:
+            ret = wlan_adhoc_g_protection(priv, wrq);
             break;
 #ifdef WPRM_DRV
         case WLANMOTOTM:
@@ -6278,7 +6831,41 @@ wlan_do_ioctl(struct net_device *dev, struct ifreq *req, int cmd)
             break;
 #endif /* WPRM_DRV */
 
-        }
+#ifdef WFMA_SUPPORT
+        case WLANFMASUPPORT:
+            {
+                int data1, data;
+                int *val;
+                data1 = *((int *) (wrq->u.name + SUBCMD_OFFSET));
+                switch (data1) {
+                    case CMD_DISABLED:
+                        PRINTM(INFO, "Unregister with FMA.\n");
+                        wlan_fma_unregister();
+                        val = (int *) wrq->u.name;
+                        *val = data1;
+                        break;
+                    case CMD_ENABLED:
+                        PRINTM(INFO, "Register with FMA to resolve traffic contention.\n");
+                        ret = wlan_fma_register();
+                        val = (int *) wrq->u.name;
+                        *val = ret;
+                        break;
+                    case CMD_GET:
+                        data = wlan_is_fma_registered();
+                        PRINTM(INFO, "Get FMA registration status : %d.\n", data);
+                        val = (int *) wrq->u.name;
+                        *val = data;
+                        break;
+                    default:
+                        ret = -EINVAL;
+                        PRINTM(INFO, "fmasupport: wrong parameter.\n");
+                        break;
+                }
+            }
+            break;
+#endif /* WFMA_SUPPORT */
+
+      }
         break;
 
     case WLAN_SETONEINT_GETONEINT:
@@ -6335,10 +6922,6 @@ wlan_do_ioctl(struct net_device *dev, struct ifreq *req, int cmd)
         case WLAN_FW_WAKEUP_METHOD:
             ret = wlan_cmd_fw_wakeup_method(priv, wrq);
             break;
-        case WLAN_TXCONTROL:
-            ret = wlan_txcontrol(priv, wrq);    //adds for txcontrol ioctl
-            break;
-
         case WLAN_NULLPKTINTERVAL:
             ret = wlan_null_pkt_interval(priv, wrq);
             break;
@@ -6353,6 +6936,14 @@ wlan_do_ioctl(struct net_device *dev, struct ifreq *req, int cmd)
             break;
         case WLAN_SDIO_MODE:
             ret = wlan_sdio_mode(priv, wrq);
+            break;
+        case WLAN_AUTODEEPSLEEP:
+            ret = wlan_auto_deep_sleep(priv, wrq);
+            break;
+        case WLAN_WAKEUP_MT:
+            if (wrq->u.data.length > 0)
+                Adapter->IntCounter++;
+            wake_up_interruptible(&priv->MainThread.waitQ);
             break;
         default:
             ret = -EOPNOTSUPP;
@@ -6369,59 +6960,50 @@ wlan_do_ioctl(struct net_device *dev, struct ifreq *req, int cmd)
         if (!subcmd)
             subcmd = (int) req->ifr_data;       //from iwpriv subcmd
 
+        idata = *((int *) (wrq->u.name + SUBCMD_OFFSET));
+
         switch (subcmd) {
         case WLAN_SUBCMD_SETRXANTENNA: /* SETRXANTENNA */
-            idata = *((int *) (wrq->u.name + SUBCMD_OFFSET));
             ret = SetRxAntenna(priv, idata);
             break;
         case WLAN_SUBCMD_SETTXANTENNA: /* SETTXANTENNA */
-            idata = *((int *) (wrq->u.name + SUBCMD_OFFSET));
             ret = SetTxAntenna(priv, idata);
             break;
 
         case WLANSETBCNAVG:
-            {
-                u16 bcn_avg = *((int *) (wrq->u.name + SUBCMD_OFFSET));
-
-                if (bcn_avg == 0)
-                    Adapter->bcn_avg_factor = DEFAULT_BCN_AVG_FACTOR;
-                else if (bcn_avg > MAX_BCN_AVG_FACTOR
-                         || bcn_avg < MIN_BCN_AVG_FACTOR) {
-                    PRINTM(MSG,
-                           "The value '%u' is out of the range (0-%u).\n",
-                           bcn_avg, MAX_BCN_AVG_FACTOR);
-                    return -EINVAL;
-                } else
-                    Adapter->bcn_avg_factor = bcn_avg;
-                break;
-            }
+            if (idata == 0)
+                Adapter->bcn_avg_factor = DEFAULT_BCN_AVG_FACTOR;
+            else if (idata > MAX_BCN_AVG_FACTOR || idata < MIN_BCN_AVG_FACTOR) {
+                PRINTM(MSG, "The value '%u' is out of the range (0-%u).\n",
+                       idata, MAX_BCN_AVG_FACTOR);
+                return -EINVAL;
+            } else
+                Adapter->bcn_avg_factor = idata;
+            break;
         case WLANSETDATAAVG:
-            {
-                u16 data_avg = *((int *) (wrq->u.name + SUBCMD_OFFSET));
+            if (idata == 0)
+                Adapter->data_avg_factor = DEFAULT_DATA_AVG_FACTOR;
+            else if (idata > MAX_DATA_AVG_FACTOR
+                     || idata < MIN_DATA_AVG_FACTOR) {
+                PRINTM(MSG, "The value '%u' is out of the range (0-%u).\n",
+                       idata, MAX_DATA_AVG_FACTOR);
+                return -EINVAL;
+            } else
+                Adapter->data_avg_factor = idata;
+            memset(Adapter->rawSNR, 0x00, sizeof(Adapter->rawSNR));
+            memset(Adapter->rawNF, 0x00, sizeof(Adapter->rawNF));
+            Adapter->nextSNRNF = 0;
+            Adapter->numSNRNF = 0;
+            break;
+        case WLANASSOCIATE:
+            ret = wlan_associate_to_table_idx(priv, idata);
+            break;
 
-                if (data_avg == 0)
-                    Adapter->data_avg_factor = DEFAULT_DATA_AVG_FACTOR;
-                else if (data_avg > MAX_DATA_AVG_FACTOR
-                         || data_avg < MIN_DATA_AVG_FACTOR) {
-                    PRINTM(MSG,
-                           "The value '%u' is out of the range (0-%u).\n",
-                           data_avg, MAX_DATA_AVG_FACTOR);
-                    return -EINVAL;
-                } else
-                    Adapter->data_avg_factor = data_avg;
-                memset(Adapter->rawSNR, 0x00, sizeof(Adapter->rawSNR));
-                memset(Adapter->rawNF, 0x00, sizeof(Adapter->rawNF));
-                Adapter->nextSNRNF = 0;
-                Adapter->numSNRNF = 0;
-                break;
-            }
         case WLANSETREGION:
-            idata = *((int *) (wrq->u.name + SUBCMD_OFFSET));
             ret = wlan_set_region(priv, (u16) idata);
             break;
 
         case WLAN_SET_LISTEN_INTERVAL:
-            idata = *((int *) (wrq->u.name + SUBCMD_OFFSET));
             Adapter->ListenInterval = (u16) idata;
             break;
 
@@ -6436,6 +7018,7 @@ wlan_do_ioctl(struct net_device *dev, struct ifreq *req, int cmd)
         case WLANSETENCRYPTIONMODE:
             ret = wlan_setencryptionmode_ioctl(priv, req);
             break;
+
         default:
             ret = -EOPNOTSUPP;
             break;
@@ -6462,6 +7045,9 @@ wlan_do_ioctl(struct net_device *dev, struct ifreq *req, int cmd)
             ret = wlan_get_tsf_ioctl(priv, wrq);
             break;
 
+        case WLAN_WPS_SESSION:
+            ret = wlan_do_wps_session_ioctl(priv, wrq);
+            break;
         }
         break;
 
@@ -6497,17 +7083,8 @@ wlan_do_ioctl(struct net_device *dev, struct ifreq *req, int cmd)
         case WLAN_GET_GEN_IE:
             ret = wlan_get_gen_ie_ioctl(priv, wrq);
             break;
-        case WLAN_REASSOCIATE:
-            ret = wlan_reassociate_ioctl(dev, wrq);
-            break;
         case WLAN_WMM_QUEUE_STATUS:
             ret = wlan_wmm_queue_status_ioctl(priv, wrq);
-            break;
-        case SET_WILDCARD_SSID:
-            ret = wlan_setwildcardssid(priv, wrq);
-            break;
-        case GET_WILDCARD_SSID:
-            ret = wlan_getwildcardssid(priv, wrq);
             break;
         }
         break;
@@ -6521,13 +7098,6 @@ wlan_do_ioctl(struct net_device *dev, struct ifreq *req, int cmd)
             break;
         case BG_SCAN_CONFIG:
             ret = wlan_do_bg_scan_config_ioctl(priv, req);
-            break;
-
-        case WMM_ACK_POLICY:
-            ret = wlan_wmm_ack_policy_ioctl(priv, req);
-            break;
-        case WMM_PARA_IE:
-            ret = wlan_wmm_para_ie_ioctl(priv, req);
             break;
         }
         break;
@@ -6583,15 +7153,16 @@ wlan_do_ioctl(struct net_device *dev, struct ifreq *req, int cmd)
                     return WLAN_STATUS_FAILURE;
 
                 if (wrq->u.data.length == 0) {
-                    cfg.Action = wlan_cpu_to_le16(HostCmd_ACT_GEN_GET);
+                    cfg.Action = HostCmd_ACT_GEN_GET;
                 } else {
-                    if (copy_from_user
-                        (data, wrq->u.data.pointer, sizeof(int) * 5)) {
+                    if (copy_from_user(data,
+                                       wrq->u.data.pointer,
+                                       sizeof(int) * 5)) {
                         PRINTM(INFO, "Copy from user failed\n");
                         return -EFAULT;
                     }
 
-                    cfg.Action = wlan_cpu_to_le16(HostCmd_ACT_GEN_SET);
+                    cfg.Action = HostCmd_ACT_GEN_SET;
                     cfg.Enable = data[0];
                     cfg.UseSNR = data[1];
 #define TPC_DATA_NO_CHANG	0x7f
@@ -6605,11 +7176,10 @@ wlan_do_ioctl(struct net_device *dev, struct ifreq *req, int cmd)
                         cfg.P2 = data[4];
                     }
                 }
-
-                ret =
-                    PrepareAndSendCommand(priv, HostCmd_CMD_802_11_TPC_CFG, 0,
-                                          HostCmd_OPTION_WAITFORRSP, 0,
-                                          (void *) &cfg);
+                ret = PrepareAndSendCommand(priv,
+                                            HostCmd_CMD_802_11_TPC_CFG, 0,
+                                            HostCmd_OPTION_WAITFORRSP, 0,
+                                            (void *) &cfg);
 
                 data[0] = cfg.Enable;
                 data[1] = cfg.UseSNR;
@@ -6624,53 +7194,7 @@ wlan_do_ioctl(struct net_device *dev, struct ifreq *req, int cmd)
                 wrq->u.data.length = 5;
             }
             break;
-        case WLAN_AUTO_FREQ_SET:
-            {
-                int data[3];
-                HostCmd_DS_802_11_AFC afc;
-                memset(&afc, 0, sizeof(afc));
-                if (wrq->u.data.length != 3)
-                    return WLAN_STATUS_FAILURE;
-                if (copy_from_user
-                    (data, wrq->u.data.pointer, sizeof(int) * 3)) {
-                    PRINTM(INFO, "Copy from user failed\n");
-                    return -EFAULT;
-                }
-                afc.afc_auto = data[0];
 
-                if (afc.afc_auto != 0) {
-                    afc.afc_thre = data[1];
-                    afc.afc_period = data[2];
-                } else {
-                    afc.afc_toff = data[1];
-                    afc.afc_foff = data[2];
-                }
-                ret =
-                    PrepareAndSendCommand(priv, HostCmd_CMD_802_11_SET_AFC, 0,
-                                          HostCmd_OPTION_WAITFORRSP, 0,
-                                          (void *) &afc);
-            }
-            break;
-        case WLAN_AUTO_FREQ_GET:
-            {
-                int data[3];
-                HostCmd_DS_802_11_AFC afc;
-                memset(&afc, 0, sizeof(afc));
-                ret =
-                    PrepareAndSendCommand(priv, HostCmd_CMD_802_11_GET_AFC, 0,
-                                          HostCmd_OPTION_WAITFORRSP, 0,
-                                          (void *) &afc);
-                data[0] = afc.afc_auto;
-                data[1] = afc.afc_toff;
-                data[2] = afc.afc_foff;
-                if (copy_to_user(wrq->u.data.pointer, data, sizeof(int) * 3)) {
-                    PRINTM(INFO, "Copy to user failed\n");
-                    return -EFAULT;
-                }
-
-                wrq->u.data.length = 3;
-            }
-            break;
         case WLAN_SCANPROBES:
             {
                 int data;
@@ -6695,44 +7219,45 @@ wlan_do_ioctl(struct net_device *dev, struct ifreq *req, int cmd)
         case WLAN_LED_GPIO_CTRL:
             {
                 int i;
-                int data[16];
-
+                int data[MAX_LEDS * 2];
                 HostCmd_DS_802_11_LED_CTRL ctrl;
-                MrvlIEtypes_LedGpio_t *gpio =
-                    (MrvlIEtypes_LedGpio_t *) ctrl.data;
+                MrvlIEtypes_LedGpio_t *gpio;
+
+                gpio = (MrvlIEtypes_LedGpio_t *) & ctrl.LedGpio;
+
+                if ((wrq->u.data.length > MAX_LEDS * 2) ||
+                    (wrq->u.data.length % 2) != 0) {
+                    PRINTM(MSG, "invalid ledgpio parameters\n");
+                    return -EINVAL;
+                }
 
                 memset(&ctrl, 0, sizeof(ctrl));
-                if (wrq->u.data.length > MAX_LEDS * 2)
-                    return -ENOTSUPP;
-                if ((wrq->u.data.length % 2) != 0)
-                    return -ENOTSUPP;
                 if (wrq->u.data.length == 0) {
-                    ctrl.Action = wlan_cpu_to_le16(HostCmd_ACT_GEN_GET);
+                    ctrl.Action = HostCmd_ACT_GEN_GET;
                 } else {
-                    if (copy_from_user
-                        (data, wrq->u.data.pointer,
-                         sizeof(int) * wrq->u.data.length)) {
+                    if (copy_from_user(data, wrq->u.data.pointer,
+                                       sizeof(int) * wrq->u.data.length)) {
                         PRINTM(INFO, "Copy from user failed\n");
                         return -EFAULT;
                     }
 
-                    ctrl.Action = wlan_cpu_to_le16(HostCmd_ACT_GEN_SET);
-                    ctrl.NumLed = wlan_cpu_to_le16(0);
-                    gpio->Header.Type = wlan_cpu_to_le16(TLV_TYPE_LED_GPIO);
+                    ctrl.Action = HostCmd_ACT_GEN_SET;
+                    ctrl.LedNums = 0;
+                    gpio->Header.Type = TLV_TYPE_LED_GPIO;
                     gpio->Header.Len = wrq->u.data.length;
                     for (i = 0; i < wrq->u.data.length; i += 2) {
-                        gpio->LedPin[i / 2].Led = data[i];
-                        gpio->LedPin[i / 2].Pin = data[i + 1];
+                        gpio->LedGpio[i / 2].LedNum = data[i];
+                        gpio->LedGpio[i / 2].GpioNum = data[i + 1];
                     }
                 }
-                ret =
-                    PrepareAndSendCommand(priv,
-                                          HostCmd_CMD_802_11_LED_GPIO_CTRL, 0,
-                                          HostCmd_OPTION_WAITFORRSP, 0,
-                                          (void *) &ctrl);
+                ret = PrepareAndSendCommand(priv,
+                                            HostCmd_CMD_802_11_LED_CONTROL, 0,
+                                            HostCmd_OPTION_WAITFORRSP,
+                                            0, (void *) &ctrl);
+
                 for (i = 0; i < gpio->Header.Len; i += 2) {
-                    data[i] = gpio->LedPin[i / 2].Led;
-                    data[i + 1] = gpio->LedPin[i / 2].Pin;
+                    data[i] = gpio->LedGpio[i / 2].LedNum;
+                    data[i + 1] = gpio->LedGpio[i / 2].GpioNum;
                 }
                 if (copy_to_user(wrq->u.data.pointer, data,
                                  sizeof(int) * gpio->Header.Len)) {
@@ -6773,17 +7298,26 @@ wlan_do_ioctl(struct net_device *dev, struct ifreq *req, int cmd)
         case WLAN_DATA_SUBSCRIBE_EVENT:
             ret = wlan_data_subscribe_event(priv, wrq);
             break;
+        case WLAN_TXCONTROL:
+            ret = wlan_txcontrol(priv, wrq);
+            break;
         case WLANHSCFG:
             ret = wlan_hscfg_ioctl(priv, wrq);
             break;
         case WLAN_INACTIVITY_TIMEOUT_EXT:
             ret = wlan_inactivity_timeout_ext(priv, wrq);
             break;
+        case WLANDBGSCFG:
+            ret = wlan_dbgs_cfg(priv, wrq);
+            break;
 #ifdef DEBUG_LEVEL1
         case WLAN_DRV_DBG:
             ret = wlan_drv_dbg(priv, wrq);
             break;
 #endif
+        case WLANBCNMONPD:
+            ret = wlan_ibss_bcnmonpd(priv, wrq);
+            break;
 #ifdef WPRM_DRV
         case WLAN_SESSIONTYPE:
             {
@@ -6814,7 +7348,6 @@ wlan_do_ioctl(struct net_device *dev, struct ifreq *req, int cmd)
         case WLAN_GET_SCAN_TABLE:
             ret = wlan_get_scan_table_ioctl(priv, wrq);
             break;
-
         case WLAN_SET_MRVL_TLV:
             ret = wlan_set_mrvl_tlv_ioctl(priv, wrq);
             break;
@@ -6833,8 +7366,14 @@ wlan_do_ioctl(struct net_device *dev, struct ifreq *req, int cmd)
         case WLAN_QUEUE_STATS:
             ret = wlan_wmm_queue_stats_ioctl(priv, wrq);
             break;
+        case WLAN_TX_PKT_STATS:
+            ret = wlan_tx_pkt_stats_ioctl(priv, wrq);
+            break;
         case WLAN_GET_CFP_TABLE:
             ret = wlan_get_cfp_table_ioctl(priv, wrq);
+            break;
+        case WLAN_GET_MEM:
+            ret = wlan_get_firmware_mem(priv, wrq);
             break;
         default:
             ret = -EOPNOTSUPP;
@@ -6898,7 +7437,7 @@ wlan_get_wireless_stats(struct net_device *dev)
                                 0, 0, NULL);
 
     if (!ret) {
-        priv->wstats.discard.code = Adapter->LogMsg.wepundecryptable;
+        priv->wstats.discard.code = 0;
         priv->wstats.discard.fragment = Adapter->LogMsg.fcserror;
         priv->wstats.discard.retries = Adapter->LogMsg.retry;
         priv->wstats.discard.misc = Adapter->LogMsg.ackfailure;
@@ -7033,7 +7572,11 @@ wlan_set_freq(struct net_device *dev, struct iw_request_info *info,
                     return ret;
                 }
                 Adapter->CurrentPacketFilter |= HostCmd_ACT_MAC_WEP_ENABLE;
-                SetMacPacketFilter(priv);
+
+                PrepareAndSendCommand(priv,
+                                      HostCmd_CMD_MAC_CONTROL,
+                                      0, HostCmd_OPTION_WAITFORRSP,
+                                      0, &Adapter->CurrentPacketFilter);
             }
         }
     }
@@ -7060,7 +7603,7 @@ SetDeepSleep(wlan_private * priv, BOOLEAN bDeepSleep)
 
     if (bDeepSleep == TRUE) {
         if (Adapter->IsDeepSleep != TRUE) {
-            PRINTM(INFO, "Deep Sleep : sleep\n");
+            PRINTM(INFO, "Deep Sleep: sleep\n");
 
             // note: the command could be queued and executed later
             //       if there is command in prigressing.
@@ -7072,26 +7615,18 @@ SetDeepSleep(wlan_private * priv, BOOLEAN bDeepSleep)
                 LEAVE();
                 return ret;
             }
+            wmm_stop_queue(priv);
             os_stop_queue(priv);
             os_carrier_off(priv);
-	    
-#ifdef ENABLE_PM	    
-	    if (wlan_mpm_active == TRUE) 
-            {
-                if (wlan_mpm_advice_id > 0 ) {
-                    mpm_driver_advise(wlan_mpm_advice_id, MPM_ADVICE_DRIVER_IS_NOT_BUSY);
-                    PRINTM(MOTO_DEBUG, "EnterDeepSleep: driver is NOT busy sent to MPM\n");
-		    wlan_mpm_active = FALSE;
-                }
-            }
-#endif
         }
     } else {
         if (Adapter->IsDeepSleep == TRUE) {
-            PRINTM(INFO, "Deep Sleep : wakeup\n");
+            PRINTM(CMND, "Deep Sleep: wakeup\n");
 
-            if (Adapter->IntCounterSaved)
+            if (Adapter->IntCounterSaved) {
                 Adapter->IntCounter = Adapter->IntCounterSaved;
+                Adapter->IntCounterSaved = 0;
+            }
 
             if (sbi_exit_deep_sleep(priv))
                 PRINTM(ERROR, "Deep Sleep : wakeup failed\n");
@@ -7100,24 +7635,14 @@ SetDeepSleep(wlan_private * priv, BOOLEAN bDeepSleep)
 
                 if (os_wait_interruptible_timeout(Adapter->ds_awake_q,
                                                   !Adapter->IsDeepSleep,
-                                                  WAIT_FOR_SCAN_RRESULT_MAX_TIME)
+                                                  MRVDRV_DEEP_SLEEP_EXIT_TIMEOUT)
                     == 0) {
-#ifdef MOTO_DBG
-                    PRINTM(ERROR,
-                           "SetDeepSleep: ds_awake_q: timer expired\n");
-#else
                     PRINTM(MSG, "ds_awake_q: timer expired\n");
-#endif
                     sbi_reset_deepsleep_wakeup(priv);
                     Adapter->IsDeepSleep = FALSE;
                     Adapter->bWakeupDevRequired = FALSE;
-#ifdef MOTO_DBG
-                    PRINTM(INFO,
-                           "SetDeepSleep: bWakeupDevRequired set to FALSE - KO for DSM\n");
-#endif
                     Adapter->WakeupTries = 0;
                     wlan_fatal_error_handle(priv);
-
                 }
             }
 
@@ -7362,7 +7887,6 @@ wlan_set_mode(struct net_device *dev,
     if (Adapter->MediaConnectStatus == WlanMediaStateConnected) {
         if (Adapter->InfrastructureMode == Wlan802_11Infrastructure) {
             ret = SendDeauthentication(priv);
-
             if (ret) {
                 LEAVE();
                 return ret;
@@ -7378,27 +7902,6 @@ wlan_set_mode(struct net_device *dev,
         }
     }
 
-    if (Adapter->SecInfo.WEPStatus == Wlan802_11WEPEnabled) {
-        /* If there is a key with the specified SSID, 
-         * send REMOVE WEP command, to make sure we clean up
-         * the WEP keys in firmware
-         */
-        ret = PrepareAndSendCommand(priv,
-                                    HostCmd_CMD_802_11_SET_WEP,
-                                    0, HostCmd_OPTION_WAITFORRSP,
-                                    OID_802_11_REMOVE_WEP, NULL);
-
-        if (ret) {
-            LEAVE();
-            return ret;
-        }
-
-        Adapter->CurrentPacketFilter &= ~HostCmd_ACT_MAC_WEP_ENABLE;
-
-        SetMacPacketFilter(priv);
-    }
-
-    Adapter->SecInfo.WEPStatus = Wlan802_11WEPDisabled;
     Adapter->SecInfo.AuthenticationMode = Wlan802_11AuthModeOpen;
 
     Adapter->InfrastructureMode = WantedMode;
@@ -7420,41 +7923,42 @@ wlan_set_mode(struct net_device *dev,
 /** 
  *  @brief Set Encryption key
  *   
- *  @param dev                  A pointer to net_device structure
- *  @param info			A pointer to iw_request_info structure
- *  @param vwrq 		A pointer to iw_param structure
- *  @param extra		A pointer to extra data buf
- *  @return 	   		WLAN_STATUS_SUCCESS --success, otherwise fail
+ *  @param dev      A pointer to net_device structure
+ *  @param info     A pointer to iw_request_info structure
+ *  @param vwrq     A pointer to iw_param structure
+ *  @param extra    A pointer to extra data buf
+ *  @return         WLAN_STATUS_SUCCESS --success, otherwise fail
  */
-int
+static int
 wlan_set_encode(struct net_device *dev,
                 struct iw_request_info *info,
                 struct iw_point *dwrq, char *extra)
 {
 
-    PWLAN_802_11_KEY pKey = NULL;
+    WLAN_802_11_KEY *pKey = NULL;
+    int retval = -EINVAL;
 
     ENTER();
 
-    if (dwrq->length > MAX_KEY_SIZE) {
-        pKey = (PWLAN_802_11_KEY) extra;
-
-        if (pKey->KeyLength <= MAX_KEY_SIZE) {
+    if (dwrq->length > MAX_WEP_KEY_SIZE) {
+        pKey = (WLAN_802_11_KEY *) extra;
+        if (pKey->KeyLength <= MAX_WEP_KEY_SIZE) {
             //dynamic WEP
             dwrq->length = pKey->KeyLength;
             dwrq->flags = pKey->KeyIndex + 1;
-            return wlan_set_encode_nonwpa(dev, info, dwrq, pKey->KeyMaterial);
+            retval = wlan_set_encode_nonwpa(dev, info, dwrq,
+                                            pKey->KeyMaterial);
         } else {
             //WPA
-            return wlan_set_encode_wpa(dev, info, dwrq, extra);
+            retval = wlan_set_encode_wpa(dev, info, dwrq, extra);
         }
     } else {
         //static WEP
         PRINTM(INFO, "Setting WEP\n");
-        return wlan_set_encode_nonwpa(dev, info, dwrq, extra);
+        retval = wlan_set_encode_nonwpa(dev, info, dwrq, extra);
     }
 
-    return -EINVAL;
+    return retval;
 }
 
 /** 
@@ -7470,9 +7974,9 @@ int
 wlan_set_txpow(struct net_device *dev, struct iw_request_info *info,
                struct iw_param *vwrq, char *extra)
 {
-    int ret = WLAN_STATUS_SUCCESS;
     wlan_private *priv = dev->priv;
     wlan_adapter *Adapter = priv->adapter;
+    int ret = WLAN_STATUS_SUCCESS;
 
     u16 dbm;
 
@@ -7487,8 +7991,6 @@ wlan_set_txpow(struct net_device *dev, struct iw_request_info *info,
         wlan_radio_ioctl(priv, RADIO_OFF);
         return WLAN_STATUS_SUCCESS;
     }
-
-    Adapter->Preamble = HostCmd_TYPE_AUTO_PREAMBLE;
 
     wlan_radio_ioctl(priv, RADIO_ON);
 
@@ -7526,11 +8028,11 @@ wlan_set_txpow(struct net_device *dev, struct iw_request_info *info,
 /** 
  *  @brief Get current essid 
  *   
- *  @param dev                  A pointer to net_device structure
- *  @param info			A pointer to iw_request_info structure
- *  @param vwrq 		A pointer to iw_param structure
- *  @param extra		A pointer to extra data buf
- *  @return 	   		WLAN_STATUS_SUCCESS --success, otherwise fail
+ *  @param dev      A pointer to net_device structure
+ *  @param info     A pointer to iw_request_info structure
+ *  @param vwrq     A pointer to iw_param structure
+ *  @param extra    A pointer to extra data buf
+ *  @return         WLAN_STATUS_SUCCESS --success, otherwise fail
  */
 int
 wlan_get_essid(struct net_device *dev, struct iw_request_info *info,
@@ -7538,36 +8040,44 @@ wlan_get_essid(struct net_device *dev, struct iw_request_info *info,
 {
     wlan_private *priv = dev->priv;
     wlan_adapter *Adapter = priv->adapter;
+    int tblIdx = -1;
+    BSSDescriptor_t *pBSSDesc;
 
     ENTER();
-    /*
-     * Note : if dwrq->flags != 0, we should get the relevant SSID from
-     * the SSID list... 
-     */
+
+    pBSSDesc = &Adapter->CurBssParams.BSSDescriptor;
 
     /*
      * Get the current SSID 
      */
     if (Adapter->MediaConnectStatus == WlanMediaStateConnected) {
-        memcpy(extra, Adapter->CurBssParams.ssid.Ssid,
-               Adapter->CurBssParams.ssid.SsidLength);
-        extra[Adapter->CurBssParams.ssid.SsidLength] = '\0';
+
+        tblIdx = FindSSIDInList(Adapter,
+                                &pBSSDesc->Ssid,
+                                pBSSDesc->MacAddress,
+                                Adapter->InfrastructureMode);
+
+        memcpy(extra, &pBSSDesc->Ssid.Ssid, pBSSDesc->Ssid.SsidLength);
+        extra[pBSSDesc->Ssid.SsidLength] = '\0';
+
     } else {
         memset(extra, 0, 32);
-        extra[Adapter->CurBssParams.ssid.SsidLength] = '\0';
+        extra[pBSSDesc->Ssid.SsidLength] = '\0';
     }
-    /*
-     * If none, we may want to get the one that was set 
-     */
 
     /* To make the driver backward compatible with WPA supplicant v0.2.4 */
-    if (dwrq->length == 32)     /* check with WPA supplicant buffer size */
-        dwrq->length = MIN(Adapter->CurBssParams.ssid.SsidLength,
-                           IW_ESSID_MAX_SIZE);
-    else
-        dwrq->length = Adapter->CurBssParams.ssid.SsidLength + 1;
+    if (dwrq->length == 32) {
+        dwrq->length = MIN(pBSSDesc->Ssid.SsidLength, IW_ESSID_MAX_SIZE);
+    } else {
+        dwrq->length = pBSSDesc->Ssid.SsidLength + 1;
+    }
 
-    dwrq->flags = 1;            /* active */
+    /* If the current network is in the table, return the table index */
+    if (tblIdx >= 0) {
+        dwrq->flags = (tblIdx + 1) & IW_ENCODE_INDEX;
+    } else {
+        dwrq->flags = 1;
+    }
 
     LEAVE();
     return WLAN_STATUS_SUCCESS;

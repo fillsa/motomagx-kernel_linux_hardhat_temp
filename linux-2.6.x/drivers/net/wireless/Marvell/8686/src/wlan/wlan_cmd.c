@@ -5,7 +5,6 @@
   * it is ready.
   * 
   * (c) Copyright © 2003-2007, Marvell International Ltd.  
-  * (c) Copyright © 2008, Motorola.
   *
   * This software file (the "File") is distributed by Marvell International 
   * Ltd. under the terms of the GNU General Public License Version 2, June 1991 
@@ -32,15 +31,8 @@ Change log:
     04/18/06: Remove old Subscrive Event and add new Subscribe Event
               implementation through generic hostcmd API
     05/04/06: Add IBSS coalescing related new hostcmd handling	      
+    08/29/06: Add ledgpio private command
 ********************************************************/
-/*****************************************************
- Date         Author         Comment
- ==========   ===========    ==========================
- 21-Mar-2008  Motorola       Integrate Marvell recovery mechanism in getSNR
- 15-May-2008  Motorola       Add MPM support.
- 13-Jun-2008  Motorola       Increase Timer on getSNR.
- 17-Jun-2008  Motorola       WIFI driver :integrate Marvell 8686 release (81048p5_26340p78)
-*******************************************************/
 
 #include	"include.h"
 
@@ -51,7 +43,7 @@ Change log:
 static u16 Commands_Allowed_In_PS[] = {
     HostCmd_CMD_802_11_RSSI,
     HostCmd_CMD_802_11_HOST_SLEEP_CFG,
-    HostCmd_CMD_802_11_HOST_SLEEP_AWAKE_CONFIRM,
+    HostCmd_CMD_802_11_WAKEUP_CONFIRM,
 };
 
 /********************************************************
@@ -179,7 +171,7 @@ wlan_cmd_802_11_fw_wakeup_method(wlan_private * priv,
     u16 action = (u16) cmd_action;
     u16 method = *((u16 *) pdata_buf);
 
-    cmd->Command = wlan_cpu_to_le16(HostCmd_CMD_802_11_FW_WAKEUP_METHOD);
+    cmd->Command = wlan_cpu_to_le16(HostCmd_CMD_802_11_FW_WAKE_METHOD);
     cmd->Size =
         wlan_cpu_to_le16(sizeof(HostCmd_DS_802_11_FW_WAKEUP_METHOD) +
                          S_DS_GEN);
@@ -302,13 +294,14 @@ wlan_cmd_802_11_sleep_period(wlan_private * priv,
                              HostCmd_DS_COMMAND * cmd,
                              u16 cmd_action, void *pdata_buf)
 {
+    HostCmd_DS_802_11_SLEEP_PERIOD *pSleepPeriod = &cmd->params.ps_sleeppd;
+
     cmd->Command = wlan_cpu_to_le16(HostCmd_CMD_802_11_SLEEP_PERIOD);
     cmd->Size = wlan_cpu_to_le16(sizeof(HostCmd_DS_802_11_SLEEP_PERIOD) +
                                  S_DS_GEN);
-    memmove(&cmd->params.ps_sleeppd, pdata_buf,
-            sizeof(HostCmd_DS_802_11_SLEEP_PERIOD));
-    cmd->params.ps_sleeppd.Period =
-        wlan_cpu_to_le16(cmd->params.ps_sleeppd.Period);
+    memmove(pSleepPeriod, pdata_buf, sizeof(HostCmd_DS_802_11_SLEEP_PERIOD));
+    pSleepPeriod->Action = wlan_cpu_to_le16(pSleepPeriod->Action);
+    pSleepPeriod->Period = wlan_cpu_to_le16(pSleepPeriod->Period);
 
     return WLAN_STATUS_SUCCESS;
 }
@@ -483,34 +476,6 @@ wlan_cmd_802_11_set_wep(wlan_private * priv,
 }
 
 /** 
- *  @brief This function prepares command of enable_rsn.
- *  
- *  @param priv		A pointer to wlan_private structure
- *  @param cmd	   	A pointer to HostCmd_DS_COMMAND structure
- *  @param cmd_action 	the action: GET or SET
- *  @return 	   	WLAN_STATUS_SUCCESS or WLAN_STATUS_FAILURE
- */
-static int
-wlan_cmd_802_11_enable_rsn(wlan_private * priv,
-                           HostCmd_DS_COMMAND * cmd, u16 cmd_action)
-{
-    HostCmd_DS_802_11_ENABLE_RSN *pEnableRSN = &cmd->params.enbrsn;
-    wlan_adapter *Adapter = priv->adapter;
-
-    cmd->Command = wlan_cpu_to_le16(HostCmd_CMD_802_11_ENABLE_RSN);
-    cmd->Size =
-        wlan_cpu_to_le16(sizeof(HostCmd_DS_802_11_ENABLE_RSN) + S_DS_GEN);
-    pEnableRSN->Action = wlan_cpu_to_le16(cmd_action);
-    if (Adapter->SecInfo.WPAEnabled || Adapter->SecInfo.WPA2Enabled) {
-        pEnableRSN->Enable = wlan_cpu_to_le16(HostCmd_ENABLE_RSN);
-    } else {
-        pEnableRSN->Enable = wlan_cpu_to_le16(HostCmd_DISABLE_RSN);
-    }
-
-    return WLAN_STATUS_SUCCESS;
-}
-
-/** 
  *  @brief This function prepares command of key_material.
  *  
  *  @param priv		A pointer to wlan_private structure
@@ -527,7 +492,7 @@ wlan_cmd_802_11_key_material(wlan_private * priv,
                              WLAN_OID cmd_oid, void *pdata_buf)
 {
     HostCmd_DS_802_11_KEY_MATERIAL *pKeyMaterial = &cmd->params.keymaterial;
-    PWLAN_802_11_KEY pKey = (PWLAN_802_11_KEY) pdata_buf;
+    WLAN_802_11_KEY *pKey = (WLAN_802_11_KEY *) pdata_buf;
     u16 KeyParamSet_len;
     int ret = WLAN_STATUS_SUCCESS;
 
@@ -617,23 +582,6 @@ wlan_cmd_802_11_get_log(wlan_private * priv, HostCmd_DS_COMMAND * cmd)
 }
 
 /** 
- *  @brief This function prepares command of get_stat.
- *  
- *  @param priv		A pointer to wlan_private structure
- *  @param cmd	   	A pointer to HostCmd_DS_COMMAND structure
- *  @return 	   	WLAN_STATUS_SUCCESS or WLAN_STATUS_FAILURE
- */
-static int
-wlan_cmd_802_11_get_stat(wlan_private * priv, HostCmd_DS_COMMAND * cmd)
-{
-    cmd->Command = wlan_cpu_to_le16(HostCmd_CMD_802_11_GET_STAT);
-    cmd->Size =
-        wlan_cpu_to_le16(sizeof(HostCmd_DS_802_11_GET_STAT) + S_DS_GEN);
-
-    return WLAN_STATUS_SUCCESS;
-}
-
-/** 
  *  @brief This function prepares command of snmp_mib.
  *  
  *  @param priv		A pointer to wlan_private structure
@@ -715,7 +663,7 @@ wlan_cmd_802_11_snmp_mib(wlan_private * priv,
         {
 
             WLAN_802_11_RTS_THRESHOLD ulTemp;
-            pSNMPMIB->OID = wlan_le16_to_cpu((u16) RtsThresh_i);
+            pSNMPMIB->OID = wlan_cpu_to_le16((u16) RtsThresh_i);
 
             if (cmd_action == HostCmd_ACT_GET) {
                 pSNMPMIB->QueryType = wlan_cpu_to_le16(HostCmd_ACT_GEN_GET);
@@ -776,32 +724,12 @@ wlan_cmd_802_11_radio_control(wlan_private * priv,
 
     ENTER();
 
-    cmd->Size =
-        wlan_cpu_to_le16((sizeof(HostCmd_DS_802_11_RADIO_CONTROL)) +
-                         S_DS_GEN);
+    cmd->Size = wlan_cpu_to_le16((sizeof(HostCmd_DS_802_11_RADIO_CONTROL))
+                                 + S_DS_GEN);
     cmd->Command = wlan_cpu_to_le16(HostCmd_CMD_802_11_RADIO_CONTROL);
 
     pRadioControl->Action = wlan_cpu_to_le16(cmd_action);
-
-    switch (Adapter->Preamble) {
-    case HostCmd_TYPE_SHORT_PREAMBLE:
-        pRadioControl->Control = wlan_cpu_to_le16(SET_SHORT_PREAMBLE);
-        break;
-
-    case HostCmd_TYPE_LONG_PREAMBLE:
-        pRadioControl->Control = wlan_cpu_to_le16(SET_LONG_PREAMBLE);
-        break;
-
-    case HostCmd_TYPE_AUTO_PREAMBLE:
-    default:
-        pRadioControl->Control = wlan_cpu_to_le16(SET_AUTO_PREAMBLE);
-        break;
-    }
-
-    if (Adapter->RadioOn)
-        pRadioControl->Control |= wlan_cpu_to_le16(TURN_ON_RF);
-    else
-        pRadioControl->Control &= wlan_cpu_to_le16(~TURN_ON_RF);
+    pRadioControl->Control = wlan_cpu_to_le16(Adapter->RadioOn);
 
     LEAVE();
     return WLAN_STATUS_SUCCESS;
@@ -884,6 +812,52 @@ wlan_cmd_802_11_rf_tx_power(wlan_private * priv,
     case HostCmd_ACT_GEN_SET:
         pRTP->Action = wlan_cpu_to_le16(HostCmd_ACT_GEN_SET);
         pRTP->CurrentLevel = wlan_cpu_to_le16(*((u16 *) pdata_buf));
+        break;
+    }
+    LEAVE();
+    return WLAN_STATUS_SUCCESS;
+}
+
+/** 
+ *  @brief This function prepares command of ibss_bcn_monitor_period.
+ *  
+ *  @param priv		A pointer to wlan_private structure
+ *  @param cmd	   	A pointer to HostCmd_DS_COMMAND structure
+ *  @param cmd_action   the action: GET or SET
+ *  @param pdata_buf	A pointer to data buffer
+ *  @return 	   	WLAN_STATUS_SUCCESS or WLAN_STATUS_FAILURE
+ */
+static int
+wlan_cmd_802_11_ibss_bcn_monitor(wlan_private * priv,
+                                 HostCmd_DS_COMMAND * cmd,
+                                 u16 cmd_action, void *pdata_buf)
+{
+    HostCmd_DS_802_11_IBSS_BCN_MONITOR *pstIbss_bcn_monpd =
+        &cmd->params.ibss_bcn_monpd;
+
+    ENTER();
+    cmd->Size =
+        wlan_cpu_to_le16((sizeof(HostCmd_DS_802_11_IBSS_BCN_MONITOR)) +
+                         S_DS_GEN);
+    cmd->Command = wlan_cpu_to_le16(Host_CMD_802_11_IBSS_BCN_MONITOR);
+    pstIbss_bcn_monpd->Action = cmd_action;
+
+    PRINTM(INFO, "Ibss_bcn_monitor_cmd: Size:%d Cmd:0x%x Act:%d\n", cmd->Size,
+           cmd->Command, pstIbss_bcn_monpd->Action);
+
+    switch (cmd_action) {
+    case HostCmd_ACT_GEN_GET:
+        pstIbss_bcn_monpd->Action = wlan_cpu_to_le16(HostCmd_ACT_GEN_GET);
+        pstIbss_bcn_monpd->u32BcnMonpd = 0;
+        break;
+    case HostCmd_ACT_GEN_SET:
+        pstIbss_bcn_monpd->Action = wlan_cpu_to_le16(HostCmd_ACT_GEN_SET);
+        pstIbss_bcn_monpd->u32BcnMonpd =
+            wlan_cpu_to_le32(((HostCmd_DS_802_11_IBSS_BCN_MONITOR *)
+                              pdata_buf)->u32BcnMonpd);
+        break;
+
+    default:
         break;
     }
     LEAVE();
@@ -1056,7 +1030,7 @@ wlan_cmd_reg_access(wlan_private * priv,
             CmdPtr->Size =
                 wlan_cpu_to_le16(sizeof(HostCmd_DS_MAC_REG_ACCESS) +
                                  S_DS_GEN);
-            macreg = (PHostCmd_DS_MAC_REG_ACCESS) & CmdPtr->params.macreg;
+            macreg = (HostCmd_DS_MAC_REG_ACCESS *) & CmdPtr->params.macreg;
 
             macreg->Action = wlan_cpu_to_le16(cmd_action);
             macreg->Offset = wlan_cpu_to_le16((u16) offval->offset);
@@ -1072,7 +1046,7 @@ wlan_cmd_reg_access(wlan_private * priv,
             CmdPtr->Size =
                 wlan_cpu_to_le16(sizeof(HostCmd_DS_BBP_REG_ACCESS) +
                                  S_DS_GEN);
-            bbpreg = (PHostCmd_DS_BBP_REG_ACCESS) & CmdPtr->params.bbpreg;
+            bbpreg = (HostCmd_DS_BBP_REG_ACCESS *) & CmdPtr->params.bbpreg;
 
             bbpreg->Action = wlan_cpu_to_le16(cmd_action);
             bbpreg->Offset = wlan_cpu_to_le16((u16) offval->offset);
@@ -1087,7 +1061,7 @@ wlan_cmd_reg_access(wlan_private * priv,
 
             CmdPtr->Size =
                 wlan_cpu_to_le16(sizeof(HostCmd_DS_RF_REG_ACCESS) + S_DS_GEN);
-            rfreg = (PHostCmd_DS_RF_REG_ACCESS) & CmdPtr->params.rfreg;
+            rfreg = (HostCmd_DS_RF_REG_ACCESS *) & CmdPtr->params.rfreg;
 
             rfreg->Action = wlan_cpu_to_le16(cmd_action);
             rfreg->Offset = wlan_cpu_to_le16((u16) offval->offset);
@@ -1147,30 +1121,29 @@ wlan_cmd_802_11_cal_data_ext(wlan_private * priv,
 {
     HostCmd_DS_802_11_CAL_DATA_EXT *PCalDataext = pdata_buf;
 
-    pHostCmd_DS_802_11_CAL_DATA_EXT pCmdCalData =
-        (pHostCmd_DS_802_11_CAL_DATA_EXT) & cmd->params.caldataext;
+    HostCmd_DS_802_11_CAL_DATA_EXT *pCmdCalData =
+        (HostCmd_DS_802_11_CAL_DATA_EXT *) & cmd->params.caldataext;
 
     ENTER();
     cmd->Command = wlan_cpu_to_le16(HostCmd_CMD_802_11_CAL_DATA_EXT);
 
     PRINTM(INFO, "CalDataLen = %d(d)\n", PCalDataext->CalDataLen);
 
-#define MAX_ALLOWED_LEN	1024
-    if (PCalDataext->CalDataLen > MAX_ALLOWED_LEN) {
+    if (PCalDataext->CalDataLen >
+        MAX_SETGET_CONF_CMD_LEN - CAL_DATA_HEADER_LEN) {
         PRINTM(MSG, "CAL_DATA_EXT: Cal data lenght too large!\n");
         return WLAN_STATUS_FAILURE;
     }
-#define ACTION_REV_CALDATA_LEN_FIELDS_LEN 6
+
     memcpy(pCmdCalData, PCalDataext,
-           PCalDataext->CalDataLen + ACTION_REV_CALDATA_LEN_FIELDS_LEN);
+           PCalDataext->CalDataLen + CAL_DATA_HEADER_LEN);
 
     pCmdCalData->Action = wlan_cpu_to_le16(pCmdCalData->Action);
     pCmdCalData->Revision = wlan_cpu_to_le16(pCmdCalData->Revision);
     pCmdCalData->CalDataLen = wlan_cpu_to_le16(pCmdCalData->CalDataLen);
 
     cmd->Size = wlan_cpu_to_le16(PCalDataext->CalDataLen +
-                                 ACTION_REV_CALDATA_LEN_FIELDS_LEN +
-                                 S_DS_GEN);
+                                 CAL_DATA_HEADER_LEN + S_DS_GEN);
 
     PRINTM(INFO, "CAL_DATA_EXT: cmd->Size = %d(d)\n", cmd->Size);
 
@@ -1280,7 +1253,7 @@ QueueCmd(wlan_adapter * Adapter, CmdCtrlNode * CmdNode, BOOLEAN addtail)
         }
     }
 
-    if ((command == HostCmd_CMD_802_11_HOST_SLEEP_AWAKE_CONFIRM)
+    if ((command == HostCmd_CMD_802_11_WAKEUP_CONFIRM)
         ) {
         addtail = FALSE;
     }
@@ -1305,34 +1278,29 @@ QueueCmd(wlan_adapter * Adapter, CmdCtrlNode * CmdNode, BOOLEAN addtail)
 /** 
  *  @brief This function sends general command to firmware.
  *  
- *  @param priv		A pointer to wlan_private structure
- *  @param CmdNode   	A pointer to CmdCtrlNode structure
- *  @return 	   	WLAN_STATUS_SUCCESS or WLAN_STATUS_FAILURE
+ *  @param priv     	A pointer to wlan_private structure
+ *  @param cmd      	A pointer to HostCmd_DS_COMMAND structure
+ *  @param pdata_buf	A pointer to data buffer
+ *  @return         	WLAN_STATUS_SUCCESS or WLAN_STATUS_FAILURE
  */
 static int
-SendMfgCommand(wlan_private * priv, CmdCtrlNode * cmdnode)
+wlan_cmd_mfg_cmd(wlan_private * priv,
+                 HostCmd_DS_COMMAND * cmd, void *pdata_buf)
 {
     HostCmd_DS_GEN *pCmdPtr;
-    wlan_adapter *Adapter = priv->adapter;
 
     ENTER();
 
-    pCmdPtr = (PHostCmd_DS_GEN) Adapter->mfg_cmd;
+    pCmdPtr = (HostCmd_DS_GEN *) pdata_buf;
 
-    pCmdPtr->Command = wlan_cpu_to_le16(HostCmd_CMD_MFG_COMMAND);
+    /* copy the MFG command to command buffer */
+    memcpy((void *) cmd, pdata_buf, pCmdPtr->Size);
 
-    SetCmdCtrlNode(priv, cmdnode, OID_MRVL_MFG_COMMAND,
-                   HostCmd_OPTION_WAITFORRSP, pCmdPtr);
+    PRINTM(INFO, "MFG command size = %d\n", pCmdPtr->Size);
 
-    /* Assign new sequence number */
-    pCmdPtr->SeqNum = wlan_cpu_to_le16(priv->adapter->SeqNum);
-
-    PRINTM(INFO, "Sizeof CmdPtr->size %d\n", (u32) pCmdPtr->Size);
-
-    /* copy the command from information buffer to command queue */
-    memcpy((void *) cmdnode->BufVirtualAddr, (void *) pCmdPtr, pCmdPtr->Size);
-
-    Adapter->mfg_cmd_flag = 1;
+    cmd->Command = wlan_cpu_to_le16(HostCmd_CMD_MFG_COMMAND);
+    cmd->Size = wlan_cpu_to_le16(cmd->Size);
+    cmd->Result = 0;
 
     LEAVE();
     return WLAN_STATUS_SUCCESS;
@@ -1379,17 +1347,19 @@ DownloadCommandToStation(wlan_private * priv, CmdCtrlNode * CmdNode)
         goto done;
     }
 
+    /* Set command sequence number */
+    Adapter->SeqNum++;
+    CmdPtr->SeqNum = wlan_cpu_to_le16(Adapter->SeqNum);
+
     spin_lock_irqsave(&Adapter->QueueSpinLock, flags);
     Adapter->CurCmd = CmdNode;
     spin_unlock_irqrestore(&Adapter->QueueSpinLock, flags);
-    Adapter->CurCmdRetCode = 0;
+//in e8 71.01.8br  Adapter->CurCmdRetCode = 0;
 
-    CmdSize = CmdPtr->Size;
-
-    Command = wlan_cpu_to_le16(CmdPtr->Command);
+    Command = wlan_le16_to_cpu(CmdPtr->Command);
+    CmdSize = wlan_le16_to_cpu(CmdPtr->Size);
 
     CmdNode->CmdWaitQWoken = FALSE;
-    CmdSize = wlan_cpu_to_le16(CmdSize);
 
     ret = sbi_host_to_card(priv, MVMS_CMD, (u8 *) CmdPtr, CmdSize);
 
@@ -1411,7 +1381,11 @@ DownloadCommandToStation(wlan_private * priv, CmdCtrlNode * CmdNode)
         goto done;
     }
 
-    Adapter->dbg.LastCmdId = Command;
+    /* Save the last command id and action to debug log */
+    Adapter->dbg.LastCmdIndex = (Adapter->dbg.LastCmdIndex + 1) % DBG_CMD_NUM;
+    Adapter->dbg.LastCmdId[Adapter->dbg.LastCmdIndex] = Command;
+    Adapter->dbg.LastCmdAct[Adapter->dbg.LastCmdIndex] =
+        wlan_le16_to_cpu(*(u16 *) ((u8 *) CmdPtr + S_DS_GEN));
 
     PRINTM(CMND, "DNLD_CMD: 0x%x, act 0x%x, len %d, seqno %d @ %lu\n",
            Command, wlan_le16_to_cpu(*(u16 *) ((u8 *) CmdPtr + S_DS_GEN)),
@@ -1464,14 +1438,23 @@ DownloadCommandToStation(wlan_private * priv, CmdCtrlNode * CmdNode)
             Adapter->CommandTimerIsSet = FALSE;
         }
 
-        /* stop clock to save more power */
-        sbi_set_bus_clock(priv, FALSE);
+        if (!Adapter->IsAutoDeepSleepEnabled
+            || (Adapter->bHostSleepConfigured &&
+                (Adapter->HSCfg.gpio != HOST_SLEEP_CFG_WAKEUP_THRU_INTERFACE))
+            )
+            /* stop clock to save more power */
+            sbi_set_bus_clock(priv, FALSE);
+
+        if (Adapter->IsAutoDeepSleepEnabled) {
+            Adapter->bWakeupDevRequired = TRUE;
+            /* For auto deep sleep mode, after entering deep sleep state, 
+             * dnld_sent flag should be cleared so that the commands in 
+             * pending queue can be handled by main thread. */
+            priv->wlan_dev.dnld_sent = DNLD_RES_RECEIVED;
+        }
 
         if (Adapter->bHostSleepConfigured) {
             Adapter->bWakeupDevRequired = TRUE;
-#ifdef MOTO_DBG
-            PRINTM(INFO, "bWakeupDevRequired set to TRUE - OK for DSM\n");
-#endif
             wlan_host_sleep_activated_event(priv);
         }
 
@@ -1492,15 +1475,17 @@ DownloadCommandToStation(wlan_private * priv, CmdCtrlNode * CmdNode)
  *  @return 		WLAN_STATUS_SUCCESS or WLAN_STATUS_FAILURE
  */
 static int
-wlan_cmd_mac_control(wlan_private * priv, HostCmd_DS_COMMAND * cmd)
+wlan_cmd_mac_control(wlan_private * priv,
+                     HostCmd_DS_COMMAND * cmd, void *InfoBuf)
 {
     HostCmd_DS_MAC_CONTROL *mac = &cmd->params.macctrl;
+    u16 Action = *((u16 *) InfoBuf);
 
     ENTER();
 
     cmd->Command = wlan_cpu_to_le16(HostCmd_CMD_MAC_CONTROL);
     cmd->Size = wlan_cpu_to_le16(sizeof(HostCmd_DS_MAC_CONTROL) + S_DS_GEN);
-    mac->Action = wlan_cpu_to_le16(priv->adapter->CurrentPacketFilter);
+    mac->Action = wlan_cpu_to_le16(Action);
 
     PRINTM(INFO, "wlan_cmd_mac_control(): Action=0x%X Size=%d\n",
            mac->Action, cmd->Size);
@@ -1542,54 +1527,6 @@ CleanupAndInsertCmd(wlan_private * priv, CmdCtrlNode * pTempCmd)
 }
 
 /** 
- *  @brief This function sets radio control.
- *  
- *  @param priv		A pointer to wlan_private structure
- *  @return 		WLAN_STATUS_SUCCESS or WLAN_STATUS_FAILURE
- */
-int
-SetRadioControl(wlan_private * priv)
-{
-    int ret = WLAN_STATUS_SUCCESS;
-
-    ENTER();
-
-    ret = PrepareAndSendCommand(priv,
-                                HostCmd_CMD_802_11_RADIO_CONTROL,
-                                HostCmd_ACT_GEN_SET,
-                                HostCmd_OPTION_WAITFORRSP, 0, NULL);
-
-    PRINTM(INFO, "RADIO_SET: on or off: 0x%X, Preamble = 0x%X\n",
-           priv->adapter->RadioOn, priv->adapter->Preamble);
-
-    LEAVE();
-    return ret;
-}
-
-/** 
- *  @brief This function sets packet filter.
- *  
- *  @param priv		A pointer to wlan_private structure
- *  @return 		WLAN_STATUS_SUCCESS or WLAN_STATUS_FAILURE
- */
-int
-SetMacPacketFilter(wlan_private * priv)
-{
-    int ret = WLAN_STATUS_SUCCESS;
-
-    ENTER();
-
-    PRINTM(INFO, "SetMacPacketFilter Value = %x\n",
-           priv->adapter->CurrentPacketFilter);
-
-    /* Send MAC control command to station */
-    ret = PrepareAndSendCommand(priv, HostCmd_CMD_MAC_CONTROL, 0, 0, 0, NULL);
-
-    LEAVE();
-    return ret;
-}
-
-/** 
  *  @brief This function prepare the command before send to firmware.
  *  
  *  @param priv		A pointer to wlan_private structure
@@ -1624,12 +1561,6 @@ PrepareAndSendCommand(wlan_private * priv,
         goto done;
     }
 
-    if (Adapter->IsDeepSleep == TRUE) {
-        PRINTM(ERROR, "PREP_CMD: Deep sleep enabled\n");
-        ret = WLAN_STATUS_FAILURE;
-        goto done;
-    }
-
     if (Adapter->SurpriseRemoved) {
         PRINTM(ERROR, "PREP_CMD: Card is Removed\n");
         ret = WLAN_STATUS_FAILURE;
@@ -1658,10 +1589,6 @@ PrepareAndSendCommand(wlan_private * priv,
         goto done;
     }
 
-    /* Set sequence number, command and INT option */
-    Adapter->SeqNum++;
-    CmdPtr->SeqNum = wlan_cpu_to_le16(Adapter->SeqNum);
-
     CmdPtr->Command = cmd_no;
     CmdPtr->Result = 0;
 
@@ -1679,11 +1606,10 @@ PrepareAndSendCommand(wlan_private * priv,
         break;
 
     case HostCmd_CMD_MAC_CONTROL:
-        ret = wlan_cmd_mac_control(priv, CmdPtr);
+        ret = wlan_cmd_mac_control(priv, CmdPtr, pdata_buf);
         break;
 
     case HostCmd_CMD_802_11_ASSOCIATE:
-    case HostCmd_CMD_802_11_REASSOCIATE:
         ret = wlan_cmd_802_11_associate(priv, CmdPtr, pdata_buf);
         break;
 
@@ -1705,14 +1631,6 @@ PrepareAndSendCommand(wlan_private * priv,
 
     case HostCmd_CMD_802_11_GET_LOG:
         ret = wlan_cmd_802_11_get_log(priv, CmdPtr);
-        break;
-
-    case HostCmd_CMD_802_11_AUTHENTICATE:
-        ret = wlan_cmd_802_11_authenticate(priv, CmdPtr, pdata_buf);
-        break;
-
-    case HostCmd_CMD_802_11_GET_STAT:
-        ret = wlan_cmd_802_11_get_stat(priv, CmdPtr);
         break;
 
     case HostCmd_CMD_802_11_SNMP_MIB:
@@ -1762,19 +1680,13 @@ PrepareAndSendCommand(wlan_private * priv,
     case HostCmd_CMD_802_11_AD_HOC_STOP:
         ret = wlan_cmd_802_11_ad_hoc_stop(priv, CmdPtr);
         break;
-
-    case HostCmd_CMD_802_11_ENABLE_RSN:
-        ret = wlan_cmd_802_11_enable_rsn(priv, CmdPtr, cmd_action);
+    case Host_CMD_802_11_IBSS_BCN_MONITOR:
+        ret = wlan_cmd_802_11_ibss_bcn_monitor(priv, CmdPtr,
+                                               cmd_action, pdata_buf);
         break;
-
     case HostCmd_CMD_802_11_KEY_MATERIAL:
         ret = wlan_cmd_802_11_key_material(priv, CmdPtr,
                                            cmd_action, cmd_oid, pdata_buf);
-        break;
-
-    case HostCmd_CMD_802_11_PAIRWISE_TSC:
-        break;
-    case HostCmd_CMD_802_11_GROUP_TSC:
         break;
 
     case HostCmd_CMD_802_11_MAC_ADDRESS:
@@ -1794,7 +1706,7 @@ PrepareAndSendCommand(wlan_private * priv,
     case HostCmd_CMD_802_11_HOST_SLEEP_CFG:
         ret = wlan_cmd_802_11_host_sleep_cfg(priv, CmdPtr, pdata_buf);
         break;
-    case HostCmd_CMD_802_11_HOST_SLEEP_AWAKE_CONFIRM:
+    case HostCmd_CMD_802_11_WAKEUP_CONFIRM:
         CmdPtr->Command = wlan_cpu_to_le16(cmd_no);
         CmdPtr->Size = wlan_cpu_to_le16(S_DS_GEN);
         break;
@@ -1806,22 +1718,9 @@ PrepareAndSendCommand(wlan_private * priv,
 
 #ifdef MFG_CMD_SUPPORT
     case HostCmd_CMD_MFG_COMMAND:
-        ret = SendMfgCommand(priv, CmdNode);
+        ret = wlan_cmd_mfg_cmd(priv, CmdPtr, pdata_buf);
         break;
 #endif
-
-    case HostCmd_CMD_802_11_SET_AFC:
-    case HostCmd_CMD_802_11_GET_AFC:
-
-        CmdPtr->Command = wlan_cpu_to_le16(cmd_no);
-        CmdPtr->Size =
-            wlan_cpu_to_le16(sizeof(HostCmd_DS_802_11_AFC) + S_DS_GEN);
-
-        memmove(&CmdPtr->params.afc,
-                pdata_buf, sizeof(HostCmd_DS_802_11_AFC));
-
-        ret = WLAN_STATUS_SUCCESS;
-        goto done;
 
     case HostCmd_CMD_802_11D_DOMAIN_INFO:
         ret = wlan_cmd_802_11d_domain_info(priv, CmdPtr, cmd_no, cmd_action);
@@ -1847,7 +1746,7 @@ PrepareAndSendCommand(wlan_private * priv,
         ret = wlan_cmd_802_11_bg_scan_query(priv, CmdPtr);
         break;
 
-    case HostCmd_CMD_802_11_FW_WAKEUP_METHOD:
+    case HostCmd_CMD_802_11_FW_WAKE_METHOD:
         ret = wlan_cmd_802_11_fw_wakeup_method(priv, CmdPtr,
                                                cmd_action, pdata_buf);
         break;
@@ -1855,13 +1754,6 @@ PrepareAndSendCommand(wlan_private * priv,
     case HostCmd_CMD_WMM_GET_STATUS:
         ret = wlan_cmd_wmm_get_status(priv, CmdPtr, pdata_buf);
         break;
-    case HostCmd_CMD_WMM_ACK_POLICY:
-        ret = wlan_cmd_wmm_ack_policy(priv, CmdPtr, pdata_buf);
-        break;
-#if 0
-    case HostCmd_CMD_WMM_PRIO_PKT_AVAIL:
-        break;
-#endif
 
     case HostCmd_CMD_WMM_ADDTS_REQ:
         ret = wlan_cmd_wmm_addts_req(priv, CmdPtr, pdata_buf);
@@ -1875,7 +1767,11 @@ PrepareAndSendCommand(wlan_private * priv,
     case HostCmd_CMD_WMM_QUEUE_STATS:
         ret = wlan_cmd_wmm_queue_stats(priv, CmdPtr, pdata_buf);
         break;
-
+    case HostCmd_CMD_TX_PKT_STATS:
+        CmdPtr->Command = wlan_cpu_to_le16(HostCmd_CMD_TX_PKT_STATS);
+        CmdPtr->Size = wlan_cpu_to_le16(S_DS_GEN);
+        ret = WLAN_STATUS_SUCCESS;
+        break;
     case HostCmd_CMD_802_11_TPC_CFG:
         CmdPtr->Command = wlan_cpu_to_le16(HostCmd_CMD_802_11_TPC_CFG);
         CmdPtr->Size =
@@ -1883,25 +1779,38 @@ PrepareAndSendCommand(wlan_private * priv,
 
         memmove(&CmdPtr->params.tpccfg,
                 pdata_buf, sizeof(HostCmd_DS_802_11_TPC_CFG));
+        CmdPtr->params.tpccfg.Action =
+            wlan_cpu_to_le16(CmdPtr->params.tpccfg.Action);
 
         ret = WLAN_STATUS_SUCCESS;
         break;
-    case HostCmd_CMD_802_11_LED_GPIO_CTRL:
+    case HostCmd_CMD_802_11_LED_CONTROL:
         {
-            MrvlIEtypes_LedGpio_t *gpio =
-                (MrvlIEtypes_LedGpio_t *) CmdPtr->params.ledgpio.data;
+            HostCmd_DS_802_11_LED_CTRL *pLedCtrl = &CmdPtr->params.ledgpio;
+            MrvlIEtypes_LedGpio_t *gpio = &pLedCtrl->LedGpio;
+            MrvlIEtypes_LedBehavior_t *pLedBehavior = pLedCtrl->LedBehavior;
 
             memmove(&CmdPtr->params.ledgpio,
                     pdata_buf, sizeof(HostCmd_DS_802_11_LED_CTRL));
 
             CmdPtr->Command =
-                wlan_cpu_to_le16(HostCmd_CMD_802_11_LED_GPIO_CTRL);
+                wlan_cpu_to_le16(HostCmd_CMD_802_11_LED_CONTROL);
 
 #define ACTION_NUMLED_TLVTYPE_LEN_FIELDS_LEN 8
             CmdPtr->Size = wlan_cpu_to_le16(gpio->Header.Len + S_DS_GEN
                                             +
                                             ACTION_NUMLED_TLVTYPE_LEN_FIELDS_LEN);
+
+            pLedCtrl->Action = wlan_cpu_to_le16(pLedCtrl->Action);
+            pLedCtrl->LedNums = wlan_cpu_to_le16(pLedCtrl->LedNums);
+
+            gpio->Header.Type = wlan_cpu_to_le16(gpio->Header.Type);
             gpio->Header.Len = wlan_cpu_to_le16(gpio->Header.Len);
+
+            pLedBehavior->Header.Type =
+                wlan_cpu_to_le16(pLedBehavior->Header.Type);
+            pLedBehavior->Header.Len =
+                wlan_cpu_to_le16(pLedBehavior->Header.Len);
 
             ret = WLAN_STATUS_SUCCESS;
             break;
@@ -1941,6 +1850,12 @@ PrepareAndSendCommand(wlan_private * priv,
             wlan_cpu_to_le16(CmdPtr->params.ldocfg.PMSource);
         break;
 
+    case HostCmd_CMD_VERSION_EXT:
+        CmdPtr->Command = wlan_cpu_to_le16(cmd_no);
+        memcpy(&CmdPtr->params, pdata_buf, sizeof(HostCmd_DS_VERSION_EXT));
+        CmdPtr->Size = wlan_cpu_to_le16(sizeof(HostCmd_DS_VERSION_EXT)
+                                        + S_DS_GEN);
+        break;
     case HostCmd_CMD_INACTIVITY_TIMEOUT_EXT:
         {
             CmdPtr->Command = wlan_cpu_to_le16(cmd_no);
@@ -1960,6 +1875,25 @@ PrepareAndSendCommand(wlan_private * priv,
                                  MulticastTimeout);
         }
         break;
+    case HostCmd_CMD_DBGS_CFG:
+        {
+            DBGS_CFG_DATA *pDbgCfg = (DBGS_CFG_DATA *) pdata_buf;
+            CmdPtr->Command = wlan_cpu_to_le16(cmd_no);
+            memcpy(&CmdPtr->params, (u8 *) & pDbgCfg->data, pDbgCfg->size);
+            CmdPtr->Size = wlan_cpu_to_le16(pDbgCfg->size + S_DS_GEN);
+        }
+        break;
+    case HostCmd_CMD_GET_MEM:
+        {
+            FW_MEM_DATA *pFwData = (FW_MEM_DATA *) pdata_buf;
+            CmdPtr->Command = wlan_cpu_to_le16(cmd_no);
+            memcpy(&CmdPtr->params, (u8 *) & pFwData->data,
+                   sizeof(HostCmd_DS_GET_MEM));
+            CmdPtr->Size =
+                wlan_cpu_to_le16(sizeof(HostCmd_DS_GET_MEM) + S_DS_GEN);
+        }
+        break;
+
     default:
         PRINTM(INFO, "PREP_CMD: unknown command- %#x\n", cmd_no);
         ret = WLAN_STATUS_FAILURE;
@@ -1980,30 +1914,13 @@ PrepareAndSendCommand(wlan_private * priv,
     QueueCmd(Adapter, CmdNode, TRUE);
     wake_up_interruptible(&priv->MainThread.waitQ);
 
-    sbi_reenable_host_interrupt(priv, 0x00);
-
     if (wait_option & HostCmd_OPTION_WAITFORRSP) {
         PRINTM(INFO, "PREP_CMD: Wait for CMD response...\n");
-        if (wait_option & HostCmd_OPTION_TIMEOUT) {
-            if (!os_wait_interruptible_timeout
-                (CmdNode->cmdwait_q, CmdNode->CmdWaitQWoken,
-                 MRVDRV_CMD_TIME_OUT_5S)) {
-                PRINTM(INFO, "PREP_CMD:Timeout ...\n");
-                ret = WLAN_STATUS_CMD_TIME_OUT;
-                goto done;
-            }
-        } else
-            wait_event_interruptible(CmdNode->cmdwait_q,
-                                     CmdNode->CmdWaitQWoken);
+        wait_event_interruptible(CmdNode->cmdwait_q, CmdNode->CmdWaitQWoken);
 
         if (Adapter->CurCmdRetCode) {
-#ifdef MOTO_DBG
-            PRINTM(ERROR, "PREP_CMD: Command failed with return code=%d\n",
-                   Adapter->CurCmdRetCode);
-#else
             PRINTM(INFO, "PREP_CMD: Command failed with return code=%d\n",
                    Adapter->CurCmdRetCode);
-#endif
             Adapter->CurCmdRetCode = 0;
             ret = WLAN_STATUS_FAILURE;
         }
@@ -2236,12 +2153,6 @@ ExecuteNextCommand(wlan_private * priv)
         goto done;
     }
 
-    if (Adapter->IsDeepSleep == TRUE) {
-        PRINTM(MSG, "EXEC_NEXT_CMD: Device is in deep sleep mode.\n");
-        ret = WLAN_STATUS_FAILURE;
-        goto done;
-    }
-
     spin_lock_irqsave(&Adapter->QueueSpinLock, flags);
 
     if (Adapter->CurCmd) {
@@ -2337,25 +2248,38 @@ ExecuteNextCommand(wlan_private * priv)
         list_del((struct list_head *) CmdNode);
         DownloadCommandToStation(priv, CmdNode);
     } else {
-        /*
-         * check if in power save mode, if yes, put the device back
-         * to PS mode
-         */
-        if ((Adapter->PSMode != Wlan802_11PowerModeCAM) &&
-            (Adapter->PSState == PS_STATE_FULL_POWER) &&
-            (Adapter->MediaConnectStatus == WlanMediaStateConnected)) {
-            if (Adapter->SecInfo.WPAEnabled || Adapter->SecInfo.WPA2Enabled) {
-                if (Adapter->IsGTK_SET) {
-                    PRINTM(INFO, "EXEC_NEXT_CMD: WPA enabled and GTK_SET"
-                           " go back to PS_SLEEP");
-                    PSSleep(priv, 0);
+        if (Adapter->MediaConnectStatus == WlanMediaStateConnected) {
+            /*
+             * check if in power save mode, if yes, put the device back
+             * to PS mode
+             */
+            if ((Adapter->PSMode != Wlan802_11PowerModeCAM) &&
+                (Adapter->PSState == PS_STATE_FULL_POWER)) {
+                if (Adapter->SecInfo.WPAEnabled
+                    || Adapter->SecInfo.WPA2Enabled) {
+                    if (Adapter->IsGTK_SET) {
+                        PRINTM(INFO, "EXEC_NEXT_CMD: WPA enabled and GTK_SET"
+                               " go back to PS_SLEEP");
+                        PSSleep(priv, 0);
+                    }
+                } else {
+                    {
+                        PRINTM(INFO, "EXEC_NEXT_CMD: Command PendQ is empty,"
+                               " go back to PS_SLEEP");
+                        PSSleep(priv, 0);
+                    }
                 }
-            } else {
-                {
-                    PRINTM(INFO, "EXEC_NEXT_CMD: Command PendQ is empty,"
-                           " go back to PS_SLEEP");
-                    PSSleep(priv, 0);
-                }
+            }
+        } else {
+            /*
+             * check if in auto deep sleep mode, if yes, put the device back
+             * to DS mode
+             */
+            if (Adapter->IsAutoDeepSleepEnabled && !Adapter->IntCounter) {
+                PRINTM(INFO, "Entering Auto Deep Sleep mode...\n");
+                ret = PrepareAndSendCommand(priv,
+                                            HostCmd_CMD_802_11_DEEP_SLEEP, 0,
+                                            0, 0, NULL);
             }
         }
     }
@@ -2366,43 +2290,69 @@ ExecuteNextCommand(wlan_private * priv)
     return ret;
 }
 
-#if WIRELESS_EXT > 14
 /** 
- *  @brief This function sends customized event to application.
+ *  @brief This function handles the timeout of command sending.
+ *  It will re-send the same command again.
  *  
- *  @param priv    A pointer to wlan_private structure
- *  @para str	   A pointer to event string
+ *  @param FunctionContext    A pointer to FunctionContext
  *  @return 	   n/a
  */
 void
-send_iwevcustom_event(wlan_private * priv, s8 * str)
+MrvDrvCommandTimerFunction(void *FunctionContext)
 {
-    union iwreq_data iwrq;
-    u8 buf[50];
+    wlan_private *priv = (wlan_private *) FunctionContext;
+    wlan_adapter *Adapter = priv->adapter;
+    CmdCtrlNode *pTempNode;
+    HostCmd_DS_COMMAND *CmdPtr;
 
     ENTER();
 
-    memset(&iwrq, 0, sizeof(union iwreq_data));
-    memset(buf, 0, sizeof(buf));
+    PRINTM(CMND, "Command timeout.\n");
 
-    snprintf(buf, sizeof(buf) - 1, "%s", str);
+    Adapter->CommandTimerIsSet = FALSE;
 
-    iwrq.data.pointer = buf;
-    iwrq.data.length = strlen(buf) + 1 + IW_EV_LCP_LEN;
+    if (!Adapter->num_cmd_timeout)
+        Adapter->dbg.num_cmd_timeout++;
 
-    /* Send Event to upper layer */
-    wireless_send_event(priv->wlan_dev.netdev, IWEVCUSTOM, &iwrq, buf);
+    pTempNode = Adapter->CurCmd;
 
-#ifdef MOTO_DBG
-    PRINTM(MOTO_DEBUG, "IWEVCUSTOM event %s is sent to upper layers\n", str);
-#else
-    PRINTM(INFO, "Wireless event %s is sent to app\n", str);
-#endif
+    if (pTempNode == NULL) {
+        PRINTM(INFO, "CurCmd Empty\n");
+        goto exit;
+    }
 
+    CmdPtr = (HostCmd_DS_COMMAND *) pTempNode->BufVirtualAddr;
+    if (CmdPtr == NULL) {
+        goto exit;
+    }
+
+    if (CmdPtr->Size) {
+        Adapter->dbg.TimeoutCmdId = wlan_cpu_to_le16(CmdPtr->Command);
+        Adapter->dbg.TimeoutCmdAct =
+            wlan_cpu_to_le16(*(u16 *) ((u8 *) CmdPtr + S_DS_GEN));
+        PRINTM(CMND, "Timeout cmd = 0x%x, act = 0x%x\n",
+               Adapter->dbg.TimeoutCmdId, Adapter->dbg.TimeoutCmdAct);
+    }
+#define MAX_CMD_TIMEOUT_COUNT	5
+    Adapter->num_cmd_timeout++;
+    if (Adapter->num_cmd_timeout > MAX_CMD_TIMEOUT_COUNT) {
+        PRINTM(FATAL, "num_cmd_timeout=%d\n", Adapter->num_cmd_timeout);
+        wlan_fatal_error_handle(priv);
+        goto exit;
+    }
+
+    /* Restart the timer to trace command response again */
+    ModTimer(&Adapter->MrvDrvCommandTimer, MRVDRV_TIMER_1S);
+    Adapter->CommandTimerIsSet = TRUE;
+
+    /* Wake up main thread to read int status register */
+    Adapter->IntCounter++;
+    wake_up_interruptible(&priv->MainThread.waitQ);
+
+  exit:
     LEAVE();
     return;
 }
-#endif
 
 /** 
  *  @brief This function sends sleep confirm command to firmware.
@@ -2427,24 +2377,14 @@ SendConfirmSleep(wlan_private * priv, u8 * CmdPtr, u16 size)
     priv->wlan_dev.dnld_sent = DNLD_RES_RECEIVED;
 
     if (ret) {
-#ifdef MOTO_DBG
-        PRINTM(ERROR, "SLEEP_CFM: sbi_host_to_card() failed\n");
-#else
         PRINTM(MSG, "SLEEP_CFM: sbi_host_to_card() failed\n");
-#endif
         Adapter->dbg.num_cmd_sleep_cfm_host_to_card_failure++;
     } else {
         sdio_clear_imask(((mmc_card_t) ((priv->wlan_dev).card))->ctrlr);
         Adapter->PSState = PS_STATE_SLEEP;
-#ifdef MOTO_DBG
-        PRINTM(INFO, "PSState set to PS_STATE_SLEEP - OK for DSM\n");
-#endif
         if (Adapter->bHostSleepConfigured &&
             (Adapter->sleep_period.period == 0)) {
             Adapter->bWakeupDevRequired = TRUE;
-#ifdef MOTO_DBG
-            PRINTM(INFO, "bWakeupDevRequired set to TRUE - OK for DSM\n");
-#endif
             wlan_host_sleep_activated_event(priv);
         }
 #define NUM_SC_PER_LINE		16
@@ -2459,24 +2399,9 @@ SendConfirmSleep(wlan_private * priv, u8 * CmdPtr, u16 size)
             PRINTM(INFO, "SLEEP_CFM: After sent, IntCnt=%d\n",
                    Adapter->IntCounter);
             Adapter->PSState = PS_STATE_AWAKE;
-#ifdef MOTO_DBG
-            PRINTM(INFO, "PSState set to PS_STATE_AWAKE - KO for DSM\n");
-#endif
         }
-#ifdef ENABLE_PM
-        else
-        {
-            if ((wlan_mpm_active == TRUE) && (Adapter->WakeupTries == 0) && (Adapter->bWakeupDevRequired == TRUE)) 
-            {
-                if (wlan_mpm_advice_id > 0 ) {
-                    mpm_driver_advise(wlan_mpm_advice_id, MPM_ADVICE_DRIVER_IS_NOT_BUSY);
-                    PRINTM(MOTO_DEBUG, "SendConfirmSleep: driver is NOT busy sent to MPM\n");
-                    wlan_mpm_active = FALSE;
-                }
-            }
-        }
-#endif
     }
+
     LEAVE();
     return ret;
 }
@@ -2543,6 +2468,8 @@ PSConfirmSleep(wlan_private * priv, u16 PSMode)
     if (!priv->wlan_dev.dnld_sent && !Adapter->CurCmd && !Adapter->IntCounter) {
         SendConfirmSleep(priv, (u8 *) & Adapter->PSConfirmSleep,
                          sizeof(PS_CMD_ConfirmSleep));
+
+        os_start_queue(priv);
     } else {
         PRINTM(INFO, "Delay Sleep Confirm (%s%s%s)\n",
                (priv->wlan_dev.dnld_sent) ? "D" : "",

@@ -31,13 +31,14 @@ Change log:
 	04/18/06: Remove old Subscrive Event and add new Subscribe Event
 	          implementation through generic hostcmd API
 	05/03/06: Add auto_tx hostcmd
+	08/28/06: Add LED_CTRL hostcmd
 ************************************************************/
 
 #ifndef _WLAN_TYPES_
 #define _WLAN_TYPES_
 
 #ifndef __KERNEL__
-typedef signed char s8;
+typedef char s8;
 typedef unsigned char u8;
 
 typedef signed short s16;
@@ -51,7 +52,6 @@ typedef unsigned long long u64;
 
 typedef u32 dma_addr_t;
 typedef u32 dma64_addr_t;
-
 /* Dma addresses are 32-bits wide.  */
 #ifndef __ATTRIB_ALIGN__
 #define __ATTRIB_ALIGN__ __attribute__((aligned(4)))
@@ -66,15 +66,14 @@ typedef long LONG;
 typedef unsigned long long ULONGLONG;
 typedef u32 WLAN_OID;
 
-#define MRVDRV_MAX_MULTICAST_LIST_SIZE		32
-#define MRVDRV_MAX_CHANNEL_SIZE			14
-#define MRVDRV_ETH_ADDR_LEN                      6
-
+#define MRVDRV_MAX_MULTICAST_LIST_SIZE	32
+#define MRVDRV_MAX_CHANNEL_SIZE		14
+#define MRVDRV_ETH_ADDR_LEN             6
 #define MRVDRV_MAX_SSID_LENGTH			32
 #define MRVDRV_MAX_BSS_DESCRIPTS		16
-
-#define MRVL_KEY_BUFFER_SIZE_IN_BYTE  		16
-#define MRVL_MAX_KEY_WPA_KEY_LENGTH     	32
+/** WEP list macros & data structures */
+#define MRVL_KEY_BUFFER_SIZE_IN_BYTE  16
+#define MRVL_MAX_KEY_WPA_KEY_LENGTH     32
 
 #define HOSTCMD_SUPPORTED_RATES G_SUPPORTED_RATES
 
@@ -82,60 +81,66 @@ typedef u32 WLAN_OID;
 #define	BAND_G			(0x02)
 #define ALL_802_11_BANDS	(BAND_B | BAND_G)
 
-#define B_SUPPORTED_RATES			8
-#define G_SUPPORTED_RATES			14
+#define B_SUPPORTED_RATES		8
+#define G_SUPPORTED_RATES		14
 
-#define	WLAN_SUPPORTED_RATES			14
-#define WLAN_MAX_SSID_LENGTH			32
+#define	WLAN_SUPPORTED_RATES		14
+#define WLAN_MAX_SSID_LENGTH		32
 
 #define	MAX_POWER_ADAPT_GROUP		5
 
-typedef u8 WLAN_802_11_RATES[WLAN_SUPPORTED_RATES];     // Set of 8 data rates
+#define MRVDRV_MAX_SSID_LIST_LENGTH     20
+
+typedef u8 WLAN_802_11_RATES[WLAN_SUPPORTED_RATES];
 typedef u8 WLAN_802_11_MAC_ADDRESS[ETH_ALEN];
 
+/** WLAN_802_11_NETWORK_TYPE */
 typedef enum _WLAN_802_11_NETWORK_TYPE
 {
     Wlan802_11FH,
     Wlan802_11DS,
-    Wlan802_11NetworkTypeMax    // not a real type, 
-        //defined as an upper bound
+    /*defined as upper bound */
+    Wlan802_11NetworkTypeMax
 } WLAN_802_11_NETWORK_TYPE, *PWLAN_802_11_NETWORK_TYPE;
 
+/** WLAN_802_11_NETWORK_INFRASTRUCTURE */
 typedef enum _WLAN_802_11_NETWORK_INFRASTRUCTURE
 {
     Wlan802_11IBSS,
     Wlan802_11Infrastructure,
     Wlan802_11AutoUnknown,
-    Wlan802_11InfrastructureMax // Not a real value, 
-        // defined as upper bound
+    /*defined as upper bound */
+    Wlan802_11InfrastructureMax
 } WLAN_802_11_NETWORK_INFRASTRUCTURE, *PWLAN_802_11_NETWORK_INFRASTRUCTURE;
+
+#define IEEE_MAX_IE_SIZE  256
 
 /** IEEE Type definitions  */
 typedef enum _IEEEtypes_ElementId_e
 {
     SSID = 0,
-    SUPPORTED_RATES,
-    FH_PARAM_SET,
-    DS_PARAM_SET,
-    CF_PARAM_SET,
-    TIM,
-    IBSS_PARAM_SET,
+    SUPPORTED_RATES = 1,
+    FH_PARAM_SET = 2,
+    DS_PARAM_SET = 3,
+    CF_PARAM_SET = 4,
+
+    IBSS_PARAM_SET = 6,
+
     COUNTRY_INFO = 7,
 
-    CHALLENGE_TEXT = 16,
-
+    ERP_INFO = 42,
     EXTENDED_SUPPORTED_RATES = 50,
 
     VENDOR_SPECIFIC_221 = 221,
     WMM_IE = VENDOR_SPECIFIC_221,
 
+    WPS_IE = VENDOR_SPECIFIC_221,
+
     WPA_IE = VENDOR_SPECIFIC_221,
-    WPA2_IE = 48,
+    RSN_IE = 48,
 
     EXTRA_IE = 133,
 } __ATTRIB_PACK__ IEEEtypes_ElementId_e;
-
-#define WMM_OUI_TYPE  2
 
 #define CAPINFO_MASK    (~( W_BIT_15 | W_BIT_14 |               \
                             W_BIT_12 | W_BIT_11 | W_BIT_9) )
@@ -158,6 +163,12 @@ typedef struct _IEEEtypes_CapInfo_t
     u8 DSSSOFDM:1;
     u8 Rsrvd1:2;
 } __ATTRIB_PACK__ IEEEtypes_CapInfo_t;
+
+typedef struct
+{
+    u8 ElementId;
+    u8 Len;
+} __ATTRIB_PACK__ IEEEtypes_Header_t;
 
 /** IEEEtypes_CfParamSet_t */
 typedef struct _IEEEtypes_CfParamSet_t
@@ -209,6 +220,13 @@ typedef union IEEEtypes_PhyParamSet_t
     IEEEtypes_DsParamSet_t DsParamSet;
 } __ATTRIB_PACK__ IEEEtypes_PhyParamSet_t;
 
+typedef struct _IEEEtypes_ERPInfo_t
+{
+    u8 ElementId;
+    u8 Len;
+    u8 ERPFlags;
+} __ATTRIB_PACK__ IEEEtypes_ERPInfo_t;
+
 typedef u16 IEEEtypes_AId_t;
 typedef u16 IEEEtypes_StatusCode_t;
 
@@ -219,6 +237,36 @@ typedef struct
     IEEEtypes_AId_t AId;
     u8 IEBuffer[1];
 } __ATTRIB_PACK__ IEEEtypes_AssocRsp_t;
+
+typedef struct
+{
+    u8 ElementId;
+    u8 Len;
+    u8 Oui[3];
+    u8 OuiType;
+    u8 OuiSubtype;
+    u8 Version;
+} __ATTRIB_PACK__ IEEEtypes_VendorHeader_t;
+
+typedef struct
+{
+    IEEEtypes_VendorHeader_t VendHdr;
+
+    /* IE Max - size of previous fields */
+    u8 Data[IEEE_MAX_IE_SIZE - sizeof(IEEEtypes_VendorHeader_t)];
+
+}
+__ATTRIB_PACK__ IEEEtypes_VendorSpecific_t;
+
+typedef struct
+{
+    IEEEtypes_Header_t IeeeHdr;
+
+    /* IE Max - size of previous fields */
+    u8 Data[IEEE_MAX_IE_SIZE - sizeof(IEEEtypes_Header_t)];
+
+}
+__ATTRIB_PACK__ IEEEtypes_Generic_t;
 
 /** TLV  type ID definition */
 #define PROPRIETARY_TLV_BASE_ID		0x0100
@@ -235,7 +283,7 @@ typedef struct
 
 #define TLV_TYPE_DOMAIN				0x0007
 
-#define TLV_TYPE_POWER_CAPABILITY	0x0021
+#define TLV_TYPE_POWER_CAPABILITY   0x0021
 
 #define TLV_TYPE_KEY_MATERIAL       (PROPRIETARY_TLV_BASE_ID + 0)
 #define TLV_TYPE_CHANLIST           (PROPRIETARY_TLV_BASE_ID + 1)
@@ -247,20 +295,21 @@ typedef struct
 #define TLV_TYPE_LED_GPIO           (PROPRIETARY_TLV_BASE_ID + 8)
 #define TLV_TYPE_LEDBEHAVIOR        (PROPRIETARY_TLV_BASE_ID + 9)
 #define TLV_TYPE_PASSTHROUGH        (PROPRIETARY_TLV_BASE_ID + 10)
-#define TLV_TYPE_REASSOCAP          (PROPRIETARY_TLV_BASE_ID + 11)
 #define TLV_TYPE_POWER_TBL_2_4GHZ   (PROPRIETARY_TLV_BASE_ID + 12)
 #define TLV_TYPE_POWER_TBL_5GHZ     (PROPRIETARY_TLV_BASE_ID + 13)
-#define TLV_TYPE_BCASTPROBE	    (PROPRIETARY_TLV_BASE_ID + 14)
+#define TLV_TYPE_BCASTPROBE	    	(PROPRIETARY_TLV_BASE_ID + 14)
 #define TLV_TYPE_NUMSSID_PROBE	    (PROPRIETARY_TLV_BASE_ID + 15)
-#define TLV_TYPE_WMMQSTATUS   	    (PROPRIETARY_TLV_BASE_ID + 16)
-#define TLV_TYPE_WILDCARDSSID	    (PROPRIETARY_TLV_BASE_ID + 18)
-#define TLV_TYPE_TSFTIMESTAMP	    (PROPRIETARY_TLV_BASE_ID + 19)
+#define TLV_TYPE_WMMQSTATUS         (PROPRIETARY_TLV_BASE_ID + 16)
+#define TLV_TYPE_WILDCARDSSID       (PROPRIETARY_TLV_BASE_ID + 18)
+#define TLV_TYPE_TSFTIMESTAMP       (PROPRIETARY_TLV_BASE_ID + 19)
 #define TLV_TYPE_POWERADAPTCFGEXT   (PROPRIETARY_TLV_BASE_ID + 20)
 #define TLV_TYPE_RSSI_HIGH          (PROPRIETARY_TLV_BASE_ID + 22)
 #define TLV_TYPE_SNR_HIGH           (PROPRIETARY_TLV_BASE_ID + 23)
-#define TLV_TYPE_AUTO_TX	    (PROPRIETARY_TLV_BASE_ID + 24)
-
+#define TLV_TYPE_AUTO_TX            (PROPRIETARY_TLV_BASE_ID + 24)
+#define TLV_TYPE_WPS_ENROLLEE_PROBE_REQ_TLV    (PROPRIETARY_TLV_BASE_ID + 27)
 #define TLV_TYPE_STARTBGSCANLATER   (PROPRIETARY_TLV_BASE_ID + 30)
+#define TLV_TYPE_AUTH_TYPE          (PROPRIETARY_TLV_BASE_ID + 31)
+#define TLV_TYPE_BSSID_FILTER       (PROPRIETARY_TLV_BASE_ID + 35)
 
 /** TLV related data structures*/
 /** MrvlIEtypesHeader_t */
@@ -376,14 +425,6 @@ typedef struct _MrvlIEtypes_PhyParamSet_t
     } fh_ds;
 } __ATTRIB_PACK__ MrvlIEtypes_PhyParamSet_t;
 
-/** MrvlIEtypes_ReassocAp_t */
-typedef struct _MrvlIEtypes_ReassocAp_t
-{
-    MrvlIEtypesHeader_t Header;
-    WLAN_802_11_MAC_ADDRESS currentAp;
-
-} __ATTRIB_PACK__ MrvlIEtypes_ReassocAp_t;
-
 /** MrvlIEtypes_RsnParamSet_t */
 typedef struct _MrvlIEtypes_RsnParamSet_t
 {
@@ -403,13 +444,14 @@ typedef struct
     MrvlIEtypesHeader_t Header;
     u8 QueueIndex;
     u8 Disabled;
-    u8 TriggeredPS;
-    u8 FlowDirection;
+    u8 Reserved1;
+    u8 Reserved2;
     u8 FlowRequired;
     u8 FlowCreated;
-    u32 MediumTime;
+    u32 Reserved3;
 } __ATTRIB_PACK__ MrvlIEtypes_WmmQueueStatus_t;
 
+/** Table of TSF values returned in the scan result */
 typedef struct
 {
     MrvlIEtypesHeader_t Header;
@@ -430,7 +472,7 @@ typedef struct _MrvlIEtypes_RssiThreshold_t
     MrvlIEtypesHeader_t Header;
     u8 RSSIValue;
     u8 RSSIFreq;
-} __ATTRIB_PACK__ MrvlIEtypes_RssiParamSet_t;
+} __ATTRIB_PACK__ MrvlIEtypes_RssiThreshold_t;
 
 /** MrvlIEtypes_SnrThreshold_t */
 typedef struct _MrvlIEtypes_SnrThreshold_t
@@ -484,18 +526,35 @@ typedef struct _MrvlIEtypes_StartBGScanLater_t
     u16 StartLater;
 } __ATTRIB_PACK__ MrvlIEtypes_StartBGScanLater_t;
 
-typedef struct
+/** MrvlIEtypes_BssidFilter_t */
+typedef struct _MrvlIEtypes_BssidFilter_t
 {
-    u8 Led;
-    u8 Pin;
-} __ATTRIB_PACK__ Led_Pin;
+    MrvlIEtypesHeader_t Header;
+    u8 Bssid[MRVDRV_ETH_ADDR_LEN];
+} __ATTRIB_PACK__ MrvlIEtypes_BssidFilter_t;
+
+typedef struct _LedGpio_t
+{
+    u8 LedNum;                  /* LED # mapped to GPIO pin # below */
+    u8 GpioNum;                 /* GPIO pin # used to control LED # above */
+} __ATTRIB_PACK__ LedGpio_t;
 
 /** MrvlIEtypes_LedGpio_t */
 typedef struct _MrvlIEtypes_LedGpio_t
 {
     MrvlIEtypesHeader_t Header;
-    Led_Pin LedPin[1];
+    LedGpio_t LedGpio[1];
 } __ATTRIB_PACK__ MrvlIEtypes_LedGpio_t;
+
+/** MrvlIEtypes_LedBehavior_t */
+typedef struct _MrvlIEtypes_LedBehavior_t
+{
+    MrvlIEtypesHeader_t Header;
+    u8 FirmwareState;           /* Firmware State */
+    u8 LedNum;                  /* LED # */
+    u8 LedState;                /* LED State corresponding to Firmware State */
+    u8 LedArgs;                 /* Arguments for LED State */
+} __ATTRIB_PACK__ MrvlIEtypes_LedBehavior_t;
 
 typedef struct _PA_Group_t
 {
@@ -522,15 +581,44 @@ typedef struct _AutoTx_MacFrame_t
     u8 Payload[];
 } __ATTRIB_PACK__ AutoTx_MacFrame_t;
 
-/** MrvlIEtypes_PA_Group_t */
+/** MrvlIEtypes_AutoTx_t */
 typedef struct _MrvlIEtypes_AutoTx_t
 {
     MrvlIEtypesHeader_t Header;
     AutoTx_MacFrame_t AutoTx_MacFrame;
 } __ATTRIB_PACK__ MrvlIEtypes_AutoTx_t;
 
+typedef struct
+{
+    u8 value;
+    u8 Freq;
+} Threshold;
+
+typedef struct
+{
+    u16 EventsBitmap;           /* bit 0: RSSI low,  bit 1: SNR low,
+                                 * bit 2: RSSI high, bit 3: SNR high
+                                 */
+    Threshold Rssi_low;
+    Threshold Snr_low;
+    Threshold Rssi_high;
+    Threshold Snr_high;
+    u8 Rssi_low_count;
+    u8 Snr_low_count;
+    u8 Rssi_high_count;
+    u8 Snr_high_count;
+} wlan_subscribe_event;
+
+/** Auth type to be used in the Authentication portion of an Assoc seq */
+typedef struct
+{
+    MrvlIEtypesHeader_t Header;
+    u16 AuthType;
+} __ATTRIB_PACK__ MrvlIEtypes_AuthType_t;
+
 #define MRVDRV_MAX_SUBBAND_802_11D		83
 #define COUNTRY_CODE_LEN			3
+
 /** Data structure for Country IE*/
 typedef struct _IEEEtypes_SubbandSet
 {
@@ -562,31 +650,6 @@ typedef struct _MrvlIEtypes_DomainParamSet
     IEEEtypes_SubbandSet_t Subband[1];
 } __ATTRIB_PACK__ MrvlIEtypes_DomainParamSet_t;
 
-typedef struct
-{
-    u8 value;
-    u8 Freq;
-} Threshold;
-
-typedef struct
-{
-    u16 EventsBitmap;           //bit 0: RSSI low, bit 1:SNR low, bit2:RSSI high, bit 3 SNR high 
-    Threshold Rssi_low;
-    Threshold Snr_low;
-    Threshold Rssi_high;
-    Threshold Snr_high;
-} wlan_subscribe_event;
-
-/** enum of WMM AC_QUEUES */
-#define  MAX_AC_QUEUES 4
-typedef enum
-{
-    AC_PRIO_BK,
-    AC_PRIO_BE,
-    AC_PRIO_VI,
-    AC_PRIO_VO
-} __ATTRIB_PACK__ wlan_wmm_ac_e;
-
 /** Size of a TSPEC.  Used to allocate necessary buffer space in commands */
 #define WMM_TSPEC_SIZE              63
 
@@ -595,37 +658,17 @@ typedef enum
 
 /** Extra TLV bytes allocated in messages for configuring WMM Queues */
 #define WMM_QUEUE_CONFIG_EXTRA_TLV_BYTES 64
+/** Maximum number of AC QOS queues available in the driver/firmware */
+#define MAX_AC_QUEUES 4
 
-/** wlan_ioctl_wmm_para_ie */
-typedef struct
+/** enum of WMM AC_QUEUES */
+typedef enum
 {
-
-    /** type */
-    u8 Type;
-
-    /** action */
-    u16 Action;
-
-    /** WMM Parameter IE */
-    u8 Para_IE[26];
-
-} __ATTRIB_PACK__ wlan_ioctl_wmm_para_ie;
-
-/** wlan_ioctl_wmm_ack_policy */
-typedef struct
-{
-    u8 Type;
-
-    /** 0-ACT_GET, 1-ACT_SET */
-    u16 Action;
-
-    /** 0-AC_BE, 1-AC_BK, 2-AC_VI, 3-AC_VO */
-    u8 AC;
-
-    /** 0-WMM_ACK_POLICY_IMM_ACK, 1-WMM_ACK_POLICY_NO_ACK */
-    u8 AckPolicy;
-
-} __ATTRIB_PACK__ wlan_ioctl_wmm_ack_policy;
+    WMM_AC_BK,
+    WMM_AC_BE,
+    WMM_AC_VI,
+    WMM_AC_VO,
+} __ATTRIB_PACK__ wlan_wmm_ac_e;
 
 /** data structure of WMM QoS information */
 typedef struct
@@ -633,97 +676,71 @@ typedef struct
     u8 ParaSetCount:4;
     u8 Reserved:3;
     u8 QosUAPSD:1;
-} __ATTRIB_PACK__ WMM_QoS_INFO;
+} __ATTRIB_PACK__ IEEEtypes_WmmQosInfo_t;
 
 typedef struct
 {
-    u8 AIFSN:4;
-    u8 ACM:1;
-    u8 ACI:2;
+    u8 Aifsn:4;
+    u8 Acm:1;
+    u8 Aci:2;
     u8 Reserved:1;
-} __ATTRIB_PACK__ WMM_ACI_AIFSN;
+} __ATTRIB_PACK__ IEEEtypes_WmmAciAifsn_t;
 
 /**  data structure of WMM ECW */
 typedef struct
 {
-    u8 ECW_Min:4;
-    u8 ECW_Max:4;
-} __ATTRIB_PACK__ WMM_ECW;
+    u8 EcwMin:4;
+    u8 EcwMax:4;
+} __ATTRIB_PACK__ IEEEtypes_WmmEcw_t;
 
 /** data structure of WMM AC parameters  */
 typedef struct
 {
-    WMM_ACI_AIFSN ACI_AIFSN;
-    WMM_ECW ECW;
-    u16 Txop_Limit;
-} __ATTRIB_PACK__ WMM_AC_PARAS;
+    IEEEtypes_WmmAciAifsn_t AciAifsn;
+    IEEEtypes_WmmEcw_t Ecw;
+    u16 TxopLimit;
+} __ATTRIB_PACK__ IEEEtypes_WmmAcParameters_t;
 
 /** data structure of WMM Info IE  */
 typedef struct
 {
-    /** 221 */
-    u8 ElementId;
-    /** 7 */
-    u8 Length;
-    /** 00:50:f2 (hex) */
-    u8 Oui[3];
-    /** 2 */
-    u8 OuiType;
-    /** 0 */
-    u8 OuiSubtype;
-    /** 1 */
-    u8 Version;
 
-    WMM_QoS_INFO QoSInfo;
+    /**
+     * WMM Info IE - Vendor Specific Header:
+     *   ElementId   [221/0xdd]
+     *   Len         [7] 
+     *   Oui         [00:50:f2]
+     *   OuiType     [2]
+     *   OuiSubType  [0]
+     *   Version     [1]
+     */
+    IEEEtypes_VendorHeader_t VendHdr;
 
-} __ATTRIB_PACK__ WMM_INFO_IE;
+    IEEEtypes_WmmQosInfo_t QoSInfo;
+
+} __ATTRIB_PACK__ IEEEtypes_WmmInfo_t;
 
 /** data structure of WMM parameter IE  */
 typedef struct
 {
-    /** 221 */
-    u8 ElementId;
-    /** 24 */
-    u8 Length;
-    /** 00:50:f2 (hex) */
-    u8 Oui[3];
-    /** 2 */
-    u8 OuiType;
-    /** 1 */
-    u8 OuiSubtype;
-    /** 1 */
-    u8 Version;
+    /**
+     * WMM Parameter IE - Vendor Specific Header:
+     *   ElementId   [221/0xdd]
+     *   Len         [24] 
+     *   Oui         [00:50:f2]
+     *   OuiType     [2]
+     *   OuiSubType  [1]
+     *   Version     [1]
+     */
+    IEEEtypes_VendorHeader_t VendHdr;
 
-    WMM_QoS_INFO QoSInfo;
+    IEEEtypes_WmmQosInfo_t QoSInfo;
     u8 Reserved;
 
-    /** AC Parameters Record AC_BE */
-    WMM_AC_PARAS AC_Paras_BE;
-    /** AC Parameters Record AC_BK */
-    WMM_AC_PARAS AC_Paras_BK;
-    /** AC Parameters Record AC_VI */
-    WMM_AC_PARAS AC_Paras_VI;
-    /** AC Parameters Record AC_VO */
-    WMM_AC_PARAS AC_Paras_VO;
-} __ATTRIB_PACK__ WMM_PARAMETER_IE;
+    /** AC Parameters Record WMM_AC_BE, WMM_AC_BK, WMM_AC_VI, WMM_AC_VO */
+    IEEEtypes_WmmAcParameters_t AcParams[MAX_AC_QUEUES];
 
-/** struct of command of WMM ack policy*/
-typedef struct
-{
-    /** 0 - ACT_GET,
-        1 - ACT_SET */
-    u16 Action;
-
-    /** 0 - AC_BE
-        1 - AC_BK
-        2 - AC_VI
-        3 - AC_VO */
-    u8 AC;
-
-    /** 0 - WMM_ACK_POLICY_IMM_ACK
-        1 - WMM_ACK_POLICY_NO_ACK */
-    u8 AckPolicy;
-} __ATTRIB_PACK__ HostCmd_DS_WMM_ACK_POLICY;
+} __ATTRIB_PACK__ IEEEtypes_WmmParameter_t;
 
 /**
  *  @brief Firmware command structure to retrieve the firmware WMM status.
@@ -742,15 +759,10 @@ typedef struct
 typedef struct
 {
     u8 queueStatusTlv[sizeof(MrvlIEtypes_WmmQueueStatus_t) * MAX_AC_QUEUES];
-    u8 wmmParamTlv[sizeof(WMM_PARAMETER_IE) + 2];
+    u8 wmmParamTlv[sizeof(IEEEtypes_WmmParameter_t) + 2];
 
 }
 __ATTRIB_PACK__ HostCmd_DS_WMM_GET_STATUS;
-
-typedef struct
-{
-    u16 PacketAC;
-} __ATTRIB_PACK__ HostCmd_DS_WMM_PRIO_PKT_AVAIL;
 
 /**
  *  @brief Enumeration for the command result from an ADDTS or DELTS command 
@@ -900,7 +912,7 @@ typedef enum
 typedef struct
 {
     wlan_wmm_queue_config_action_e action;      //!< Set, Get, or Default
-    wlan_wmm_ac_e accessCategory;       //!< AC_BK(0) to AC_VO(3)
+    wlan_wmm_ac_e accessCategory;       //!< WMM_AC_BK(0) to WMM_AC_VO(3)
 
     /** @brief MSDU lifetime expiry per 802.11e
      *
@@ -926,7 +938,7 @@ typedef struct
 typedef struct
 {
     wlan_wmm_queue_config_action_e action;      //!< Set, Get, or Default
-    wlan_wmm_ac_e accessCategory;       //!< AC_BK(0) to AC_VO(3)
+    wlan_wmm_ac_e accessCategory;       //!< WMM_AC_BK(0) to WMM_AC_VO(3)
     u16 msduLifetimeExpiry;     //!< lifetime expiry in TUs
 
     int tlvBufLen;              //!< Not supported yet
@@ -947,7 +959,7 @@ typedef struct
 typedef struct
 {
     wlan_wmm_queue_config_action_e action;      //!< Set, Get, or Default
-    wlan_wmm_ac_e accessCategory;       //!< AC_BK(0) to AC_VO(3)
+    wlan_wmm_ac_e accessCategory;       //!< WMM_AC_BK(0) to WMM_AC_VO(3)
     u16 msduLifetimeExpiry;     //!< lifetime expiry in TUs
 
     u8 supportedRates[10];      //!< Not supported yet
@@ -962,6 +974,8 @@ typedef enum
     WMM_STATS_ACTION_START = 0,
     WMM_STATS_ACTION_STOP = 1,
     WMM_STATS_ACTION_GET_CLR = 2,
+    WMM_STATS_ACTION_SET_CFG = 3,       /* Not currently used */
+    WMM_STATS_ACTION_GET_CFG = 4,       /* Not currently used */
 
     WMM_STATS_ACTION_MAX
 } __ATTRIB_PACK__ wlan_wmm_stats_action_e;
@@ -978,13 +992,13 @@ typedef enum
 typedef struct
 {
     wlan_wmm_stats_action_e action;     //!< Start, Stop, or Get 
-    wlan_wmm_ac_e accessCategory;       //!< AC_BK(0) to AC_VO(3)
+    wlan_wmm_ac_e accessCategory;       //!< WMM_AC_BK(0) to WMM_AC_VO(3)
 
     u16 pktCount;               //!< Number of successful packets transmitted
     u16 pktLoss;                //!< Packets lost; not included in pktCount
     u32 avgQueueDelay;          //!< Average Queue delay in microseconds
     u32 avgTxDelay;             //!< Average Transmission delay in microseconds
-    u32 usedTime;               //!< Calculated medium time 
+    u32 usedTime;               //!< Calculated medium time - Not currently used
 
     /** @brief Queue Delay Histogram; number of packets per queue delay range
      * 
@@ -997,6 +1011,8 @@ typedef struct
      *  [6] - 50ms <= delay < msduLifetime (TUs)
      */
     u16 delayHistogram[WMM_STATS_PKTS_HIST_BINS];
+
+    u16 reserved_u16_1;
 
 } __ATTRIB_PACK__ HostCmd_DS_WMM_QUEUE_STATS;
 
@@ -1012,7 +1028,7 @@ typedef struct
 typedef struct
 {
     wlan_wmm_stats_action_e action;     //!< Start, Stop, or Get 
-    wlan_wmm_ac_e accessCategory;       //!< AC_BK(0) to AC_VO(3)
+    wlan_wmm_ac_e accessCategory;       //!< WMM_AC_BK(0) to WMM_AC_VO(3)
     u16 pktCount;               //!< Number of successful packets transmitted  
     u16 pktLoss;                //!< Packets lost; not included in pktCount    
     u32 avgQueueDelay;          //!< Average Queue delay in microseconds
@@ -1037,7 +1053,7 @@ typedef struct
  */
 typedef struct
 {
-    u8 wmmACM;
+    u8 wmmAcm;
     u8 flowRequired;
     u8 flowCreated;
     u8 disabled;
@@ -1063,6 +1079,6 @@ typedef struct
     u8 Disabled;
     u8 FlowRequired;
     u8 FlowCreated;
-} WMM_AC_STATUS;
+} WmmAcStatus_t;
 
 #endif /* _WLAN_TYPES_ */

@@ -2,7 +2,7 @@
  *  Copyright 2004-2006 Freescale Semiconductor, Inc. All Rights Reserved.
  *    - Platform specific register memory map
  *
- *  Copyright (C) 2006-2008 Motorola, Inc. 
+ *  Copyright (C) 2006-2007 Motorola, Inc.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -24,9 +24,6 @@
  *                    #defines as well as several WFN bug fixes.
  * 01/2007  Motorola  Added FIQ_START for watchdog debug support.
  * 04/2007  Motorola  Added the definition for 32KHz clock source.
- * 10/2007  Motorola  FIQ related added.
- * 03/2008  Motorola  GPIO_BP_A_PORT added.
- * 07/2008  Motorola  Removed GPIO_BP_A_PORT.
  */
 #ifndef __ASM_ARM_ARCH_MXC91231_H_
 #define __ASM_ARM_ARCH_MXC91231_H_
@@ -459,7 +456,7 @@
 #define MXC_MAX_INT_LINES       63
 #define MXC_MAX_EXT_LINES       8
 
-#if defined(CONFIG_MOT_FEAT_DEBUG_WDOG) || defined(CONFIG_FIQ)
+#ifdef CONFIG_MOT_FEAT_DEBUG_WDOG
 #define FIQ_START		0
 #endif
 /*!

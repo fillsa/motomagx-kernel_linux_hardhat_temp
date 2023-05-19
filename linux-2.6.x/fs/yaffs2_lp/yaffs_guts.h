@@ -29,7 +29,6 @@
  *                        Added the mount option for the checkpoint feature
  * 12-15-2006   Motorola  Added the middleOfMounting flag
  * 06-27-2007   Motorola  Added new member "contig" for chunk cache structure
- * 07-13-2007   Motorola  Added config item YAFFS2_TUNING for special product 
  */
 
 /*
@@ -152,7 +151,7 @@ typedef struct {
 	int dirty;
 	int nBytes;		/* Only valid if the cache is dirty */
 	int locked;		/* Can't push out or flush while locked. */
-#ifdef /*CONFIG_MOT_FEAT_YAFFS2_TUNING*/ CONFIG_MOT_FEAT_MTD_FS	
+#ifdef CONFIG_MOT_FEAT_MTD_FS	
 	int contig;		/* Number of valid contiguous bytes in data area */
 #endif
 #ifdef CONFIG_YAFFS_YAFFS2

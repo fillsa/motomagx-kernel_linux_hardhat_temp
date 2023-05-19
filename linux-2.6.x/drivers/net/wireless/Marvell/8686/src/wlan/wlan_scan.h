@@ -216,26 +216,31 @@ typedef struct
     u16 BeaconPeriod;
 
     u32 ATIMWindow;
+    u8 ERPFlags;
 
     WLAN_802_11_NETWORK_TYPE NetworkTypeInUse;
     WLAN_802_11_NETWORK_INFRASTRUCTURE InfrastructureMode;
     WLAN_802_11_RATES SupportedRates;
-    WMM_PARAMETER_IE wmmIE;
+    IEEEtypes_WmmParameter_t wmmIE;
 
     int extra_ie;
 
     u8 TimeStamp[8];            //!< TSF value included in the beacon/probe response
+
     IEEEtypes_PhyParamSet_t PhyParamSet;
     IEEEtypes_SsParamSet_t SsParamSet;
     IEEEtypes_CapInfo_t Cap;
+
     u8 DataRates[WLAN_SUPPORTED_RATES];
 
     u64 networkTSF;             //!< TSF timestamp from the current firmware TSF
 
     IEEEtypes_CountryInfoFullSet_t CountryInfo;
 
-    WPA_SUPPLICANT wpa_supplicant;
-    WPA_SUPPLICANT wpa2_supplicant;
+    IEEEtypes_VendorSpecific_t wpaIE;
+    IEEEtypes_Generic_t rsnIE;
+
+    IEEEtypes_VendorSpecific_t wpsIE;
 
     u8 *pBeaconBuf;             //!< Pointer to the returned scan response
     uint beaconBufSize;         //!< Length of the stored scan response
@@ -244,8 +249,8 @@ typedef struct
 } BSSDescriptor_t;
 
 extern int SSIDcmp(WLAN_802_11_SSID * ssid1, WLAN_802_11_SSID * ssid2);
-extern int FindSSIDInList(wlan_adapter * Adapter,
-                          WLAN_802_11_SSID * ssid, u8 * bssid, int mode);
+extern int FindSSIDInList(wlan_adapter * Adapter, WLAN_802_11_SSID * ssid,
+                          u8 * bssid, int mode);
 extern int FindBestSSIDInList(wlan_adapter * Adapter);
 extern int FindBSSIDInList(wlan_adapter * Adapter, u8 * bssid, int mode);
 
@@ -262,6 +267,9 @@ extern int wlan_associate(wlan_private * priv, BSSDescriptor_t * pBSSDesc);
 
 extern int wlan_cmd_802_11_scan(wlan_private * priv,
                                 HostCmd_DS_COMMAND * cmd, void *pdata_buf);
+
+extern void wlan_scan_update_tsf_timestamps(wlan_private * priv,
+                                            BSSDescriptor_t * pNewBssDesc);
 
 extern int wlan_ret_802_11_scan(wlan_private * priv,
                                 HostCmd_DS_COMMAND * resp);

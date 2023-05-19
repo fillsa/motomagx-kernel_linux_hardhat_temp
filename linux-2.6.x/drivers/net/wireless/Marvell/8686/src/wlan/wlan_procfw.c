@@ -24,6 +24,7 @@ Change log:
 #include 	"include.h"
 #include <linux/vmalloc.h>
 
+#ifdef CONFIG_PROC_FS
 /********************************************************
 		Local Variables
 ********************************************************/
@@ -305,3 +306,4 @@ wlan_firmware_remove(wlan_private * priv)
     }
     return;
 }
+#endif

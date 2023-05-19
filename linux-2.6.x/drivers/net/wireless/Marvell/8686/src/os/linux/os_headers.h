@@ -81,5 +81,4 @@
 
 /* Wireless header */
 #include        <net/iw_handler.h>
-
 #endif

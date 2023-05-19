@@ -1,14 +1,4 @@
 /*
- * Copyright (C) 2005-2006 Motorola, Inc.
- *
- *  Date         Author           Comment
- *  -----------  --------------   --------------------------------
- *  2005-Jun-16  Motorola         Disabled DMA for UART due to problem in 
- *				  data flow and OBEX transfer stalled.
- *  2006-Oct-05  Motorola         merges from MV releases 050823 and 060512 
-*/
-
-/*
  * Copyright 2004-2006 Freescale Semiconductor, Inc. All Rights Reserved.
  * Copyright (C) 2007 Motorola, Inc. 
  * 

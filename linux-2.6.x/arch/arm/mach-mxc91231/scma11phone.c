@@ -6,7 +6,7 @@
  *  Copyright (C) 2000 Deep Blue Solutions Ltd
  *  Copyright (C) 2002 Shane Nay (shane@minirl.com)
  *  Copyright 2004 Freescale Semiconductor, Inc. All Rights Reserved.
- *  Copyright (C) 2006-2007 Motorola, Inc.
+ *  Copyright 2006-2007 Motorola, Inc.
  * 
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -28,6 +28,8 @@
  *                    Added USB highspeed chipset support
  * 12/2006  Motorola  Added power_ic_kernel.h include
  * 01/2007  Motorola  Set clkctl_gp_ctrl[7] to keep ARM on when JTAG attached.
+ * 02/2007  Motorola  added hooks to allow power ic driver to be released as a module.
+ * 05/2007  Motorola  Added CONFIG_MOT_FEAT_PM control.
  * 05/2007  Motorola  Expose reboot procedure via __mxc_power_off().
  */
 
@@ -41,7 +43,6 @@
 #include <linux/nodemask.h>
 #include <linux/reboot.h>
 
-#include <linux/power_ic_kernel.h>
 
 #include <asm/hardware.h>
 #include <asm/setup.h>
@@ -49,6 +50,7 @@
 #include <asm/mach/arch.h>
 #include <asm/mach/keypad.h>
 #include <asm/arch/gpio.h>
+#include <asm/power-ic-api.h>
 #if defined(CONFIG_MOT_FEAT_PM)
 #include <asm/arch/clock.h>
 #endif
@@ -147,10 +149,10 @@ void __mxc_power_off(void)
  */
 static void mxc_power_off(void)
 {
-        /* If charger is attached, perform a reset instead of shutdown. */
-        if(power_ic_is_charger_attached() > 0) {
-                machine_restart(0);
-        }
+    /* If charger is attached, perform a reset instead of shutdown. */
+    if(kernel_power_ic_is_charger_attached() > 0) {
+        machine_restart(0);
+    }
 
         __mxc_power_off();
 }
@@ -200,12 +202,6 @@ static void __init mxc_board_init(void)
          * request for this PLL to be turned ON by using
          * mxc_pll_request_pll
          * */
-         
-    /* PLL0 Starts Out Running */
-	/* Potential Problems Touching It Here */
-	/* (void) mxc_pll_request_pll(MCUPLL); */
-
-	/* Initially do not need PLL2 - Ignore potential error return. */
         (void) mxc_pll_release_pll(USBPLL);
 #endif
 
@@ -215,13 +211,7 @@ static void __init mxc_board_init(void)
  * The following uses standard kernel macros define in arch.h in order to 
  * initialize __mach_desc_SCMA11PHONE data structure.
  */
-#if defined(CONFIG_MACH_ASCENSION)
-MACHINE_START(ASCENSION, "Motorola Product - SCM-A11 Phone")
-#elif defined(CONFIG_MACH_LIDO)
-MACHINE_START(LIDO, "Motorola Product - SCM-A11 Phone")
-#else
 MACHINE_START(SCMA11PHONE, "Motorola Product - SCM-A11 Phone")
-#endif
         MAINTAINER("Motorola, Inc.")
         /*       physical memory    physical IO        virtual IO     */
         BOOT_MEM(PHYS_OFFSET_ASM, AIPS1_BASE_ADDR, AIPS1_BASE_ADDR_VIRT)

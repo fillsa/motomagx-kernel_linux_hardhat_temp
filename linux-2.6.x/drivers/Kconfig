@@ -54,8 +54,6 @@ source "sound/Kconfig"
 
 source "drivers/usb/Kconfig"
 
-source "drivers/otg/Kconfig"
-
 source "drivers/profiler/Kconfig"
 
 source "drivers/mmc/Kconfig"
@@ -63,7 +61,5 @@ source "drivers/mmc/Kconfig"
 source "drivers/ssi/Kconfig"
 
 source "drivers/power_ic/Kconfig"
-
-source "drivers/cap_touch/Kconfig"
 
 endmenu

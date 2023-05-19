@@ -25,7 +25,7 @@ Change log:
 #include "../release_version.h"
 
 const char driver_version[] =
-    "sd8686-%s-" DRIVER_RELEASE_VERSION "-(" "FP" FPNUM ")"
+    "sd8686-%s-" DRIVER_RELEASE_VERSION "-(" "FP" FPNUM "-NoExtHS" ")"
 #ifdef	DEBUG_LEVEL2
     "-dbg"
 #endif

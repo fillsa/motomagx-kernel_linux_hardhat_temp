@@ -6,7 +6,7 @@
 /** 
   * @section copyright_sec Copyright
   *
-  * Copyright (C) 2006-2008 Motorola, Inc.
+  * (c) Copyright Motorola 2006-2007
   *
   * This file is free software; you can redistribute it and/or modify
   * it under the terms of the GNU General Public License as published by
@@ -25,11 +25,7 @@
   * Motorola         29-Mar-2007     Implement chipset wake up by WLAN_CLIENT_WAKE_B
   * Motorola         31-May-2007     Add host sleep configuration when FW is in PS Mode at connection time.
   * Motorola         04-Jun-2007     Improve log capability
-  * Motorola         18-Jul-2007     Improve log capability phase 2
-  * Motorola         17-Mar-2008     Change in sleeppd command based on Marvell recommandation.
-  * Motorola         21-Mar-2008     Change debug level and check for trafic meter enable.
-  * Motorola         15-May-2008     Add MPM support.
-  * Motorola         04-Jul-2008     Update file for OSS compliance.
+  * Motorola         03-Aug-2007     Enable events in host sleep configuration
   */
 
 /*---------------------------------- Includes --------------------------------*/
@@ -88,14 +84,14 @@ void wprm_send_hscfg_cmd(wlan_private * priv, BOOLEAN cancel)
                 0, HostCmd_OPTION_WAITFORRSP,
                 0, &HostSleepCfgParam);
 		
-        PRINTM(MOTO_DEBUG, "WLAN driver: WPRM thread, ENTER_UAPSD: hostsleepcfg cmd sent to FW, condition=%d, gpio=%d, gap=%d\n", \
+        PRINTM(MSG, "WLAN driver: WPRM thread, ENTER_UAPSD: hostsleepcfg cmd sent to FW, condition=%d, gpio=%d, gap=%d\n", \
 		       HostSleepCfgParam.conditions, HostSleepCfgParam.gpio, HostSleepCfgParam.gap);
     
     }
     else
     {
         /* Need to send Host sleep configuration for FW PS*/
-        HostSleepCfgParam.conditions = WPRM_HWUC_BROADCAST_MASK | WPRM_HWUC_UNICAST_MASK | WPRM_HWUC_MULTICAST_MASK;
+        HostSleepCfgParam.conditions = WPRM_HWUC_BROADCAST_MASK | WPRM_HWUC_UNICAST_MASK | WPRM_HWUC_MULTICAST_MASK | WPRM_HWUC_MAC_EVENTS_MASK;
 		
         /* P2B and P3A wingboards use GPIO 2 for WLAN_HOST_WAKE_B */
         if((boardrev() == BOARDREV_P3AW) || (boardrev() == BOARDREV_P2BW))
@@ -115,7 +111,7 @@ void wprm_send_hscfg_cmd(wlan_private * priv, BOOLEAN cancel)
                     0, HostCmd_OPTION_WAITFORRSP,
                     0, &HostSleepCfgParam);
     
-        PRINTM(MOTO_DEBUG, "WLAN driver: WPRM thread, CONFIG_HSCFG: hostsleepcfg cmd sent to FW, condition=%d, gpio=%d, gap=%d\n", \
+        PRINTM(MSG, "WLAN driver: WPRM thread, CONFIG_HSCFG: hostsleepcfg cmd sent to FW, condition=%d, gpio=%d, gap=%d\n", \
 		       HostSleepCfgParam.conditions, HostSleepCfgParam.gpio, HostSleepCfgParam.gap);
 		       
     }
@@ -191,23 +187,14 @@ irqreturn_t wprm_wlan_host_wakeb_handler(int irq, void *dev_id, struct pt_regs *
 	WPRM_DRV_TRACING_PRINT();
 	priv = (wlan_private *)dev_id;
 
-#ifdef ENABLE_PM
-    mpm_handle_ioi( );
-    if ((wlan_mpm_advice_id > 0 ) && (wlan_mpm_active == FALSE)){
-        wlan_mpm_active = TRUE;
-        mpm_driver_advise(wlan_mpm_advice_id, MPM_ADVICE_DRIVER_IS_BUSY);
-        PRINTM(MOTO_DEBUG, "Host wake up triggered, driver is BUSY sent to MPM\n");
-    }
-#endif
-
 	if(sbi_set_bus_clock(priv, TRUE)) {
-		PRINTM(MOTO_DEBUG, "wprm_wlan_host_wakeb_handler: turn on sdio clock error.\n");
+		PRINTM(MSG, "wprm_wlan_host_wakeb_handler: turn on sdio clock error.");
 	}
-
+	
 	gpio_wlan_hostwake_clear_int();
 
 	WPRM_DRV_TRACING_PRINT();
-
+	
 	return 0;
 }
 
@@ -293,12 +280,12 @@ void wprm_traffic_meter_timer_handler(void *FunctionContext)
     WPRM_DRV_TRACING_PRINT();
     if (wprm_tm_ps_cmd_in_list!=FALSE)
 		goto wprm_tm_exit_reinstall;
-    PRINTM(MOTO_DEBUG, "WLAN driver: WPRM: tx_cnt = %d. rx_cnt = %d.\n", wprm_tx_packet_cnt, wprm_rx_packet_cnt);
+    PRINTM(DEBUG, "WLAN driver: WPRM: tx_cnt = %d. rx_cnt = %d.\n", wprm_tx_packet_cnt, wprm_rx_packet_cnt);
     if(datasession_status != 0 )
     {   /*Should Enter Active Mode*/
 	if(Adapter->PSMode == Wlan802_11PowerModeCAM)
 		goto wprm_tm_exit_reinstall;
-	PRINTM(MOTO_MSG, "WLAN driver: WPRM: timer_handler(), Exit PS on data session.\n");
+	PRINTM(DEBUG, "WLAN driver: WPRM: timer_handler(), Exit PS on data session.\n");
         wprm_tm_ps_cmd_no = WPRM_TM_CMD_EXIT_PS;
         wprm_tm_ps_cmd_in_list = TRUE;
         wake_up_interruptible(&tmThread.waitQ);
@@ -317,7 +304,7 @@ void wprm_traffic_meter_timer_handler(void *FunctionContext)
 			    goto wprm_tm_exit_reinstall;	/*Keep in UAPSD Mode*/
 	    if((wprm_tx_packet_cnt + wprm_rx_packet_cnt) >= TXRX_TRESHOLD_EXIT_PS) 
 	    {	/*Should Enter Active Mode*/
-	          PRINTM(MOTO_MSG, "WLAN driver: WPRM: timer_handler(), Exit PS on high traffic from UAPSD mode.\n");
+	          PRINTM(DEBUG, "WLAN driver: WPRM: timer_handler(), Exit PS on high traffic from UAPSD mode.\n");
 		    wprm_tm_ps_cmd_no = WPRM_TM_CMD_EXIT_PS;
 		   wprm_tm_ps_cmd_in_list = TRUE;
 	          wake_up_interruptible(&tmThread.waitQ);
@@ -328,7 +315,7 @@ void wprm_traffic_meter_timer_handler(void *FunctionContext)
 	    }
 	    else		/*Should Enter PS Mode*/
 	    {
-	          PRINTM(MOTO_MSG, "WLAN driver: WPRM: timer_handler(), Enter PS on low traffic from UAPSD mode.\n");
+	          PRINTM(DEBUG, "WLAN driver: WPRM: timer_handler(), Enter PS on low traffic from UAPSD mode.\n");
 		  wprm_tm_ps_cmd_no = WPRM_TM_CMD_ENTER_PS;
 		  wprm_tm_ps_cmd_in_list = TRUE;
 	          wake_up_interruptible(&tmThread.waitQ);
@@ -346,7 +333,7 @@ void wprm_traffic_meter_timer_handler(void *FunctionContext)
     { 
         if(datasession_status != 0 )
         {       /*Should Enter Active Mode*/
-              PRINTM(MOTO_MSG, "WLAN driver: WPRM: timer_handler(), Exit PS on data session from PS mode.\n");
+              PRINTM(DEBUG, "WLAN driver: WPRM: timer_handler(), Exit PS on data session from PS mode.\n");
               wprm_tm_ps_cmd_no = WPRM_TM_CMD_EXIT_PS;
               wprm_tm_ps_cmd_in_list = TRUE;
               wake_up_interruptible(&tmThread.waitQ);
@@ -358,7 +345,7 @@ void wprm_traffic_meter_timer_handler(void *FunctionContext)
 	/*If voice session is set, then goto UAPSD mode*/
 	else if(voicesession_status != 0 ) /*There is VOICE application running. go to UAPSD mode then*/			
 	{
-	    PRINTM(MOTO_MSG, "WLAN driver: WPRM: timer_handler(), Enter UAPSD on voice session from PS mode.\n");
+	    PRINTM(DEBUG, "WLAN driver: WPRM: timer_handler(), Enter UAPSD on voice session from PS mode.\n");
 	    wprm_tm_ps_cmd_no = WPRM_TM_CMD_ENTER_UAPSD;
 	    wprm_tm_ps_cmd_in_list = TRUE;
 	    wake_up_interruptible(&tmThread.waitQ);
@@ -375,7 +362,7 @@ void wprm_traffic_meter_timer_handler(void *FunctionContext)
 	{
             /* ENTER FULL POWER  mode */
             /* send command to traffic meter thread */
-	    PRINTM(MOTO_MSG, "WLAN driver: WPRM: timer_handler(), Exit PS on high traffic from PS mode.\n");
+	    PRINTM(DEBUG, "WLAN driver: WPRM: timer_handler(), Exit PS on high traffic from PS mode.\n");
             wprm_tm_ps_cmd_no = WPRM_TM_CMD_EXIT_PS;
             wprm_tm_ps_cmd_in_list = TRUE;
             wake_up_interruptible(&tmThread.waitQ);
@@ -404,7 +391,7 @@ void wprm_traffic_meter_timer_handler(void *FunctionContext)
         /*If voice session is set, then goto UAPSD mode*/
 	else if(voicesession_status != 0 ) /*There is VOICE application running.*/
 	{
-	    PRINTM(MOTO_MSG, "WLAN driver: WPRM: timer_handler(), Enter UAPSD on voice session from FULL power.\n");
+	    PRINTM(DEBUG, "WLAN driver: WPRM: timer_handler(), Enter UAPSD on voice session from FULL power.\n");
 	    wprm_tm_ps_cmd_no = WPRM_TM_CMD_ENTER_UAPSD;
 	    wprm_tm_ps_cmd_in_list = TRUE;
 	    wake_up_interruptible(&tmThread.waitQ);
@@ -419,7 +406,7 @@ void wprm_traffic_meter_timer_handler(void *FunctionContext)
 
         if((wprm_tx_packet_cnt + wprm_rx_packet_cnt) <= TXRX_TRESHOLD_ENTER_PS) 
 	{
-	    PRINTM(MOTO_MSG, "WLAN driver: WPRM: timer_handler(), Enter PS on low traffic from Full power.\n");
+	    PRINTM(DEBUG, "WLAN driver: WPRM: timer_handler(), Enter PS on low traffic from Full power.\n");
             /* enter power save mode */
             /* send command to traffic meter thread */
             wprm_tm_ps_cmd_no = WPRM_TM_CMD_ENTER_PS;
@@ -504,7 +491,7 @@ void wprm_traffic_measurement(wlan_private *priv, wlan_adapter *Adapter, BOOLEAN
         }
         if(datasession_status != 0 )
         {       /*Should Enter Active Mode*/
-	    PRINTM(MOTO_DEBUG, "WLAN driver: WPRM: wprm_traffic_measurement(), Exit PS on data session.\n");
+	    PRINTM(DEBUG, "WLAN driver: WPRM: wprm_traffic_measurement(), Exit PS on data session.\n");
             wprm_tm_ps_cmd_no = WPRM_TM_CMD_EXIT_PS;
             wprm_tm_ps_cmd_in_list = TRUE;
             wake_up_interruptible(&tmThread.waitQ);
@@ -515,7 +502,7 @@ void wprm_traffic_measurement(wlan_private *priv, wlan_adapter *Adapter, BOOLEAN
 	/*If voice session is set, then goto UAPSD mode*/
 	else if(voicesession_status != 0 ) /*There is VOICE application running.*/
 	{
-	    PRINTM(MOTO_MSG, "WLAN driver: WPRM: wprm_traffic_measurement(), Enter UAPSD on voice session.\n");
+	    PRINTM(DEBUG, "WLAN driver: WPRM: wprm_traffic_measurement(), Enter UAPSD on voice session.\n");
 	    wprm_tm_ps_cmd_no = WPRM_TM_CMD_ENTER_UAPSD;
 	    wprm_tm_ps_cmd_in_list = TRUE;
 	    wake_up_interruptible(&tmThread.waitQ);
@@ -549,7 +536,7 @@ void wprm_traffic_measurement(wlan_private *priv, wlan_adapter *Adapter, BOOLEAN
             wprm_tm_ps_cmd_in_list = TRUE;
  
             wake_up_interruptible(&tmThread.waitQ);
-            PRINTM(MOTO_MSG, "WLAN driver: WPRM: wprm_traffic_measurement(), Exit ps mode on TX/RX traffic high.\n");
+            PRINTM(DEBUG, "WLAN driver: WPRM: wprm_traffic_measurement(), Exit ps mode on TX/RX traffic high.\n");
         }
     }
    
@@ -564,17 +551,11 @@ void wprm_traffic_measurement(wlan_private *priv, wlan_adapter *Adapter, BOOLEAN
  */
 int wprm_configure_hscfg(void)
 {
-
-    /* check automatic traffic meter is enabled or not */
-    if(wlan_wprm_tm_is_enabled() == FALSE) {
-       return 0;
-    }
-
     wprm_tm_ps_cmd_no = WPRM_TM_CMD_CONFIG_HSCFG;
     wprm_tm_ps_cmd_in_list = TRUE;
  
     wake_up_interruptible(&tmThread.waitQ);
-    PRINTM(MOTO_DEBUG, "WLAN driver: WPRM: wprm_configure_hscfg(), to reconfigure hscfg.\n");
+    PRINTM(DEBUG, "WLAN driver: WPRM: wprm_configure_hscfg(), to reconfigure hscfg.\n");
 
     return 0;
     
@@ -632,14 +613,6 @@ int wprm_traffic_meter_service_thread(void *data)
         if( wprm_tm_ps_cmd_no == WPRM_TM_CMD_EXIT_PS ) {
             WPRM_DRV_TRACING_PRINT();
 
-            /* assemble "iwconfig eth0 power off" command request */
-            iwrq.value = 0;
-            iwrq.fixed = 0;
-            iwrq.disabled = 1;  /* exit from low power mode */
-            iwrq.flags = 0;
-            /* send exit IEEE power save command */
-            wlan_set_power(priv->wlan_dev.netdev, NULL, &iwrq, NULL);
-
 	    if(priv->adapter->sleep_period.period!=0 )
 	    {
 		 /*assembly sleeppd command*/
@@ -658,9 +631,19 @@ int wprm_traffic_meter_service_thread(void *data)
 		     PrepareAndSendCommand(priv, HostCmd_CMD_802_11_SLEEP_PERIOD,
 			    0, HostCmd_OPTION_WAITFORRSP,
 			    0, (void *) &sleeppd);
+		     PRINTM(MSG, "WLAN driver: WPRM thread, EXIT_PS: sleeppd cmd sent to FW, period=%d\n", sleeppd.Period);
 		 }
 	    }
 
+            /* assemble "iwconfig eth0 power off" command request */
+            iwrq.value = 0;
+            iwrq.fixed = 0;
+            iwrq.disabled = 1;  /* exit from low power mode */
+            iwrq.flags = 0;
+            /* send exit IEEE power save command */
+            wlan_set_power(priv->wlan_dev.netdev, NULL, &iwrq, NULL);
+
+            PRINTM(DEBUG, "WLAN driver: WPRM thread, EXIT_PS: set_power cmd sent to FW, disabled=%d.\n", iwrq.disabled);
 
             /* once enter active mode, start tm timer */
             if(priv->adapter->MediaConnectStatus != WlanMediaStateConnected)
@@ -668,7 +651,7 @@ int wprm_traffic_meter_service_thread(void *data)
                 wprm_tm_ps_cmd_no = WPRM_TM_CMD_NONE;
                 wprm_tm_ps_cmd_in_list = FALSE;
 		wprm_traffic_meter_exit(priv);
-		PRINTM(MOTO_DEBUG, "WLAN driver: WPRM thread, EXIT_PS: link loss detected.\n");
+		PRINTM(DEBUG, "WLAN driver: WPRM thread, EXIT_PS: link loss detected.\n");
                 continue;
             }
             wprm_traffic_meter_init(priv);
@@ -681,7 +664,7 @@ int wprm_traffic_meter_service_thread(void *data)
                 wprm_tm_ps_cmd_no = WPRM_TM_CMD_NONE;
                 wprm_tm_ps_cmd_in_list = FALSE;
 		wprm_traffic_meter_exit(priv);
-		PRINTM(MOTO_DEBUG, "WLAN driver: WPRM thread, ENTER_PS: link loss detected.\n");
+		PRINTM(DEBUG, "WLAN driver: WPRM thread, ENTER_PS: link loss detected.\n");
                 continue;
             }
 		
@@ -698,19 +681,11 @@ int wprm_traffic_meter_service_thread(void *data)
                  }
                  else
                  {
-		     /* First exit PS */
-		     /* assemble "iwconfig eth0 power off" command request */
-                     iwrq.value = 0;
-                     iwrq.fixed = 0;
-                     iwrq.disabled = 1;  /* exit from low power mode */
-                     iwrq.flags = 0;
-                     /* send exit IEEE power save command */
-                     wlan_set_power(priv->wlan_dev.netdev, NULL, &iwrq, NULL);
-		     
-		     /* Send the sleep pd command */
+
 		     PrepareAndSendCommand(priv, HostCmd_CMD_802_11_SLEEP_PERIOD,
 			    0, HostCmd_OPTION_WAITFORRSP,
 			    0, (void *) &sleeppd);
+		     PRINTM(MSG, "WLAN driver: WPRM thread, ENTER_PS: sleeppd cmd sent to FW, period=%d\n", sleeppd.Period);
 		 }
 
 	    }
@@ -733,12 +708,14 @@ int wprm_traffic_meter_service_thread(void *data)
             iwrq.flags = 0;
             /* send enter IEEE power save command */
             wlan_set_power(priv->wlan_dev.netdev, NULL, &iwrq, NULL);
+            PRINTM(DEBUG, "WLAN driver: WPRM thread, ENTER_PS: set_power cmd sent to FW, disabled=%d.\n", iwrq.disabled);
 
             if(priv->adapter->MediaConnectStatus != WlanMediaStateConnected)
             {
                 iwrq.disabled = 1;
                 wlan_set_power(priv->wlan_dev.netdev, NULL, &iwrq, NULL);
-                PRINTM(MOTO_DEBUG, "WLAN driver: WPRM thread, ENTER_PS: link loss detected - Exit PS.\n");
+		PRINTM(DEBUG, "WLAN driver: WPRM thread, ENTER_PS: set_power cmd sent to FW, disabled=%d.\n", iwrq.disabled);
+                PRINTM(DEBUG, "WLAN driver: WPRM thread, ENTER_PS: link loss detected - Exit PS.\n");
             }
             /* once enter PS mode, stop tm timer. After that, tm timer will only be triggered by 
              * traffic measurement or association 
@@ -755,7 +732,7 @@ int wprm_traffic_meter_service_thread(void *data)
                 wprm_tm_ps_cmd_no = WPRM_TM_CMD_NONE;
                 wprm_tm_ps_cmd_in_list = FALSE;
 		wprm_traffic_meter_exit(priv);
-		PRINTM(MOTO_DEBUG, "WLAN driver: WPRM thread, ENTER_UAPSD: link loss detected.\n");
+		PRINTM(DEBUG, "WLAN driver: WPRM thread, ENTER_UAPSD: link loss detected.\n");
                 continue;
             }
 
@@ -782,19 +759,12 @@ int wprm_traffic_meter_service_thread(void *data)
             }
             else
             {
-                /* First exit PS */
-		/* assemble "iwconfig eth0 power off" command request */
-                iwrq.value = 0;
-                iwrq.fixed = 0;
-                iwrq.disabled = 1;  /* exit from low power mode */
-                iwrq.flags = 0;
-                /* send exit IEEE power save command */
-                wlan_set_power(priv->wlan_dev.netdev, NULL, &iwrq, NULL);
-		     
-                /* Send the sleep pd command */
+   
+
 	        PrepareAndSendCommand(priv, HostCmd_CMD_802_11_SLEEP_PERIOD,
 			0, HostCmd_OPTION_WAITFORRSP,
 			0, (void *) &sleeppd);
+                PRINTM(MSG, "WLAN driver: WPRM thread, ENTER_UAPSD: sleeppd cmd sent to FW, period=%d\n", sleeppd.Period);
     
 	    }
     		
@@ -805,6 +775,7 @@ int wprm_traffic_meter_service_thread(void *data)
             iwrq.flags = 0;
             /* send enter IEEE power save command */
             wlan_set_power(priv->wlan_dev.netdev, NULL, &iwrq, NULL);
+            PRINTM(DEBUG, "WLAN driver: WPRM thread, EXIT_UAPSD: set_power cmd sent to FW, disabled=%d.\n", iwrq.disabled);
 
             /* once enter APSD mode, start tm timer.  */
             wprm_traffic_meter_init(priv);
@@ -823,12 +794,14 @@ int wprm_traffic_meter_service_thread(void *data)
 		    PrepareAndSendCommand(priv, HostCmd_CMD_802_11_SLEEP_PERIOD,
                         0, HostCmd_OPTION_WAITFORRSP,
                         0, (void *) &sleeppd);
+		    PRINTM(MSG, "WLAN driver: WPRM thread, EXIT UAPSD: sleeppd cmd sent to FW, period=%d\n", sleeppd.Period);
        
 		}
      
                 iwrq.disabled = 1;
                 wlan_set_power(priv->wlan_dev.netdev, NULL, &iwrq, NULL);
-                PRINTM(MOTO_DEBUG, "WLAN driver: WPRM thread, ENTER_UAPSD: link loss detected - Exit PS.\n");
+		PRINTM(DEBUG, "WLAN driver: WPRM thread, ENTER_UAPSD: set_power cmd sent to FW, disabled=%d.\n", iwrq.disabled);
+                PRINTM(DEBUG, "WLAN driver: WPRM thread, ENTER_UAPSD: link loss detected - Exit PS.\n");
            
 		wprm_traffic_meter_exit(priv);
             }	
@@ -904,10 +877,10 @@ int wprm_session_type_action(WPRM_SESSION_SPEC_S *session)
 {
 
     /* debug */
-    PRINTM(MOTO_DEBUG, "WLAN driver: WPRM: before new session: data=%d, voice=%d\n", \
+    PRINTM(DEBUG, "WLAN driver: WPRM: before new session: data=%d, voice=%d\n", \
            datasession_status, voicesession_status);
 	   
-    PRINTM(MOTO_MSG, "WLAN driver: WPRM: new session: pid=0x%x, sid=%d, type=%d, action=%d.\n", \
+    PRINTM(MSG, "WLAN driver: WPRM: new session: pid=0x%x, sid=%d, type=%d, action=%d.\n", \
            session->pid, session->sid, session->type, session->act);
 	   
 	   
@@ -938,7 +911,7 @@ int wprm_session_type_action(WPRM_SESSION_SPEC_S *session)
 		break;
 	}
 	
-    PRINTM(MOTO_DEBUG, "WLAN driver: WPRM: after new session: data=%d, voice=%d\n", \
+    PRINTM(DEBUG, "WLAN driver: WPRM: after new session: data=%d, voice=%d\n", \
            datasession_status, voicesession_status);
 	   		
     return 0;

@@ -1,22 +1,20 @@
 /*
- * Copyright 2004-2005 Freescale Semiconductor, Inc.
+ * Copyright 2004-2006 Freescale Semiconductor, Inc. All Rights Reserved.
  * Copyright (C) 2006-2007 Motorola, Inc.
  */
 
-/*
- * The code contained herein is licensed under the GNU Lesser General
- * Public License.  You may obtain a copy of the GNU Lesser General
- * Public License Version 2.1 or later at the following locations:
- *
- * http://www.opensource.org/licenses/lgpl-license.html
- * http://www.gnu.org/copyleft/lgpl.html
- *
- * Date     Author    Comment
- * 10/2006  Motorola  Added support to panel_info for the HVGA display driver.
- * 02/2007  Motorola  Added ESD counter timeout 
- * 04/2007  Motorola  Removed support for the HVGA driver
- */
-
+ /*
+  * The code contained herein is licensed under the GNU Lesser General
+  * Public License.  You may obtain a copy of the GNU Lesser General
+  * Public License Version 2.1 or later at the following locations:
+  *
+  * http://www.opensource.org/licenses/lgpl-license.html
+  * http://www.gnu.org/copyleft/lgpl.html
+  *
+  * Date     Author    Comment
+  * 10/2006  Motorola  Added support to panel_info for the HVGA display driver.
+  * 06/2007  Motorola  Removed support for the HVGA driver
+  */
 /*
  * @file    mxcfb.h
  *
@@ -28,11 +26,6 @@
 #define _INCLUDE_MXCFB_H_
 
 #include <linux/fb.h>
-
-#define MXCFB_SCREEN_TOP_OFFSET         0
-#define MXCFB_SCREEN_LEFT_OFFSET        2
-#define MXCFB_SCREEN_WIDTH              240
-#define MXCFB_SCREEN_HEIGHT             320
 
 /*
  * Bits per pixel defines
@@ -48,31 +41,6 @@
 #define MXCFB_MAIN_DEVICE       "/dev/fb/0"
 #define MXCFB_OVERLAY_DEVICE    "/dev/fb/1"
 #define MXCFB_CLI_DEVICE        "/dev/fb/2"
-
-#define	NOP			0x00	// No Operation 
-#define	SWRESET		0x01	// Software reset
-#define	RDDIDIF		0x04	// Read display identification information
-#define	SLPIN		0x10	// Sleep in
-#define	SLPOUT		0x11	// Sleep out
-#define	PTLON		0x12	// Partial mode on
-#define	NORON		0x13	// Normal display mode on
-#define	INVOFF		0x20	// Display Inversion off
-#define	INVON		0x21	// Display inversion on
-#define	DISPOFF		0x28	// Display off
-#define	DISPON		0x29	// Display on 41
-#define	RAMWR		0x2C	// Memory write
-#define	RAMRD		0x2E	// Memory read
-#define	PTLAR		0x30	// Partial area
-#define	TEOFF		0x34	// Tearing effect line off
-#define	TEON		0x35	// Tearing effect line on
-#define	MADCTL		0x36	// Memory access control
-#define	IDMOFF		0x38	// Idle mode off
-#define	IDMON		0x39	// Idle mode on
-#define	VSYNCOUT	0xBC	// External VSYNC disable
-#define	VSYNCIN		0xBD	// External VSYNC enable
-#define	DTRNSE		0xBF	// Data trans end
-#define	IFMOD		0xC2	// Interface mode select
-#define	ATRFSH		0xC3	// Auto refresh
 
 struct mxcfb_gbl_alpha {
 	int enable;
@@ -97,10 +65,6 @@ struct mxcfb_color_key {
 
 #include "../drivers/mxc/ipu/ipu.h"
 
-#if defined(CONFIG_MOT_FEAT_LCD_ESD_RECOVERY)
-/* esd_delay = ms * HZ / 1000 */
-#define esd_delay (5000 * HZ / 1000) 
-#endif
 enum {
 	MXCFB_REFRESH_OFF,
 	MXCFB_REFRESH_AUTO,
@@ -120,12 +84,6 @@ int mxcfb_set_refresh_mode(struct fb_info *fbi, int mode,
 struct panel_info {
 	char *name;
 	ipu_panel_t type;
-#if defined(CONFIG_FB_MXC_HVGA_PANEL)
-        int refresh_rate;
-        int top_offset;
-        int left_offset;
-        int middle_porch_lines;
-#endif
 	uint32_t pixel_fmt;
 	int width;
 	int height;

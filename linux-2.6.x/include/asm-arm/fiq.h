@@ -4,13 +4,13 @@
  * Support for FIQ on ARM architectures.
  * Written by Philip Blundell <philb@gnu.org>, 1998
  * Re-written by Russell King
- */
-/*
+ *
  * Copyright (C) 2007 Motorola, Inc.
  *
- * Date           Author            Comment
- * ===========  ==========  ====================================
- * 10/15/2007   Motorola    FIQ related modified.
+ * Revision History:
+ * Date         Author    Comment
+ * ---------    --------  ---------------------------
+ * 10/02/2007   Motorola  Added FIQ C dispatcher in kernel.
  */
 
 #ifndef __ASM_FIQ_H

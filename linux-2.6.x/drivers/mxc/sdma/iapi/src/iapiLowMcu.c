@@ -71,9 +71,9 @@ iapi_Channel0Command( channelDescriptor * cd_p, void * buf,
   int result = IAPI_SUCCESS;
   unsigned char chNum;
 
-   chNum = SDMA_CONTROL_CHANNEL;
+  chNum = SDMA_CONTROL_CHANNEL;
 
-    /* Try to aquire channel*/
+  /* Try to aquire channel*/
   if(iapi_GetChannel(chNum) != 0)
   {
      result = IAPI_ERR_CH_IN_USE | chNum;
@@ -125,10 +125,9 @@ iapi_Channel0Command( channelDescriptor * cd_p, void * buf,
   
   /* Actually the transfer */
   iapi_lowStartChannel( cd_p->channelNumber );
-
   iapi_lowSynchChannel( cd_p->channelNumber );
 
-   iapi_ReleaseChannel(chNum);
+  iapi_ReleaseChannel(chNum);
 
   /* Cleaning of allocation */
   FREE( bd_p );
@@ -387,7 +386,7 @@ iapi_lowSetContext(channelDescriptor * cd_p, void * buf, unsigned char channel)
   bufferDescriptor * local_bd_p;
   
   local_bd_p = (bufferDescriptor *)iapi_Phys2Virt(cd_p->ccb_ptr->baseBDptr);
-
+  
   iapi_SetBufferDescriptor( &local_bd_p[0],
                             C0_SETDM,
 							(unsigned char)(BD_DONE | BD_INTR | BD_WRAP|BD_EXTD),
@@ -395,11 +394,8 @@ iapi_lowSetContext(channelDescriptor * cd_p, void * buf, unsigned char channel)
 							 buf,
 							 (void *)(2048+(sizeof(contextData)/4)*channel));
 							 
-
   /* Send */
-
   iapi_lowStartChannel( cd_p->channelNumber );
-
   iapi_lowSynchChannel( cd_p->channelNumber );
 
 }
@@ -428,7 +424,6 @@ iapi_lowAssignScript(channelDescriptor * cd_p, script_data * data_p)
    contextData * chContext;    /* context to be loaded for the channel */
    channelDescriptor * cd0_p;  /* pointer to channel descriptor of channel 0*/
    int result = IAPI_SUCCESS;
-
    
    /*Verify passed data*/
    if(cd_p == NULL || data_p == NULL)

@@ -1,4 +1,4 @@
-# Copyright (C) 2005-2006  Motorola, Inc.
+# Copyright (C) 2007  Motorola, Inc.
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License version 2 as 
@@ -18,39 +18,36 @@
 #
 # Makefile for the kernel APAL (Audio Platform Abstraction Layer) driver.
 #
+# ChangeLog:
+# Date (mm/dd/yyyy)        Author        Comment
+# 04/27/2007               Motorola      Remove hardcode.
+# 08/04/2007               Motorola      Clearmake compliance.
+# 09/04/2007               Motorola      Miniplatform build compliance.
 
-ifneq ($(KBUILD_SRC),)
-LINUX_OS	= $(KBUILD_SRC)
-else
-LINUX_OS	=
-endif
+# Source in the top-level make options for MOT build environment
+include $(BOOTSTRAP)
+ifneq ($(HW_ARCH),i686)
 
-LINUX_INCLUDE	= $(LINUX_OS)/include
+# Source in the CKbuild build system to achieve clearmake compliance
+include ${STD_DIRPATH}/ckbuild/ckbuild.mk
+include ${STD_DIRPATH}/ckbuild/modkconfig.mk
 
-ifeq ($(CONFIG_ARCH_MXC91231), y)
-LINUX_ASM	= $(LINUX_INCLUDE)/asm-arm/arch-mxc
-endif
+KERNEL_VERSION  	:= 2.6.10_dev
+PRODUCT_ROOTFS  	:= $(BUILDTOP)/$(PROC_FAMILY)/$(PROC_TYPE)/fs/
+KMODULES_DIR    	:= ${PRODUCT_ROOTFS}/lib/modules/${KERNEL_VERSION}/
 
-ifeq ($(CONFIG_ARCH_MXC91331), y)
-LINUX_ASM	= $(LINUX_INCLUDE)/asm-arm/arch-mxc
-endif
+CKBUILD_EXTRA_CONFIG = $(shell $(MODKCONFIG) path config)
 
-ifeq ($(CONFIG_ARCH_MXC91321), y)
-LINUX_ASM	= $(LINUX_INCLUDE)/asm-arm/arch-mxc
-endif
+CKBUILD_EXTRA_ARGS  	+= INSTALL_MOD_PATH=$(BUILDTOP)
+CKBUILD_EXTRA_ARGS  	+= CKBUILD_COMP_TOP=$(COMPTOP)
 
-OS_DRIVERS_PATH	= $(LINUX_OS)/drivers/mxc
+CKBUILD_EXTRA_CFLAGS 	= -DMODKCONFIG -I$(STD_INCPATH) -I$(KERNELDIR)/include
 
-APAL_KERNEL_INCLUDE	= -I$(LINUX_ASM) \
-			  -I$(OS_DRIVERS_PATH)/atlas/module \
-			  -I$(OS_DRIVERS_PATH)/atlas/core   \
-			  -I$(OS_DRIVERS_PATH)/ssi  \
-			  -I$(OS_DRIVERS_PATH)/dam \
-			  -I$(OS_DRIVERS_PATH)/sdma \
-			  -I$(LINUX_INCLUDE)
+# now finally do the build and install
+api_build: $(PROPFILES)
+impl: modules modules_install
 
-EXTRA_CFLAGS += $(APAL_KERNEL_INCLUDE)
+distclean: clean
+	$(KERNEL_MAKE) clean
 
-#ifneq ($(KERNELRELEASE))
-
-obj-$(CONFIG_APAL) += apal_driver.o
+endif # ifneq ($(HW_ARCH),i686)

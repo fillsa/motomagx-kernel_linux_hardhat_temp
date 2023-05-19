@@ -1,6 +1,6 @@
 /*
  * Copyright 2005-2006 Freescale Semiconductor, Inc.
- * Copyright (C) 2006-2008 Motorola, Inc. 
+ * Copyright (C) 2006-2007 Motorola, Inc. 
  */
 /*
  * The code contained herein is licensed under the GNU Lesser General
@@ -13,22 +13,11 @@
  * Date     Author      Comment
  * 10/2006  Motorola    Added support for QVGA Sanyo display, additional pixel
  *                      packing formats, and a configurable memory location.
- * 11/2006  Motorola  Added prototypes for ipu_enable_pixel_clock functions.
- * 01/2007  Motorola  Added prototypes for ipu_enable_sdc, ipu_disable_sdc functions.
  * 01/2007  Motorola    Added support for configurable IPU memory size.
- * 02/2007  Motorola  Added ipu_adc_read_cmd prototype for reading via ADC SPI
- * 03/2007  Motorola  Added RODEM and TANGO as cmddata types
- * 06/2007  Motorola  Added a function to return if an SDC channel is enabled or not
  * 06/2007  Motorola    Fix to support setting of ADC serial interface bit
  *                      width in ipu driver.
- * 08/2007  Motorola    Add comments for oss compliance.
- * 08/2007  Motorola    Add comments.
+ * 06/2007  Motorola    Removed lines related HVGA.
  * 11/2007  Motorola    Add declaration of a function
- * 11/2007  Motorola    Added Dynamic AP Clock Gating for IPU clock.
- * 12/2007  Motorola  Removed Dynamic AP Clock Gating due to the introduced issue that phone resets
- * 04/2008  Motorola    Add code for new display
- * 05/2008  Motorola    Add elements in display signal structure
- * 08/2008  Motorola    Add declaration of 2 functions which set/restore m3if register priority
  */
 
 /*!
@@ -109,7 +98,6 @@ typedef enum {
 /*! @name Generic or Raw Data Formats *//*! @{ */
 #define IPU_PIX_FMT_GENERIC ipu_fourcc('I','P','U','0')	/*!< IPU Generic Data */
 #define IPU_PIX_FMT_GENERIC_32 ipu_fourcc('I','P','U','1')	/*!< IPU Generic Data */
-#define IPU_PIX_FMT_GENERIC_16 ipu_fourcc('I','P','U','2')  /*!< IPU Generic Data */
 /*! @} */
 
 /*! @name RGB Formats *//*! @{ */
@@ -525,8 +513,6 @@ typedef struct {
 	unsigned enable_pol:1;
 	unsigned Hsync_pol:1;	/* true = active high */
 	unsigned Vsync_pol:1;
-    unsigned read_pol:1;
-    unsigned write_pol:1;
 } ipu_di_signal_cfg_t;
 
 /*!
@@ -586,12 +572,6 @@ typedef enum
 {
         DAT,      /* Send only data to the display */
         CMD,      /* Send a command and then associated data */
-#if defined(CONFIG_FB_MXC_HVGA_PANEL)
-	RODEM = CMD,
-	TANGO,
-	CMD_ONLY,
-	INVALID,  /* Indicates the end of a command array block */
-#endif
 }cmddata_t;
 
 /*!
@@ -711,11 +691,6 @@ typedef struct {
 int32_t ipu_init_channel(ipu_channel_t channel, ipu_channel_params_t * params);
 void ipu_uninit_channel(ipu_channel_t channel);
 
-void ipu_enable_sdc(void);
-void ipu_disable_sdc(void);
-void ipu_enable_pixel_clock(void);
-void ipu_disable_pixel_clock(void);
-
 int32_t ipu_init_channel_buffer(ipu_channel_t channel, ipu_buffer_t type,
 				uint32_t pixel_fmt,
 				uint16_t width, uint16_t height,
@@ -725,9 +700,6 @@ int32_t ipu_init_channel_buffer(ipu_channel_t channel, ipu_buffer_t type,
 
 int32_t ipu_update_channel_buffer(ipu_channel_t channel, ipu_buffer_t type,
 				  uint32_t bufNum, void *phyaddr);
-
-int32_t ipu_update_channel_yuvoffset_buffer(ipu_channel_t channel, ipu_buffer_t type, 
-                                  uint16_t u_offset, uint16_t v_offset);
 
 int32_t ipu_select_buffer(ipu_channel_t channel,
 			  ipu_buffer_t type, uint32_t bufNum);
@@ -758,7 +730,6 @@ int32_t ipu_sdc_init_panel(ipu_panel_t panel,
 			   ipu_di_signal_cfg_t sig);
 int32_t ipu_sdc_set_window_pos(ipu_channel_t channel, int16_t x_pos,
 			       int16_t y_pos);
-uint32_t ipu_is_sdc_chan_enabled(ipu_channel_t channel);
 int32_t ipu_sdc_set_global_alpha(bool enable, uint8_t alpha);
 int32_t ipu_sdc_set_color_key(ipu_channel_t channel, bool enable,
 			      uint32_t colorKey);
@@ -775,10 +746,6 @@ int32_t ipu_adc_set_update_mode(ipu_channel_t channel,
 				uint32_t * size);
 
 int32_t ipu_adc_get_snooping_status(uint32_t * statl, uint32_t * stath);
-
-int32_t setup_ipu_access_memory_priority(void);
-
-int32_t restore_ipu_access_memory_priority(void);
 
 int32_t ipu_adc_write_cmd(display_port_t disp, cmddata_t type,
 			  uint32_t cmd, const uint32_t * params,
@@ -830,10 +797,9 @@ void ipu_lpmc_uninit(void);
 /* Camera 2MP still capture workaround API */
 void ipu_sdc_fg_uninit(void);
 void ipu_sdc_fg_init(void);
-
-#ifdef CONFIG_MOT_FEAT_2MP_CAMERA_WRKARND
 void setup_dma_chan_priority(void);
 void restore_dma_chan_priority(void);
-#endif
 
+void ipu_wake_from_sleep(void);
+void ipu_go_to_sleep(void);
 #endif

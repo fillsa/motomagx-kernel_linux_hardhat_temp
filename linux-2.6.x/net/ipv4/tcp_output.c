@@ -38,14 +38,27 @@
 
 /*
  * Copyright (C) 2007 Motorola, Inc.
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; either version 2 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program; if not, write to the Free Software
+ * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
  */
+ 
 /*
- * Author     Date          Comment
- * =======   ===========   ====================================================
- * Motorola  11/30/2007    Limit mss to be no bigger than 1372(0x55C) to solve 
- *                         compatibility issue with CMCC
- * Motorola  07/02/2008    Limit mss to be no bigger than 1000 to solve 
- *                         compatibility issue with Spain
+ * Date          Author        Comment
+ * ========      ===========   =================================================
+ * 11/27/2007    Motorola      Limit mss be no bigger than 1372(0x55C) to solve 
+ *                             compatibility issue with CMCC
  */
 
 #include <net/tcp.h>
@@ -54,22 +67,12 @@
 #include <linux/module.h>
 #include <linux/smp_lock.h>
 
-
 #ifdef CONFIG_MOT_FEAT_MSS_CMCC
 /* 
  * Limit mss to be not bigger than 1372(0x055C)
  * to solve compatiblity issue with CMCC 
  */
 #define LJ_MAX_TCP_SEGMENT_SIZE 0x055C
-#endif
-
-#ifdef CONFIG_MOT_FEAT_MSS_XL_SPAIN
-/* 
- * Limit mss to be not bigger than 1000 
- * to solve compatiblity issue with XL SPAIN 
- */
-#define LJ_MAX_TCP_SEGMENT_SIZE 1000
-
 #endif
 
 /* People can turn this off for buggy TCP's found in printers etc. */
@@ -126,27 +129,16 @@ static __u16 tcp_advertise_mss(struct sock *sk)
 	int mss = tp->advmss;
 
 #ifdef CONFIG_MOT_FEAT_MSS_CMCC
-        /*	
-         * Limit mss to be not bigger than 1372(0x55C)
+	/*
+	 * Limit mss to be not bigger than 1372(0x55C)
 	 * to solve compatiblity issue with CMCC
 	 */
-	if (mss > LJ_MAX_TCP_SEGMENT_SIZE) {
-		mss = LJ_MAX_TCP_SEGMENT_SIZE;
-		tp->advmss = mss; 
-	}
-#endif	
-	
-#ifdef CONFIG_MOT_FEAT_MSS_XL_SPAIN
-	/*	
-	 * Limit mss to be not bigger than 1000
-	 * to solve compatiblity issue with Spain
-	 */
-	if (mss > LJ_MAX_TCP_SEGMENT_SIZE) {
+	if (mss > LJ_MAX_TCP_SEGMENT_SIZE)
+	{
 		mss = LJ_MAX_TCP_SEGMENT_SIZE;
 		tp->advmss = mss; 
 	}
 #endif
-
 	if (dst && dst_metric(dst, RTAX_ADVMSS) < mss) {
 		mss = dst_metric(dst, RTAX_ADVMSS);
 		tp->advmss = mss;
@@ -687,26 +679,16 @@ unsigned int tcp_sync_mss(struct sock *sk, u32 pmtu)
 	if (mss_now > tp->mss_clamp)
 		mss_now = tp->mss_clamp;
 
-#ifdef CONFIG_MOT_FEAT_MSS_CMCC
-	/*
-	 * Limit mss to be not bigger than 1372(0x055C)
+#ifdef CONFIG_MOT_FEAT_MSS_CMCC	
+	/* 
+	 * Limit mss to be not bigger than 1372(0x55C)
 	 * to solve compatiblity issue with CMCC
 	 */
-	if (mss_now > LJ_MAX_TCP_SEGMENT_SIZE) {
+	if (mss_now > LJ_MAX_TCP_SEGMENT_SIZE)
+	{
 		mss_now = LJ_MAX_TCP_SEGMENT_SIZE;
 	}
 #endif
-		
-#ifdef CONFIG_MOT_FEAT_MSS_XL_SPAIN
-	/* 
-	 * Limit mss to be not bigger than 1000
-	 * to solve compatiblity issue with Spain
-	 */
-	if (mss_now > LJ_MAX_TCP_SEGMENT_SIZE) {
-		mss_now = LJ_MAX_TCP_SEGMENT_SIZE;
-	}
-#endif
-
 	/* Now subtract optional transport overhead */
 	mss_now -= tp->ext_header_len + tp->ext2_header_len;
 

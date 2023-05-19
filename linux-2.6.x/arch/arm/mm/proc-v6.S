@@ -2,7 +2,7 @@
  *  linux/arch/arm/mm/proc-v6.S
  *
  *  Copyright (C) 2001 Deep Blue Solutions Ltd.
- *  Copyright (C) 2006-2007 Motorola Inc.
+ *  Copyright (C) 2006-2008 Motorola, Inc.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 as
@@ -10,18 +10,11 @@
  *
  *  This is the "shell" of the ARMv6 processor support.
  *
+ * Date     Author     Comment
+ * 10/2006  Motorola   Added workaround for ARM errata 380532
+ * 02/2007  Motorola   Enabled hardware XN support
+ * 06/2008  Motorola   Invalidated main locked TLB.
  *
- * Date        Author            Comment
- * ==========  ================  ========================
- * 09/26/2006  Motorola          Initial creation
- * 10/25/2006   Motorola        Modify the assembly check to include r1p1 as well.
- * 11/15/2006  Motorola          Added workaround errata 380532
- * 12/21/2006   Motorola        Modify icache flushes to flush the icache using
- *                                the recommended ARM errata workaround
- * 02/21/2007  Motorola          Added fix for errata 411920
- * 03/14/2007   Motorola        Improve L2 Cache performance by changing the CPU wait time.
- * 03/28/2007  Motorola          Added cache optimization
- * 07/14/2008  Motorola          Invalidated main locked TLB.
  */
 #include <linux/linkage.h>
 #include <asm/assembler.h>
@@ -62,7 +55,7 @@
 	orr	r2, r2, #0x00030000
 
 #ifdef CONFIG_MOT_FEAT_CACHE_OPTIMIZATION
-#if CORE_MAX_FREQ >= CORE_FREQ_532 // #if CORE_MAX_FREQ == CORE_FREQ_532
+#if CORE_MAX_FREQ == CORE_FREQ_532
 	orr	r2, r2, #0x00000024
 #elif CORE_MAX_FREQ == CORE_FREQ_399
 	orr	r2, r2, #0x0000001B
@@ -250,9 +243,14 @@ ENTRY(cpu_v6_set_pte)
 	tst	r1, #L_PTE_YOUNG
 	biceq	r2, r2, #PTE_EXT_APX | PTE_EXT_AP_MASK
 
+#ifdef CONFIG_MOT_WFN422
+	tst	r1, #L_PTE_EXEC
+	orreq	r2, r2, #PTE_EXT_XN
+#else
 @	tst	r1, #L_PTE_EXEC
 @	orreq	r2, r2, #PTE_EXT_XN
-
+#endif
+	
 	tst	r1, #L_PTE_PRESENT
 	moveq	r2, #0
 
@@ -312,7 +310,6 @@ __v6_setup:
 	nop
 	nop
 #endif
-
 	mcr	p15, 0, r0, c7, c15, 0		@ clean+invalidate cache
 	mcr	p15, 0, r0, c7, c10, 4		@ drain write buffer
 	mcr	p15, 0, r0, c8, c7, 0		@ invalidate I + D TLBs

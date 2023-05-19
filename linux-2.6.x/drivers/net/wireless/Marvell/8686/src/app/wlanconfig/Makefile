@@ -1,7 +1,7 @@
 # File: app/Makefile
 #
-# (c) Copyright © 2003-2006, Marvell International Ltd. 
-# (c) Copyright © 2006-2007, Motorola.
+# (c) Copyright © 2003-2006, Marvell International Ltd.
+# (c) Copyright © 2006-2007, Motorola 
 #
 # This software file (the "File") is distributed by Marvell International 
 # Ltd. under the terms of the GNU General Public License Version 2, June 1991 
@@ -21,13 +21,11 @@
 # 30-Oct-2006  Motorola       Build of wlanconfig.
 # 18-Jan-2006  Motorola       WIFI driver :integrate Marvell 8686 16/01 release (81044p3_26340p44)
 # 02-Mar-2007  Motorola       WIFI driver :integrate Marvell 8686 01/03 release (81047p1_26340p54)
-# 11-Apr-2007  Motorola       WIFI driver :integrate Marvell 8686 11/04 release (81047p5_26340p65)
-# 30-May-2007  Motorola       WIFI driver :integrate Marvell 8686 30/05 release (81047p8_26340p68)
-# 10-Jul-2007  Motorola       WIFI driver :integrate Marvell 8686 09/07 release (81047p12_26340p72)
-# 16-Oct-2007  Motorola       WIFI driver :integrate Marvell 8686 10/15 release (81048p0_26340p75)
-
-
-
+# 04-Apr-2007  Motorola       WIFI driver :integrate Marvell 8686 v9 01/04 release (91043p4_26409p9)
+# 22-May-2007  Motorola       WIFI driver :integrate Marvell 8686 v9 18/05 release (91043p8_26409p17)
+# 19-Jul-2007  Motorola       WIFI driver :integrate Marvell 8686 v9 13/07 release (91043p12_26409p29)
+# 11-Sep-2007  Motorola       WIFI driver :integrate Marvell 8686 v9 31/08 release (91043p17_26409p38)
+# 22-Oct-2007  Motorola       WIFI driver :integrate Marvell 8686 v9 22/10 release (91043p19_26409p42)
 
 COMPILERTOOLPATH=/vobs/jem/cee4_lsp/mobilinux/devkit/arm/v6_vfp_le/bin
 COMPILERTOOLPREFIX=arm_v6_vfp_le-

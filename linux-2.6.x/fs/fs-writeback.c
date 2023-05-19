@@ -2,7 +2,6 @@
  * fs/fs-writeback.c
  *
  * Copyright (C) 2002, Linus Torvalds.
- * Copyright (C) 2007, Motorola, Inc.
  *
  * Contains all the functions related to writing back and waiting
  * upon dirty inodes against superblocks, and writing back dirty
@@ -13,13 +12,6 @@
  *		Split out of fs/inode.c
  *		Additions for address_space-based writeback
  */
-
-/* Date         Author          Comment
- * ===========  ==============  ==============================================
- * 13-Jul-2007  Motorola        Fix the bug about st_ctime, and st_mtime field
- *                              of a mapped region, and msync()
- */
-
 
 #include <linux/kernel.h>
 #include <linux/spinlock.h>
@@ -176,11 +168,6 @@ __sync_single_inode(struct inode *inode, struct writeback_control *wbc)
 
 	spin_unlock(&inode_lock);
 
-#ifdef CONFIG_MOT_WFN484
-	if (test_and_clear_bit(AS_MCTIME, &mapping->flags))
-			    inode_update_time(inode, 1);
-#endif
-	
 	ret = do_writepages(mapping, wbc);
 
 	/* Don't write the inode if only I_DIRTY_PAGES was set */

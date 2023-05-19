@@ -1,1 +1,1 @@
-../../drivers/video/mxc/mxcfb.h
+./../../drivers/video/mxc/mxcfb.h

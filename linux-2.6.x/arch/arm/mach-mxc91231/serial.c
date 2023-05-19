@@ -1,13 +1,6 @@
 /*
- *
- * Changelog:
- * Date         Author          Comment
- * 09/18/2006   Motorola       added support for Power Management, and for Bluetooth use of UART
-*/
-
-/*
  * Copyright 2006 Freescale Semiconductor, Inc. All Rights Reserved.
- * Copyright 2006 Motorola, Inc.
+ * Copyright (C) 2006-2007 Motorola, Inc.
  */
 /*
  * The code contained herein is licensed under the GNU General Public
@@ -17,6 +10,17 @@
  * http://www.opensource.org/licenses/gpl-license.html
  * http://www.gnu.org/copyleft/gpl.html
  */
+
+/*
+ *
+ * Changelog:
+ * Date         Author          Comment
+ * ===============================================================
+ * 09/18/2006   Motorola        added support for Power Management,
+ *                              and for Bluetooth use of UART.
+ * 10/29/2007   Motorola        Enable DMA for Bluetooth.
+*/
+
 /*!
  * @file serial.c
  *
@@ -70,8 +74,8 @@
 /*!
  * This is option to enable (set this option to 1) or disable DMA data transfer
  */
-/* No DMA for Irda UART */
-#define UART1_DMA_ENABLE        0
+/* Enable DMA for Bluetooth */
+#define UART1_DMA_ENABLE        1
 /*!
  * Specify the size of the DMA receive buffer. The minimum buffer size is 512
  * bytes. The buffer size should be a multiple of 256.

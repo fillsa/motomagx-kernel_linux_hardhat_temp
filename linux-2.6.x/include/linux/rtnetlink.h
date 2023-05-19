@@ -1,7 +1,7 @@
 #ifndef __LINUX_RTNETLINK_H
 #define __LINUX_RTNETLINK_H
 
-/* Copyright (C) 2007 Motorola, Inc. 
+/* Copyright 2007 Motorola, Inc. 
  *
  * Date         Author         Comment
  * ==========   ===========    ===================================
@@ -817,7 +817,6 @@ extern void rtnl_lock(void);
 extern void rtnl_unlock(void);
 extern void rtnetlink_init(void);
 
-#define CONFIG_MOT_FEAT_CHKSUM
 
 #ifdef CONFIG_MOT_FEAT_CHKSUM
 #define ASSERT_RTNL() do { \

@@ -27,7 +27,6 @@ Change Log:
     01/11/06: Initial revision. Match new scan code, relocate related functions
     01/19/06: Fix failure to save adhoc ssid as current after adhoc start
     03/16/06: Add a semaphore to protect reassociation thread
-    10/16/06: Add comments for association response status code
 
 ************************************************************/
 
@@ -103,30 +102,46 @@ get_common_rates(wlan_adapter * Adapter, u8 * rate1,
 }
 
 /**
- *  @brief Send Deauth Request
+ *  @brief Create the intersection of the rates supported by a target BSS and
+ *         our Adapter settings for use in an assoc/join command.
  *
- *  @param priv      A pointer to wlan_private structure
- *  @return          WLAN_STATUS_SUCCESS--success, otherwise fail
+ *  @param Adapter       A pointer to wlan_adapter structure
+ *  @param pBSSDesc      BSS Descriptor whose rates are used in the setup
+ *  @param pOutRates     Output: Octet array of rates common between the BSS
+ *                       and the Adapter supported rates settings
+ *  @param pOutRatesSize Output: Number of rates/octets set in pOutRates
+ *
+ *  @return              WLAN_STATUS_SUCCESS or WLAN_STATUS_FAILURE
+ *
  */
-int
-wlan_send_deauth(wlan_private * priv)
+static int
+setup_rates_from_bssdesc(wlan_adapter * Adapter,
+                         BSSDescriptor_t * pBSSDesc,
+                         u8 * pOutRates, int *pOutRatesSize)
 {
-    wlan_adapter *Adapter = priv->adapter;
-    int ret = WLAN_STATUS_SUCCESS;
+    u8 *card_rates;
+    int card_rates_size;
 
     ENTER();
 
-    if (Adapter->InfrastructureMode == Wlan802_11Infrastructure &&
-        Adapter->MediaConnectStatus == WlanMediaStateConnected) {
+    memcpy(pOutRates, pBSSDesc->SupportedRates, WLAN_SUPPORTED_RATES);
 
-        ret = SendDeauthentication(priv);
-    } else {
+    card_rates = SupportedRates;
+    card_rates_size = sizeof(SupportedRates);
+
+    if (get_common_rates(Adapter, pOutRates, WLAN_SUPPORTED_RATES,
+                         card_rates, card_rates_size)) {
+        *pOutRatesSize = 0;
+        PRINTM(INFO, "get_common_rates failed\n");
         LEAVE();
-        return -ENOTSUPP;
+        return WLAN_STATUS_FAILURE;
     }
 
+    *pOutRatesSize = MIN(strlen(pOutRates), WLAN_SUPPORTED_RATES);
+
     LEAVE();
-    return ret;
+
+    return WLAN_STATUS_SUCCESS;
 }
 
 /**
@@ -185,24 +200,24 @@ wlan_set_mrvl_tlv_ioctl(wlan_private * priv, struct iwreq *wrq)
 
     /* If the passed length is zero, reset the buffer */
     if (wrq->u.data.length == 0) {
-        Adapter->mrvlTlvBufferLen = 0;
+        Adapter->mrvlAssocTlvBufferLen = 0;
     } else {
         /*
          * Verify that the passed length is not larger than the available
          *   space remaining in the buffer
          */
-        if (wrq->u.data.length <
-            (sizeof(Adapter->mrvlTlvBuffer) - Adapter->mrvlTlvBufferLen)) {
-            /* Append the passed data to the end of the mrvlTlvBuffer */
-            if (copy_from_user
-                (Adapter->mrvlTlvBuffer + Adapter->mrvlTlvBufferLen,
-                 wrq->u.data.pointer, wrq->u.data.length)) {
+        if (wrq->u.data.length < (sizeof(Adapter->mrvlAssocTlvBuffer)
+                                  - Adapter->mrvlAssocTlvBufferLen)) {
+            /* Append the passed data to the end of the mrvlAssocTlvBuffer */
+            if (copy_from_user(Adapter->mrvlAssocTlvBuffer
+                               + Adapter->mrvlAssocTlvBufferLen,
+                               wrq->u.data.pointer, wrq->u.data.length)) {
                 PRINTM(INFO, "Copy from user failed\n");
                 return -EFAULT;
             }
 
             /* Increment the stored buffer length by the size passed */
-            Adapter->mrvlTlvBufferLen += wrq->u.data.length;
+            Adapter->mrvlAssocTlvBufferLen += wrq->u.data.length;
         } else {
             /* Passed data does not fit in the remaining buffer space */
             ret = WLAN_STATUS_FAILURE;
@@ -273,9 +288,9 @@ wlan_set_essid(struct net_device *dev, struct iw_request_info *info,
 
 #ifdef REASSOCIATION
     // cancel re-association timer if there's one
-    if (Adapter->TimerIsSet == TRUE) {
+    if (Adapter->ReassocTimerIsSet == TRUE) {
         CancelTimer(&Adapter->MrvDrvTimer);
-        Adapter->TimerIsSet = FALSE;
+        Adapter->ReassocTimerIsSet = FALSE;
     }
 
     if (OS_ACQ_SEMAPHORE_BLOCK(&Adapter->ReassocSem)) {
@@ -286,7 +301,6 @@ wlan_set_essid(struct net_device *dev, struct iw_request_info *info,
 
     /* Check the size of the string */
     if (dwrq->length > IW_ESSID_MAX_SIZE + 1) {
-        PRINTM(ERROR, "Set essid ioctl: wrong length\n");
         ret = -E2BIG;
         goto setessid_ret;
     }
@@ -298,12 +312,7 @@ wlan_set_essid(struct net_device *dev, struct iw_request_info *info,
      */
     if (!dwrq->flags) {
         if (FindBestNetworkSsid(priv, &reqSSID)) {
-#ifdef MOTO_DBG
-            PRINTM(MOTO_DEBUG,
-                   "set ssid ioctl: Could not find best network\n");
-#else
             PRINTM(INFO, "Could not find best network\n");
-#endif
             ret = WLAN_STATUS_SUCCESS;
             goto setessid_ret;
         }
@@ -314,16 +323,8 @@ wlan_set_essid(struct net_device *dev, struct iw_request_info *info,
 
     }
 
-#ifdef MOTO_DBG
-    PRINTM(MOTO_MSG,
-           "set ssid ioctl called by upper layer: Requested new SSID = %s (%s)\n",
-           (reqSSID.SsidLength > 0) ? (char *) reqSSID.Ssid : "NULL",
-           (dwrq->flags ==
-            0) ? "Best Network found" : "Provided in set ssid command");
-#else
     PRINTM(INFO, "Requested new SSID = %s\n",
            (reqSSID.SsidLength > 0) ? (char *) reqSSID.Ssid : "NULL");
-#endif
 
     if (!reqSSID.SsidLength || reqSSID.Ssid[0] < 0x20) {
         PRINTM(INFO, "Invalid SSID - aborting set_essid\n");
@@ -331,26 +332,25 @@ wlan_set_essid(struct net_device *dev, struct iw_request_info *info,
         goto setessid_ret;
     }
 
-    /* If the requested SSID is not a NULL string, join */
-
     if (Adapter->InfrastructureMode == Wlan802_11Infrastructure) {
         /* infrastructure mode */
         PRINTM(INFO, "SSID requested = %s\n", reqSSID.Ssid);
 
-        if (Adapter->MediaConnectStatus == WlanMediaStateConnected) {
-            PRINTM(INFO, "Already Connected ..\n");
-            ret = SendDeauthentication(priv);
+        if ((dwrq->flags & IW_ENCODE_INDEX) > 1) {
+            i = (dwrq->flags & IW_ENCODE_INDEX) - 1;    /* convert to 0 based */
 
-            if (ret) {
-                goto setessid_ret;
+            PRINTM(INFO, "Request SSID by index = %d\n", i);
+
+            if (i > Adapter->NumInScanTable) {
+                /* Failed to find in table since index is > current max. */
+                i = -EINVAL;
             }
-        }
-
-        if (Adapter->Prescan) {
+        } else {
             SendSpecificSSIDScan(priv, &reqSSID);
+            i = FindSSIDInList(Adapter,
+                               &reqSSID, NULL, Wlan802_11Infrastructure);
         }
 
-        i = FindSSIDInList(Adapter, &reqSSID, NULL, Wlan802_11Infrastructure);
         if (i >= 0) {
             PRINTM(INFO, "SSID found in scan list ... associating...\n");
 
@@ -366,7 +366,7 @@ wlan_set_essid(struct net_device *dev, struct iw_request_info *info,
     } else {
         /* ad hoc mode */
         /* If the requested SSID matches current SSID return */
-        if (!SSIDcmp(&Adapter->CurBssParams.ssid, &reqSSID)) {
+        if (!SSIDcmp(&Adapter->CurBssParams.BSSDescriptor.Ssid, &reqSSID)) {
             ret = WLAN_STATUS_SUCCESS;
             goto setessid_ret;
         }
@@ -384,11 +384,19 @@ wlan_set_essid(struct net_device *dev, struct iw_request_info *info,
         }
         Adapter->AdhocLinkSensed = FALSE;
 
-        /* Scan for the network */
-        SendSpecificSSIDScan(priv, &reqSSID);
+        if ((dwrq->flags & IW_ENCODE_INDEX) > 1) {
+            i = (dwrq->flags & IW_ENCODE_INDEX) - 1;    /* 0 based */
+            if (i > Adapter->NumInScanTable) {
+                /* Failed to find in table since index is > current max. */
+                i = -EINVAL;
+            }
+        } else {
+            /* Scan for the network */
+            SendSpecificSSIDScan(priv, &reqSSID);
 
-        /* Search for the requested SSID in the scan table */
-        i = FindSSIDInList(Adapter, &reqSSID, NULL, Wlan802_11IBSS);
+            /* Search for the requested SSID in the scan table */
+            i = FindSSIDInList(Adapter, &reqSSID, NULL, Wlan802_11IBSS);
+        }
 
         if (i >= 0) {
             PRINTM(INFO, "SSID found at %d in List, so join\n", i);
@@ -425,6 +433,8 @@ wlan_set_essid(struct net_device *dev, struct iw_request_info *info,
 /**
  *  @brief Connect to the AP or Ad-hoc Network with specific bssid
  *
+ * NOTE: Scan should be issued by application before this function is called
+ *
  *  @param dev          A pointer to net_device structure
  *  @param info         A pointer to iw_request_info structure
  *  @param awrq         A pointer to iw_param structure
@@ -444,11 +454,6 @@ wlan_set_wap(struct net_device *dev, struct iw_request_info *info,
 
     ENTER();
 
-#ifdef MOTO_DBG
-    PRINTM(MOTO_DEBUG,
-           "SIOCSIWAP (wlan_set_wap) ioctl called by upper layer\n");
-#endif
-
     if (!Is_Command_Allowed(priv)) {
         PRINTM(MSG, "%s: not allowed\n", __FUNCTION__);
         return -EBUSY;
@@ -457,34 +462,32 @@ wlan_set_wap(struct net_device *dev, struct iw_request_info *info,
     /* Clear any past association response stored for application retrieval */
     Adapter->assocRspSize = 0;
 
-//Application should call scan before call this function.    
-
     if (awrq->sa_family != ARPHRD_ETHER)
         return -EINVAL;
 
-#ifdef MOTO_DBG
-    PRINTM(MOTO_MSG, "SIOCSIWAP: sa_data: %02x:%02x:%02x:%02x:%02x:%02x\n",
-           (u8) awrq->sa_data[0], (u8) awrq->sa_data[1],
-           (u8) awrq->sa_data[2], (u8) awrq->sa_data[3],
-           (u8) awrq->sa_data[4], (u8) awrq->sa_data[5]);
-#else
     PRINTM(INFO, "ASSOC: WAP: sa_data: %02x:%02x:%02x:%02x:%02x:%02x\n",
            (u8) awrq->sa_data[0], (u8) awrq->sa_data[1],
            (u8) awrq->sa_data[2], (u8) awrq->sa_data[3],
            (u8) awrq->sa_data[4], (u8) awrq->sa_data[5]);
-#endif
 
 #ifdef REASSOCIATION
     // cancel re-association timer if there's one
-    if (Adapter->TimerIsSet == TRUE) {
+    if (Adapter->ReassocTimerIsSet == TRUE) {
         CancelTimer(&Adapter->MrvDrvTimer);
-        Adapter->TimerIsSet = FALSE;
+        Adapter->ReassocTimerIsSet = FALSE;
     }
 #endif /* REASSOCIATION */
 
     if (!memcmp(bcast, awrq->sa_data, ETH_ALEN)) {
         i = FindBestSSIDInList(Adapter);
     } else {
+        if (Adapter->MediaConnectStatus == WlanMediaStateConnected) {
+            if (memcmp
+                (awrq->sa_data,
+                 Adapter->CurBssParams.BSSDescriptor.MacAddress,
+                 ETH_ALEN) == 0)
+                return WLAN_STATUS_SUCCESS;
+        }
         memcpy(reqBSSID, awrq->sa_data, ETH_ALEN);
 
         PRINTM(INFO, "ASSOC: WAP: Bssid = %02x:%02x:%02x:%02x:%02x:%02x\n",
@@ -496,23 +499,12 @@ wlan_set_wap(struct net_device *dev, struct iw_request_info *info,
     }
 
     if (i < 0) {
-#ifdef MOTO_DBG
-        PRINTM(ERROR, "ASSOC: WAP: MAC address not found in BSSID List\n");
-#else
         PRINTM(INFO, "ASSOC: WAP: MAC address not found in BSSID List\n");
-#endif
         return -ENETUNREACH;
     }
 
     if (Adapter->InfrastructureMode == Wlan802_11Infrastructure) {
-        if (Adapter->MediaConnectStatus == WlanMediaStateConnected) {
-            ret = SendDeauthentication(priv);
 
-            if (ret) {
-                LEAVE();
-                return ret;
-            }
-        }
         ret = wlan_associate(priv, &Adapter->ScanTable[i]);
 
         if (ret) {
@@ -541,10 +533,6 @@ wlan_set_wap(struct net_device *dev, struct iw_request_info *info,
         ret = -ENETDOWN;
     }
 
-#ifdef MOTO_DBG
-    PRINTM(MOTO_DEBUG, "SIOCSIWAP (wlan_set_wap) ioctl end\n");
-#endif
-
     LEAVE();
     return ret;
 }
@@ -560,24 +548,129 @@ wlan_set_wap(struct net_device *dev, struct iw_request_info *info,
 int
 wlan_associate(wlan_private * priv, BSSDescriptor_t * pBSSDesc)
 {
+    wlan_adapter *Adapter = priv->adapter;
+    int enableData = TRUE;
+    union iwreq_data wrqu;
     int ret;
+    IEEEtypes_AssocRsp_t *pAssocRsp;
+    u8 currentBSSID[MRVDRV_ETH_ADDR_LEN];
+    int reassocAttempt = FALSE;
+
+    ENTER();
+
+    /* Return error if the Adapter or table entry is not marked as infra */
+    if ((Adapter->InfrastructureMode != Wlan802_11Infrastructure)
+        || (pBSSDesc->InfrastructureMode != Wlan802_11Infrastructure)) {
+        LEAVE();
+        return -EINVAL;
+    }
+
+    memcpy(&currentBSSID,
+           &Adapter->CurBssParams.BSSDescriptor.MacAddress,
+           sizeof(currentBSSID));
+
+    if (Adapter->MediaConnectStatus == WlanMediaStateConnected) {
+        reassocAttempt = TRUE;
+        PRINTM(INFO, "Attempting reassociation, stopping wmm queues\n");
+        wmm_stop_queue(priv);
+    }
 
     /* Clear any past association response stored for application retrieval */
-    priv->adapter->assocRspSize = 0;
-
-    ret = PrepareAndSendCommand(priv, HostCmd_CMD_802_11_AUTHENTICATE,
-                                0, HostCmd_OPTION_WAITFORRSP,
-                                0, pBSSDesc->MacAddress);
-
-    if (ret) {
-        LEAVE();
-        return ret;
-    }
+    Adapter->assocRspSize = 0;
 
     ret = PrepareAndSendCommand(priv, HostCmd_CMD_802_11_ASSOCIATE,
                                 0, HostCmd_OPTION_WAITFORRSP, 0, pBSSDesc);
 
+    if (Adapter->wmm.enabled) {
+        /* Don't re-enable carrier until we get the WMM_GET_STATUS event */
+        enableData = FALSE;
+    } else {
+        /* Since WMM is not enabled, setup the queues with the defaults */
+        wmm_setup_queues(priv);
+    }
+
+    if (Adapter->MediaConnectStatus == WlanMediaStateConnected) {
+
+        if (reassocAttempt
+            && (memcmp(&currentBSSID,
+                       &Adapter->CurBssParams.BSSDescriptor.MacAddress,
+                       sizeof(currentBSSID)) == 0)) {
+
+            /* Reassociation attempt failed, still associated to old AP,
+             **   no need to wait for WMM notification to restart data
+             */
+            enableData = TRUE;
+        }
+        if (enableData) {
+            PRINTM(INFO, "Post association, re-enabling data flow\n");
+            wmm_start_queue(priv);
+            os_carrier_on(priv);
+            os_start_queue(priv);
+        }
+    } else {
+        PRINTM(INFO, "Post association, stopping data flow\n");
+        os_carrier_off(priv);
+        os_stop_queue(priv);
+    }
+
+    memcpy(wrqu.ap_addr.sa_data,
+           &Adapter->CurBssParams.BSSDescriptor.MacAddress, ETH_ALEN);
+    wrqu.ap_addr.sa_family = ARPHRD_ETHER;
+    wireless_send_event(priv->wlan_dev.netdev, SIOCGIWAP, &wrqu, NULL);
+
+    pAssocRsp = (IEEEtypes_AssocRsp_t *) Adapter->assocRspBuffer;
+
+    if (ret || pAssocRsp->StatusCode) {
+        ret = -ENETUNREACH;
+    }
+
     LEAVE();
+    return ret;
+}
+
+/**
+ *  @brief Associated to a specific indexed entry in the ScanTable
+ *
+ *  @param priv      A pointer to wlan_private structure
+ *  @param tableIdx  Index into the ScanTable to associate to, index parameter
+ *                   base value is 1.  No scanning is done before the 
+ *                   association attempt.
+ *
+ *  @return          WLAN_STATUS_SUCCESS-success, otherwise fail
+ */
+int
+wlan_associate_to_table_idx(wlan_private * priv, int tableIdx)
+{
+    wlan_adapter *Adapter = priv->adapter;
+    int ret;
+
+    ENTER();
+
+#ifdef REASSOCIATION
+    if (OS_ACQ_SEMAPHORE_BLOCK(&Adapter->ReassocSem)) {
+        PRINTM(ERROR, "Acquire semaphore error\n");
+        return -EBUSY;
+    }
+#endif
+
+    PRINTM(INFO, "ASSOC: iwpriv: Index = %d, NumInScanTable = %d\n",
+           tableIdx, Adapter->NumInScanTable);
+
+    /* Check index in table, subtract 1 if within range and call association
+     *   sub-function.  ScanTable[] is 0 based, parameter is 1 based to
+     *   conform with IW_ENCODE_INDEX flag parameter passing in iwconfig/iwlist
+     */
+    if (tableIdx && (tableIdx <= Adapter->NumInScanTable)) {
+        ret = wlan_associate(priv, &Adapter->ScanTable[tableIdx - 1]);
+    } else {
+        ret = -EINVAL;
+    }
+
+#ifdef REASSOCIATION
+    OS_REL_SEMAPHORE(&Adapter->ReassocSem);
+#endif
+    LEAVE();
+
     return ret;
 }
 
@@ -598,19 +691,9 @@ StartAdhocNetwork(wlan_private * priv, WLAN_802_11_SSID * AdhocSSID)
 
     Adapter->AdhocCreate = TRUE;
 
-    if (!Adapter->capInfo.ShortPreamble) {
-        PRINTM(INFO, "AdhocStart: Long Preamble\n");
-        Adapter->Preamble = HostCmd_TYPE_LONG_PREAMBLE;
-    } else {
-        PRINTM(INFO, "AdhocStart: Short Preamble\n");
-        Adapter->Preamble = HostCmd_TYPE_SHORT_PREAMBLE;
-    }
-
-    SetRadioControl(priv);
-
     PRINTM(INFO, "Adhoc Channel = %d\n", Adapter->AdhocChannel);
     PRINTM(INFO, "CurBssParams.channel = %d\n",
-           Adapter->CurBssParams.channel);
+           Adapter->CurBssParams.BSSDescriptor.Channel);
     PRINTM(INFO, "CurBssParams.band = %d\n", Adapter->CurBssParams.band);
 
     ret = PrepareAndSendCommand(priv, HostCmd_CMD_802_11_AD_HOC_START,
@@ -638,16 +721,17 @@ JoinAdhocNetwork(wlan_private * priv, BSSDescriptor_t * pBSSDesc)
     ENTER();
 
     PRINTM(INFO, "JoinAdhocNetwork: CurBss.ssid =%s\n",
-           Adapter->CurBssParams.ssid.Ssid);
+           Adapter->CurBssParams.BSSDescriptor.Ssid.Ssid);
     PRINTM(INFO, "JoinAdhocNetwork: CurBss.ssid_len =%u\n",
-           Adapter->CurBssParams.ssid.SsidLength);
+           Adapter->CurBssParams.BSSDescriptor.Ssid.SsidLength);
     PRINTM(INFO, "JoinAdhocNetwork: ssid =%s\n", pBSSDesc->Ssid.Ssid);
     PRINTM(INFO, "JoinAdhocNetwork: ssid len =%u\n",
            pBSSDesc->Ssid.SsidLength);
 
     /* check if the requested SSID is already joined */
-    if (Adapter->CurBssParams.ssid.SsidLength
-        && !SSIDcmp(&pBSSDesc->Ssid, &Adapter->CurBssParams.ssid)
+    if (Adapter->CurBssParams.BSSDescriptor.Ssid.SsidLength
+        && !SSIDcmp(&pBSSDesc->Ssid,
+                    &Adapter->CurBssParams.BSSDescriptor.Ssid)
         && (Adapter->CurBssParams.BSSDescriptor.InfrastructureMode ==
             Wlan802_11IBSS)) {
 
@@ -658,20 +742,8 @@ JoinAdhocNetwork(wlan_private * priv, BSSDescriptor_t * pBSSDesc)
         return WLAN_STATUS_FAILURE;
     }
 
-    /*Use ShortPreamble only when both creator and card supports
-       short preamble */
-    if (!pBSSDesc->Cap.ShortPreamble || !Adapter->capInfo.ShortPreamble) {
-        PRINTM(INFO, "AdhocJoin: Long Preamble\n");
-        Adapter->Preamble = HostCmd_TYPE_LONG_PREAMBLE;
-    } else {
-        PRINTM(INFO, "AdhocJoin: Short Preamble\n");
-        Adapter->Preamble = HostCmd_TYPE_SHORT_PREAMBLE;
-    }
-
-    SetRadioControl(priv);
-
     PRINTM(INFO, "CurBssParams.channel = %d\n",
-           Adapter->CurBssParams.channel);
+           Adapter->CurBssParams.BSSDescriptor.Channel);
     PRINTM(INFO, "CurBssParams.band = %c\n", Adapter->CurBssParams.band);
 
     Adapter->AdhocCreate = FALSE;
@@ -710,12 +782,6 @@ StopAdhocNetwork(wlan_private * priv)
 int
 SendDeauthentication(wlan_private * priv)
 {
-    wlan_adapter *Adapter = priv->adapter;
-
-    /* If a reassociation attempt is in progress, do not send the deauth */
-    if (Adapter->reassocAttempt) {
-        return WLAN_STATUS_SUCCESS;
-    }
     return PrepareAndSendCommand(priv, HostCmd_CMD_802_11_DEAUTHENTICATE,
                                  0, HostCmd_OPTION_WAITFORRSP, 0, NULL);
 }
@@ -810,9 +876,10 @@ wlanidle_on(wlan_private * priv)
     if (Adapter->MediaConnectStatus == WlanMediaStateConnected) {
         if (Adapter->InfrastructureMode == Wlan802_11Infrastructure) {
             PRINTM(INFO, "Previous SSID = %s\n", Adapter->PreviousSSID.Ssid);
-            memmove(&Adapter->PreviousSSID,
-                    &Adapter->CurBssParams.ssid, sizeof(WLAN_802_11_SSID));
-            wlan_send_deauth(priv);
+            memcpy(&Adapter->PreviousSSID,
+                   &Adapter->CurBssParams.BSSDescriptor.Ssid,
+                   sizeof(WLAN_802_11_SSID));
+            SendDeauthentication(priv);
 
         } else if (Adapter->InfrastructureMode == Wlan802_11IBSS) {
             ret = StopAdhocNetwork(priv);
@@ -820,9 +887,9 @@ wlanidle_on(wlan_private * priv)
 
     }
 #ifdef REASSOCIATION
-    if (Adapter->TimerIsSet == TRUE) {
+    if (Adapter->ReassocTimerIsSet == TRUE) {
         CancelTimer(&Adapter->MrvDrvTimer);
-        Adapter->TimerIsSet = FALSE;
+        Adapter->ReassocTimerIsSet = FALSE;
     }
 #endif /* REASSOCIATION */
 
@@ -835,15 +902,16 @@ wlanidle_on(wlan_private * priv)
 /**
  *  @brief Append a generic IE as a passthrough TLV to a TLV buffer.
  *
- *  It is called from the network join command prep. routine. If a generic
- *    IE buffer has been setup by the application/supplication, the routine
- *    appends the buffer as a passthrough TLV type to the request.
+ *  This function is called from the network join command prep. routine. 
+ *    If the IE buffer has been setup by the application, this routine appends
+ *    the buffer as a passthrough TLV type to the request.
  *
  *  @param priv     A pointer to wlan_private structure
  *  @param ppBuffer pointer to command buffer pointer
+ *
  *  @return         bytes added to the buffer
  */
-int
+static int
 wlan_cmd_append_generic_ie(wlan_private * priv, u8 ** ppBuffer)
 {
     wlan_adapter *Adapter = priv->adapter;
@@ -891,15 +959,16 @@ wlan_cmd_append_generic_ie(wlan_private * priv, u8 ** ppBuffer)
 /**
  *  @brief Append any application provided Marvell TLVs to a TLV buffer.
  *
- *  It is called from the network join command prep. routine. If the Marvell
- *    TLV buffer has been setup by the application/supplication, the routine
+ *  This function is called from the network join command prep. routine. 
+ *    If the Marvell TLV buffer has been setup by the application, this routine
  *    appends the buffer to the request.
  *
  *  @param priv     A pointer to wlan_private structure
  *  @param ppBuffer pointer to command buffer pointer
+ *
  *  @return         bytes added to the buffer
  */
-int
+static int
 wlan_cmd_append_marvell_tlv(wlan_private * priv, u8 ** ppBuffer)
 {
     wlan_adapter *Adapter = priv->adapter;
@@ -915,19 +984,20 @@ wlan_cmd_append_marvell_tlv(wlan_private * priv, u8 ** ppBuffer)
      * If there is a Marvell TLV buffer setup, append it to the return
      *   parameter buffer pointer.
      */
-    if (Adapter->mrvlTlvBufferLen) {
-        PRINTM(INFO, "append tlv %d to %p\n", Adapter->mrvlTlvBufferLen,
-               *ppBuffer);
+    if (Adapter->mrvlAssocTlvBufferLen) {
+        PRINTM(INFO, "append tlv %d to %p\n",
+               Adapter->mrvlAssocTlvBufferLen, *ppBuffer);
 
         /* Copy the TLV buffer to the output buffer, advance pointer */
-        memcpy(*ppBuffer, Adapter->mrvlTlvBuffer, Adapter->mrvlTlvBufferLen);
+        memcpy(*ppBuffer,
+               Adapter->mrvlAssocTlvBuffer, Adapter->mrvlAssocTlvBufferLen);
 
         /* Increment the return size and the return buffer pointer param */
-        *ppBuffer += Adapter->mrvlTlvBufferLen;
-        retLen += Adapter->mrvlTlvBufferLen;
+        *ppBuffer += Adapter->mrvlAssocTlvBufferLen;
+        retLen += Adapter->mrvlAssocTlvBufferLen;
 
         /* Reset the Marvell TLV buffer */
-        Adapter->mrvlTlvBufferLen = 0;
+        Adapter->mrvlAssocTlvBufferLen = 0;
     }
 
     /* return the length appended to the buffer */
@@ -935,28 +1005,30 @@ wlan_cmd_append_marvell_tlv(wlan_private * priv, u8 ** ppBuffer)
 }
 
 /**
- *  @brief Append the reassociation TLV to the TLV buffer if appropriate.
+ *  @brief Append TSF tracking info from the scan table for the target AP
  *
- *  It is called from the network join command prep. routine.
- *    If a reassociation attempt is in progress (determined from flag in
- *    the wlan_priv structure), a REASSOCAP TLV is added to the association
- *    request.
+ *  This function is called from the network join command prep. routine. 
+ *    The TSF table TSF sent to the firmware contians two TSF values:
+ *      - the TSF of the target AP from its previous beacon/probe response
+ *      - the TSF timestamp of our local MAC at the time we observed the
+ *        beacon/probe response.
  *
- *  This causes the firmware to send a reassociation request instead of an
- *    association request.  The wlan_priv structure also contains the current
- *    AP BSSID to be passed in the TLV and eventually in the management
- *    frame to the new AP.
+ *    The firmware uses the timestamp values to set an initial TSF value
+ *      in the MAC for the new association after a reassociation attempt.
  *
  *  @param priv     A pointer to wlan_private structure
- *  @param ppBuffer pointer to command buffer pointer
+ *  @param ppBuffer A pointer to command buffer pointer
+ *  @param pBSSDesc A pointer to the BSS Descriptor from the scan table of
+ *                  the AP we are trying to join
+ *
  *  @return         bytes added to the buffer
  */
-int
-wlan_cmd_append_reassoc_tlv(wlan_private * priv, u8 ** ppBuffer)
+static int
+wlan_cmd_append_tsf_tlv(wlan_private * priv, u8 ** ppBuffer,
+                        BSSDescriptor_t * pBSSDesc)
 {
-    wlan_adapter *Adapter = priv->adapter;
-    int retLen = 0;
-    MrvlIEtypes_ReassocAp_t reassocIe;
+    MrvlIEtypes_TsfTimestamp_t tsfTlv;
+    u64 tsfVal;
 
     /* Null Checks */
     if (ppBuffer == 0)
@@ -964,78 +1036,31 @@ wlan_cmd_append_reassoc_tlv(wlan_private * priv, u8 ** ppBuffer)
     if (*ppBuffer == 0)
         return 0;
 
-    /*
-     * If the reassocAttempt flag is set in the adapter structure, include
-     *   the appropriate TLV in the association buffer pointed to by ppBuffer
-     */
-    if (Adapter->reassocAttempt) {
-        PRINTM(INFO, "Reassoc: append current AP: %#x:%#x:%#x:%#x:%#x:%#x\n",
-               Adapter->reassocCurrentAp[0], Adapter->reassocCurrentAp[1],
-               Adapter->reassocCurrentAp[2], Adapter->reassocCurrentAp[3],
-               Adapter->reassocCurrentAp[4], Adapter->reassocCurrentAp[5]);
+    tsfTlv.Header.Type = wlan_cpu_to_le16(TLV_TYPE_TSFTIMESTAMP);
+    tsfTlv.Header.Len = wlan_cpu_to_le16(2 * sizeof(tsfVal));
 
-        /* Setup a copy of the reassocIe on the stack */
-        reassocIe.Header.Type = wlan_cpu_to_le16(TLV_TYPE_REASSOCAP);
-        reassocIe.Header.Len
-            = wlan_cpu_to_le16(sizeof(MrvlIEtypes_ReassocAp_t)
-                               - sizeof(MrvlIEtypesHeader_t));
+    memcpy(*ppBuffer, &tsfTlv, sizeof(tsfTlv.Header));
+    *ppBuffer += sizeof(tsfTlv.Header);
 
-        memcpy(&reassocIe.currentAp,
-               &Adapter->reassocCurrentAp, sizeof(reassocIe.currentAp));
+    /* TSF timestamp from the firmware TSF when the bcn/prb rsp was received */
+    tsfVal = wlan_cpu_to_le64(pBSSDesc->networkTSF);
+    memcpy(*ppBuffer, &tsfVal, sizeof(tsfVal));
+    *ppBuffer += sizeof(tsfVal);
 
-        /* Copy the stack reassocIe to the buffer pointer parameter */
-        memcpy(*ppBuffer, &reassocIe, sizeof(reassocIe));
+    memcpy(&tsfVal, pBSSDesc->TimeStamp, sizeof(tsfVal));
 
-        /* Set the return length */
-        retLen = sizeof(reassocIe);
+    PRINTM(INFO, "ASSOC: TSF offset calc: %016llx - %016llx\n",
+           tsfVal, pBSSDesc->networkTSF);
 
-        /* Advance passed buffer pointer */
-        *ppBuffer += sizeof(reassocIe);
+    tsfVal = wlan_cpu_to_le64(tsfVal);
+    memcpy(*ppBuffer, &tsfVal, sizeof(tsfVal));
+    *ppBuffer += sizeof(tsfVal);
 
-        /* Reset the reassocAttempt flag, only valid for a single attempt */
-        Adapter->reassocAttempt = FALSE;
-
-        /* Reset the reassociation AP address */
-        memset(&Adapter->reassocCurrentAp,
-               0x00, sizeof(Adapter->reassocCurrentAp));
-    }
-
-    /* return the length appended to the buffer */
-    return retLen;
+    return (sizeof(tsfTlv.Header) + (2 * sizeof(tsfVal)));
 }
 
 /**
- *  @brief This function prepares command of authenticate.
- *
- *  @param priv      A pointer to wlan_private structure
- *  @param cmd       A pointer to HostCmd_DS_COMMAND structure
- *  @param pdata_buf Void cast of pointer to a BSSID to authenticate with
- *
- *  @return         WLAN_STATUS_SUCCESS or WLAN_STATUS_FAILURE
- */
-int
-wlan_cmd_802_11_authenticate(wlan_private * priv,
-                             HostCmd_DS_COMMAND * cmd, void *pdata_buf)
-{
-    wlan_adapter *Adapter = priv->adapter;
-    HostCmd_DS_802_11_AUTHENTICATE *pAuthenticate = &cmd->params.auth;
-    u8 *bssid = (u8 *) pdata_buf;
-
-    cmd->Command = wlan_cpu_to_le16(HostCmd_CMD_802_11_AUTHENTICATE);
-    cmd->Size = wlan_cpu_to_le16(sizeof(HostCmd_DS_802_11_AUTHENTICATE)
-                                 + S_DS_GEN);
-
-    pAuthenticate->AuthType = Adapter->SecInfo.AuthenticationMode;
-    memcpy(pAuthenticate->MacAddr, bssid, MRVDRV_ETH_ADDR_LEN);
-
-    PRINTM(INFO, "AUTH_CMD: Bssid is : %x:%x:%x:%x:%x:%x\n",
-           bssid[0], bssid[1], bssid[2], bssid[3], bssid[4], bssid[5]);
-
-    return WLAN_STATUS_SUCCESS;
-}
-
-/**
- *  @brief This function prepares command of deauthenticat.
+ *  @brief This function prepares command of deauthenticate.
  *
  *  @param priv     A pointer to wlan_private structure
  *  @param cmd      A pointer to HostCmd_DS_COMMAND structure
@@ -1054,7 +1079,8 @@ wlan_cmd_802_11_deauthenticate(wlan_private * priv, HostCmd_DS_COMMAND * cmd)
         wlan_cpu_to_le16(sizeof(HostCmd_DS_802_11_DEAUTHENTICATE) + S_DS_GEN);
 
     /* set AP MAC address */
-    memmove(dauth->MacAddr, Adapter->CurBssParams.bssid, MRVDRV_ETH_ADDR_LEN);
+    memcpy(dauth->MacAddr,
+           &Adapter->CurBssParams.BSSDescriptor.MacAddress, ETH_ALEN);
 
     /* Reason code 3 = Station is leaving */
 #define REASON_CODE_STA_LEAVING 3
@@ -1080,25 +1106,21 @@ wlan_cmd_802_11_associate(wlan_private * priv,
     HostCmd_DS_802_11_ASSOCIATE *pAsso = &cmd->params.associate;
     int ret = WLAN_STATUS_SUCCESS;
     BSSDescriptor_t *pBSSDesc;
-    u8 *card_rates;
+    WLAN_802_11_RATES rates;
+    int ratesSize;
     u8 *pos;
-    int card_rates_size;
     u16 TmpCap;
-    MrvlIEtypes_SsIdParamSet_t *ssid;
-    MrvlIEtypes_PhyParamSet_t *phy;
-    MrvlIEtypes_SsParamSet_t *ss;
-    MrvlIEtypes_RatesParamSet_t *rates;
-    MrvlIEtypes_RsnParamSet_t *rsn;
+    MrvlIEtypes_SsIdParamSet_t *pSsidTlv;
+    MrvlIEtypes_PhyParamSet_t *pPhyTlv;
+    MrvlIEtypes_SsParamSet_t *pSsTlv;
+    MrvlIEtypes_RatesParamSet_t *pRatesTlv;
+    MrvlIEtypes_AuthType_t *pAuthTlv;
+    MrvlIEtypes_RsnParamSet_t *pRsnTlv;
 
     ENTER();
 
     pBSSDesc = (BSSDescriptor_t *) pdata_buf;
     pos = (u8 *) pAsso;
-
-    if (!Adapter) {
-        ret = WLAN_STATUS_FAILURE;
-        goto done;
-    }
 
     cmd->Command = wlan_cpu_to_le16(HostCmd_CMD_802_11_ASSOCIATE);
 
@@ -1109,116 +1131,93 @@ wlan_cmd_802_11_associate(wlan_private * priv,
            pBSSDesc->MacAddress, sizeof(pAsso->PeerStaAddr));
     pos += sizeof(pAsso->PeerStaAddr);
 
-    /* set preamble to firmware */
-    if (Adapter->capInfo.ShortPreamble && pBSSDesc->Cap.ShortPreamble) {
-        Adapter->Preamble = HostCmd_TYPE_SHORT_PREAMBLE;
-    } else {
-        Adapter->Preamble = HostCmd_TYPE_LONG_PREAMBLE;
-    }
-
-    SetRadioControl(priv);
-
     /* set the listen interval */
     pAsso->ListenInterval = wlan_cpu_to_le16(Adapter->ListenInterval);
 
     pos += sizeof(pAsso->CapInfo);
     pos += sizeof(pAsso->ListenInterval);
-    pos += sizeof(pAsso->BcnPeriod);
-    pos += sizeof(pAsso->DtimPeriod);
+    pos += sizeof(pAsso->Reserved1);
 
-    ssid = (MrvlIEtypes_SsIdParamSet_t *) pos;
-    ssid->Header.Type = wlan_cpu_to_le16(TLV_TYPE_SSID);
-    ssid->Header.Len = pBSSDesc->Ssid.SsidLength;
-    memcpy(ssid->SsId, pBSSDesc->Ssid.Ssid, ssid->Header.Len);
-    pos += sizeof(ssid->Header) + ssid->Header.Len;
-    ssid->Header.Len = wlan_cpu_to_le16(ssid->Header.Len);
+    pSsidTlv = (MrvlIEtypes_SsIdParamSet_t *) pos;
+    pSsidTlv->Header.Type = wlan_cpu_to_le16(TLV_TYPE_SSID);
+    pSsidTlv->Header.Len = pBSSDesc->Ssid.SsidLength;
+    memcpy(pSsidTlv->SsId, pBSSDesc->Ssid.Ssid, pSsidTlv->Header.Len);
+    pos += sizeof(pSsidTlv->Header) + pSsidTlv->Header.Len;
+    pSsidTlv->Header.Len = wlan_cpu_to_le16(pSsidTlv->Header.Len);
 
-    phy = (MrvlIEtypes_PhyParamSet_t *) pos;
-    phy->Header.Type = wlan_cpu_to_le16(TLV_TYPE_PHY_DS);
-    phy->Header.Len = sizeof(phy->fh_ds.DsParamSet);
-    memcpy(&phy->fh_ds.DsParamSet,
+    pPhyTlv = (MrvlIEtypes_PhyParamSet_t *) pos;
+    pPhyTlv->Header.Type = wlan_cpu_to_le16(TLV_TYPE_PHY_DS);
+    pPhyTlv->Header.Len = sizeof(pPhyTlv->fh_ds.DsParamSet);
+    memcpy(&pPhyTlv->fh_ds.DsParamSet,
            &pBSSDesc->PhyParamSet.DsParamSet.CurrentChan,
-           sizeof(phy->fh_ds.DsParamSet));
-    pos += sizeof(phy->Header) + phy->Header.Len;
-    phy->Header.Len = wlan_cpu_to_le16(phy->Header.Len);
+           sizeof(pPhyTlv->fh_ds.DsParamSet));
+    pos += sizeof(pPhyTlv->Header) + pPhyTlv->Header.Len;
+    pPhyTlv->Header.Len = wlan_cpu_to_le16(pPhyTlv->Header.Len);
 
-    ss = (MrvlIEtypes_SsParamSet_t *) pos;
-    ss->Header.Type = wlan_cpu_to_le16(TLV_TYPE_CF);
-    ss->Header.Len = sizeof(ss->cf_ibss.CfParamSet);
-    pos += sizeof(ss->Header) + ss->Header.Len;
-    ss->Header.Len = wlan_cpu_to_le16(ss->Header.Len);
+    pSsTlv = (MrvlIEtypes_SsParamSet_t *) pos;
+    pSsTlv->Header.Type = wlan_cpu_to_le16(TLV_TYPE_CF);
+    pSsTlv->Header.Len = sizeof(pSsTlv->cf_ibss.CfParamSet);
+    pos += sizeof(pSsTlv->Header) + pSsTlv->Header.Len;
+    pSsTlv->Header.Len = wlan_cpu_to_le16(pSsTlv->Header.Len);
 
-    rates = (MrvlIEtypes_RatesParamSet_t *) pos;
-    rates->Header.Type = wlan_cpu_to_le16(TLV_TYPE_RATES);
-
-    memcpy(&rates->Rates, &pBSSDesc->SupportedRates, WLAN_SUPPORTED_RATES);
-
-    card_rates = SupportedRates;
-    card_rates_size = sizeof(SupportedRates);
-
-    if (get_common_rates(Adapter, rates->Rates, WLAN_SUPPORTED_RATES,
-                         card_rates, card_rates_size)) {
+    /* Get the common rates supported between the driver and the BSS Desc */
+    if (setup_rates_from_bssdesc(Adapter, pBSSDesc, rates, &ratesSize)) {
         ret = WLAN_STATUS_FAILURE;
         goto done;
     }
 
-    rates->Header.Len = MIN(strlen(rates->Rates), WLAN_SUPPORTED_RATES);
-    Adapter->CurBssParams.NumOfRates = rates->Header.Len;
+    /* Setup the Rates TLV in the association command */
+    pRatesTlv = (MrvlIEtypes_RatesParamSet_t *) pos;
+    pRatesTlv->Header.Type = wlan_cpu_to_le16(TLV_TYPE_RATES);
+    pRatesTlv->Header.Len = wlan_cpu_to_le16(ratesSize);
+    memcpy(pRatesTlv->Rates, rates, ratesSize);
+    pos += sizeof(pRatesTlv->Header) + ratesSize;
+    PRINTM(INFO, "ASSOC_CMD: Rates size = %d\n", ratesSize);
 
-    pos += sizeof(rates->Header) + rates->Header.Len;
-    rates->Header.Len = wlan_cpu_to_le16(rates->Header.Len);
+    /* Add the Authentication type to be used for Auth frames if needed */
+    pAuthTlv = (MrvlIEtypes_AuthType_t *) pos;
+    pAuthTlv->Header.Type = wlan_cpu_to_le16(TLV_TYPE_AUTH_TYPE);
+    pAuthTlv->Header.Len = sizeof(pAuthTlv->AuthType);
+    pAuthTlv->AuthType = Adapter->SecInfo.AuthenticationMode;
+    pos += sizeof(pAuthTlv->Header) + pAuthTlv->Header.Len;
+    pAuthTlv->Header.Len = wlan_cpu_to_le16(pAuthTlv->Header.Len);
 
-    if (Adapter->SecInfo.WPAEnabled || Adapter->SecInfo.WPA2Enabled) {
-        rsn = (MrvlIEtypes_RsnParamSet_t *) pos;
-        rsn->Header.Type = (u16) Adapter->Wpa_ie[0];    /* WPA_IE or WPA2_IE */
-        rsn->Header.Type = rsn->Header.Type & 0x00FF;
-        rsn->Header.Type = wlan_cpu_to_le16(rsn->Header.Type);
-        rsn->Header.Len = (u16) Adapter->Wpa_ie[1];
-        rsn->Header.Len = rsn->Header.Len & 0x00FF;
-        if (rsn->Header.Len <= (sizeof(Adapter->Wpa_ie) - 2)) {
-            memcpy(rsn->RsnIE, &Adapter->Wpa_ie[2], rsn->Header.Len);
-        } else {
-            ret = WLAN_STATUS_FAILURE;
-            goto done;
+    if (!Adapter->wps.SessionEnable) {
+        if (Adapter->SecInfo.WPAEnabled || Adapter->SecInfo.WPA2Enabled) {
+            pRsnTlv = (MrvlIEtypes_RsnParamSet_t *) pos;
+            pRsnTlv->Header.Type = (u16) Adapter->Wpa_ie[0];    /* WPA_IE or WPA2_IE */
+            pRsnTlv->Header.Type = pRsnTlv->Header.Type & 0x00FF;
+            pRsnTlv->Header.Type = wlan_cpu_to_le16(pRsnTlv->Header.Type);
+            pRsnTlv->Header.Len = (u16) Adapter->Wpa_ie[1];
+            pRsnTlv->Header.Len = pRsnTlv->Header.Len & 0x00FF;
+            if (pRsnTlv->Header.Len <= (sizeof(Adapter->Wpa_ie) - 2)) {
+                memcpy(pRsnTlv->RsnIE, &Adapter->Wpa_ie[2],
+                       pRsnTlv->Header.Len);
+            } else {
+                ret = WLAN_STATUS_FAILURE;
+                goto done;
+            }
+
+            HEXDUMP("ASSOC_CMD: RSN IE", (u8 *) pRsnTlv,
+                    sizeof(pRsnTlv->Header) + pRsnTlv->Header.Len);
+            pos += sizeof(pRsnTlv->Header) + pRsnTlv->Header.Len;
+            pRsnTlv->Header.Len = wlan_cpu_to_le16(pRsnTlv->Header.Len);
         }
-        HEXDUMP("ASSOC_CMD: RSN IE", (u8 *) rsn,
-                sizeof(rsn->Header) + rsn->Header.Len);
-        pos += sizeof(rsn->Header) + rsn->Header.Len;
-        rsn->Header.Len = wlan_cpu_to_le16(rsn->Header.Len);
     }
 
     wlan_wmm_process_association_req(priv, &pos, &pBSSDesc->wmmIE);
-
-    wlan_cmd_append_reassoc_tlv(priv, &pos);
 
     wlan_cmd_append_generic_ie(priv, &pos);
 
     wlan_cmd_append_marvell_tlv(priv, &pos);
 
-    /* update CurBssParams */
-    Adapter->CurBssParams.channel =
-        (pBSSDesc->PhyParamSet.DsParamSet.CurrentChan);
-
-    /* Copy the infra. association rates into Current BSS state structure */
-    memcpy(&Adapter->CurBssParams.DataRates, &rates->Rates,
-           MIN(sizeof(Adapter->CurBssParams.DataRates),
-               wlan_le16_to_cpu(rates->Header.Len)));
-
-    PRINTM(INFO, "ASSOC_CMD: rates->Header.Len = %d\n",
-           wlan_le16_to_cpu(rates->Header.Len));
-
-    /* set IBSS field */
-    if (pBSSDesc->InfrastructureMode == Wlan802_11Infrastructure) {
-#define CAPINFO_ESS_MODE 1
-        pAsso->CapInfo.Ess = CAPINFO_ESS_MODE;
-    }
+    wlan_cmd_append_tsf_tlv(priv, &pos, pBSSDesc);
 
     if (wlan_create_dnld_countryinfo_11d(priv, 0)) {
         PRINTM(INFO, "Dnld_countryinfo_11d failed\n");
         ret = WLAN_STATUS_FAILURE;
         goto done;
     }
-
     if (wlan_parse_dnld_countryinfo_11d(priv)) {
         ret = WLAN_STATUS_FAILURE;
         goto done;
@@ -1274,33 +1273,33 @@ wlan_cmd_802_11_ad_hoc_start(wlan_private * priv,
     /*
      * Fill in the parameters for 2 data structures:
      *   1. HostCmd_DS_802_11_AD_HOC_START Command
-     *   2. Adapter->ScanTable[i]
+     *   2. pBSSDesc
      *
      * Driver will fill up SSID, BSSType,IBSS param, Physical Param,
      *   probe delay, and Cap info.
      *
-     * Firmware will fill up beacon period, DTIM, Basic rates
+     * Firmware will fill up beacon period, Basic rates
      *   and operational rates.
      */
 
     memset(adhs->SSID, 0, MRVDRV_MAX_SSID_LENGTH);
 
-    memcpy(adhs->SSID, ((PWLAN_802_11_SSID) pssid)->Ssid,
-           ((PWLAN_802_11_SSID) pssid)->SsidLength);
+    memcpy(adhs->SSID, ((WLAN_802_11_SSID *) pssid)->Ssid,
+           ((WLAN_802_11_SSID *) pssid)->SsidLength);
 
     PRINTM(INFO, "ADHOC_S_CMD: SSID = %s\n", adhs->SSID);
 
     memset(pBSSDesc->Ssid.Ssid, 0, MRVDRV_MAX_SSID_LENGTH);
     memcpy(pBSSDesc->Ssid.Ssid,
-           ((PWLAN_802_11_SSID) pssid)->Ssid,
-           ((PWLAN_802_11_SSID) pssid)->SsidLength);
+           ((WLAN_802_11_SSID *) pssid)->Ssid,
+           ((WLAN_802_11_SSID *) pssid)->SsidLength);
 
-    pBSSDesc->Ssid.SsidLength = ((PWLAN_802_11_SSID) pssid)->SsidLength;
+    pBSSDesc->Ssid.SsidLength = ((WLAN_802_11_SSID *) pssid)->SsidLength;
 
     /* set the BSS type */
     adhs->BSSType = HostCmd_BSS_TYPE_IBSS;
     pBSSDesc->InfrastructureMode = Wlan802_11IBSS;
-    adhs->BeaconPeriod = Adapter->BeaconPeriod;
+    adhs->BeaconPeriod = wlan_cpu_to_le16(Adapter->BeaconPeriod);
     pBSSDesc->BeaconPeriod = Adapter->BeaconPeriod;
 
     /* set Physical param set */
@@ -1315,7 +1314,7 @@ wlan_cmd_802_11_ad_hoc_start(wlan_private * priv,
     PRINTM(INFO, "ADHOC_S_CMD: Creating ADHOC on Channel %d\n",
            Adapter->AdhocChannel);
 
-    Adapter->CurBssParams.channel = Adapter->AdhocChannel;
+    Adapter->CurBssParams.BSSDescriptor.Channel = Adapter->AdhocChannel;
 
     pBSSDesc->Channel = Adapter->AdhocChannel;
     adhs->PhyParamSet.DsParamSet.CurrentChan = Adapter->AdhocChannel;
@@ -1331,7 +1330,8 @@ wlan_cmd_802_11_ad_hoc_start(wlan_private * priv,
 
     adhs->SsParamSet.IbssParamSet.ElementId = IBSS_PARA_IE_ID;
     adhs->SsParamSet.IbssParamSet.Len = IBSS_PARA_IE_LEN;
-    adhs->SsParamSet.IbssParamSet.AtimWindow = Adapter->AtimWindow;
+    adhs->SsParamSet.IbssParamSet.AtimWindow
+        = wlan_cpu_to_le16(Adapter->AtimWindow);
     pBSSDesc->ATIMWindow = Adapter->AtimWindow;
     memcpy(&pBSSDesc->SsParamSet,
            &adhs->SsParamSet, sizeof(IEEEtypes_SsParamSet_t));
@@ -1341,7 +1341,7 @@ wlan_cmd_802_11_ad_hoc_start(wlan_private * priv,
     adhs->Cap.Ibss = 1;
     pBSSDesc->Cap.Ibss = 1;
 
-    /* set up privacy in Adapter->ScanTable[i] */
+    /* set up privacy in pBSSDesc */
     if (Adapter->SecInfo.WEPStatus == Wlan802_11WEPEnabled
         || Adapter->AdhocAESEnabled) {
 
@@ -1360,6 +1360,18 @@ wlan_cmd_802_11_ad_hoc_start(wlan_private * priv,
     if (Adapter->adhoc_grate_enabled == TRUE) {
         memcpy(adhs->DataRate, AdhocRates_G,
                MIN(sizeof(adhs->DataRate), sizeof(AdhocRates_G)));
+        if (Adapter->
+            CurrentPacketFilter & HostCmd_ACT_MAC_ADHOC_G_PROTECTION_ON) {
+            ret =
+                PrepareAndSendCommand(priv, HostCmd_CMD_MAC_CONTROL, 0,
+                                      HostCmd_OPTION_WAITFORRSP, 0,
+                                      &Adapter->CurrentPacketFilter);
+            if (ret) {
+                PRINTM(INFO, "ADHOC_S_CMD: G Protection config failed\n");
+                ret = WLAN_STATUS_FAILURE;
+                goto done;
+            }
+        }
     } else {
         memcpy(adhs->DataRate, AdhocRates_B,
                MIN(sizeof(adhs->DataRate), sizeof(AdhocRates_B)));
@@ -1388,10 +1400,6 @@ wlan_cmd_802_11_ad_hoc_start(wlan_private * priv,
 
     cmd->Size = wlan_cpu_to_le16(sizeof(HostCmd_DS_802_11_AD_HOC_START)
                                  + S_DS_GEN + cmdAppendSize);
-
-    adhs->BeaconPeriod = wlan_cpu_to_le16(adhs->BeaconPeriod);
-    adhs->SsParamSet.IbssParamSet.AtimWindow =
-        wlan_cpu_to_le16(adhs->SsParamSet.IbssParamSet.AtimWindow);
 
     memcpy(&TmpCap, &adhs->Cap, sizeof(u16));
     TmpCap = wlan_cpu_to_le16(TmpCap);
@@ -1438,20 +1446,36 @@ wlan_cmd_802_11_ad_hoc_join(wlan_private * priv,
     BSSDescriptor_t *pBSSDesc = (BSSDescriptor_t *) pdata_buf;
     int cmdAppendSize = 0;
     int ret = WLAN_STATUS_SUCCESS;
-    u8 *card_rates;
-    int card_rates_size;
+    WLAN_802_11_RATES rates;
+    int ratesSize;
     u16 TmpCap;
-    int i;
+    u16 CurrentPacketFilter;
 
     ENTER();
 
+#define USE_G_PROTECTION	0x02
+    if (pBSSDesc->ERPFlags & USE_G_PROTECTION) {
+        CurrentPacketFilter =
+            Adapter->
+            CurrentPacketFilter | HostCmd_ACT_MAC_ADHOC_G_PROTECTION_ON;
+        ret =
+            PrepareAndSendCommand(priv, HostCmd_CMD_MAC_CONTROL, 0,
+                                  HostCmd_OPTION_WAITFORRSP, 0,
+                                  &CurrentPacketFilter);
+        if (ret) {
+            PRINTM(INFO, "ADHOC_S_CMD: G Protection config failed\n");
+            ret = WLAN_STATUS_FAILURE;
+            goto done;
+        }
+    }
     Adapter->pAttemptedBSSDesc = pBSSDesc;
 
     cmd->Command = wlan_cpu_to_le16(HostCmd_CMD_802_11_AD_HOC_JOIN);
 
     pAdHocJoin->BssDescriptor.BSSType = HostCmd_BSS_TYPE_IBSS;
 
-    pAdHocJoin->BssDescriptor.BeaconPeriod = pBSSDesc->BeaconPeriod;
+    pAdHocJoin->BssDescriptor.BeaconPeriod
+        = wlan_cpu_to_le16(pBSSDesc->BeaconPeriod);
 
     memcpy(&pAdHocJoin->BssDescriptor.BSSID,
            &pBSSDesc->MacAddress, MRVDRV_ETH_ADDR_LEN);
@@ -1475,7 +1499,8 @@ wlan_cmd_802_11_ad_hoc_join(wlan_private * priv,
            sizeof(IEEEtypes_CapInfo_t));
 
     /* information on BSSID descriptor passed to FW */
-    PRINTM(INFO, "ADHOC_J_CMD: BSSID = %2x-%2x-%2x-%2x-%2x-%2x, SSID = %s\n",
+    PRINTM(INFO,
+           "ADHOC_J_CMD: BSSID = %02x-%02x-%02x-%02x-%02x-%02x, SSID = %s\n",
            pAdHocJoin->BssDescriptor.BSSID[0],
            pAdHocJoin->BssDescriptor.BSSID[1],
            pAdHocJoin->BssDescriptor.BSSID[2],
@@ -1484,44 +1509,23 @@ wlan_cmd_802_11_ad_hoc_join(wlan_private * priv,
            pAdHocJoin->BssDescriptor.BSSID[5],
            pAdHocJoin->BssDescriptor.SSID);
 
-    PRINTM(INFO, "ADHOC_J_CMD: Data Rate = %x\n",
-           (u32) pAdHocJoin->BssDescriptor.DataRates);
-
-    /* Copy Data Rates from the Rates recorded in scan response */
-    memset(pAdHocJoin->BssDescriptor.DataRates, 0,
-           sizeof(pAdHocJoin->BssDescriptor.DataRates));
-    memcpy(pAdHocJoin->BssDescriptor.DataRates, pBSSDesc->DataRates,
-           MIN(sizeof(pAdHocJoin->BssDescriptor.DataRates),
-               sizeof(pBSSDesc->DataRates)));
-
-    card_rates = SupportedRates;
-    card_rates_size = sizeof(SupportedRates);
-
-    Adapter->CurBssParams.channel = pBSSDesc->Channel;
-
-    if (get_common_rates(Adapter, pAdHocJoin->BssDescriptor.DataRates,
-                         sizeof(pAdHocJoin->BssDescriptor.DataRates),
-                         card_rates, card_rates_size)) {
-        PRINTM(INFO, "ADHOC_J_CMD: get_common_rates returns error.\n");
+    /* Get the common rates supported between the driver and the BSS Desc */
+    if (setup_rates_from_bssdesc(Adapter, pBSSDesc, rates, &ratesSize)) {
         ret = WLAN_STATUS_FAILURE;
         goto done;
     }
 
-    /* Find the last non zero */
-    for (i = 0; i < sizeof(pAdHocJoin->BssDescriptor.DataRates)
-         && pAdHocJoin->BssDescriptor.DataRates[i]; i++);
+    /* Copy Data Rates from the Rates recorded in scan response */
+    memset(pAdHocJoin->BssDescriptor.DataRates, 0,
+           sizeof(pAdHocJoin->BssDescriptor.DataRates));
+    memcpy(pAdHocJoin->BssDescriptor.DataRates, rates, ratesSize);
 
-    Adapter->CurBssParams.NumOfRates = i;
+    /* Copy the adhoc join rates into Current BSS state structure */
+    Adapter->CurBssParams.NumOfRates = ratesSize;
+    memcpy(&Adapter->CurBssParams.DataRates, rates, ratesSize);
 
-    /*
-     * Copy the adhoc joining rates to Current BSS State structure
-     */
-    memcpy(Adapter->CurBssParams.DataRates,
-           pAdHocJoin->BssDescriptor.DataRates,
-           Adapter->CurBssParams.NumOfRates);
-
-    pAdHocJoin->BssDescriptor.SsParamSet.IbssParamSet.AtimWindow =
-        wlan_cpu_to_le16(pBSSDesc->ATIMWindow);
+    /* Copy the channel information */
+    Adapter->CurBssParams.BSSDescriptor.Channel = pBSSDesc->Channel;
 
     if (Adapter->SecInfo.WEPStatus == Wlan802_11WEPEnabled
         || Adapter->AdhocAESEnabled) {
@@ -1557,12 +1561,6 @@ wlan_cmd_802_11_ad_hoc_join(wlan_private * priv,
     cmd->Size = wlan_cpu_to_le16(sizeof(HostCmd_DS_802_11_AD_HOC_JOIN)
                                  + S_DS_GEN + cmdAppendSize);
 
-    pAdHocJoin->BssDescriptor.BeaconPeriod =
-        wlan_cpu_to_le16(pAdHocJoin->BssDescriptor.BeaconPeriod);
-    pAdHocJoin->BssDescriptor.SsParamSet.IbssParamSet.AtimWindow =
-        wlan_cpu_to_le16(pAdHocJoin->BssDescriptor.SsParamSet.IbssParamSet.
-                         AtimWindow);
-
     memcpy(&TmpCap, &pAdHocJoin->BssDescriptor.Cap,
            sizeof(IEEEtypes_CapInfo_t));
     TmpCap = wlan_cpu_to_le16(TmpCap);
@@ -1573,19 +1571,6 @@ wlan_cmd_802_11_ad_hoc_join(wlan_private * priv,
   done:
     LEAVE();
     return ret;
-}
-
-/**
- *  @brief This function handles the command response of authenticate
- *
- *  @param priv    A pointer to wlan_private structure
- *  @param resp    A pointer to HostCmd_DS_COMMAND
- *  @return        WLAN_STATUS_SUCCESS or WLAN_STATUS_FAILURE
- */
-int
-wlan_ret_802_11_authenticate(wlan_private * priv, HostCmd_DS_COMMAND * resp)
-{
-    return WLAN_STATUS_SUCCESS;
 }
 
 /**
@@ -1625,7 +1610,6 @@ wlan_ret_802_11_authenticate(wlan_private * priv, HostCmd_DS_COMMAND * resp)
  *     |        If CapInfo is -4:                                   |
  *     |           (1) Association response timeout                 |
  *     |           (2) Authentication response timeout              |
- *     |           (3) Network join timeout (receive AP beacon)     |
  *     .------------------------------------------------------------.
  *     |  AId(u16): 0xFFFF                                          |
  *     .------------------------------------------------------------.
@@ -1660,13 +1644,17 @@ wlan_ret_802_11_associate(wlan_private * priv, HostCmd_DS_COMMAND * resp)
 {
     wlan_adapter *Adapter = priv->adapter;
     int ret = WLAN_STATUS_SUCCESS;
-    union iwreq_data wrqu;
     IEEEtypes_AssocRsp_t *pAssocRsp;
     BSSDescriptor_t *pBSSDesc;
+    WLAN_802_11_RATES rates;
+    int ratesSize;
 
     ENTER();
 
     pAssocRsp = (IEEEtypes_AssocRsp_t *) & resp->params;
+
+    HEXDUMP("ASSOC_RESP:", (void *) &resp->params,
+            wlan_le16_to_cpu(resp->Size) - S_DS_GEN);
 
     Adapter->assocRspSize = MIN(wlan_le16_to_cpu(resp->Size) - S_DS_GEN,
                                 sizeof(Adapter->assocRspBuffer));
@@ -1674,28 +1662,19 @@ wlan_ret_802_11_associate(wlan_private * priv, HostCmd_DS_COMMAND * resp)
     memcpy(Adapter->assocRspBuffer, &resp->params, Adapter->assocRspSize);
 
     if (pAssocRsp->StatusCode) {
-
-        if (Adapter->MediaConnectStatus == WlanMediaStateConnected) {
-            MacEventDisconnected(priv);
-        }
-
         priv->adapter->dbg.num_cmd_assoc_failure++;
-#ifdef MOTO_DBG
-        PRINTM(ERROR,
-               "ASSOC_RESP: Association Failed, status code = %d, error = %d\n",
-               pAssocRsp->StatusCode, *(short *) &pAssocRsp->Capability);
-#else
         PRINTM(CMND, "ASSOC_RESP: Association Failed, "
                "status code = %d, error = %d\n",
                pAssocRsp->StatusCode, *(short *) &pAssocRsp->Capability);
-#endif
 
         ret = WLAN_STATUS_FAILURE;
+
         goto done;
     }
 
     /* Send a Media Connected event, according to the Spec */
     Adapter->MediaConnectStatus = WlanMediaStateConnected;
+
 #ifdef WPRM_DRV
     WPRM_DRV_TRACING_PRINT();
     /* Launch traffic meter */
@@ -1705,35 +1684,45 @@ wlan_ret_802_11_associate(wlan_private * priv, HostCmd_DS_COMMAND * resp)
     wprm_configure_hscfg();
 
 #endif
-    Adapter->LinkSpeed = MRVDRV_LINK_SPEED_11mbps;
 
     /* Set the attempted BSSID Index to current */
     pBSSDesc = Adapter->pAttemptedBSSDesc;
 
     PRINTM(INFO, "ASSOC_RESP: %s\n", pBSSDesc->Ssid.Ssid);
 
-    /* Set the new SSID to current SSID */
-    memcpy(&Adapter->CurBssParams.ssid,
-           &pBSSDesc->Ssid, sizeof(WLAN_802_11_SSID));
-
-    /* Set the new BSSID (AP's MAC address) to current BSSID */
-    memcpy(Adapter->CurBssParams.bssid,
-           pBSSDesc->MacAddress, MRVDRV_ETH_ADDR_LEN);
-
     /* Make a copy of current BSSID descriptor */
     memcpy(&Adapter->CurBssParams.BSSDescriptor,
            pBSSDesc, sizeof(BSSDescriptor_t));
 
-    if (pBSSDesc->wmmIE.ElementId == WMM_IE) {
+    /* update CurBssParams */
+    Adapter->CurBssParams.BSSDescriptor.Channel
+        = pBSSDesc->PhyParamSet.DsParamSet.CurrentChan;
+
+    if (setup_rates_from_bssdesc(Adapter, pBSSDesc, rates, &ratesSize)) {
+        ret = WLAN_STATUS_FAILURE;
+        goto done;
+    }
+
+    /* Copy the infra. association rates into Current BSS state structure */
+    Adapter->CurBssParams.NumOfRates = ratesSize;
+    memcpy(&Adapter->CurBssParams.DataRates, rates, ratesSize);
+
+    /* Adjust the timestamps in the scan table to be relative to the newly
+     *   associated AP's TSF
+     */
+    wlan_scan_update_tsf_timestamps(priv, pBSSDesc);
+
+    if (pBSSDesc->wmmIE.VendHdr.ElementId == WMM_IE) {
         Adapter->CurBssParams.wmm_enabled = TRUE;
     } else {
         Adapter->CurBssParams.wmm_enabled = FALSE;
     }
 
-    if (Adapter->wmm.required && Adapter->CurBssParams.wmm_enabled)
+    if (Adapter->wmm.required && Adapter->CurBssParams.wmm_enabled) {
         Adapter->wmm.enabled = TRUE;
-    else
+    } else {
         Adapter->wmm.enabled = FALSE;
+    }
 
     Adapter->CurBssParams.wmm_uapsd_enabled = FALSE;
 
@@ -1756,37 +1745,8 @@ wlan_ret_802_11_associate(wlan_private * priv, HostCmd_DS_COMMAND * resp)
     Adapter->nextSNRNF = 0;
     Adapter->numSNRNF = 0;
 
-    /* Don't enable carrier until we get the WMM_GET_STATUS event */
-    if (Adapter->wmm.enabled == FALSE) {
-        os_carrier_on(priv);
-        os_start_queue(priv);
-    }
-
     priv->adapter->dbg.num_cmd_assoc_success++;
-#ifdef MOTO_DBG
-    PRINTM(MOTO_MSG, "ASSOC_RESP: Associated %s wmm.enabled=%d "
-           "wmm_uapsd_enabled=%d, num_cmd_assoc_success=%d\n",
-           pBSSDesc->Ssid.Ssid, Adapter->wmm.enabled,
-           Adapter->CurBssParams.wmm_uapsd_enabled,
-           priv->adapter->dbg.num_cmd_assoc_success);
-#else
     PRINTM(INFO, "ASSOC_RESP: Associated \n");
-#endif
-
-#ifdef MOTO_DBG
-    PRINTM(MOTO_DEBUG,
-           "Security: wep=%d, authmode=%d, encryption=%d, wpa=%d, wpa2=%d\n",
-           Adapter->SecInfo.WEPStatus, Adapter->SecInfo.AuthenticationMode,
-           Adapter->SecInfo.EncryptionMode, Adapter->SecInfo.WPAEnabled,
-           Adapter->SecInfo.WPA2Enabled);
-#endif
-
-    memcpy(wrqu.ap_addr.sa_data, Adapter->CurBssParams.bssid, ETH_ALEN);
-    wrqu.ap_addr.sa_family = ARPHRD_ETHER;
-    wireless_send_event(priv->wlan_dev.netdev, SIOCGIWAP, &wrqu, NULL);
-#ifdef MOTO_DBG
-    PRINTM(MOTO_MSG, "ASSOC_RESP: Connected event sent to upper layer.\n");
-#endif
 
   done:
     LEAVE();
@@ -1825,8 +1785,8 @@ wlan_ret_802_11_ad_hoc(wlan_private * priv, HostCmd_DS_COMMAND * resp)
 {
     wlan_adapter *Adapter = priv->adapter;
     int ret = WLAN_STATUS_SUCCESS;
-    u16 Command = wlan_le16_to_cpu(resp->Command);
-    u16 Result = wlan_le16_to_cpu(resp->Result);
+    u16 Command = resp->Command;
+    u16 Result = resp->Result;
     HostCmd_DS_802_11_AD_HOC_RESULT *pAdHocResult;
     union iwreq_data wrqu;
     BSSDescriptor_t *pBSSDesc;
@@ -1841,11 +1801,7 @@ wlan_ret_802_11_ad_hoc(wlan_private * priv, HostCmd_DS_COMMAND * resp)
      * Join result code 0 --> SUCCESS
      */
     if (Result) {
-#ifdef MOTO_DBG
-        PRINTM(ERROR, "ADHOC_RESP Failed, result=%d\n", Result);
-#else
         PRINTM(INFO, "ADHOC_RESP Failed\n");
-#endif
         if (Adapter->MediaConnectStatus == WlanMediaStateConnected) {
             MacEventDisconnected(priv);
         }
@@ -1859,6 +1815,7 @@ wlan_ret_802_11_ad_hoc(wlan_private * priv, HostCmd_DS_COMMAND * resp)
 
     /* Send a Media Connected event, according to the Spec */
     Adapter->MediaConnectStatus = WlanMediaStateConnected;
+
 #ifdef WPRM_DRV
     WPRM_DRV_TRACING_PRINT();
     /* Launch traffic meter */
@@ -1868,14 +1825,9 @@ wlan_ret_802_11_ad_hoc(wlan_private * priv, HostCmd_DS_COMMAND * resp)
     wprm_configure_hscfg();
 
 #endif
-    Adapter->LinkSpeed = MRVDRV_LINK_SPEED_11mbps;
 
     if (Command == HostCmd_RET_802_11_AD_HOC_START) {
-#ifdef MOTO_DBG
-        PRINTM(MOTO_DEBUG, "ADHOC_S_RESP  %s\n", pBSSDesc->Ssid.Ssid);
-#else
         PRINTM(INFO, "ADHOC_S_RESP  %s\n", pBSSDesc->Ssid.Ssid);
-#endif
 
         /* Update the created network descriptor with the new BSSID */
         memcpy(pBSSDesc->MacAddress,
@@ -1885,47 +1837,29 @@ wlan_ret_802_11_ad_hoc(wlan_private * priv, HostCmd_DS_COMMAND * resp)
          * Now the join cmd should be successful
          * If BSSID has changed use SSID to compare instead of BSSID
          */
-#ifdef MOTO_DBG
-        PRINTM(MOTO_DEBUG, "ADHOC_J_RESP  %s\n", pBSSDesc->Ssid.Ssid);
-#else
         PRINTM(INFO, "ADHOC_J_RESP  %s\n", pBSSDesc->Ssid.Ssid);
-#endif
 
         /* Make a copy of current BSSID descriptor, only needed for join since
          *   the current descriptor is already being used for adhoc start
          */
-        memmove(&Adapter->CurBssParams.BSSDescriptor,
-                pBSSDesc, sizeof(BSSDescriptor_t));
+        memcpy(&Adapter->CurBssParams.BSSDescriptor,
+               pBSSDesc, sizeof(BSSDescriptor_t));
     }
 
-    /* Set the BSSID from the joined/started descriptor */
-    memcpy(&Adapter->CurBssParams.bssid,
-           pBSSDesc->MacAddress, MRVDRV_ETH_ADDR_LEN);
-
-    /* Set the new SSID to current SSID */
-    memcpy(&Adapter->CurBssParams.ssid,
-           &pBSSDesc->Ssid, sizeof(WLAN_802_11_SSID));
-
     memset(&wrqu, 0, sizeof(wrqu));
-    memcpy(wrqu.ap_addr.sa_data, Adapter->CurBssParams.bssid, ETH_ALEN);
+    memcpy(wrqu.ap_addr.sa_data,
+           &Adapter->CurBssParams.BSSDescriptor.MacAddress, ETH_ALEN);
     wrqu.ap_addr.sa_family = ARPHRD_ETHER;
     wireless_send_event(priv->wlan_dev.netdev, SIOCGIWAP, &wrqu, NULL);
 
-#ifdef MOTO_DBG
-    PRINTM(MOTO_MSG, "ADHOC_RESP: Connected event sent to upper layer.\n");
-    PRINTM(MOTO_MSG,
-           "ADHOC_RESP: Associated Channel=%d, BSSID=%02x:%02x:%02x:%02x:%02x:%02x\n",
-           Adapter->AdhocChannel, pAdHocResult->BSSID[0],
-           pAdHocResult->BSSID[1], pAdHocResult->BSSID[2],
-           pAdHocResult->BSSID[3], pAdHocResult->BSSID[4],
-           pAdHocResult->BSSID[5]);
-#else
     PRINTM(INFO, "ADHOC_RESP: Channel = %d\n", Adapter->AdhocChannel);
     PRINTM(INFO, "ADHOC_RESP: BSSID = %02x:%02x:%02x:%02x:%02x:%02x\n",
-           pAdHocResult->BSSID[0], pAdHocResult->BSSID[1],
-           pAdHocResult->BSSID[2], pAdHocResult->BSSID[3],
-           pAdHocResult->BSSID[4], pAdHocResult->BSSID[5]);
-#endif
+           Adapter->CurBssParams.BSSDescriptor.MacAddress[0],
+           Adapter->CurBssParams.BSSDescriptor.MacAddress[1],
+           Adapter->CurBssParams.BSSDescriptor.MacAddress[2],
+           Adapter->CurBssParams.BSSDescriptor.MacAddress[3],
+           Adapter->CurBssParams.BSSDescriptor.MacAddress[4],
+           Adapter->CurBssParams.BSSDescriptor.MacAddress[5]);
 
     LEAVE();
     return ret;
@@ -2024,12 +1958,8 @@ wlan_reassociation_thread(void *data)
 
         PRINTM(INFO, "Reassoc: Performing Active Scan @ %lu\n",
                os_time_get());
+        SendSpecificSSIDScan(priv, &Adapter->PreviousSSID);
 
-        if (Adapter->Prescan) {
-            SendSpecificSSIDScan(priv, &Adapter->PreviousSSID);
-        }
-
-        /* Try to find the specific SSID we were associated to first */
         i = FindSSIDInList(Adapter,
                            &Adapter->PreviousSSID,
                            Adapter->PreviousBSSID,
@@ -2061,7 +1991,7 @@ wlan_reassociation_thread(void *data)
             PRINTM(INFO, "Reassoc: No AP found or assoc failed."
                    "Restarting re-assoc Timer @ %lu\n", os_time_get());
 
-            Adapter->TimerIsSet = TRUE;
+            Adapter->ReassocTimerIsSet = TRUE;
             ModTimer(&Adapter->MrvDrvTimer, MRVDRV_TIMER_10S);
         }
     }
@@ -2070,6 +2000,42 @@ wlan_reassociation_thread(void *data)
 
     LEAVE();
     return WLAN_STATUS_SUCCESS;
+}
+
+/** 
+ *  @brief This function triggers re-association by waking up
+ *  re-assoc thread.
+ *  
+ *  @param FunctionContext    A pointer to FunctionContext
+ *  @return 	   n/a
+ */
+void
+MrvDrvReassocTimerFunction(void *FunctionContext)
+{
+    wlan_private *priv = (wlan_private *) FunctionContext;
+    wlan_adapter *Adapter = priv->adapter;
+    OS_INTERRUPT_SAVE_AREA;
+
+    ENTER();
+
+    PRINTM(INFO, "MrvDrvReassocTimer fired.\n");
+    Adapter->ReassocTimerIsSet = FALSE;
+    if (Adapter->PSState != PS_STATE_FULL_POWER) {
+        /* wait until Exit_PS command returns */
+        Adapter->ReassocTimerIsSet = TRUE;
+        ModTimer(&Adapter->MrvDrvTimer, MRVDRV_TIMER_1S);
+        PRINTM(INFO, "MrvDrvTimerFunction(PSState=%d) waiting"
+               "for Exit_PS done\n", Adapter->PSState);
+        LEAVE();
+        return;
+    }
+
+    PRINTM(INFO, "Waking Up the Reassoc Thread\n");
+
+    wake_up_interruptible(&priv->ReassocThread.waitQ);
+
+    LEAVE();
+    return;
 }
 #endif /* REASSOCIATION */
 

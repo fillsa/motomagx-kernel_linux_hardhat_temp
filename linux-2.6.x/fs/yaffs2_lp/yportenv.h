@@ -5,7 +5,6 @@
  *
  * Copyright (C) 2002 Aleph One Ltd.
  *   for Toby Churchill Ltd and Brightstar Engineering
- * Copyright (C) 2007 Motorola, Inc.
  *
  * Created by Charles Manning <charles@aleph1.co.uk>
  *
@@ -13,23 +12,13 @@
  * it under the terms of the GNU Lesser General Public License version 2.1 as
  * published by the Free Software Foundation.
  *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software
- * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA
- * 02111-1307, USA
  *
  * Note: Only YAFFS headers are LGPL, YAFFS C code is covered by GPL.
  *
  * $Id: yportenv.h,v 1.11 2006/05/21 09:39:12 charles Exp $
  *
  */
-
-/* Change log:
+/* Copyright 2007 Motorola, Inc.
  *
  * Date         Author         Comment
  * ==========   ===========    ===================================

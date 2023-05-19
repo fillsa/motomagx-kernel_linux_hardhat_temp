@@ -104,13 +104,6 @@ config VIDEO_MXC_OUTPUT
 	---help---
 	  This is the video4linux2 driver for IPU post processing video output.
 
-config VIDEO_MXC_V4L1
-	tristate "MXC Video For Linux (V4L1 only)"
-	depends on (VIDEO_DEV && MXC_IPU)
-        default n
-	---help---
-	  This is the video4linux1 driver for cameras based on IPU Viewfinder.
-
 config VIDEO_CPIA
 	tristate "CPiA Video For Linux"
 	depends on VIDEO_DEV

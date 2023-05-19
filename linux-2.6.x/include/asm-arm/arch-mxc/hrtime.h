@@ -16,8 +16,6 @@
  * 03/27/2007   Motorola  Added support for <=32KHz clock source.
  * 06/18/2007   Motorola  Changed #ifdef  CLOCK_TICK_RATE <= 0x40000
  *                        to #if CLOCK_TICK_RATE <= 0x400000
- * 07/20/2007   Motorola  Add comments.
- * 08/13/2007   Motorola  Add commnets.
  */
 
 #ifndef __ASM_ARCH_HRTIME_H_
@@ -90,7 +88,7 @@ int get_arch_cycles(unsigned);
 
 #else
 
-#if  CLOCK_TICK_RATE <= 0x400000       /* 4194304 = 2^22 */
+#if CLOCK_TICK_RATE <= 0x400000       /* 4194304 = 2^22 */
 #define SC_ARCH2NSEC        22  /* int(log2(2 * CLOCK_TICK_RATE - 1)) */
 #elif   CLOCK_TICK_RATE <= 0x800000
 #define SC_ARCH2NSEC        23

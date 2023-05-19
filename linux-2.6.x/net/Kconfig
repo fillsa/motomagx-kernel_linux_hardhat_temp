@@ -673,7 +673,6 @@ source "net/ax25/Kconfig"
 
 source "net/irda/Kconfig"
 
-source "net/bluetooth/Kconfig"
 source "net/ieee80211/Kconfig"
 
 source "drivers/net/Kconfig"

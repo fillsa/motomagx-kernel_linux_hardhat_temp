@@ -1,6 +1,6 @@
 /*
  * Copyright 2005-2006 Freescale Semiconductor, Inc. All Rights Reserved.
- * Copyright (C) 2005-2006, 2008 Motorola Inc.
+ * Copyright (C) 2005-2006 Motorola Inc.
  */
 
 /*
@@ -26,9 +26,6 @@ Motorola            11/16/2005     Momentarily disable both CSI
                                    and IC when reconfiguring CSI
                                    parameters.
 Motorola            06/09/2006     Upmerge to MV 05/12/2006
-Motorola            10/11/2006     Change camera clk src to PLL0
-Motorola            02/20/2007     Desense improvements
-Motorola            09/04/2008     Export CSI position and size functions
 */
 
 /*!
@@ -254,5 +251,4 @@ void ipu_csi_set_window_pos(uint32_t left, uint32_t top)
 
 EXPORT_SYMBOL(ipu_csi_enable_mclk);
 EXPORT_SYMBOL(ipu_csi_init_interface);
-EXPORT_SYMBOL(ipu_csi_set_window_pos);
-EXPORT_SYMBOL(ipu_csi_set_window_size);
+

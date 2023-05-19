@@ -1,7 +1,7 @@
 /******************************************************************************
  *
  * Copyright 2005 Freescale Semiconductor, Inc. All Rights Reserved.
- * Copyright (C) 2008 Motorola, Inc.
+ *
  *
  * The code contained herein is licensed under the GNU General Public
  * License. You may obtain a copy of the GNU General Public License
@@ -28,9 +28,6 @@
  *
  * $Log iapiLow.c $
  *
- * DATE          AUTHOR         COMMMENT
- * ----          ------         --------
- * 08/11/2008    Motorola       Protect variable ipai_SDMAintr with spin lock to fix MMC log stop issue.
  *****************************************************************************/
 
 /* ****************************************************************************
@@ -128,12 +125,7 @@ iapi_lowSynchChannel (unsigned char channel)
 {
   //while (! ( (1UL << channel) & iapi_SDMAIntr ) ) ;
   GOTO_SLEEP(channel);
-  
-  iapi_AcquireLock();
-  /* Protecting iapi_SDMAIntr from being updated in the ISR -
-  multiple assembly instructions used for this single write*/
   iapi_SDMAIntr &= ~(1UL << channel);
-  iapi_ReleaseLock();
 }
 
 /* ***************************************************************************/

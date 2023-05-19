@@ -1,5 +1,5 @@
 /*
- * Copyright 2006-2007 Motorola, Inc.
+ * Copyright (C) 2006-2007 Motorola, Inc.
  * 
  * This program is free software; you can redistribute it and/or
  * modify it under the terms of the GNU General Public License as
@@ -26,7 +26,7 @@
  * 01/28/2007  Motorola  Add long IOI timeout API for SD Card
  * 02/06/2007  Motorola  Resolve DSM race.
  * 04/12/2007  Motorola  Check in idle for busy drivers/modules.
- * 06/07/2007  Motorola  Add notifier for flip and key events.
+ * 10/25/2007  Motorola  Improved periodic job state collection for debug.
  */
 
 #include <linux/types.h>
@@ -41,7 +41,6 @@
 #include <linux/module.h>
 #include <linux/mpm.h>
 #include <linux/rtc.h>
-#include <linux/notifier.h>
 #ifdef CONFIG_MOT_FEAT_PM_DESENSE
 #include <asm/setup.h>
 #endif
@@ -74,6 +73,9 @@ static void queue_mpm_event(mpm_event_t );
 static int mpm_dummy_function(void);
 #ifdef CONFIG_MOT_FEAT_PM_STATS
 static void mpm_test_dummy_function(int, ...);
+static void mpm_pj_dummy_function(const unsigned long,
+                                  const char *,
+                                  const int);
 #endif
 
 /*
@@ -125,15 +127,15 @@ mpm_callback_t mpm_resume_from_sleep = mpm_dummy_function;
  */
 mpm_test_callback_t mpm_report_test_point = mpm_test_dummy_function;
 
+/* This function is used to collect periodic job state */
+mpm_pjs_callback_t mpm_collect_pj_stat = mpm_pj_dummy_function;
+
 /* MPM statistics pointer. */
 mpm_stats_t *mpmsp = NULL;
 
 spinlock_t mpmsplk = SPIN_LOCK_UNLOCKED;
 #endif
 
-struct notifier_block *mpm_flipkey_notifier_list;
-
-EXPORT_SYMBOL(mpm_flipkey_notifier_list);
 
 int mpm_queue_empty(void)
 {
@@ -190,12 +192,6 @@ void mpm_event_notify(short type, short kind, int info)
     queue_mpm_event(event);
     (void)mpm_set_awake_state();
 
-    if (type == MPM_EVENT_DEVICE &&
-	(kind == EVENT_DEV_KEY || kind == EVENT_DEV_FLIP ||
-	 kind == EVENT_DEV_SLIDER)) {
-	    notifier_call_chain(&mpm_flipkey_notifier_list, 0, &event);
-    }
-    
     return;
 }
 
@@ -548,6 +544,7 @@ void mpm_callback_register(struct mpm_callback_fns *mpm_callback_fns_ptr)
     mpm_resume_from_sleep = mpm_callback_fns_ptr->resume_from_sleep;
 #ifdef CONFIG_MOT_FEAT_PM_STATS
     mpm_report_test_point = mpm_callback_fns_ptr->report_test_point;
+    mpm_collect_pj_stat = mpm_callback_fns_ptr->collect_pj_stat;
 #endif
 }
 
@@ -563,6 +560,7 @@ void mpm_callback_deregister(void)
     mpm_resume_from_sleep = mpm_dummy_function;
 #ifdef CONFIG_MOT_FEAT_PM_STATS
     mpm_report_test_point = mpm_test_dummy_function;
+    mpm_collect_pj_stat = mpm_pj_dummy_function;
 #endif
 }
 
@@ -620,6 +618,19 @@ int mpm_panic_with_invalid_desense()
 static void mpm_test_dummy_function(int argc, ...)
 {
 }
+
+/*
+ * Dummy functions for initial value of the periodic job state collection
+ * callback routines.  If power management is not active, then the callback
+ * will not have been registered, in which case we do nothing if they
+ * are called.
+ */
+static void mpm_pj_dummy_function(const unsigned long orig_func,
+                                  const char *comm, 
+                                  int pid)
+{
+}
+
 #endif
 
 EXPORT_SYMBOL(mpm_queue_empty);
@@ -647,6 +658,7 @@ EXPORT_SYMBOL(mpm_panic_with_invalid_desense);
 #endif /* CONFIG_MOT_FEAT_PM_DESENSE */
 #ifdef CONFIG_MOT_FEAT_PM_STATS
 EXPORT_SYMBOL(mpm_report_test_point);
+EXPORT_SYMBOL(mpm_collect_pj_stat);
 EXPORT_SYMBOL(mpmsp);
 EXPORT_SYMBOL(mpmsplk);
 #endif

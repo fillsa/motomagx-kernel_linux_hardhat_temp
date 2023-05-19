@@ -47,10 +47,9 @@
  * 04-25-2007  Motorola  Prevent disabling the nfc clock for the first 
  *                       60 seconds of uptime.
  * 05-21-2007  Motorola  update NFC_CLK dividsors to be 4 for Toshiba and STM parts.
- * 10-10-2007  Motorola  Add mpm_hanle_ioi to delay phone goto DSM when read from nand.
- * 02-26-2008  Motorola  Remove mpm_handle_ioi.
- *                       Add busy flag for suspend rejection and mpm advise interface.
- * 11-13-2008  Motorola  update NFC_CLK divisors to be 4 for Hynix part.
+ * 10-18-2007  Motorola  Add mpm_hanle_ioi to delay phone goto DSM when read from nand.
+ * 02-29-2008  Motorola  Remove mpm_handle_ioi.
+ *                       Add mpm advice mechanism for dynamic PM.
  */
 
 
@@ -191,10 +190,6 @@ static int Ecc_disabled;
 
 static bool nand_debug = false;
 
-/*
- * This variable indicates if the NFC is active
- */
-static int nfc_active = -1;
 
 #ifdef CONFIG_MOT_FEAT_PM
 static int mxc_nand_mpm_advice_id = -1;
@@ -363,11 +358,6 @@ static irqreturn_t mxc_nfc_irq(int irq, void* dev_id, struct pt_regs* regs)
  */
 static void wait_op_done(int maxRetries, u16 param, bool useirq)
 {
-        nfc_active = 1;
-#ifdef CONFIG_MOT_FEAT_PM
-        mpm_driver_advise(mxc_nand_mpm_advice_id, MPM_ADVICE_DRIVER_IS_BUSY);
-#endif        
-        
 #ifdef CONFIG_MOT_FEAT_KPANIC
 	if (useirq && !kpanic_in_progress) {
 #else
@@ -396,12 +386,6 @@ static void wait_op_done(int maxRetries, u16 param, bool useirq)
 #endif
 		}
 	}
-        
-        nfc_active = -1;
-#ifdef CONFIG_MOT_FEAT_PM
-        mpm_driver_advise(mxc_nand_mpm_advice_id, MPM_ADVICE_DRIVER_IS_NOT_BUSY);
-#endif        
-        
 }
 
 /*!
@@ -490,7 +474,15 @@ static void send_read_page_lp(bool bSpareOnly)
 	if (nand_debug)
 		DEBUG (MTD_DEBUG_LEVEL3, "send_read_page_lp (%d)\n", bSpareOnly);
 
-	/* Only issues the first 512 byte read.  The rest are issued in
+#ifdef ELBA_71_01_8BR
+#ifdef CONFIG_MOT_FEAT_PM
+        /* Send IOI to MPM in order to not sleep during NAND access */
+        mpm_handle_ioi();
+#endif
+#endif
+	
+		
+        /* Only issues the first 512 byte read.  The rest are issued in
          * mxc_nfc_irq().  The LP flash is not readable when
          * kpanic_in_progress since kpanic_in_progress only polls and
          * reading from LP nand will not work in polled mode.
@@ -1298,6 +1290,9 @@ static void mxc_nand_command(struct mtd_info *mtd, unsigned command,
 		      "mxc_nand_command (cmd = 0x%x, col = 0x%x, page = 0x%x)\n",
 		      command, column, page_addr);
 
+#ifdef CONFIG_MOT_FEAT_PM
+        mpm_driver_advise(mxc_nand_mpm_advice_id, MPM_ADVICE_DRIVER_IS_BUSY);
+#endif
 	/*
 	 * Reset command state information
 	 */
@@ -1472,6 +1467,9 @@ static void mxc_nand_command(struct mtd_info *mtd, unsigned command,
 	case NAND_CMD_ERASE2:
 		break;
 	}
+#ifdef CONFIG_MOT_FEAT_PM
+        mpm_driver_advise(mxc_nand_mpm_advice_id, MPM_ADVICE_DRIVER_IS_NOT_BUSY);
+#endif
 }
 
 #ifdef CONFIG_MXC_NAND_LOW_LEVEL_ERASE
@@ -1639,10 +1637,10 @@ static int __init mxcnd_probe(struct device *dev)
 			mxc_set_clocks_div(NFC_CLK, 6);
 			break;
 		case NAND_MFR_HYNIX:
-                        /* Read/Write Access time at 60ns has been validated, and
-                         * NFC clock rate will be set to 33.3Mhz (with DIV:4 - 0x0011)
-                         */			
-			mxc_set_clocks_div(NFC_CLK, 4);
+			/* Read/Write Access time at 90ns has NOT been validated yet,
+			 * NFC clock rate is set to 19 MHz (with DIV:7 - 0x0110)
+			 */
+			mxc_set_clocks_div(NFC_CLK, 7);
 			break;
 		default:
 			/* default, NFC clock at 16.7MHz */
@@ -1771,11 +1769,7 @@ static int mxcnd_suspend(struct device *dev, u32 state, u32 level)
 
 	switch (level) {
 	case SUSPEND_DISABLE:
-		if (nfc_active == 1) {
-			DEBUG(MTD_DEBUG_LEVEL0, "%s, %d: NFC is busy. sending -EBUSY\n",
-			      __FUNCTION__, __LINE__);
-			return -EBUSY;
-		}
+		/* Do nothing */
 		break;
 
 	case SUSPEND_SAVE_STATE:
@@ -1792,7 +1786,6 @@ static int mxcnd_suspend(struct device *dev, u32 state, u32 level)
 		/* Error */
 		return -1;
 	}
-	
 	return ret;
 }
 
@@ -2021,7 +2014,8 @@ static void __exit mxc_nd_cleanup (void)
 	platform_device_unregister(&mxcnd_device);
 	driver_unregister(&mxcnd_driver);
 #ifdef CONFIG_MOT_FEAT_PM
-        mpm_unregister_with_mpm(mxc_nand_mpm_advice_id);
+        if (mxc_nand_mpm_advice_id >= 0)
+          mpm_unregister_with_mpm(mxc_nand_mpm_advice_id);
 #endif        
 }
 

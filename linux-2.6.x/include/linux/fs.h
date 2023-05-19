@@ -6,7 +6,9 @@
  * ===========  ==============  ==============================================
  * 07-07-2006   Motorola   	Add link from super_block to vfsmount structure 
  * 31-Oct-2006  Motorola        Added inotify
- * 13-Jul-2007  Motorola        Fix the bug about st_ctime, and st_mtime field
+ * 02-27-2007   Motorola        Rename MOT_FEAT_SECURITY_DRM to 
+ *                              MOT_FEAT_FASTPATHNAME
+ * 31-Jan-2007  Motorola        Fix the bug about st_ctime, and st_mtime field
  *                              of a mapped region, and msync()
  */
 
@@ -815,9 +817,9 @@ struct super_block {
 	char s_id[32];				/* Informational name */
 
 	void 			*s_fs_info;	/* Filesystem private info */
-#ifdef CONFIG_MOT_FEAT_SECURE_DRM
+#ifdef CONFIG_MOT_FEAT_FASTPATHNAME
         struct vfsmount 	*s_vfsmount; /* Used for pathname lookups */
-#endif /* CONFIG_MOT_FEAT_SECURE_DRM */
+#endif /* CONFIG_MOT_FEAT_FASTPATHNAME */
 
 	/*
 	 * The next field is for VFS *only*. No filesystems have any business

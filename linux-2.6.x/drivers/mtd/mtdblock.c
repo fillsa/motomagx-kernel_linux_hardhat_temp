@@ -16,8 +16,11 @@
  * 10-20-2006	Motorola  added CONFIG_MOT_FEAT_MTD_AUTO_BBM feature.
  *			  provides automatically bad block replacement on block
  *			  device layer.
- * 03-15-2007   Motorola added 'rsv' partition as a protected device.
  *
+ * 02-23-2007   Motorla   Renamed MOT_FEAT_SECURE_DRM feature to 
+ *                        MOT_FEAT_SECURE_MTD
+ *
+ * 03-15-2007   Motorola added 'rsv' partition as a protected device.
  */
 
 #include <linux/config.h>
@@ -41,7 +44,7 @@ static struct mtdblk_dev {
 	enum { STATE_EMPTY, STATE_CLEAN, STATE_DIRTY } cache_state;
 } *mtdblks[MAX_MTD_DEVICES];
 
-#ifdef CONFIG_MOT_FEAT_SECURE_DRM
+#ifdef CONFIG_MOT_FEAT_SECURE_MTD
 static inline int is_protected_device(struct mtd_info *mtd)
 {
 	return ((mtd) && (mtd->name) &&
@@ -49,7 +52,7 @@ static inline int is_protected_device(struct mtd_info *mtd)
 		 (strcmp(mtd->name, "user") == 0)||
 		 (strcmp(mtd->name, "rsv") == 0)));
 }
-#endif /* CONFIG_MOT_FEAT_SECURE_DRM */
+#endif /* CONFIG_MOT_FEAT_SECURE_MTD */
 
 /*
  * Cache stuff...
@@ -283,12 +286,12 @@ static int mtdblock_readsect(struct mtd_blktrans_dev *dev,
 {
 	struct mtdblk_dev *mtdblk = mtdblks[dev->devnum];
 
-#ifdef CONFIG_MOT_FEAT_SECURE_DRM
+#ifdef CONFIG_MOT_FEAT_SECURE_MTD
 	if (is_protected_device(mtdblk->mtd))
 	{
 		return -EPERM;
 	}
-#endif /* CONFIG_MOT_FEAT_SECURE_DRM */
+#endif /* CONFIG_MOT_FEAT_SECURE_MTD */
 
 	return do_cached_read(mtdblk, block<<9, 512, buf);
 }
@@ -298,12 +301,12 @@ static int mtdblock_writesect(struct mtd_blktrans_dev *dev,
 {
 	struct mtdblk_dev *mtdblk = mtdblks[dev->devnum];
 
-#ifdef CONFIG_MOT_FEAT_SECURE_DRM
+#ifdef CONFIG_MOT_FEAT_SECURE_MTD
 	if (is_protected_device(mtdblk->mtd))
 	{
 		return -EPERM;
 	}
-#endif /* CONFIG_MOT_FEAT_SECURE_DRM */
+#endif /* CONFIG_MOT_FEAT_SECURE_MTD */
 
 	if (unlikely(!mtdblk->cache_data && mtdblk->cache_size)) {
 		mtdblk->cache_data = vmalloc(mtdblk->mtd->erasesize);

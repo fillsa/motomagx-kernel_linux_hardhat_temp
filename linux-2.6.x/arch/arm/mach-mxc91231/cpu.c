@@ -1,29 +1,25 @@
 /*
  *  Copyright (C) 2001 Deep Blue Solutions Ltd.
  *  Copyright 2004-2006 Freescale Semiconductor, Inc. All Rights Reserved.
- *  Copyright (C) 2007-2008 Motorola, Inc.
- *  
+ *  Copyright 2006-2007 Motorola, Inc.
+ *
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 as
  * published by the Free Software Foundation.
- * 
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
  *
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software
- * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA
- * 02111-1307, USA
+ * Revision History:
  *
- * Changelog:
- * Date               Author           Comment
- * -----------------------------------------------------------------------------
+ * Date        Author            Comment
+ * ==========  ================  ========================
+ * 11/30/2006  Motorola          Clock gating changes    
  * 12/05/2006  Motorola          Dynamic PLL lock/unlock
- * 05/11/2007         Motorola         Enable PLL2 Lock/Unlock Change
- * 02/28/2008         Motorola         Fix flicker when showing logo
+ * 05/22/2007  Motorola          Remove mxc_pll_release_pll
+ *                               from mxc_cpu_init
+ *
+ * 08/28/2007  Motorola          Fix typing error on line 254:
+                                 Change AMLPMRG_4_VALUE to
+                                 AMLPMRG_3_VALUE  
  */
 
 /*!
@@ -162,7 +158,7 @@ static int __init post_cpu_init(void)
 	clk_gate_value |= AMLPMRB_0_VALUE;
 
 	__raw_writel(clk_gate_value, MXC_CRMAP_AMLPMRB);
-
+       
 
 	/* AMLPMRC */
 
@@ -181,7 +177,7 @@ static int __init post_cpu_init(void)
 		 AMLPMRC_7_VALUE | AMLPMRC_9_VALUE);
 
 	__raw_writel(clk_gate_value, MXC_CRMAP_AMLPMRC);
-
+        
 
 	/* AMLPMRD */
 
@@ -325,6 +321,7 @@ static int __init post_cpu_init(void)
 #endif /* breaks the phone */
 #endif /* CONFIG_MOT_FEAT_PM */
 	return 0;
+	      
 }
 
 postcore_initcall(post_cpu_init);

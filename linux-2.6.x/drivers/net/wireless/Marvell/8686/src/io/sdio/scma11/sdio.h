@@ -358,9 +358,11 @@ enum _cmd53_opcode
 
 #define SDIO_BUSWIDTH_1_BIT 1
 #define SDIO_BUSWIDTH_4_BIT 4
+
 #define ECSI_BIT	    0x20
 #define BUSWIDTH_1_BIT	    0x00
 #define BUSWIDTH_4_BIT	    0x02
+
 #define	MMC_TYPE_HOST		1
 #define	MMC_TYPE_CARD		2
 #define	MMC_REG_TYPE_USER	3

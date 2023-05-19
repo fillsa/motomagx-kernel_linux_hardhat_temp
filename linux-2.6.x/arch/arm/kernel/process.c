@@ -14,7 +14,7 @@
  * Date         Author    Comment
  * ----------   --------  ------------------------------
  * 08/22/2005   Motorola  Power management profiler code 
- * 03/24/2008   Motorola  Fixed mutiprocess use the same stack
+ * 03/24/2008   Motorola  Polled a kernel patch for alloc_thread_info from 2.6.17
  */
 
 #include <stdarg.h>

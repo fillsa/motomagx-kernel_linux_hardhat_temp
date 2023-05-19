@@ -24,12 +24,10 @@
  *			   Martin Schaller
  *			   Andreas Schwab
  *
- *	Copyright (C) 2006,2008  Motorola, Inc. 
+ *	Copyright 2006 Motorola, Inc. 
  *
  *  Date     Author    Comment
  *  10/2006  Motorola  Added panic text support to the framebuffer console.
- *  07/2008  Motorola  Added APP coredump prompt support 
- *  08/2008  Mororola  Added AP Kernel Panic support
  *
  *  Hardware cursor support added by Emmanuel Marty (core@ggi-project.org)
  *  Smart redraw scrolling, arbitrary font width support, 512char font support
@@ -97,15 +95,6 @@
 #if defined(__mc68000__) || defined(CONFIG_APUS)
 #include <asm/machdep.h>
 #include <asm/setup.h>
-#endif
-
-/* include 3 header files for display ap panic message*/
-#include "../../mxc/ipu/ipu.h"
-#include "../../mxc/ipu/ipu_regs.h"
-#ifdef CONFIG_MACH_NEVIS
-#include "../mxc/mxcfb_gd2.h"
-#else
-#include "../mxc/mxcfb.h"
 #endif
 
 #include "fbcon.h"
@@ -410,22 +399,7 @@ struct panic_data
 static void do_draw_panic_text(unsigned long private)
 {
 	struct panic_data * panic = (struct panic_data *)private;
-#if defined(CONFIG_MOT_FEAT_APP_COREDUMP_DISPLAY)
-	struct display *p = &fb_display[panic->vc->vc_num];
-	struct fbcon_ops *ops = panic->info->fbcon_par;
- 
- 	if (panic->vc && CON_IS_VISIBLE(panic->vc) &&
-     	    (vt_cons[panic->vc->vc_num]->vc_mode == KD_TEXT) &&
-      	     registered_fb[con2fb_map[panic->vc->vc_num]] == panic->info)
- 	{
-  		ops->putcs(panic->vc, panic->info, panic->text, panic->text_len,
-			   real_y(p, panic->row_start), panic->col_start,
-      			   get_color(panic->vc, panic->info, scr_readw(panic->text), 1),
-      			   get_color(panic->vc, panic->info, scr_readw(panic->text), 0));
 
-                mod_timer(&panic->timer, jiffies + panic->delay);
-        }
-#else
 	/* Make sure current console is active and displaying */
 	if (panic->vc && CON_IS_VISIBLE(panic->vc) && 
 	    !fbcon_is_inactive(panic->vc, panic->info) &&
@@ -436,68 +410,6 @@ static void do_draw_panic_text(unsigned long private)
 
 		mod_timer(&panic->timer, jiffies + panic->delay);
 	}
-#endif /* CONFIG_MOT_FEAT_APP_COREDUMP_DISPLAY */
-}
-
-
-/*!
- * Transfer data from Framebuffer to Panel after the text "AP Kernel Panic"
- * has been put in Framebuffer.
- * @param start_addr: pointer to framebuffer
- * @param memsize: the framebuffer size
- */
-static void ipu_show_ap_panic_text(uint32_t start_addr, uint32_t memsize)
-{
-    ipu_channel_params_t ipu_params;
-    uint32_t param[4] = {0, 0, 1, 0xDF};
-
-    ipu_disable_channel(ADC_SYS1, true);
-
-    ipu_adc_write_cmd(DISP0, CMD, NOP, 0, 0);          // NOP command to exit data mode if panel was in data mode
-    ipu_adc_write_cmd(DISP0, CMD, IFMOD, param, 1);    // Set panel to use 8 bit transfer mode
-    ipu_adc_write_cmd(DISP0, CMD, 0x2A, param, 4);     // Set column addresses
-    ipu_adc_write_cmd(DISP0, CMD, 0x2B, param, 4);     // Set row addresses
-
-    ipu_adc_set_ifc_width(DISP0, IPU_PIX_FMT_BGR24, 8); // set the correct data mapping that should be used.
-    ipu_adc_write_cmd(DISP0, CMD, RAMWR, 0, 0);         // set the panel into ram write mode
-
-    memset(&ipu_params, 0, sizeof(ipu_params));
-    ipu_params.adc_sys1.disp = DISP0;
-    ipu_params.adc_sys1.ch_mode = WriteDataWoRS;
-#ifdef CONFIG_MACH_NEVIS	
-    ipu_params.adc_sys1.out_left = GD2_SCREEN_LEFT_OFFSET;
-    ipu_params.adc_sys1.out_top = GD2_SCREEN_TOP_OFFSET;
-#else
-    ipu_params.adc_sys1.out_left = MXCFB_SCREEN_LEFT_OFFSET;
-    ipu_params.adc_sys1.out_top = MXCFB_SCREEN_TOP_OFFSET;
-#endif
-    ipu_init_channel(ADC_SYS1, &ipu_params);	
-
-    ipu_init_channel_buffer(ADC_SYS1,           // ipu_channel_t
-                            IPU_INPUT_BUFFER,   // ipu_buffer_t
-#if defined(CONFIG_MOT_FEAT_32_BIT_DISPLAY)
-                            IPU_PIX_FMT_BGRA32, // pixel_fmt
-#else
-                            IPU_PIX_FMT_BGRA6666,
-#endif
-
-#ifdef CONFIG_MACH_NEVIS	
-                            GD2_SCREEN_WIDTH,   // width
-                            GD2_SCREEN_HEIGHT,  // height
-                            GD2_SCREEN_WIDTH,   // stride
-#else
-                            MXCFB_SCREEN_WIDTH,   // width
-                            MXCFB_SCREEN_HEIGHT,  // height
-                            MXCFB_SCREEN_WIDTH,   // stride
-#endif
-                            0,                  // ipu_rotate_mode_t
-                            (void *)start_addr, // *phyaddr_0
-                            NULL);              // *phyaddr_1
-
-    ipu_select_buffer(ADC_SYS1, IPU_INPUT_BUFFER, 0);
-    ipu_enable_channel(ADC_SYS1);
-    ipu_adc_set_update_mode(ADC_SYS1, IPU_ADC_AUTO_REFRESH, 30, // refresh rate, 30fps
-                            start_addr, &memsize);
 }
 
 /*!
@@ -530,9 +442,6 @@ int fb_draw_panic_text(struct fb_info * info, const char * panic_text,
 	int row_start=0;
 	unsigned short color;
 	struct panic_data * panic = NULL;
-#if defined(CONFIG_MOT_FEAT_APP_COREDUMP_DISPLAY)
-	static int core_num = 4;
-#endif /* CONFIG_MOT_FEAT_APP_COREDUMP_DISPLAY */
 
 	if (!info) {
 		vc = vc_cons[fg_console].d;
@@ -545,17 +454,13 @@ int fb_draw_panic_text(struct fb_info * info, const char * panic_text,
 		vc = vc_cons[ops->currcon].d;
 	}
 
-#if !defined(CONFIG_MOT_FEAT_APP_COREDUMP_DISPLAY) && defined(CONFIG_MOT_FEAT_CONSOLE_DISABLED)
+#ifdef CONFIG_MOT_FEAT_CONSOLE_DISABLED
 	info->state = FBINFO_STATE_RUNNING;
 #endif
 
 	/* Make sure current console is active and displaying */
 	if (!vc || !CON_IS_VISIBLE(vc) || 
-#if defined(CONFIG_MOT_FEAT_APP_COREDUMP_DISPLAY)
-	    (vt_cons[vc->vc_num]->vc_mode != KD_TEXT) ||
-#else
-	    fbcon_is_inactive(vc, info) ||  
-#endif /* CONFIG_MOT_FEAT_APP_COREDUMP_DISPLAY */
+	    fbcon_is_inactive(vc, info) ||
  	    registered_fb[con2fb_map[vc->vc_num]] != info)
 	{
 		return -EINVAL;
@@ -575,14 +480,7 @@ int fb_draw_panic_text(struct fb_info * info, const char * panic_text,
 	}
 
 	col_start = (cols - panic_len) / 2;
-#if defined(CONFIG_MOT_FEAT_APP_COREDUMP_DISPLAY)
-	row_start = (rows - 1) / 3 + 2 * core_num;
-	if (core_num > 1) { 
-		core_num--;
-	}
-#else
 	row_start = (rows - 1) / 2;
-#endif /* CONFIG_MOT_FEAT_APP_COREDUMP_DISPLAY */
 
 	/* The panic text buffer will never be freed if do_timer is true. 
 	   We need to allocate with GFP_ATOMIC since GFP_KERNEL can sleep. */
@@ -628,14 +526,8 @@ int fb_draw_panic_text(struct fb_info * info, const char * panic_text,
 		add_timer(&panic->timer); 
 	}
 	else {
-#if defined(CONFIG_MOT_FEAT_APP_COREDUMP_DISPLAY) && defined(CONFIG_MOT_FEAT_CONSOLE_DISABLED)
-                info->state = FBINFO_STATE_RUNNING;
-#endif
 		fbcon_putcs(vc, text_buffer, panic_len, row_start, col_start);
 		kfree(text_buffer);
-#if defined(CONFIG_MACH_NEVIS)
-                ipu_show_ap_panic_text(info->fix.smem_start, info->fix.smem_len);
-#endif
 	}
 
 	return 0;

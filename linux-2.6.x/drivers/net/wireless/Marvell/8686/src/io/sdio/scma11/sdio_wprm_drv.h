@@ -20,8 +20,8 @@
   *
   * Revision History:
   * Author           Date            Description
-  * Motorola         01-Sep-2006     Creation.
-  * Motorola         03-Oct-2006     Improvement of power up sequence
+  * Motorola         01-Sep-2006     LIBjj65873 - Creation.
+  * Motorola         03-Oct-2006     LIBkk14097 - Improvement of power up sequence
   */
   
 /*---------------------------------- Includes --------------------------------*/

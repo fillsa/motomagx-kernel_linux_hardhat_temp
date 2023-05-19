@@ -3,7 +3,7 @@
  *
  * SCM-A11 implementation of Motorola GPIO API for SD Host Controller support.
  *
- * Copyright (C) 2006, 2008 Motorola, Inc. 
+ * Copyright 2007 Motorola, Inc.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -18,14 +18,11 @@
  * You should have received a copy of the GNU General Public License
  * along with this program; if not, write to the Free Software
  * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
- *
- * Date          Author      Comments
- * ===========   =========   ====================================================
- * 01-Jan-2006  Motorola        Initial version.
- * 20-Mar-2008   Motorola    Remove code not related to signals in Nevis produst
- * 23-June-2008  Motorola    Add code to check GPIO_SIGNAL_GND to detect Embedded TFlash of Nevis 
- * 28-Jun-2007  Motorola        Removed MARCO specific signal code in relation to xPIXL.
- * 03-Jul-2008  Motorola        OSS CV fix.
+ */
+
+/* Date         Author          Comment
+ * ===========  ==============  ==============================================
+ * 27-Feb-2007  Motorola        Initial revision.
  */
 
 #include <linux/kernel.h>
@@ -63,11 +60,12 @@ void gpio_sdhc_active(int module)
             break;
 
         case 1:
-#if defined(CONFIG_MOT_FEAT_GPIO_API_WLAN)
-            /* SDHC slot 2 is the WLAN controller on scma11ref and Marco */
-            gpio_signal_set_data(GPIO_SIGNAL_WLAN_PWR_DWN_B, GPIO_DATA_HIGH);
-            gpio_signal_set_data(GPIO_SIGNAL_WLAN_RESET, GPIO_DATA_HIGH);
-#endif
+            if(GPIO_SIGNAL_IS_VALID(GPIO_SIGNAL_WLAN_RESET)) {
+                /* SDHC slot 2 is the WLAN controller on scma11ref and Marco */ 
+                gpio_signal_set_data(GPIO_SIGNAL_WLAN_PWR_DWN_B,
+                        GPIO_DATA_HIGH);
+                gpio_signal_set_data(GPIO_SIGNAL_WLAN_RESET, GPIO_DATA_HIGH); 
+            }
             break;
     
         default:
@@ -90,11 +88,12 @@ void gpio_sdhc_inactive(int module)
             break;
 
         case 1:
-#if defined(CONFIG_MOT_FEAT_GPIO_API_WLAN)
-            /* SDHC slot 2 is the WLAN controller on scma11ref and Marco */
-            gpio_signal_set_data(GPIO_SIGNAL_WLAN_RESET, GPIO_DATA_LOW);
-            gpio_signal_set_data(GPIO_SIGNAL_WLAN_PWR_DWN_B, GPIO_DATA_LOW);
-#endif
+            if(GPIO_SIGNAL_IS_VALID(GPIO_SIGNAL_WLAN_RESET)) {
+                /* SDHC slot 2 is the WLAN controller on scma11ref and Marco */ 
+                gpio_signal_set_data(GPIO_SIGNAL_WLAN_RESET, GPIO_DATA_LOW); 
+                gpio_signal_set_data(GPIO_SIGNAL_WLAN_PWR_DWN_B,
+                        GPIO_DATA_LOW);
+            }
             break;
     
         default:
@@ -117,13 +116,8 @@ int sdhc_find_card(int module)
 
 #if defined(CONFIG_MOT_FEAT_SD1_TF_DET)
     if(module == 0) {
-#if defined(CONFIG_MACH_NEVIS) || defined(CONFIG_MACH_XPIXL)
-	/*GND is low if card is present*/
-	data = gpio_signal_get_data_check(GPIO_SIGNAL_GND);
-#else
         /* TF_DET is low if card is present */
         data = gpio_signal_get_data_check(GPIO_SIGNAL_TF_DET);
-#endif
     } else {
 #endif
         if(module < NUM_SDHC_MODULE) {

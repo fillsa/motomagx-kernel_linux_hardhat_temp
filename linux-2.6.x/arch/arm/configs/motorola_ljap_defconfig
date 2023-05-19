@@ -4,13 +4,13 @@
 # This is the base Linux kernel configuration file for all products. Additional
 # configuration options are appended to this file at build time. For more
 # information please see: arch/arm/configs/motorola_ljap/README.txt
-#
 # Copyright (C) 2006-2008 Motorola, Inc.
 #
 # This program is free software; you can redistribute it and/or modify
-# it under the terms of the GNU General Public License version 2 as
-# published by the Free Software Foundation.
-#                                                                        
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation; either version 2 of the License, or
+# (at your option) any later version.
+#
 # This program is distributed in the hope that it will be useful,
 # but WITHOUT ANY WARRANTY; without even the implied warranty of
 # MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
@@ -18,47 +18,79 @@
 #
 # You should have received a copy of the GNU General Public License
 # along with this program; if not, write to the Free Software
-# Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA
-# 02111-1307, USA
+# Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
 #
-# Changelog:
-# Date         Author          Comment
-# ------       --------        -----------------------------------------
-# 10/10/2006   Motorola        Fix the IAPI driver to have less Incorrect logger blocks
-# 10/13/2006   Motorola        bcdDevice field needs to be set to 0x0101
-# 12/06/2006   Motorola        Provide memory dump tool for LJ
-# 01/19/2007   Motorola        Add program counter to GENERAL_AP_KERNEL panics
-# 03/14/2007   Motorola        Add a config varbile for enabling 32k buffer for MSC for ascenion
-# 03/26/2007   Motorola        Highres timers cause interrupts to be disabled for up to 10 ms
-# 04/2007      Motorola        UMA DSCP support - 
-#                              new config option MOT_FEAT_DSCP_UMA added
-# 06/2007      Motorola        Antivirus hooks unset to support conditional compilation
-# 07/2007      Motorola        Adding WFN494
-# 07/09/2007   Motorola	       Added WFN495
-# 18/09/2007   Motorola        Enable config option  MOT_FEAT_I2C_BLK_SUSPEND
-# 10/24/2007   Motorola	       Add config option MOT_FEAT_YAFFS_SYNC and MOT_FEAT_FAT_SYNC
-# 11/08/2007   Motorola        Remove v4l drivers support in kernel
-# 11/23/2007   Motorola        Add BT LED debug option processing
-# 11/30/2007   Motorola        Add and enable config option CONFIG_MOT_FEAT_MSS_CMCC
-# 01/15/2008   Motorola        Set default MOT_FEAT_BT_WLAN_SINGLE_ANTENNA switch to FALSE
-# 02/14/2008   Motorola        Enable config option CONFIG_CRYPTO_NULL
-# 04/14/2008   Motorola        Enable config option CONFIG_MOT_FEAT_GETTIMEOFFSET_2618
-# 04/23/2008   Motorola        Add config CONFIG_MOT_FEAT_DISPLAY_EPSON
-# 05/14/2008   Motorola        Disable CONFIG_MOT_FEAT_DRM_COREDUMP
-# 07/14/2008   Motorola        Enable CONFIG_MOT_FEAT_FLUSH_LOCKED_TLB
-# 07/15/2008   Motorola        Added config CONFIG_MOT_FEAT_APP_COREDUMP_DISPLAY
-# 07/29/2008   Motorola        Add config CONFIG_MOT_FEAT_32_BIT_DISPLAY
-
+#
+# Date        Author            Comment
+# ==========  ================  ========================
+# 09/25/2006  Motorola          Initial creation
+# 09/27/2006  Motorola          Removed MAKE_DEVFS_ENTIRES,ALT_PLL,CMDLINE
+#                               Added BOOT_BACKLIGHT, WFN452, WFN452,
+#                               Sierra flags, IOSCHED flags
+#                               MXC_IPU_CAMERA_LIGHT_SENSOR
+#                               VIDEO_MXC_COMMON_DRIVER
+# 10/03/2006  Motorola          Added WFN455
+# 10/16/2006  Motorola          Added LANDSCAPE_IMODULE, WFN457, 
+#                               PRIORITIZED_OOM_KILL
+# 10/25/2006  Motorola          EMULATED_CLI unset, turned off many GPIO flags
+# 11/04/2006  Motorola          Added MMCSD_DEV_HOST_BIND, MTD_AUTO_BBM,
+#                               RAW_I2C_API, Removed WFN455
+# 11/15/2006  Motorola          Added VFP_RUNFAST_PANIC, WFN455, WFN461,WFN465,
+#                               WFN462, NET_LEY, INET flags, XFRM flags, 
+#                               CRYPTO flags,
+# 11/22/2006  Motorola          Removed POWERUP_REASON,MBM_VERSION, WFN329
+#                               Added MMCSD_HCSD, YAFFS flags, OTG_ACM_CONSOLE
+#                               DEBUG_ERROR, SECURITY, LSM, SECURE_MOUNT flags
+#                               YAFFS_FS turned off
+# 12/12/2006  Motorola          Added INOTIRY flags, GPIO_API_GPU,WFN475,
+#                               WFN472, WFN473, PROXSENSOR RAW_I2C_API set on
+# 01/02/2007  Motorola          Added DEVICE_TREE, WFN470
+# 01/24/2007  Motorola          Added WFN478, WFN479, HOTPLUG_FILTER
+# 02/09/2007  Motorola          Added ADVANCED_DEBUG, MEMDUMP, TEST_PANIC
+#                               PANIC_ON_OOPS, PANIC_ON_SCHED_ATOMIC
+# 02/16/2007  Motorola          Added NO_READ_AHEAD, WFN462, SYNC_INODE
+#                               Removed WFN462, BT flags OTG_TRACE set off
+# 02/21/2007  Motorola          Added WFN477,WFN456,MAX6946,OMEGA,PWR_KEY_LOCK
+#                               FM_RADIO
+# 02/26/2007  Motorola          Added PRINT_PC_ON_PANIC
+# 03/07/2007  Motorola          Added DEBUG_WDOG, PANIC_ON_OOM
+#                               Removed WFN452, PRIORITIZED_OOM_KILL set off
+# 03/09/2007  Motorola          PANIC_ON_OOPS set on
+# 03/26/2007  Motorola          Added OTG_MSC_NUM_PAGES
+# 03/28/2007  Motorola          Added CACHE_OPTIMIZATION
+# 04/04/2007  Motorola          Added WDOG_CLEANUP, WDOG1_ENABLE
+# 04/16/2007  Motorola          Added SDHC1, SDHC2, GCOV flags
+# 04/20/2007  Motorola          Added WFN482
+# 04/25/2007  Motorola          DEBUG_BUGVERBOSE set off
+# 04/2007     Motorola          UMA DSCP support - 
+#                               new config option MOT_FEAT_DSCP_UMA added
+# 05/22/2007  Motorola          Added CONFIG_MOT_FEAT_DRM_COREDUMP
+# 06/2007     Motorola          Antivirus hooks removed to support FEAT_AV
+# 06/08/2007  Motorola          Removed SiERRA Configuration Options
+# 07/09/2007  Motorola		Added WFN495
+# 07/23/2007  Motorola          Added WFN494
+# 08/03/2007  Motorola		Enable ptrace in kernel
+# 08/23/2007  Motorola          Added MOT_FEAT_YAFFS_SYNC & MOT_FEAT_FAT_SYNC
+# 08/23/2007  Motorola          Removed WFN455
+# 09/14/2007  Motorola		Disabled DEBUG_BUGVERBOSE 
+# 09/27/2007  Motorola		Added MOT_FEAT_IPU_MEM_SIZE 
+# 11/08/2007  Motorola          Removed Imager Drivers from Kernel Tree
+# 12/07/2007  Motorola          Added DEBUG_GNPO
+# 01/21/2008  Motorola          Added MOT_FEAT_ENABLE_JFFS2VFS_PATCH
+# 02/29/2008  Motorola          Enable CONFIG_MOT_FEAT_PRINT_PC_ON_PANIC
+# 03/25/2008  Motorola          Enable MOT_FEAT_ENABLE_HIDE_SYSFILE
+# 05/08/2008  Motorola          Disable CONFIG_MOT_FEAT_DRM_COREDUMP
+# 06/24/2008  Motorola          Enable CONFIG_MOT_FEAT_FLUSH_LOCKED_TLB
+# 07/23/2008  Motorola          Enable CONFIG_MOT_FAT_LOOKUP
 # Motorola Features
+
 #
-#CONFIG_FIQ=y
-#CONFIG_INOTIFY=y
-#CONFIG_MOT_FEAT_DEVICE_TREE=y
-#CONFIG_MOT_FEAT_INOTIFY=y
+CONFIG_MOT_FEAT_PRINT_PC_ON_PANIC=y
 CONFIG_MOT_FEAT_BRDREV=y
 CONFIG_MOT_FEAT_BOOTINFO=y
 CONFIG_MOT_FEAT_DOWN_TIMEOUT=y
-CONFIG_MOT_FEAT_POWERUP_LOGO=n
+CONFIG_MOT_FEAT_POWERUP_LOGO=y
+CONFIG_MOT_FEAT_DEVICE_TREE=y
 CONFIG_MOT_FEAT_POWERUP_REASON_EZX_COMPAT=y
 CONFIG_MOT_FEAT_MTD_FS=y
 CONFIG_MOT_FEAT_NO_READ_AHEAD=y
@@ -71,27 +103,28 @@ CONFIG_MOT_FEAT_NAND_AUTO_DETECT=y
 # CONFIG_MOT_FEAT_EMULATED_CLI is not set
 CONFIG_MOT_FEAT_IPU_PF_PERM666=y
 CONFIG_MOT_FEAT_DISABLE_SW_CURSOR=y
-# CONFIG_MOT_FEAT_SYSREBOOT is not set
+CONFIG_MOT_FEAT_SYSREBOOT=y
+# CONFIG_MOT_FEAT_SYSREBOOT_CRM is not set
+# CONFIG_MOT_FEAT_SYSREBOOT_ATLAS is not set
 # CONFIG_MOT_FEAT_VFP_RUNFAST_PANIC is not set
 # CONFIG_MOT_FIX_ASCENSION is not set
 CONFIG_MOT_FEAT_IPU_MEM_ADDR=y
+#CONFIG_MOT_FEAT_IPU_MEM_SIZE is not set
 CONFIG_MOT_FEAT_IPU_IOCTL=y
 CONFIG_MOT_FEAT_FB_PANIC_TEXT=y
 CONFIG_MOT_FEAT_IPU_IOCTL_EZX_COMPAT=y
 CONFIG_MOT_FEAT_ACTIVE_AND_LOW_POWER_INTERVAL_TIMERS=y
-CONFIG_MOT_FEAT_PRINTK_TIMES=y
+# CONFIG_MOT_FEAT_PRINTK_TIMES is not set
 CONFIG_MOT_FEAT_ADVANCED_DEBUG=y
 CONFIG_MOT_FEAT_KPANIC=y
 # CONFIG_MOT_FEAT_DEBUG_WDOG is not set
 # CONFIG_MOT_FEAT_MEMDUMP is not set
 # CONFIG_MOT_FEAT_TEST_PANIC is not set
-# CONFIG_MOT_FEAT_APP_COREDUMP_DISPLAY is not set
-# CONFIG_MOT_FEAT_PANIC_ON_OOPS is not set
+CONFIG_MOT_FEAT_PANIC_ON_OOPS=y
 # CONFIG_MOT_FEAT_PANIC_ON_SCHED_ATOMIC is not set
 # CONFIG_MOT_FEAT_WDOG_CLEANUP is not set
 # CONFIG_MOT_FEAT_WDOG1_ENABLE is not set
 CONFIG_MOT_FEAT_MODEM_RELAY=y
-CONFIG_MOT_KEYPAD=y
 # CONFIG_MOT_FEAT_FLIP is not set
 # CONFIG_MOT_FEAT_SLIDER is not set
 # CONFIG_MOT_FEAT_PPP_EZX_COMPAT is not set
@@ -100,12 +133,13 @@ CONFIG_MOT_FEAT_SLABFREE_PROC=y
 CONFIG_MOT_FEAT_MXC_IPC_SDMA_STATS=y
 CONFIG_MOT_FEAT_APP_DUMP=y
 CONFIG_MOT_FEAT_PM=y
+CONFIG_MOT_FEAT_FLUSH_LOCKED_TLB=y
 #
 # Desense is enabled on a per-product basis by the HW_PM_DESENSE flag in
 # the LJ Build Environment.
 #
 # CONFIG_MOT_FEAT_PM_DESENSE is not set
-# CONFIG_MOT_FEAT_PM_STATS is not set
+CONFIG_MOT_FEAT_PM_STATS=y
 # CONFIG_MOT_FEAT_PM_DEVICE_SUSPEND_DEBUG is not set
 CONFIG_MOT_FEAT_CACHE_OPTIMIZATION=y
 
@@ -116,24 +150,31 @@ CONFIG_MOT_FEAT_NAND_RDDIST=y
 # CONFIG_MOT_FEAT_NANDECC_TEST is not set
 CONFIG_MOT_FEAT_SO_BINDTODEVICE_EZX_COMPAT=y
 # CONFIG_MOT_FEAT_MU_TEST is not set
-CONFIG_MOT_FEAT_SECURE_CLOCK=n
 CONFIG_MOT_FEAT_OTP_EFUSE=y
 CONFIG_MOT_FEAT_ATLAS_TIMING_ISSUES=y
 CONFIG_MOT_FEAT_CONSOLE_DISABLED=y
 CONFIG_MOT_FEAT_CHKSUM=y
-# CONFIG_MOT_FEAT_BT_MAXUARTBAUDRATE is not set
+CONFIG_MOT_FEAT_BT_MAXUARTBAUDRATE=y
 CONFIG_MOT_WFN443=y
-CONFIG_MOT_FEAT_SECURE_USERMEM=n
-CONFIG_MOT_FEAT_NO_PTRACE=n
+CONFIG_MOT_FEAT_SECURE_USERMEM=y 
+# CONFIG_MOT_FEAT_ALLOW_MEM_ACCESS is not set
+# CONFIG_MOT_FEAT_NO_PTRACE is not set
 CONFIG_MOT_FEAT_PANIC_DECISION=y
-CONFIG_MOT_FEAT_SECURE_DRM=y
+CONFIG_MOT_FEAT_SECURE_MTD=y
 # CONFIG_MOT_FEAT_DRM_COREDUMP is not set
-CONFIG_MOT_FEAT_SECURE_MODULE=n
+CONFIG_MOT_FEAT_SECURE_MODULE=y
+CONFIG_MOT_FEAT_SECURE_MODULE_SYSFS=m
 # CONFIG_MOT_FEAT_SD1_TF_DET is not set
 # CONFIG_MOT_FEAT_DISABLE_UART3_DMA is not set
 # CONFIG_MOT_FEAT_STM90NM is not set
 # CONFIG_MOT_FEAT_BOOT_BACKLIGHT is not set
-# CONFIG_MOT_FEAT_MMCSD_DEV_HOST_BIND is not set
+CONFIG_MOT_FEAT_MTD_AUTO_BBM=y
+CONFIG_INOTIFY=y
+CONFIG_MOT_FEAT_INOTIFY=y
+CONFIG_MOT_FEAT_FASTPATHNAME=y
+CONFIG_MOT_FEAT_GETTIMEOFFSET_2618=y
+CONFIG_MOT_FEAT_INVERTED_SPI_DISPLAY=m
+CONFIG_MOT_FEAT_32KHZ_GPT=y
 
 #
 # Motorola GPIO API Options
@@ -145,27 +186,21 @@ CONFIG_MOT_FEAT_GPIO_API_MC13783=y
 CONFIG_MOT_FEAT_GPIO_API_BTPOWER=y
 CONFIG_MOT_FEAT_GPIO_API_CSI=y
 CONFIG_MOT_FEAT_GPIO_API_DAI=y
-CONFIG_MOT_FEAT_GPIO_API_ETHERNET=y
+# CONFIG_MOT_FEAT_GPIO_API_ETHERNET is not set
 CONFIG_MOT_FEAT_GPIO_API_ETM=y
+CONFIG_MOT_FEAT_GPIO_API_GPU=y
 CONFIG_MOT_FEAT_GPIO_API_LCD=y
-# CONFIG_MOT_FEAT_GPIO_API_SERIALIZER is not set
 CONFIG_MOT_FEAT_GPIO_API_LIGHTING=y
-CONFIG_MOT_FEAT_GPIO_API_LIGHTING_LCD=y
+# CONFIG_MOT_FEAT_GPIO_API_LIGHTING_LCD is not set
 CONFIG_MOT_FEAT_GPIO_API_LIGHTING_CAM_TORCH=y
-# CONFIG_MOT_FEAT_GPIO_API_LIGHTING_CAM_FLASH is not set
+CONFIG_MOT_FEAT_GPIO_API_LIGHTING_CAM_FLASH=y
 CONFIG_MOT_FEAT_GPIO_API_LIGHTING_EL=y
 CONFIG_MOT_FEAT_GPIO_API_SDHC=y
+CONFIG_MOT_FEAT_GPIO_API_SERIALIZER=y
 CONFIG_MOT_FEAT_GPIO_API_USBHS=y
 CONFIG_MOT_FEAT_GPIO_API_WLAN=y
-# CONFIG_MOT_FEAT_DISABLE_UART3_DMA is not set
-# CONFIG_MOT_FEAT_STM90NM is not set
-# CONFIG_MOT_FEAT_BOOT_BACKLIGHT is not set
-# CONFIG_MOT_FEAT_LANDSCAPE_IMODULE is not set
-CONFIG_MOT_FEAT_PRINT_PC_ON_PANIC=y
+
 CONFIG_MOT_FEAT_PANIC_ON_OOM=y
-# CONFIG_MOT_FEAT_MMC_SDHC1 is not set
-# CONFIG_MOT_FEAT_MMC_SDHC2 is not set
-# CONFIG_MOT_FEAT_BT_WLAN_SINGLE_ANTENNA is not set
 
 #
 # Anti-virus support
@@ -197,6 +232,7 @@ CONFIG_MOT_WFN409=y
 CONFIG_MOT_WFN407=y
 # CONFIG_MOT_WFN423 is not set
 CONFIG_MOT_WFN414=y
+# CONFIG_MOT_WFN418 is not set
 CONFIG_MOT_WFN431=y
 CONFIG_MOT_WFN424=y
 # CONFIG_MOT_WFN420 is not set
@@ -208,9 +244,8 @@ CONFIG_MOT_WFN436=y
 CONFIG_MOT_WFN444=y
 CONFIG_MOT_WFN389=y
 # CONFIG_MOT_WFN421 is not set
-CONFIG_MOT_WFN452=y
+CONFIG_MOT_WFN441=y
 CONFIG_MOT_WFN454=y
-CONFIG_MOT_WFN455=y
 CONFIG_MOT_WFN453=y
 CONFIG_MOT_WFN457=y
 CONFIG_MOT_WFN462=y
@@ -221,28 +256,20 @@ CONFIG_MOT_WFN475=y
 CONFIG_MOT_WFN472=y
 CONFIG_MOT_WFN473=y
 CONFIG_MOT_WFN477=y
-
 CONFIG_MOT_WFN478=y
-
 CONFIG_MOT_WFN479=y
+CONFIG_MOT_WFN422=y
+# CONFIG_MOT_WFN483 is not set
+CONFIG_MOT_WFN456=y
 CONFIG_MOT_WFN482=y
 CONFIG_MOT_WFN484=y
-CONFIG_MOT_WFN456=y
-
-#
-# Motorola SiERRA Configuration Options
-#
-CONFIG_MOT_POWER_IC=y
-CONFIG_MOT_POWER_IC_ATLAS=y
-#CONFIG_USR_BLK_DEV=y
-# CONFIG_CAPTOUCH is not set
-# CONFIG_CERAMICSPEAKER is not set
-# CONFIG_LINEARVIBRATOR is not set
-# CONFIG_PROXSENSOR is not set
-# CONFIG_MOT_FEAT_MAX6946 is not set
-# CONFIG_OMEGA is not set
-# CONFIG_PWR_KEY_LOCK is not set
-# CONFIG_FM_RADIO is not set
+CONFIG_MOT_WFN485=y
+CONFIG_MOT_WFN487=y
+CONFIG_MOT_WFN491=y
+CONFIG_MOT_WFN492=y
+CONFIG_MOT_WFN493=y
+CONFIG_MOT_WFN494=y
+CONFIG_MOT_WFN495=y
 
 #
 # End Motorola-specific feature and bug fixes
@@ -265,7 +292,7 @@ CONFIG_LOCK_KERNEL=y
 # General setup
 #
 CONFIG_LOCALVERSION=""
-CONFIG_SWAP=y
+# CONFIG_SWAP is not set
 CONFIG_SYSVIPC=y
 CONFIG_SYSVIPC_SEMMNI=128
 CONFIG_SYSVIPC_SEMMSL=250
@@ -302,6 +329,11 @@ CONFIG_NEWEV=y
 CONFIG_CSTM=y
 # CONFIG_GPIO is not set
 # CONFIG_TINY_SHMEM is not set
+
+#
+#GNPO debug panic
+#
+#CONFIG_MOT_FEAT_LOG_SCHEDULE_EVENTS=y #old CONFIG_DEBUG_GNPO=y
 
 #
 # Loadable module support
@@ -350,7 +382,6 @@ CONFIG_ARCH_MXC=y
 # CONFIG_ARCH_MXC91231 is not set
 # CONFIG_ARCH_MXC91131 is not set
 # CONFIG_ARCH_MX3 is not set
-CONFIG_FEAT_MXC31_CORE_OVERCLOCK_740=n
 
 #
 # MXC91131 Options
@@ -453,8 +484,6 @@ CONFIG_PM=y
 # Event Broker
 #
 # CONFIG_EVENT_BROKER is not set
-# CONFIG_ARTHUR is not set
-#CONFIG_CMDLINE="console=ttyS0,115200 root=/dev/nfs ip=bootp noinitrd"
 CONFIG_ALIGNMENT_TRAP=y
 
 #
@@ -549,7 +578,7 @@ CONFIG_BLK_DEV_LOOP=y
 CONFIG_BLK_DEV_RAM=y
 CONFIG_BLK_DEV_RAM_COUNT=16
 CONFIG_BLK_DEV_RAM_SIZE=16384
-# CONFIG_BLK_DEV_INITRD is not set
+CONFIG_BLK_DEV_INITRD=y
 CONFIG_INITRAMFS_SOURCE=""
 # CONFIG_CDROM_PKTCDVD is not set
 
@@ -589,18 +618,20 @@ CONFIG_IP_PNP=y
 CONFIG_IP_PNP_DHCP=y
 # CONFIG_IP_PNP_BOOTP is not set
 # CONFIG_IP_PNP_RARP is not set
-# CONFIG_NET_IPIP is not set
+CONFIG_NET_IPIP=y
 # CONFIG_NET_IPGRE is not set
 # CONFIG_IP_MROUTE is not set
 # CONFIG_ARPD is not set
 # CONFIG_SYN_COOKIES is not set
-# CONFIG_INET_AH is not set
-# CONFIG_INET_ESP is not set
-# CONFIG_INET_IPCOMP is not set
-# CONFIG_INET_TUNNEL is not set
+CONFIG_INET_AH=y
+CONFIG_INET_ESP=y
+CONFIG_INET_IPCOMP=y 
+CONFIG_INET_TUNNEL=y
 CONFIG_IP_TCPDIAG=y
 # CONFIG_IP_TCPDIAG_IPV6 is not set
 # CONFIG_IPV6 is not set
+CONFIG_XFRM=y
+CONFIG_XFRM_USER=y
 
 #
 # IP: Netfilter Configuration
@@ -694,24 +725,7 @@ CONFIG_IP_NF_TARGET_ULOG=y
 # CONFIG_OMAP1610_IR is not set
 # CONFIG_SMC_IRCC_FIR is not set
 # CONFIG_ALI_FIR is not set
-CONFIG_BT=m
-CONFIG_BT_L2CAP=m
-CONFIG_BT_SCO=m
-CONFIG_BT_RFCOMM=m
-CONFIG_BT_RFCOMM_TTY=y
-CONFIG_BT_BNEP=m
-CONFIG_BT_BNEP_MC_FILTER=y
-CONFIG_BT_BNEP_PROTO_FILTER=y
-CONFIG_BT_HIDP=m
 
-#
-# Bluetooth device drivers
-#
-CONFIG_BT_HCIUART=m
-CONFIG_BT_HCIUART_H4=y
-CONFIG_BT_HCIUART_BCSP=y
-CONFIG_BT_HCIUART_BCSP_TXCRC=y
-CONFIG_BT_HCIVHCI=m
 # CONFIG_IEEE80211 is not set
 CONFIG_NETDEVICES=y
 # CONFIG_DUMMY is not set
@@ -773,7 +787,7 @@ CONFIG_PPP_ASYNC=y
 CONFIG_PPP_SYNC_TTY=y
 # CONFIG_PPP_DEFLATE is not set
 # CONFIG_PPP_BSDCOMP is not set
-CONFIG_PPPOE=y
+# CONFIG_PPPOE is not set
 CONFIG_SLIP=y
 # CONFIG_SLIP_COMPRESSED is not set
 # CONFIG_SLIP_SMART is not set
@@ -843,6 +857,7 @@ CONFIG_HW_CONSOLE=y
 # CONFIG_SERIAL_NONSTANDARD is not set
 CONFIG_MXC_MU=y
 CONFIG_MXC_IPC=y
+CONFIG_MXC_IPC_V2=y
 # CONFIG_MXC_SDMA_TTY is not set
 CONFIG_MXC_RTC=y
 
@@ -889,6 +904,7 @@ CONFIG_UNIX98_PTYS=y
 #
 CONFIG_I2C=y
 # CONFIG_I2C_CHARDEV is not set
+CONFIG_MOT_FEAT_I2C_BLK_SUSPEND=y 
 
 #
 # I2C Algorithms
@@ -966,8 +982,8 @@ CONFIG_MXC_I2C_CLIENT=y
 #
 # File systems
 #
-CONFIG_EXT2_FS=y
-CONFIG_EXT3_FS=y
+# CONFIG_EXT2_FS is not set
+# CONFIG_EXT3_FS is not set
 # CONFIG_JBD is not set
 # CONFIG_REISERFS_FS is not set
 # CONFIG_JFS_FS is not set
@@ -982,7 +998,7 @@ CONFIG_DNOTIFY=y
 #
 # CD-ROM/DVD Filesystems
 #
-CONFIG_ISO9660_FS=m
+# CONFIG_ISO9660_FS is not set
 # CONFIG_UDF_FS is not set
 
 #
@@ -994,6 +1010,7 @@ CONFIG_VFAT_FS=y
 CONFIG_FAT_DEFAULT_CODEPAGE=437
 CONFIG_FAT_DEFAULT_IOCHARSET="iso8859-1"
 # CONFIG_NTFS_FS is not set
+CONFIG_MOT_FEAT_ENABLE_HIDE_SYSFILE=y
 
 #
 # Pseudo filesystems
@@ -1028,6 +1045,11 @@ CONFIG_JFFS2_FS_WRITEBUFFER=y
 CONFIG_JFFS2_ZLIB=y
 CONFIG_JFFS2_RTIME=y
 # CONFIG_JFFS2_RUBIN is not set
+#
+#For enable the patch in VFS for jffs2
+#
+CONFIG_MOT_FEAT_ENABLE_JFFS2VFS_PATCH=y
+
 CONFIG_CRAMFS=y
 # CONFIG_CRAMFS_LINEAR is not set
 CONFIG_SQUASHFS=y
@@ -1055,8 +1077,6 @@ CONFIG_YAFFS_SHORT_NAMES_IN_RAM=y
 CONFIG_YAFFS_MXC_MODE=y
 CONFIG_MOT_FEAT_YAFFS_PARSE_MOUNT_OPTIONS=y
 CONFIG_MOT_FEAT_YAFFS_SHREDDER=y 
-CONFIG_MOT_FEAT_YAFFS_SYNC=y
-CONFIG_MOT_FEAT_FAT_SYNC=y
 # CONFIG_YAFFS1_FS is not set
 
 # New flags for files in the yaffs2_lp area.
@@ -1065,14 +1085,17 @@ CONFIG_MOT_FEAT_FAT_SYNC=y
 # CONFIG_YAFFS_DISABLE_WIDE_TNODES is not set
 # CONFIG_YAFFS_ALWAYS_CHECK_CHUNK_ERASED is not set
 
+CONFIG_MOT_FEAT_YAFFS_SYNC=y
+CONFIG_MOT_FEAT_FAT_SYNC=y
+
 #
 # Network File Systems
 #
-# CONFIG_NFS_FS is nto set
+CONFIG_NFS_FS=m
 # CONFIG_NFSD is not set
 # CONFIG_EXPORTFS is not set
 # CONFIG_SMB_FS is not set
-CONFIG_CIFS=m
+# CONFIG_CIFS is not set
 # CONFIG_NCP_FS is not set
 # CONFIG_CODA_FS is not set
 # CONFIG_AFS_FS is not set
@@ -1152,9 +1175,7 @@ CONFIG_FB_MXC_OVERLAY=y
 # CONFIG_MOT_FEAT_FB_MXC_RGB is not set
 CONFIG_MOT_FEAT_FB_MXC_BGR=y
 CONFIG_MOT_FEAT_IPU_BGRA6666=y
-# CONFIG_MOT_FEAT_LCD_ESD_RECOVERY is not set
 # CONFIG_FB_VIRTUAL is not set
-# NEW_MBX is not set
 
 # Display type, whether TRANSMISSIVE or TRANSFLECTIVE
 CONFIG_FB_MXC_MAIN_TRANSMISSIVE_DISPLAY=y
@@ -1177,9 +1198,6 @@ CONFIG_FONT_8x16=y
 # Logo configuration
 #
 # CONFIG_LOGO is not set
-# CONFIG_LOGO_LINUX_MONO is not set
-# CONFIG_LOGO_LINUX_VGA16 is not set
-CONFIG_LOGO_LINUX_CLUT224=y
 
 #
 # Multimedia devices
@@ -1200,19 +1218,19 @@ CONFIG_VIDEO_MXC_CAMERA=y
 # MXC Camera/V4L2 IPU PRP Features support
 #
 # CONFIG_MXC_CAMERA_MICRON111 is not set
-#CONFIG_MXC_IPU_CAMERA_SENSOR2M=y
-CONFIG_MXC_IPU_PRP_VF_SDC=y
-CONFIG_MXC_IPU_PRP_ENC=y
-CONFIG_MXC_IPU_CAMERA_I2C_INTERFACE=y
-CONFIG_VIDEO_MXC_OUTPUT=y
-CONFIG_VIDEO_MXC_V4L1=y
+# CONFIG_MXC_IPU_PRP_VF_SDC is not set
+# CONFIG_MXC_IPU_PRP_ENC is not set
+# CONFIG_VIDEO_MXC_OUTPUT is not set
+
 # CONFIG_VIDEO_CPIA is not set
 # CONFIG_VIDEO_SAA5246A is not set
 # CONFIG_VIDEO_SAA5249 is not set
 # CONFIG_TUNER_3036 is not set
 # CONFIG_VIDEO_OVCAMCHIP is not set
 # CONFIG_MOT_FEAT_2MP_CAMERA_WRKARND is not set
-# CONFIG_VIDEO_MXC_COMMON_DRIVER is not set
+
+# raw i2c api
+CONFIG_MOT_FEAT_RAW_I2C_API=y
 
 #
 # Radio Adapters
@@ -1265,231 +1283,11 @@ CONFIG_USB_ARCH_HAS_HCD=y
 # CONFIG_USB_GADGET is not set
 
 #
-# On-The-Go and USB Peripheral Support
+# Kernel level USB Peripheral Support
 #
-CONFIG_OTG=m
-# CONFIG_OTG_HIGH_SPEED is not set
+
 # CONFIG_MOT_FEAT_FX2LP_I2C is not set
-# CONFIG_OTG_NFS is not set
-
-#
-# 
-#
-
-#
-# On-The-Go Support Platform Selection
-#
-CONFIG_OTG_BRASSBOARD=m
-CONFIG_OTG_BRASSBOARD_ISP1104=y
-# CONFIG_OTG_BRASSBOARD_MC13783 is not set
-CONFIG_OTG_BRASSBOARD_DIFFERENTIAL_UNIDIRECTIONAL=y
-# CONFIG_OTG_BRASSBOARD_DIFFERENTIAL_BIDIRECTIONAL is not set
-# CONFIG_OTG_BRASSBOARD_SINGLE_ENDED_UNIDIRECTIONAL is not set
-# CONFIG_OTG_BRASSBOARD_SINGLE_ENDED_BIDIRECTIONAL is not set
-CONFIG_OTG_HRT=y
-CONFIG_OTG_PLATFORM_OTG=y
-CONFIG_OTG_PLATFORM_USB=y
-CONFIG_OTG_PLATFORM_USBD=y
-CONFIG_OTG_FREESCALE=y
-
-#
-# 
-#
-
-#
-# On-The-Go Options
-#
-CONFIG_OTG_USB_PERIPHERAL=y
-# CONFIG_OTG_USB_PERIPHERAL_OR_HOST is not set
-# CONFIG_OTG_DEVICE is not set
-# CONFIG_OTG_TR_AUTO is not set
-
-#
-# 
-#
-
-#
-# OTG Support In Linux USB Core
-#
-
-#
-# 
-#
-
-#
-# Language
-#
-CONFIG_OTG_LANGID=0x0904
-
-#
-# Testing and Portability
-#
-# CONFIG_OTG_TRACE is not set
-# CONFIG_OTG_NOC99 is not set
-
-#
-# Targeted Peripherals List (USB Peripheral Function Drivers)
-#
-
-#
-# OTG Generic function
-#
-CONFIG_OTG_GENERIC=m
-CONFIG_OTG_GENERIC_HOTPLUG=y
-
-#
-# OTG Generic Composite function options
-#
-CONFIG_OTG_GENERIC_VENDORID=0x22b8
-CONFIG_OTG_GENERIC_PRODUCTID=0x6424
-CONFIG_OTG_GENERIC_BCDDEVICE=0x0101
-CONFIG_OTG_GENERIC_MANUFACTURER="Motorola Inc."
-CONFIG_OTG_GENERIC_PRODUCT_NAME="Motorola USB Device"
-CONFIG_OTG_ACM_NETWORK_PRODUCTID=0x6425
-CONFIG_OTG_ACM_NETWORK_BLAN_DESC="Motorola ACM BLAN Configuration"
-CONFIG_OTG_GENERIC_CONFIG_NONE=y
-# CONFIG_OTG_GENERIC_CONFIG_MOUSE is not set
-# CONFIG_OTG_GENERIC_CONFIG_NET_BLAN is not set
-# CONFIG_OTG_GENERIC_CONFIG_NET_CDC is not set
-# CONFIG_OTG_GENERIC_CONFIG_NET_SAFE is not set
-# CONFIG_OTG_GENERIC_CONFIG_ACM_TTY is not set
-# CONFIG_OTG_GENERIC_CONFIG_MSC is not set
-# CONFIG_OTG_GENERIC_CONFIG_MTP is not set
-# CONFIG_OTG_GENERIC_CONFIG_PBG is not set
-# CONFIG_OTG_GENERIC_CONFIG_MOUSE2 is not set
-# CONFIG_OTG_GENERIC_CONFIG_MSC_MOUSE is not set
-# CONFIG_OTG_GENERIC_CONFIG_MOUSE_BLAN is not set
-# CONFIG_OTG_GENERIC_CONFIG_MSC_BLAN is not set
-# CONFIG_OTG_GENERIC_CONFIG_MSC_CDC is not set
-CONFIG_OTG_GENERIC_CONFIG_NAME=""
-
-#
-# OTG ACM Function
-#
-CONFIG_OTG_ACM=m
-
-#
-# OTG ACM function options
-#
-CONFIG_OTG_ACM_VENDORID=0x22b8
-CONFIG_OTG_ACM_PRODUCTID=0x6422
-CONFIG_OTG_ACM_BCDDEVICE=0x0101
-CONFIG_OTG_ACM_MANUFACTURER="Motorola Inc."
-CONFIG_OTG_ACM_PRODUCT_NAME="Motorola USB device"
-CONFIG_OTG_ACM_DESC="Motorola Communication Class"
-CONFIG_OTG_ACM_HOTPLUG=y
-CONFIG_OTG_ACM_COMM_INTF="Motorola Communication Interface"
-CONFIG_OTG_ACM_NODATA_INTF="Motorola Data Interface"
-CONFIG_OTG_ACM_DATA_INTF="Motorola Data Interface"
-# CONFIG_OTG_ACM_CONSOLE is not set
-
-#
-# OTG Random Mouse function
-#
-# CONFIG_OTG_MOUSE is not set
-
-#
-# Mouse support modules:
-#
-# CONFIG_OTG_MOUSE_INTERFACE is not set
-# CONFIG_OTG_MOUSE_COMPOSITE is not set
-# CONFIG_OTG_MOUSE_TRADITIONAL is not set
-
-#
-# OTG Random Mouse function options
-#
-#CONFIG_OTG_MOUSE_VENDORID=0x15ec
-#CONFIG_OTG_MOUSE_PRODUCTID=0xf003
-#CONFIG_OTG_MOUSE_BCDDEVICE=0x0100
-#CONFIG_OTG_MOUSE_MANUFACTURER="Belcarra"
-#CONFIG_OTG_MOUSE_PRODUCT_NAME="Random Mouse Device"
-#CONFIG_OTG_MOUSE_COMM_INTF="MOUSE Data Intf"
-#CONFIG_OTG_MOUSE_DESC="MOUSE Configuration"
-# CONFIG_OTG_MOUSE_BH is not set
-#CONFIG_OTG_MOUSE_PACKETS=10000
-# CONFIG_OTG_MOUSE_STALL is not set
-#CONFIG_OTG_MOUSE_INTERVAL=1
-
-#
-# OTG Mass Storage function
-#
-CONFIG_OTG_MSC=m
-
-#
-# OTG Mass Storage function options
-#
-CONFIG_OTG_MSC_VENDORID=0x22b8
-CONFIG_OTG_MSC_PRODUCTID=0x6426
-CONFIG_OTG_MSC_BCDDEVICE=0x0101
-CONFIG_OTG_MSC_MANUFACTURER="Motorola Inc."
-CONFIG_OTG_MSC_PRODUCT_NAME="MS"
-CONFIG_OTG_MSC_DESC="MSC BO Configuration"
-CONFIG_OTG_MSC_HOTPLUG=y
-# CONFIG_OTG_MSC_REGISTER_TRACE is not set
-CONFIG_OTG_MSC_NUM_PAGES=0x08
-
-#
-# OTG Network Function
-#
-CONFIG_OTG_NETWORK=m
-
-#
-# OTG Network Function options
-#
-CONFIG_OTG_NETWORK_VENDORID=0x22b8
-CONFIG_OTG_NETWORK_PRODUCTID=0x6424
-CONFIG_OTG_NETWORK_BCDDEVICE=0x0101
-CONFIG_OTG_NETWORK_MANUFACTURER="Motorola Inc."
-CONFIG_OTG_NETWORK_PRODUCT_NAME="Motorola USB Device"
-
-#
-# --
-#
-CONFIG_OTG_NETWORK_BLAN=y
-
-#
-# BLAN Network Function options
-#
-CONFIG_OTG_NETWORK_BLAN_DESC="BLAN Net Cfg"
-CONFIG_OTG_NETWORK_BLAN_CRC=y 
-CONFIG_OTG_NETWORK_BLAN_AUTO_CONFIG=y
-# CONFIG_OTG_NETWORK_BLAN_NONBRIDGED is not set
-# CONFIG_OTG_NETWORK_SAFE is not set
-# CONFIG_OTG_NETWORK_CDC is not set
-# CONFIG_OTG_NETWORK_BASIC is not set
-# CONFIG_OTG_NETWORK_BASIC2 is not set
-
-#
-# OTG MTP Function
-#
-CONFIG_OTG_MTP=m
-
-#
-# OTG MTP function options
-#
-CONFIG_OTG_MTP_VENDORID=0x22b8
-CONFIG_OTG_MTP_PRODUCTID=0x6415
-CONFIG_OTG_MTP_BCDDEVICE=0x0101
-CONFIG_OTG_MTP_MANUFACTURER="Motorola Inc."
-CONFIG_OTG_MTP_PRODUCT_NAME="Motorola USB Device"
-CONFIG_OTG_MTP_DESC="MTP Configuration"
-CONFIG_OTG_MTP_HOTPLUG=y
-
-#
-# OTG PBG Function
-#
-CONFIG_OTG_PBG=m
-
-#
-# OTG PBG function options
-#
-CONFIG_OTG_PBG_VENDORID=0x22b8
-CONFIG_OTG_PBG_PRODUCTID=0x6411
-CONFIG_OTG_PBG_BCDDEVICE=0x0101
-CONFIG_OTG_PBG_MANUFACTURER="Motorola Inc."
-CONFIG_OTG_PBG_PRODUCT_NAME="Motorola USB Device"
-CONFIG_OTG_PBG_DESC="PTP Configuration"
-CONFIG_OTG_PBG_HOTPLUG=y
+# CONFIG_MOT_FEAT_ANTIOCH is not set
 
 #
 # Synchronous Serial Interfaces (SSI)
@@ -1498,9 +1296,7 @@ CONFIG_OTG_PBG_HOTPLUG=y
 #
 # MMC/SD Card support
 #
-# CONFIG_MMC is not set
-# CONFIG_MMC_DEBUG is not set
-# CONFIG_MMC_WBSD is not set
+CONFIG_MMC_MXC=y
 
 #
 # profiler support
@@ -1510,7 +1306,6 @@ CONFIG_OTG_PBG_HOTPLUG=y
 # AP Logger Hooks
 #
 CONFIG_APLOGGER=y
-CONFIG_SIM_SUPPORT=y
 
 #
 # MontaVista System tools
@@ -1524,7 +1319,7 @@ CONFIG_SIM_SUPPORT=y
 #
 CONFIG_DEBUG_KERNEL=y
 # CONFIG_MAGIC_SYSRQ is not set
-CONFIG_PRINTK_TIME=y
+# CONFIG_PRINTK_TIME is not set
 # CONFIG_SCHEDSTATS is not set
 # CONFIG_DEBUG_SLAB is not set
 # CONFIG_DEBUG_PREEMPT is not set
@@ -1532,7 +1327,7 @@ CONFIG_PRINTK_TIME=y
 # CONFIG_CRITICAL_PREEMPT_TIMING is not set
 # CONFIG_CRITICAL_IRQSOFF_TIMING is not set
 # CONFIG_DEBUG_KOBJECT is not set
-CONFIG_DEBUG_BUGVERBOSE=y
+# CONFIG_DEBUG_BUGVERBOSE is not set
 CONFIG_DEBUG_INFO=y
 CONFIG_FRAME_POINTER=y
 # CONFIG_KGDB is not set
@@ -1546,16 +1341,15 @@ CONFIG_DEBUG_ERRORS=y
 #
 # CONFIG_KEYS is not set
 CONFIG_SECURITY=y
-CONFIG_MOT_FEAT_LSM=y
-CONFIG_MOT_FEAT_SECURE_MOUNT=n
-CONFIG_MOT_FEAT_SECURE_MOUNT_SYSFS=n
+CONFIG_SECURITY_NETWORK=y
+CONFIG_SECURITY_CAPABILITIES=y
 
 #
 # Cryptographic options
 #
 CONFIG_CRYPTO=y
 CONFIG_CRYPTO_HMAC=y
-CONFIG_CRYPTO_NULL=y
+# CONFIG_CRYPTO_NULL is not set
 CONFIG_CRYPTO_MD4=y
 CONFIG_CRYPTO_MD5=y
 CONFIG_CRYPTO_SHA1=y
@@ -1617,12 +1411,12 @@ CONFIG_MXC_SPI_SELECT2=y
 #
 # MXC SSI support
 #
-CONFIG_MXC_SSI=y
+CONFIG_MXC_SSI=m
 
 #
 # MXC Digital Audio Multiplexer support
 #
-CONFIG_MXC_DAM=y
+CONFIG_MXC_DAM=m
 
 #
 # SC55112 support
@@ -1660,12 +1454,21 @@ CONFIG_MXC_SDMA_API=y
 #
 # APAL (Audio Driver) support
 #
-CONFIG_APAL=y
+CONFIG_APAL=m
 
 #
 # Do not hardcode pgprot to PAGE_SHARED
 #
 CONFIG_MOT_FEAT_NO_PAGE_SHARED=y
+
+#
+# UMA Stage 3 Spec, DSCP mapping
+#
+CONFIG_MOT_FEAT_DSCP_UMA=n
+#
+# POWER IC API Hooks
+#
+CONFIG_MOT_FEAT_POWER_IC_API=y
 
 #
 # GCOV support
@@ -1677,31 +1480,7 @@ CONFIG_MOT_FEAT_NO_PAGE_SHARED=y
 
 CONFIG_MOT_FEAT_SDMA_DEBUG=y
 
-
 #
-# Set TCP MSS to solve compatibility issue with CMCC
+# FAT
 #
-#CONFIG_MOT_FEAT_MSS_CMCC is not set
-
-
-# CONFIG_MOT_TURBO_INDICATOR is not set
-# CONFIG_MOT_DSM_INDICATOR is not set
-#
-# OTG PTP Function
-#
-CONFIG_OTG_PTP=m
-
-#
-# OTG PTP function options
-#
-CONFIG_OTG_PTP_VENDORID=0x22b8
-CONFIG_OTG_PTP_PRODUCTID=0x6411
-CONFIG_OTG_PTP_BCDDEVICE=0x0001
-CONFIG_OTG_PTP_MANUFACTURER="Motorola Inc."
-CONFIG_OTG_PTP_PRODUCT_NAME="Motorola USB Device"
-CONFIG_OTG_PTP_DESC="PTP Configuration"
-CONFIG_OTG_PTP_HOTPLUG=y
-
-# CONFIG_MOT_FEAT_DISPLAY_EPSON is not set
-
-# CONFIG_MOT_FEAT_32_BIT_DISPLAY is not set
+CONFIG_MOT_FAT_LOOKUP=y

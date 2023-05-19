@@ -5,8 +5,8 @@
   * thread etc..
   * 
   * (c) Copyright © 2003-2007, Marvell International Ltd. 
-  * (c) Copyright © 2008, Motorola.
-  * 
+  * (c) Copyright © 2007, Motorola.
+  *
   * This software file (the "File") is distributed by Marvell International 
   * Ltd. under the terms of the GNU General Public License Version 2, June 1991 
   * (the "License").  You may use, redistribute and/or modify this File in 
@@ -36,23 +36,21 @@
   */
 /********************************************************
 Change log:
-	09/30/05: Add Doxygen format comments
-	12/09/05: Add TX_QUEUE support	
-	01/05/06: Add kernel 2.6.x support	
-	01/11/06: Conditionalize new scan/join functions.
-	01/12/06: Add TxLockFlag for UAPSD power save mode 
-	          and Proprietary Periodic sleep support
+    09/30/05: Add Doxygen format comments
+    12/09/05: Add TX_QUEUE support  
+    01/05/06: Add kernel 2.6.x support  
+    01/11/06: Conditionalize new scan/join functions.
+    01/12/06: Add TxLockFlag for UAPSD power save mode 
+              and Proprietary Periodic sleep support
 ********************************************************/
-/*****************************************************
- Date         Author         Comment
- ==========   ===========    ==========================
- 05-May-2008  Motorola       Increase wlan main thread priority to -11
- 15-May-2008  Motorola       Add MPM support.
- 04-Jun-2008  Motorola       WIFI driver :integrate Marvell 8686 pre release (81048p4_26340p77)
- 17-Jun-2008  Motorola       WIFI driver :integrate Marvell 8686 release (81048p5_26340p78)
- 04-Jul-2008  Motorola       Update file for OSS compliance.
-*******************************************************/
-#include	"include.h"
+
+/********************************************************
+ Revision History:
+  * Author           Date            Description
+  * Motorola         20-Oct-2007     Added FMA support  
+*********************************************************/
+
+#include    "include.h"
 
 #ifdef WPRM_DRV
 extern int gpio_wlan_hostwake_request_irq(gpio_irq_handler handler,
@@ -61,7 +59,7 @@ extern int gpio_wlan_hostwake_request_irq(gpio_irq_handler handler,
 extern void gpio_wlan_hostwake_free_irq(void *dev_id);
 #endif
 /********************************************************
-		Local Variables
+        Local Variables
 ********************************************************/
 #ifdef WPRM_DRV
 #define WLAN_WPRM_DRV_NAME "wlan_wprm_drv"
@@ -95,12 +93,12 @@ static struct platform_device wlan_pm_platform_device = {
 spinlock_t driver_lock = SPIN_LOCK_UNLOCKED;
 ulong driver_flags;
 
-#define WLAN_TX_PWR_DEFAULT		20      /*100mW */
-#define WLAN_TX_PWR_US_DEFAULT		20      /*100mW */
-#define WLAN_TX_PWR_JP_DEFAULT		8
-#define WLAN_TX_PWR_FR_100MW		20      /*100mW */
-#define WLAN_TX_PWR_FR_10MW		10      /*10mW */
-#define WLAN_TX_PWR_EMEA_DEFAULT	20      /*100mW */
+#define WLAN_TX_PWR_DEFAULT     20      /*100mW */
+#define WLAN_TX_PWR_US_DEFAULT      20  /*100mW */
+#define WLAN_TX_PWR_JP_DEFAULT      16  /*50mW */
+#define WLAN_TX_PWR_FR_100MW        20  /*100mW */
+#define WLAN_TX_PWR_FR_10MW     10      /*10mW */
+#define WLAN_TX_PWR_EMEA_DEFAULT    20  /*100mW */
 
 /* Format { Channel, Frequency (MHz), MaxTxPower } */
 /* Band: 'B/G', Region: USA FCC/Canada IC */
@@ -175,7 +173,7 @@ static CHANNEL_FREQ_POWER channel_freq_power_JPN40_BG[] = {
 };
 
 /********************************************************
-		Global Variables
+        Global Variables
 ********************************************************/
 
 /**
@@ -233,8 +231,9 @@ u8 WlanDataRates[WLAN_SUPPORTED_RATES] =
  * the rates supported
  */
 u8 SupportedRates[G_SUPPORTED_RATES] =
-    { 0x82, 0x84, 0x8b, 0x96, 0x0c, 0x12, 0x18, 0x24, 0x30, 0x48, 0x60, 0x6c,
-0 };
+    { 0x82, 0x84, 0x8b, 0x96, 0x0c, 0x12, 0x18, 0x24, 0x30, 0x48,
+    0x60, 0x6c, 0
+};
 
 /**
  * the rates supported for ad-hoc G mode
@@ -265,19 +264,15 @@ u32 DSFreqList[15] = {
 u16 RegionCodeToIndex[MRVDRV_MAX_REGION_CODE] =
     { 0x10, 0x20, 0x30, 0x31, 0x32, 0x40, 0x41 };
 
-#ifdef ENABLE_PM
-int wlan_mpm_advice_id = -1;
-BOOLEAN wlan_mpm_active = FALSE;
-#endif
 /********************************************************
-		Local Functions
+        Local Functions
 ********************************************************/
 
 /** 
  *  @brief This function opens the network device
  *  
  *  @param dev     A pointer to net_device structure
- *  @return 	   WLAN_STATUS_SUCCESS
+ *  @return        WLAN_STATUS_SUCCESS
  */
 static int
 wlan_open(struct net_device *dev)
@@ -294,12 +289,12 @@ wlan_open(struct net_device *dev)
     if ((adapter->MediaConnectStatus == WlanMediaStateConnected)
         && (adapter->InfrastructureMode != Wlan802_11IBSS
             || adapter->AdhocLinkSensed == TRUE))
-
         os_carrier_on(priv);
     else
         os_carrier_off(priv);
 
     os_start_queue(priv);
+    wmm_start_queue(priv);
 
     LEAVE();
     return WLAN_STATUS_SUCCESS;
@@ -309,7 +304,7 @@ wlan_open(struct net_device *dev)
  *  @brief This function closes the network device
  *  
  *  @param dev     A pointer to net_device structure
- *  @return 	   WLAN_STATUS_SUCCESS
+ *  @return        WLAN_STATUS_SUCCESS
  */
 static int
 wlan_close(struct net_device *dev)
@@ -318,10 +313,8 @@ wlan_close(struct net_device *dev)
 
     ENTER();
 
-    /* Flush all the packets upto the OS before stopping */
-    wlan_send_rxskbQ(priv);
-    os_stop_queue(priv);
-    os_carrier_off(priv);
+    if (priv->adapter)
+        wlan_clean_txrx(priv);
 
     MODULE_PUT;
 
@@ -485,7 +478,6 @@ wlan_pm_resume(struct device *pmdev, u32 level)
                  * Start bus clock
                  */
                 sbi_set_bus_clock(priv, TRUE);
-
                 /*
                  * Attach the network interface
                  * if the network is running
@@ -541,13 +533,15 @@ wlan_pm_release(struct device *pmdev)
  *  
  *  @param skb     A pointer to sk_buff structure
  *  @param dev     A pointer to net_device structure
- *  @return 	   WLAN_STATUS_SUCCESS or WLAN_STATUS_FAILURE
+ *  @return        WLAN_STATUS_SUCCESS or WLAN_STATUS_FAILURE
  */
 static int
 wlan_hard_start_xmit(struct sk_buff *skb, struct net_device *dev)
 {
     int ret;
     wlan_private *priv = dev->priv;
+
+    ret = WLAN_STATUS_SUCCESS;
 
     ENTER();
 
@@ -556,19 +550,7 @@ wlan_hard_start_xmit(struct sk_buff *skb, struct net_device *dev)
     if (wlan_tx_packet(priv, skb)) {
         /* Transmit failed */
         ret = WLAN_STATUS_FAILURE;
-        goto done;
-    } else {
-        /* Transmit succeeded */
-        if (!priv->adapter->wmm.enabled) {
-            if (priv->adapter->TxSkbNum >= MAX_NUM_IN_TX_Q) {
-                UpdateTransStart(dev);
-                os_stop_queue(priv);
-            }
-        }
     }
-
-    ret = WLAN_STATUS_SUCCESS;
-  done:
 
     LEAVE();
     return ret;
@@ -579,7 +561,7 @@ wlan_hard_start_xmit(struct sk_buff *skb, struct net_device *dev)
  *  transmission
  *  
  *  @param dev     A pointer to net_device structure
- *  @return 	   n/a
+ *  @return        n/a
  */
 static void
 wlan_tx_timeout(struct net_device *dev)
@@ -589,7 +571,6 @@ wlan_tx_timeout(struct net_device *dev)
     ENTER();
 
     PRINTM(DATA, "Tx timeout\n");
-
     UpdateTransStart(dev);
 
     priv->adapter->dbg.num_tx_timeout++;
@@ -604,7 +585,7 @@ wlan_tx_timeout(struct net_device *dev)
  *  @brief This function returns the network statistics
  *  
  *  @param dev     A pointer to wlan_private structure
- *  @return 	   A pointer to net_device_stats structure
+ *  @return        A pointer to net_device_stats structure
  */
 static struct net_device_stats *
 wlan_get_stats(struct net_device *dev)
@@ -619,7 +600,7 @@ wlan_get_stats(struct net_device *dev)
  *  
  *  @param priv    A pointer to wlan_private structure
  *  @param pRxPD   A pointer to RxPD structure of received packet
- *  @return 	   WLAN_STATUS_SUCCESS or WLAN_STATUS_FAILURE
+ *  @return        WLAN_STATUS_SUCCESS or WLAN_STATUS_FAILURE
  */
 static int
 wlan_set_mac_address(struct net_device *dev, void *addr)
@@ -661,7 +642,7 @@ wlan_set_mac_address(struct net_device *dev, void *addr)
  *  @brief This function sets multicast addresses to firmware
  *  
  *  @param dev     A pointer to net_device structure
- *  @return 	   n/a
+ *  @return        n/a
  */
 static void
 wlan_set_multicast_list(struct net_device *dev)
@@ -677,9 +658,7 @@ wlan_set_multicast_list(struct net_device *dev)
     if (dev->flags & IFF_PROMISC) {
         PRINTM(INFO, "Enable Promiscuous mode\n");
         Adapter->CurrentPacketFilter |= HostCmd_ACT_MAC_PROMISCUOUS_ENABLE;
-        Adapter->CurrentPacketFilter &=
-            ~(HostCmd_ACT_MAC_ALL_MULTICAST_ENABLE |
-              HostCmd_ACT_MAC_MULTICAST_ENABLE);
+        Adapter->CurrentPacketFilter &= ~HostCmd_ACT_MAC_ALL_MULTICAST_ENABLE;
     } else {
         /* Multicast */
         Adapter->CurrentPacketFilter &= ~HostCmd_ACT_MAC_PROMISCUOUS_ENABLE;
@@ -689,7 +668,6 @@ wlan_set_multicast_list(struct net_device *dev)
             PRINTM(INFO, "Enabling All Multicast!\n");
             Adapter->CurrentPacketFilter |=
                 HostCmd_ACT_MAC_ALL_MULTICAST_ENABLE;
-            Adapter->CurrentPacketFilter &= ~HostCmd_ACT_MAC_MULTICAST_ENABLE;
         } else {
             Adapter->CurrentPacketFilter &=
                 ~HostCmd_ACT_MAC_ALL_MULTICAST_ENABLE;
@@ -697,13 +675,9 @@ wlan_set_multicast_list(struct net_device *dev)
             if (!dev->mc_count) {
                 PRINTM(INFO, "No multicast addresses - "
                        "disabling multicast!\n");
-                Adapter->CurrentPacketFilter &=
-                    ~HostCmd_ACT_MAC_MULTICAST_ENABLE;
+
             } else {
                 int i;
-
-                Adapter->CurrentPacketFilter |=
-                    HostCmd_ACT_MAC_MULTICAST_ENABLE;
 
                 Adapter->NumOfMulticastMACAddr =
                     CopyMulticastAddrs(Adapter, dev);
@@ -728,7 +702,9 @@ wlan_set_multicast_list(struct net_device *dev)
     }
 
     if (Adapter->CurrentPacketFilter != OldPacketFilter) {
-        SetMacPacketFilter(priv);
+        PrepareAndSendCommand(priv,
+                              HostCmd_CMD_MAC_CONTROL,
+                              0, 0, 0, &Adapter->CurrentPacketFilter);
     }
 
     LEAVE();
@@ -738,7 +714,7 @@ wlan_set_multicast_list(struct net_device *dev)
  *  @brief This function pops rx_skb from the rx queue.
  *  
  *  @param RxSkbQ  A pointer to rx_skb queue
- *  @return 	   A pointer to skb
+ *  @return        A pointer to skb
  */
 static struct sk_buff *
 wlan_pop_rx_skb(struct sk_buff *RxSkbQ)
@@ -759,7 +735,7 @@ wlan_pop_rx_skb(struct sk_buff *RxSkbQ)
  *  from firmware and tx data sent from kernel.
  *  
  *  @param data    A pointer to wlan_thread structure
- *  @return 	   WLAN_STATUS_SUCCESS
+ *  @return        WLAN_STATUS_SUCCESS
  */
 static int
 wlan_service_main_thread(void *data)
@@ -779,9 +755,9 @@ wlan_service_main_thread(void *data)
     init_waitqueue_entry(&wait, current);
 
     current->flags |= PF_NOFREEZE;
-    
-    set_user_nice(current, -11);
-    
+
+    wmm_init(priv);
+
     for (;;) {
         add_wait_queue(&thread->waitQ, &wait);
         OS_SET_THREAD_STATE(TASK_INTERRUPTIBLE);
@@ -794,11 +770,9 @@ wlan_service_main_thread(void *data)
             (!Adapter->IntCounter &&
              Adapter->PSState == PS_STATE_PRE_SLEEP) ||
             (!Adapter->IntCounter
-             && (priv->wlan_dev.dnld_sent || !Adapter->wmm.enabled ||
-                 Adapter->TxLockFlag || !os_queue_is_active(priv) ||
-                 wmm_lists_empty(priv))
-             && (priv->wlan_dev.dnld_sent || Adapter->TxLockFlag ||
-                 !Adapter->TxSkbNum)
+             && (priv->wlan_dev.dnld_sent || Adapter->TxLockFlag
+                 || wmm_lists_empty(priv) || wmm_is_queue_stopped(priv))
+             && (priv->wlan_dev.dnld_sent || !Adapter->CurrentTxSkb)
              && (priv->wlan_dev.dnld_sent || Adapter->CurCmd ||
                  list_empty(&Adapter->CmdPendingQ))
             )
@@ -828,11 +802,9 @@ wlan_service_main_thread(void *data)
         OS_SET_THREAD_STATE(TASK_RUNNING);
         remove_wait_queue(&thread->waitQ, &wait);
 
-        if (kthread_should_stop()
-            || Adapter->SurpriseRemoved) {
-            PRINTM(INFO,
-                   "main-thread: break from main thread: SurpriseRemoved=0x%x\n",
-                   Adapter->SurpriseRemoved);
+        if (kthread_should_stop() || Adapter->SurpriseRemoved) {
+            PRINTM(INFO, "main-thread: break from main thread: "
+                   "SurpriseRemoved=0x%x\n", Adapter->SurpriseRemoved);
             break;
         }
 
@@ -851,7 +823,9 @@ wlan_service_main_thread(void *data)
             OS_INT_RESTORE;
             PRINTM(INTR, "INT: status = 0x%x\n", Adapter->HisRegCpy);
         } else if (Adapter->bWakeupDevRequired
-                   && (Adapter->PSState == PS_STATE_SLEEP)
+                   && ((Adapter->PSState == PS_STATE_SLEEP)
+                       || (Adapter->IsDeepSleep)
+                   )
             ) {
             Adapter->WakeupTries++;
             PRINTM(CMND,
@@ -860,13 +834,6 @@ wlan_service_main_thread(void *data)
                    (priv->adapter->MediaConnectStatus) ? "Y" : "N",
                    priv->adapter->PSMode, priv->adapter->PSState);
 
-#ifdef ENABLE_PM
-            if ((Adapter->MediaConnectStatus == WlanMediaStateConnected) && (wlan_mpm_advice_id > 0 ) && (wlan_mpm_active == FALSE)) {
-                wlan_mpm_active = TRUE;
-                mpm_driver_advise(wlan_mpm_advice_id, MPM_ADVICE_DRIVER_IS_BUSY);
-                PRINTM(MOTO_DEBUG, "Wakeup device, driver is BUSY sent to MPM\n");
-            }
-#endif
             /* Wake up device */
             if (sbi_exit_deep_sleep(priv))
                 PRINTM(MSG, "main-thread: wakeup dev failed\n");
@@ -913,31 +880,31 @@ wlan_service_main_thread(void *data)
             }
         }
 
-        /* The PS state is changed during processing of Sleep Request event above */
-        if ((priv->adapter->PSState == PS_STATE_SLEEP)
-            || (priv->adapter->PSState == PS_STATE_PRE_SLEEP)
-            ) {
+        /* The PS state is changed during processing of 
+         * Sleep Request event above 
+         */
+        if ((Adapter->PSState == PS_STATE_SLEEP)
+            || (Adapter->PSState == PS_STATE_PRE_SLEEP)) {
             continue;
         }
+
+        if (Adapter->IsDeepSleep)
+            continue;
 
         /* Execute the next command */
         if (!priv->wlan_dev.dnld_sent && !Adapter->CurCmd) {
             ExecuteNextCommand(priv);
         }
 
-        if (Adapter->wmm.enabled) {
-            if (!wmm_lists_empty(priv) && os_queue_is_active(priv)) {
-                if ((Adapter->PSState == PS_STATE_FULL_POWER) ||
-                    (Adapter->sleep_period.period == 0)
-                    || (Adapter->TxLockFlag == FALSE))
-                    wmm_process_tx(priv);
-            }
-        } else {
-            if (!priv->wlan_dev.dnld_sent && (Adapter->TxLockFlag == FALSE)
-                && !list_empty((struct list_head *) &priv->adapter->TxSkbQ)) {
-                wlan_process_txqueue(priv);
+        if (!priv->wlan_dev.dnld_sent
+            && !wmm_lists_empty(priv) && !wmm_is_queue_stopped(priv)) {
+            if ((Adapter->PSState == PS_STATE_FULL_POWER)
+                || (Adapter->sleep_period.period == 0)
+                || (Adapter->TxLockFlag == FALSE)) {
+                wmm_process_tx(priv);
             }
         }
+
     }
 
     wlan_deactivate_thread(thread);
@@ -951,14 +918,13 @@ wlan_service_main_thread(void *data)
  * card, allocate the wlan_priv and initialize the device. 
  *  
  *  @param card    A pointer to card
- *  @return 	   A pointer to wlan_private structure
+ *  @return        A pointer to wlan_private structure
  */
 static wlan_private *
 wlan_add_card(void *card)
 {
     struct net_device *dev = NULL;
     wlan_private *priv = NULL;
-    
 
     ENTER();
 
@@ -998,13 +964,11 @@ wlan_add_card(void *card)
     dev->do_ioctl = wlan_do_ioctl;
     dev->set_mac_address = wlan_set_mac_address;
 
-#define	WLAN_WATCHDOG_TIMEOUT	(2 * HZ)
-
     dev->tx_timeout = wlan_tx_timeout;
     dev->get_stats = wlan_get_stats;
-    dev->watchdog_timeo = WLAN_WATCHDOG_TIMEOUT;
+    dev->watchdog_timeo = MRVDRV_DEFAULT_WATCHDOG_TIMEOUT;
 
-#ifdef	WIRELESS_EXT
+#ifdef  WIRELESS_EXT
     dev->get_wireless_stats = wlan_get_wireless_stats;
     dev->wireless_handlers = (struct iw_handler_def *) &wlan_handler_def;
 #endif
@@ -1012,11 +976,6 @@ wlan_add_card(void *card)
     dev->features |= NETIF_F_DYNALLOC;
     dev->flags |= IFF_BROADCAST | IFF_MULTICAST;
     dev->set_multicast_list = wlan_set_multicast_list;
-
-#ifdef MFG_CMD_SUPPORT
-    /* Required for the mfg command */
-    init_waitqueue_head(&priv->adapter->mfg_cmd_q);
-#endif
 
     init_waitqueue_head(&priv->adapter->ds_awake_q);
 
@@ -1036,13 +995,6 @@ wlan_add_card(void *card)
         PRINTM(MSG,
                "WiFi driver, wlan_main : error when registering driver to Linux Power Managment.\n");
     }
-    
-    /* register to MPM for busy/non-busy advice */
-    wlan_mpm_advice_id = mpm_register_with_mpm("wlan_driver");
-    if ( wlan_mpm_advice_id < 0 ) {
-        /* we needn't unregister here */
-        PRINTM(MSG, "Can't register wlan driver to mpm ( %d )\n", wlan_mpm_advice_id);
-    }
 #endif
 #ifdef WPRM_DRV
     /* Register wprm_wlan_host_wakeb_handler as handler for WLAN_HOST_WAKE_B GPIO interrupt. */
@@ -1058,15 +1010,11 @@ wlan_add_card(void *card)
     INIT_LIST_HEAD(&priv->adapter->CmdPendingQ);
 
     PRINTM(INFO, "Starting kthread...\n");
-    
-    
-    
     priv->MainThread.priv = priv;
     wlan_create_thread(wlan_service_main_thread,
                        &priv->MainThread, "wlan_main_service");
-		      
-    
-    
+
+    ConfigureThreadPriority();
 
 #ifdef REASSOCIATION
     priv->ReassocThread.priv = priv;
@@ -1082,7 +1030,6 @@ wlan_add_card(void *card)
                        "wlan_traffic_meter");
 
 #endif /* WPRM_DRV */
-    
     /*
      * Register the device. Fillup the private data structure with
      * relevant information from the card and request for the required
@@ -1098,11 +1045,13 @@ wlan_add_card(void *card)
            "revision 0x%02X at IRQ %i\n", dev->name,
            priv->adapter->chip_rev, dev->irq);
 
+#ifdef CONFIG_PROC_FS
     wlan_proc_entry(priv, dev);
     wlan_firmware_entry(priv, dev);
 #ifdef PROC_DEBUG
     wlan_debug_entry(priv, dev);
 #endif
+#endif /* CPNFIG_PROC_FS */
 
     /* Get the CIS Table */
     sbi_get_cis_info(priv);
@@ -1124,11 +1073,13 @@ wlan_add_card(void *card)
   err_init_fw:
     sbi_unregister_dev(priv);
 
+#ifdef CONFIG_PROC_FS
 #ifdef PROC_DEBUG
     wlan_debug_remove(priv);
 #endif
     wlan_firmware_remove(priv);
     wlan_proc_remove(priv);
+#endif
 
   err_registerdev:
     /* Stop the thread servicing the interrupts */
@@ -1139,7 +1090,6 @@ wlan_add_card(void *card)
     wake_up_interruptible(&priv->ReassocThread.waitQ);
     wlan_terminate_thread(&priv->ReassocThread);
 #endif /* REASSOCIATION */
-
 #ifdef WPRM_DRV
     WPRM_DRV_TRACING_PRINT();
     /* remove traffic meter thread */
@@ -1160,7 +1110,7 @@ wlan_add_card(void *card)
  *  @brief This function removes the card.
  *  
  *  @param priv    A pointer to card
- *  @return 	   WLAN_STATUS_SUCCESS
+ *  @return        WLAN_STATUS_SUCCESS
  */
 static int
 wlan_remove_card(void *card)
@@ -1177,6 +1127,10 @@ wlan_remove_card(void *card)
         return WLAN_STATUS_SUCCESS;
     }
 
+#ifdef WFMA_SUPPORT
+    wlan_fma_unregister();
+#endif /* WFMA_SUPPORT */
+    
     Adapter = priv->adapter;
 
     if (!Adapter) {
@@ -1199,13 +1153,21 @@ wlan_remove_card(void *card)
         wlan_clean_txrx(priv);
         Adapter->MediaConnectStatus = WlanMediaStateDisconnected;
     }
+
     if (Adapter->PSMode == Wlan802_11PowerModeMAX_PSP) {
         Adapter->PSMode = Wlan802_11PowerModeCAM;
         PSWakeup(priv, HostCmd_OPTION_WAITFORRSP);
     }
     if (Adapter->IsDeepSleep == TRUE) {
-        Adapter->IsDeepSleep = FALSE;
         sbi_exit_deep_sleep(priv);
+        if (Adapter->IsDeepSleep == TRUE) {
+            if (os_wait_interruptible_timeout(Adapter->ds_awake_q,
+                                              !Adapter->IsDeepSleep,
+                                              MRVDRV_DEEP_SLEEP_EXIT_TIMEOUT)
+                == 0) {
+                PRINTM(MSG, "ds_awake_q: timer expired\n");
+            }
+        }
     }
 
     memset(wrqu.ap_addr.sa_data, 0xaa, ETH_ALEN);
@@ -1223,22 +1185,7 @@ wlan_remove_card(void *card)
     /* unregister driver and device from Linux Power Management system. */
     platform_device_unregister(&wlan_pm_platform_device);
     driver_unregister(&wlan_pm_driver);
-
-    if ( wlan_mpm_advice_id >= 0 ) {
-        if (wlan_mpm_active == TRUE) {
-            mpm_driver_advise(wlan_mpm_advice_id, MPM_ADVICE_DRIVER_IS_NOT_BUSY);
-            PRINTM(MOTO_DEBUG, "Remove_card: driver is NOT busy sent to MPM\n");
-	    wlan_mpm_active = FALSE;
-        }
-        mpm_unregister_with_mpm(wlan_mpm_advice_id);
-    }
 #endif
-
-    /* Flush all the packets upto the OS before stopping */
-    wlan_send_rxskbQ(priv);
-    cleanup_txqueues(priv);
-    os_stop_queue(priv);
-    os_carrier_off(priv);
 
     Adapter->SurpriseRemoved = TRUE;
 
@@ -1263,11 +1210,13 @@ wlan_remove_card(void *card)
 #ifdef WPRM_DRV
     gpio_wlan_hostwake_free_irq(priv);
 #endif
+#ifdef CONFIG_PROC_FS
 #ifdef PROC_DEBUG
     wlan_debug_remove(priv);
 #endif
     wlan_firmware_remove(priv);
     wlan_proc_remove(priv);
+#endif
 
     PRINTM(INFO, "unregester dev\n");
     sbi_unregister_dev(priv);
@@ -1294,60 +1243,14 @@ wlan_remove_card(void *card)
 }
 
 /********************************************************
-		Global Functions
+        Global Functions
 ********************************************************/
-/** 
- *  @brief Cleanup TX queue
- *  @param priv       pointer to wlan_private
- *  @return 	      N/A
-*/
-void
-cleanup_txqueues(wlan_private * priv)
-{
-    struct sk_buff *delNode, *Q;
-
-    Q = &priv->adapter->TxSkbQ;
-    while (!list_empty((struct list_head *) Q)) {
-        delNode = Q->next;
-        list_del((struct list_head *) delNode);
-        kfree_skb(delNode);
-    }
-    priv->adapter->TxSkbNum = 0;
-}
-
-/** 
- *  @brief handle TX Queue
- *  @param priv       pointer to wlan_private
- *  @return 	      N/A
-*/
-void
-wlan_process_txqueue(wlan_private * priv)
-{
-    wlan_adapter *Adapter = priv->adapter;
-    ulong flags;
-    struct sk_buff *Q;
-    OS_INTERRUPT_SAVE_AREA;
-    ENTER();
-    spin_lock_irqsave(&Adapter->CurrentTxLock, flags);
-    if (Adapter->TxSkbNum > 0) {
-        Q = &priv->adapter->TxSkbQ;
-        Adapter->CurrentTxSkb = Q->next;
-        list_del((struct list_head *) Adapter->CurrentTxSkb);
-        Adapter->TxSkbNum--;
-    }
-    spin_unlock_irqrestore(&Adapter->CurrentTxLock, flags);
-    if (Adapter->CurrentTxSkb) {
-        wlan_process_tx(priv);
-    }
-
-    LEAVE();
-}
 
 /**
  * @brief This function sends the rx packets to the os from the skb queue
  *
- * @param priv	A pointer to wlan_private structure
- * @return	n/a
+ * @param priv  A pointer to wlan_private structure
+ * @return  n/a
  */
 void
 wlan_send_rxskbQ(wlan_private * priv)
@@ -1369,9 +1272,9 @@ wlan_send_rxskbQ(wlan_private * priv)
  *  region_cfp_table based on region and band parameter.
  *  
  *  @param region  The region code
- *  @param band	   The band
+ *  @param band    The band
  *  @param cfp_no  A pointer to CFP number
- *  @return 	   A pointer to CFP
+ *  @return        A pointer to CFP
  */
 CHANNEL_FREQ_POWER *
 wlan_get_region_cfp_table(u8 region, u8 band, int *cfp_no)
@@ -1402,8 +1305,8 @@ wlan_get_region_cfp_table(u8 region, u8 band, int *cfp_no)
  *  
  *  @param priv    A pointer to wlan_private structure
  *  @param region  The region code
- *  @param band	   The band
- *  @return 	   WLAN_STATUS_SUCCESS or WLAN_STATUS_FAILURE
+ *  @param band    The band
+ *  @return        WLAN_STATUS_SUCCESS or WLAN_STATUS_FAILURE
  */
 int
 wlan_set_regiontable(wlan_private * priv, u8 region, u8 band)
@@ -1458,14 +1361,15 @@ wlan_interrupt(struct net_device *dev)
     if (priv->adapter->PSState == PS_STATE_SLEEP) {
         priv->adapter->PSState = PS_STATE_AWAKE;
     }
+
     wake_up_interruptible(&priv->MainThread.waitQ);
 }
 
 /** 
  *  @brief This function initializes module.
  *  
- *  @param	   n/a    A pointer to wlan_private structure
- *  @return 	   WLAN_STATUS_SUCCESS or WLAN_STATUS_FAILURE
+ *  @param     n/a    A pointer to wlan_private structure
+ *  @return        WLAN_STATUS_SUCCESS or WLAN_STATUS_FAILURE
  */
 int
 wlan_init_module(void)
@@ -1473,10 +1377,6 @@ wlan_init_module(void)
     int ret = WLAN_STATUS_SUCCESS;
 
     ENTER();
-
-#ifdef MOTO_DBG
-    PRINTM(MOTO_MSG, "WLAN module init start.\n");
-#endif
 
     if (sbi_register(wlan_add_card, wlan_remove_card, NULL) == NULL) {
         ret = WLAN_STATUS_FAILURE;
@@ -1492,16 +1392,12 @@ wlan_init_module(void)
  *  @brief This function cleans module
  *  
  *  @param priv    n/a
- *  @return 	   n/a
+ *  @return        n/a
  */
 void
 wlan_cleanup_module(void)
 {
     ENTER();
-
-#ifdef MOTO_DBG
-    PRINTM(MOTO_MSG, "Removing WLAN module.\n");
-#endif
 
     sbi_unregister();
 

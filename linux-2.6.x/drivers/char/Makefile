@@ -10,7 +10,7 @@ FONTMAPFILE = cp437.uni
 obj-y	 += mem.o random.o tty_io.o n_tty.o tty_ioctl.o
 
 
-######obj-$(CONFIG_INOTIFY)           += inotify.o
+obj-$(CONFIG_INOTIFY)           += inotify.o
 obj-$(CONFIG_LEGACY_PTYS)	+= pty.o
 obj-$(CONFIG_UNIX98_PTYS)	+= pty.o
 obj-y				+= misc.o
@@ -40,7 +40,6 @@ obj-$(CONFIG_SIBYTE_SB1250_DUART) += sb1250_duart.o
 obj-$(CONFIG_MXC_MU)		+= mxc_mu.o
 obj-$(CONFIG_MXC_IPC)		+= mxc_ipc.o
 obj-$(CONFIG_MXC_SDMA_TTY)	+= mxc_sdma_tty.o
-obj-$(CONFIG_MOT_KEYPAD)        += mot_keyb.o
 obj-$(CONFIG_COMPUTONE)		+= ip2.o ip2main.o
 obj-$(CONFIG_RISCOM8)		+= riscom8.o
 obj-$(CONFIG_ISI)		+= isicom.o

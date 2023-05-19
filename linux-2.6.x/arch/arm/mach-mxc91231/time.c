@@ -25,14 +25,18 @@
  * Date         Author    Comment
  * ----------   --------  --------------------
  * 10/06/2006   Motorola  Kernel panic support 
- * 01/12/2007   Motorola  Added watchdog debug support
  * 02/09/2007   Motorola  Rewirte the check start code of wdog make it more readable
  * 03/28/2007   Motorola  FN482: Fixed the calculation of timer
- *                        interrupt match in schedule_hr_timer_int 
+ *                        interrupt match in schedule_hr_timer_int
+ * 04/17/2007   Motorola  Improved mxc_gettimeoffset()
  * 04/24/2007   Motorola  Added 32KHz clock support for GPT.
- * 11/13/2007   Motorola  Start the kernel thread to kick the watch dog 
- * 03/11/2008   Motorola  Adapted WDOG2 FIQ handler to FIQ handler in C language
- * 04/14/2008   Motorola  Improved mxc_gettimeoffset()
+ * 11/13/2007   Motorola  Start the kernel thread to kick the watch dog
+ * 12/03/2007   Motorola  Enable Watchdog in DSM mode
+ * 12/27/2007   Motorola  Enabled wdog2 functionality.
+ * 02/13/2008   Motorola  Changed priority of wdog kick thread 
+ * 03/05/2008   Motorola  Enable APR for wdog2 panic
+ * 04/23/2008   Motorola  Added PC in wdog2 interrupt handler
+ *
  */
 
 /*!
@@ -51,14 +55,12 @@
 #include <linux/wait.h>
 #include <linux/proc_fs.h>
 #include <linux/rtc.h>
+#ifdef CONFIG_MOT_FEAT_ENABLE_WD_IN_DSM
+#include <linux/device.h>
+#endif /* CONFIG_MOT_FEAT_ENABLE_WD_IN_DSM */
 #include <asm/mach/time.h>
 #include <asm/io.h>
 #include "time_priv.h"
-
-#ifdef CONFIG_MOT_FEAT_DEBUG_WDOG
-#include <asm/fiq.h>
-#include <asm/arch/clock.h>
-#endif
 
 /*!
  * This function converts system timer ticks to microseconds
@@ -140,7 +142,6 @@ volatile unsigned short g_wdog1_enabled, g_wdog2_enabled;
 
 /* WDOG WCR register's WT value */
 static int wdog_tmout[2] = { WDOG1_TIMEOUT, WDOG2_TIMEOUT };
-
 /*!
  * This function provides the required service for the watchdog to avoid
  * the timeout.
@@ -162,60 +163,31 @@ void kick_wd(void)
 	}
 }
 
-#ifdef CONFIG_MOT_FEAT_DEBUG_WDOG
-static struct fiq_handler wdog2_fh = {
-	name: "WDOG2"
-};
-#endif /* CONFIG_MOT_FEAT_DEBUG_WDOG */
-
 /*!
  * This is the watchdog initialization routine to setup the timeout
  * value and enable it.
  */
 void mxc_wd_init(int port)
 {
-#ifdef CONFIG_MOT_FEAT_DEBUG_WDOG
-	extern unsigned char wdog2_fiq_handler_start, wdog2_fiq_handler_end;
-	struct pt_regs fiq_regs;
-#endif /* CONFIG_MOT_FEAT_DEBUG_WDOG */
 	unsigned volatile short timeout =
 	    ((wdog_tmout[port] / 1000) * 2) << WDOG_WT;
 
 	if (port == 0) {
 		/* enable WD, suspend WD in DEBUG mode and low power mode */
 		wdog_base[port]->WDOG_WCR = timeout | WCR_WOE_BIT |
-		    WCR_SRS_BIT | WCR_WDA_BIT | WCR_WDE_BIT | WCR_WDBG_BIT | WCR_WDZST_BIT;
+#ifdef CONFIG_MOT_FEAT_ENABLE_WD_IN_DSM
+			WCR_SRS_BIT | WCR_WDA_BIT | WCR_WDE_BIT | WCR_WDBG_BIT;
+#else
+			WCR_SRS_BIT | WCR_WDA_BIT | WCR_WDE_BIT | WCR_WDBG_BIT | WCR_WDZST_BIT;
+#endif /* CONFIG_MOT_FEAT_ENABLE_WD_IN_DSM */
 	} else {
 		/* enable WD, suspend WD in DEBUG, low power modes and WRE=1 */
-#ifndef CONFIG_MOT_FEAT_DEBUG_WDOG
 		wdog_base[port]->WDOG_WCR = timeout | WCR_WOE_BIT |
-		    WCR_SRS_BIT | WCR_WRE_BIT | WCR_WDE_BIT | WCR_WDBG_BIT;
+#ifndef CONFIG_MOT_FEAT_DEBUG_WDOG 
+                     WCR_SRS_BIT | WCR_WRE_BIT | WCR_WDE_BIT | WCR_WDBG_BIT;
 #else
-		mxc_clks_enable(WDOG2_CLK);
-
-		wdog_base[port]->WDOG_WCR = timeout | WCR_WOE_BIT |
-		    WCR_WDA_BIT | WCR_SRS_BIT |  WCR_WDE_BIT | WCR_WRE_BIT | WCR_WDBG_BIT | WCR_WDZST_BIT;
-		/* enable FIQ for INT_WDOG2 */
-#ifdef CONFIG_MOT_FEAT_FIQ_IN_C
-		__raw_writel(1 << (INT_WDOG2 - 32), AVIC_INTTYPEH);
-		enable_fiq(INT_WDOG2);
-#else
-		if (claim_fiq(&wdog2_fh))
-			printk("Couldn't claim FIQ for INT_WDOG2\n");
-		else {
-			printk("FIQ claimed for INT_WDOG2\n");	
-			__raw_writel(1 << (INT_WDOG2 - 32), AVIC_INTTYPEH);
-
-			/* FIQ handler must be no more 
-			 * than to 0x200-0x01c (484) bytes 
-			 */
-			set_fiq_handler(&wdog2_fiq_handler_start, &wdog2_fiq_handler_end - &wdog2_fiq_handler_start);
-			fiq_regs.ARM_r8 = (long)(AVIC_BASE);
-			set_fiq_regs(&fiq_regs);
-			enable_fiq(INT_WDOG2);
-		}
-#endif /* CONFIG_MOT_FEAT_FIQ_IN_C */
-#endif /* CONFIG_MOT_FEAT_DEBUG_WDOG */
+		     WCR_WDA_BIT | WCR_SRS_BIT |  WCR_WDE_BIT | WCR_WRE_BIT | WCR_WDBG_BIT | WCR_WDZST_BIT;
+#endif
 	}
 
 #ifdef CONFIG_MOT_WFN321
@@ -230,18 +202,26 @@ static unsigned short wdog_reset_status = 0;
 
 //#define MXC_WDT_KICK_THREAD_DEBUG	1
 
+#ifdef CONFIG_MOT_FEAT_ENABLE_WD_IN_DSM
+#define WATCHDOG_TIMEOUT_IN_DSM		120	/* second */
+
+static unsigned int g_wd1_timeout = 0;
+static rtc_sw_task_t g_rtc_task;
+#endif /* CONFIG_MOT_FEAT_ENABLE_WD_IN_DSM */
+
 static int mxc_wdt_kick_thread(void *unused)
 {
 	int ret;
 
 	daemonize("mxcwdt_kick");
+	set_user_nice(current, -20);
 #ifdef MXC_WDT_KICK_THREAD_DEBUG
 	allow_signal(SIGKILL);
 #endif
 
 	for(;;) {
 		ret = wait_event_interruptible(mxc_watchdog_wait,
-			g_wdog_count >= ((WDOG_SERVICE_PERIOD / 1000) * HZ));
+				g_wdog_count >= ((WDOG_SERVICE_PERIOD / 1000) * HZ));
 #ifdef MXC_WDT_KICK_THREAD_DEBUG
 		if (ret < 0) {
 			printk("Signal received, exit ...\n");
@@ -254,7 +234,139 @@ static int mxc_wdt_kick_thread(void *unused)
 
 	return 0;
 }
-#endif
+
+#ifdef CONFIG_MOT_FEAT_ENABLE_WD_IN_DSM
+static int wd_in_dsm_enabled(int wd)
+{
+	if(wd < 0 || wd > 1)
+	{
+		printk(KERN_ERR"Invalid watchdog parameter: %d.\n", wd);
+		return 0;
+	}
+	return !(wdog_base[wd]->WDOG_WCR & WCR_WDZST_BIT);
+}
+
+static unsigned int wd_get_timeout(int wd)
+{
+	unsigned int timeout;
+
+	if(wd < 0 || wd > 1)
+	{
+		printk(KERN_ERR"Invalid watchdog parameter: %d.\n", wd);
+		return 0;
+	}
+
+	timeout = (wdog_base[wd]->WDOG_WCR >> WDOG_WT) & 0xff;
+	return (timeout + 1) / 2;
+}
+
+static void wd_set_timeout(int wd, int seconds)
+{
+	unsigned int timeout;
+
+	if(wd < 0 || wd > 1)
+	{
+		printk(KERN_ERR"Invalid watchdog parameter: %d.\n", wd);
+		return;
+	}
+	if(seconds < 1 || seconds > 128)
+	{
+		printk(KERN_ERR"Invalid watchdog timeout: %d.\n", seconds);
+		return;
+	}
+	timeout = wdog_base[wd]->WDOG_WCR;
+	timeout &= ~(0xff << WDOG_WT);
+	timeout |= (seconds * 2 - 1) << WDOG_WT;
+
+	wdog_base[wd]->WDOG_WCR = timeout;
+}
+
+static void rtc_kicking(unsigned long tick)
+{
+	/* 
+	 * We needn't do anything here. After waking up, kernel timer will
+	 * wake up kernel thread to kick wd.
+	 */
+}
+
+static int watchdog_suspend(struct device *dev, u32 state, u32 level)
+{
+	unsigned int min_rtc_timeout;
+
+	if(level != SUSPEND_POWER_DOWN)
+		return 0;
+
+	kick_wd();
+
+	min_rtc_timeout = rtc_sw_get_closest_timeout();
+	wd_set_timeout(0, WATCHDOG_TIMEOUT_IN_DSM);
+
+	if((min_rtc_timeout > WATCHDOG_TIMEOUT_IN_DSM * 1000 / 2) || !min_rtc_timeout)
+		rtc_sw_task_schedule(WATCHDOG_TIMEOUT_IN_DSM * 1000 / 2, &g_rtc_task);
+
+	return 0;
+}
+
+static int watchdog_resume(struct device *dev, u32 level)
+{
+	if(level != RESUME_POWER_ON)
+		return 0;
+
+	kick_wd();
+
+	/* Restore original awaking WD timeout setting */
+	wd_set_timeout(0, g_wd1_timeout);
+
+	return 0;
+}
+
+static struct platform_device mxc_wd_device = {
+	.name = "watchdog",
+	.id = 0,
+};
+
+static struct device_driver wd_driver = {
+	.name = "watchdog",
+	.bus = &platform_bus_type,
+	.suspend = watchdog_suspend,
+	.resume = watchdog_resume,
+};
+
+static int __init wd_rtc_driver_init(void)
+{
+	int ret;
+	ret = driver_register(&wd_driver);
+	if (ret != 0) {
+		printk(KERN_ERR "Wddog can't register rtc_sw driver: %d\n", ret);
+		return ret;
+	}
+}
+
+static int __init wd_rtc_device_init(void)
+{
+        int ret;
+
+	/* Checking whether Wdog enabled in DSM mode or not. */
+	if(!wd_in_dsm_enabled(0))
+	{
+		printk(KERN_NOTICE"WD is disabed in DSM mode.\n");
+		return 0;
+	}
+
+	g_wd1_timeout = wd_get_timeout(0);
+        ret = platform_device_register(&mxc_wd_device);
+	if (ret != 0) {
+		printk(KERN_ERR "Wddog can't register device: %d\n", ret);
+		return ret;
+	}
+
+        rtc_sw_task_init(&g_rtc_task, rtc_kicking, 0);
+}
+
+late_initcall(wd_rtc_device_init);
+module_init(wd_rtc_driver_init);
+#endif /* ONFIG_MOT_FEAT_ENABLE_WD_IN_DSM */
+#endif /* WDOG_SERVICE_PERIOD */
 
 /*!
  * This is the timer interrupt service routine to do required tasks.
@@ -363,12 +475,14 @@ static struct irqaction timer_irq = {
 };
 
 #ifdef CONFIG_MOT_FEAT_DEBUG_WDOG
-
 static irqreturn_t wdog2_irq_handler(int irq, void *did, struct pt_regs *regs)
 {
-	printk("Current Process: %s, PID: %d.\n", current->comm, current->pid);
+	printk ("dead PC: %p\n",(void *) instruction_pointer(regs));
 	dump_stack();
-	panic("Watchdog timeout");
+#ifdef CONFIG_MOT_FEAT_PRINT_PC_ON_PANIC
+	printk("[APR]PanicPC: WD2:%s,prio %d\n",current->comm,current->prio);
+#endif
+	panic("Watchdog timeout - Current thread is %s, pid %d, prio is %d.\n", current->comm, current->pid, current->prio);
 	return IRQ_HANDLED;
 }
 
@@ -377,7 +491,16 @@ static struct irqaction wdog2_irq = {
 	.flags = SA_INTERRUPT,
 	.handler = wdog2_irq_handler
 };
+
+static void enable_fiq_for_int_wdog2(void)
+{
+	__raw_writel(1 << (INT_WDOG2 - 32), AVIC_INTTYPEH);
+
+	enable_fiq(INT_WDOG2);
+	setup_irq(INT_WDOG2, &wdog2_irq);
+}
 #endif /* CONFIG_MOT_FEAT_DEBUG_WDOG */
+
 
 /*!
  * This function is used to initialize the GPT to produce an interrupt
@@ -411,9 +534,6 @@ void __init mxc_init_time(void)
 	__raw_writel(reg, MXC_GPT_GPTOCR1);
 
 	setup_irq(INT_GPT, &timer_irq);
-#ifdef CONFIG_MOT_FEAT_DEBUG_WDOG
-	setup_irq(INT_WDOG2, &wdog2_irq);
-#endif  /* CONFIG_MOT_FEAT_DEBUG_WDOG */
 
 	reg = __raw_readl(MXC_GPT_GPTCR);
 #ifdef CONFIG_MOT_FEAT_32KHZ_GPT
@@ -457,9 +577,10 @@ void __init mxc_init_time(void)
 	g_wdog1_enabled = (wdog_base[0]->WDOG_WCR) & WCR_WDE_BIT;
 #endif
 #endif
-#ifdef WDOG2_ENABLE
+#ifdef CONFIG_MOT_FEAT_DEBUG_WDOG	
 	mxc_wd_init(1);
 	g_wdog2_enabled = 1;
+	enable_fiq_for_int_wdog2();
 #else
 	g_wdog2_enabled = (wdog_base[1]->WDOG_WCR) & WCR_WDE_BIT;
 #endif

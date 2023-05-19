@@ -5,8 +5,7 @@
  *  IOCTL handlers as well as command preperation and response routines
  *   for sending scan commands to the firmware.
  *
- *  (c) Copyright © 2003-2007, Marvell International Ltd.
- *  (c) Copyright © 2008, Motorola.
+ *  (c) Copyright © 2003-2007, Marvell International Ltd.  
  *   
  *  This software file (the "File") is distributed by Marvell International 
  *  Ltd. under the terms of the GNU General Public License Version 2, June 1991 
@@ -29,11 +28,6 @@ Change Log:
     01/31/06: Add support for selectively enabling the FW Scan channel filter
 
 ************************************************************/
-/*****************************************************
- Date         Author         Comment
- ==========   ===========    ==========================
- 12-Aug-2008  Motorola       Add beacon period in scan results.
-*******************************************************/
 
 #include    "include.h"
 
@@ -49,8 +43,7 @@ Change Log:
                              + IW_EV_QUAL_LEN           \
                              + MRVDRV_MAX_SSID_LENGTH   \
                              + IW_EV_PARAM_LEN          \
-                             + 40  /* 40 for WPAIE */   \
-			     + 18) /* 18 for beacon period */
+                             + 40)      /* 40 for WPAIE */
 
 //! Memory needed to store a max sized Channel List TLV for a firmware scan
 #define CHAN_TLV_MAX_SIZE  (sizeof(MrvlIEtypesHeader_t)         \
@@ -60,11 +53,15 @@ Change Log:
 //! Memory needed to store a max number/size SSID TLV for a firmware scan
 #define SSID_TLV_MAX_SIZE  (1 * sizeof(MrvlIEtypes_SsIdParamSet_t))
 
+//! WPS TLV MAX size is MAX IE size plus 2 bytes for u16 MRVL TLV extension
+#define WPS_TLV_MAX_SIZE   (sizeof(IEEEtypes_VendorSpecific_t) + 2)
+
 //! Maximum memory needed for a wlan_scan_cmd_config with all TLVs at max
 #define MAX_SCAN_CFG_ALLOC (sizeof(wlan_scan_cmd_config)        \
                             + sizeof(MrvlIEtypes_NumProbes_t)   \
                             + CHAN_TLV_MAX_SIZE                 \
-                            + SSID_TLV_MAX_SIZE)
+                            + SSID_TLV_MAX_SIZE                 \
+                            + WPS_TLV_MAX_SIZE)
 
 //! The maximum number of channels the firmware can scan per command
 #define MRVDRV_MAX_CHANNELS_PER_SCAN   14
@@ -97,210 +94,17 @@ typedef union
     u8 configAllocBuf[MAX_SCAN_CFG_ALLOC];      //!< Max allocated block
 } wlan_scan_cmd_config_tlv;
 
-#ifdef MOTO_DBG
-/**
- *  @brief Dump bg scan config parameters
- *
- *  @param Adapter A pointer to wlan_adapter
- *
- *  @return        None
- */
-static void
-DumpBGScanConfig(wlan_adapter * Adapter)
-{
-    u32 i, j;
-    MrvlIEtypesHeader_t *pHeader;
-    u8 *ptemp8;
-    u16 *ptemp16;
-    ChanScanParamSet_t *pChans;
-
-    PRINTM(MOTO_DEBUG, "\n");
-    PRINTM(MOTO_DEBUG, "Backgound scan configure SET completed\n");
-    PRINTM(MOTO_DEBUG, "\n");
-    PRINTM(MOTO_DEBUG, "Adapter->bgScanConfig->Action: 0x%04x\n",
-           Adapter->bgScanConfig->Action);
-    PRINTM(MOTO_DEBUG, "Adapter->bgScanConfig->Enable: 0x%02x\n",
-           Adapter->bgScanConfig->Enable);
-    PRINTM(MOTO_DEBUG, "Adapter->bgScanConfig->BssType: 0x%02x\n",
-           Adapter->bgScanConfig->BssType);
-    PRINTM(MOTO_DEBUG, "Adapter->bgScanConfig->ChannelsPerScan: %d\n",
-           Adapter->bgScanConfig->ChannelsPerScan);
-    PRINTM(MOTO_DEBUG, "Adapter->bgScanConfig->DiscardWhenFull: 0x%02x\n",
-           Adapter->bgScanConfig->DiscardWhenFull);
-    PRINTM(MOTO_DEBUG, "Adapter->bgScanConfig->Reserved: 0x%04x\n",
-           Adapter->bgScanConfig->Reserved);
-    PRINTM(MOTO_DEBUG, "Adapter->bgScanConfig->ScanInterval: %d\n",
-           Adapter->bgScanConfig->ScanInterval);
-    PRINTM(MOTO_DEBUG, "Adapter->bgScanConfig->StoreCondition: 0x%08x\n",
-           Adapter->bgScanConfig->StoreCondition);
-    PRINTM(MOTO_DEBUG, "Adapter->bgScanConfig->ReportConditions: 0x%08x\n",
-           Adapter->bgScanConfig->ReportConditions);
-    PRINTM(MOTO_DEBUG, "Adapter->bgScanConfig->MaxScanResults: %d\n",
-           Adapter->bgScanConfig->MaxScanResults);
-    PRINTM(MOTO_DEBUG, "\n");
-    PRINTM(MOTO_DEBUG, "Total configured size= %d\n",
-           Adapter->bgScanConfigSize);
-    PRINTM(MOTO_DEBUG, "\n");
-    for (i = sizeof(HostCmd_DS_802_11_BG_SCAN_CONFIG);
-         i < Adapter->bgScanConfigSize;) {
-        pHeader = (MrvlIEtypesHeader_t *) ((u32) Adapter->bgScanConfig + i);
-        switch (pHeader->Type) {
-        case TLV_TYPE_SSID:
-            ptemp8 = (u8 *) ((u32) pHeader + sizeof(MrvlIEtypesHeader_t));
-            PRINTM(MOTO_DEBUG, "----TLV Type SSID = 0x%04x\n", TLV_TYPE_SSID);
-            PRINTM(MOTO_DEBUG, "   Length = %d\n", pHeader->Len);
-            PRINTM(MOTO_DEBUG, "   SSID = ");
-            for (j = 0; j < pHeader->Len; j++) {
-                PRINTM(MOTO_DEBUG, "0x%02x, ", *ptemp8++);
-            }
-            PRINTM(MOTO_DEBUG, "\n");
-            break;
-        case TLV_TYPE_NUMPROBES:
-            ptemp16 = (u16 *) ((u32) pHeader + sizeof(MrvlIEtypesHeader_t));
-            PRINTM(MOTO_DEBUG, "----TLV Type NUMPROBES = 0x%04x\n",
-                   pHeader->Type);
-            PRINTM(MOTO_DEBUG, "   Length = %d\n", pHeader->Len);
-            PRINTM(MOTO_DEBUG, "   NUMPROBES = %d", *ptemp16);
-            break;
-        case TLV_TYPE_CHANLIST:
-            pChans =
-                (ChanScanParamSet_t *) ((u32) pHeader +
-                                        sizeof(MrvlIEtypesHeader_t));
-            PRINTM(MOTO_DEBUG, "----TLV Type CHANLIST = 0x%04x\n",
-                   pHeader->Type);
-            PRINTM(MOTO_DEBUG, "   Length = %d\n", pHeader->Len);
-            for (j = 0; j < pHeader->Len; j += sizeof(ChanScanParamSet_t)) {
-                PRINTM(MOTO_DEBUG, "\n");
-                PRINTM(MOTO_DEBUG, "   RadioType = %d\n", pChans->RadioType);
-                PRINTM(MOTO_DEBUG, "   ChanNumber = %d\n",
-                       pChans->ChanNumber);
-                if (pChans->ChanScanMode.PassiveScan) {
-                    PRINTM(MOTO_DEBUG,
-                           "   ChanScanMode.PassiveScan set to passive\n");
-                } else {
-                    PRINTM(MOTO_DEBUG,
-                           "   ChanScanMode.PassiveScan set to active\n");
-                }
-                if (pChans->ChanScanMode.DisableChanFilt) {
-                    PRINTM(MOTO_DEBUG,
-                           "   ChanScanMode.DisableChanFilt set\n");
-                } else {
-                    PRINTM(MOTO_DEBUG,
-                           "   ChanScanMode.DisableChanFilt clear\n");
-                }
-                PRINTM(MOTO_DEBUG, "   MinScanTime = %d\n",
-                       pChans->MinScanTime);
-                PRINTM(MOTO_DEBUG, "   MaxScanTime = %d\n",
-                       pChans->MaxScanTime);
-                PRINTM(MOTO_DEBUG, "\n");
-                pChans =
-                    (ChanScanParamSet_t *) ((u32) pChans +
-                                            sizeof(ChanScanParamSet_t));
-            }
-            break;
-        case TLV_TYPE_BCASTPROBE:
-            ptemp16 = (u16 *) ((u32) pHeader + sizeof(MrvlIEtypesHeader_t));
-            PRINTM(MOTO_DEBUG, "----TLV Type BCASTPROBE = 0x%04x\n",
-                   pHeader->Type);
-            PRINTM(MOTO_DEBUG, "   Length = %d\n", pHeader->Len);
-            PRINTM(MOTO_DEBUG, "   NUM_BCASTPROBE = %d\n", *ptemp16);
-            break;
-        case TLV_TYPE_NUMSSID_PROBE:
-            ptemp16 = (u16 *) ((u32) pHeader + sizeof(MrvlIEtypesHeader_t));
-            PRINTM(MOTO_DEBUG, "----TLV Type NUMSSID_PROBE = 0x%04x\n",
-                   pHeader->Type);
-            PRINTM(MOTO_DEBUG, "   Length = %d\n", pHeader->Len);
-            PRINTM(MOTO_DEBUG, "   NUMSSID_PROBE = %d\n", *ptemp16);
-            break;
-        case TLV_TYPE_SNR_LOW:
-            ptemp16 = (u16 *) ((u32) pHeader + sizeof(MrvlIEtypesHeader_t));
-            PRINTM(MOTO_DEBUG, "----TLV Type SNR_LOW = 0x%04x\n",
-                   pHeader->Type);
-            PRINTM(MOTO_DEBUG, "   Length = %d\n", pHeader->Len);
-            PRINTM(MOTO_DEBUG, "   SNR_LOW = %d\n", *ptemp16);
-            break;
-        case TLV_TYPE_STARTBGSCANLATER:
-            ptemp16 = (u16 *) ((u32) pHeader + sizeof(MrvlIEtypesHeader_t));
-            PRINTM(MOTO_DEBUG, "----TLV Type STARTBGSCANLATER = 0x%04x\n",
-                   pHeader->Type);
-            PRINTM(MOTO_DEBUG, "   Length = %d\n", pHeader->Len);
-            PRINTM(MOTO_DEBUG, "   STARTBGSCANLATER = %d\n", *ptemp16);
-            break;
-        default:
-            ptemp8 = (u8 *) ((u32) pHeader + sizeof(MrvlIEtypesHeader_t));
-            PRINTM(MOTO_DEBUG, "----TLV Type = 0x%04x\n", pHeader->Type);
-            PRINTM(MOTO_DEBUG, "   Length = %d\n", pHeader->Len);
-            for (j = 0; j < pHeader->Len; j++) {
-                PRINTM(MOTO_DEBUG, "0x%02x, ", *ptemp8++);
-            }
-            PRINTM(MOTO_DEBUG, "\n");
-            break;
-        }
-        i += sizeof(MrvlIEtypesHeader_t) + pHeader->Len;
-    }
-    return;
-}
-
-/**
- *  @brief Dump setuserscan parameters
- *
- *  @param scanReq wlan_ioctl_user_scan_cfg structure.
- *
- *  @return        None
- */
-static void
-DumpSetUserScanConfig(wlan_ioctl_user_scan_cfg scanReq)
-{
-    int chan_Idx;
-
-    PRINTM(MOTO_MSG,
-           "Setuserscan ioctl called by upper layer providing SSID=%s\n",
-           scanReq.specificSSID);
-    PRINTM(MOTO_DEBUG, "Upper layer keepPreviousScan=%d\n",
-           scanReq.keepPreviousScan);
-    PRINTM(MOTO_DEBUG, "Upper layer bssType=%d\n", scanReq.bssType);
-    PRINTM(MOTO_DEBUG, "Upper layer numProbes=%d\n", scanReq.numProbes);
-    PRINTM(MOTO_DEBUG, "Upper layer BSSID=%x:%x:%x:%x:%x:%x\n",
-           scanReq.specificBSSID[0], scanReq.specificBSSID[1],
-           scanReq.specificBSSID[2], scanReq.specificBSSID[3],
-           scanReq.specificBSSID[4], scanReq.specificBSSID[5]);
-
-    if (scanReq.chanList[0].chanNumber) {
-        PRINTM(MOTO_DEBUG,
-               "Upper layer supplied the following channels info\n");
-
-        for (chan_Idx = 0;
-             chan_Idx < WLAN_IOCTL_USER_SCAN_CHAN_MAX
-             && scanReq.chanList[chan_Idx].chanNumber; chan_Idx++) {
-            PRINTM(MOTO_DEBUG, "Upper layer channelnb=%d\n",
-                   scanReq.chanList[chan_Idx].chanNumber);
-            PRINTM(MOTO_DEBUG, "Upper layer radioType=%d\n",
-                   scanReq.chanList[chan_Idx].radioType);
-            PRINTM(MOTO_DEBUG, "Upper layer scanType=%d\n",
-                   scanReq.chanList[chan_Idx].scanType);
-
-            if (scanReq.chanList[chan_Idx].scanTime) {
-                PRINTM(MOTO_DEBUG, "Upper layer scanTime=%d\n",
-                       scanReq.chanList[chan_Idx].scanTime);
-            } else {
-                PRINTM(MOTO_DEBUG, "Upper layer scanTime not provided\n");
-            }
-        }
-    }
-    return;
-}
-#endif
-
 /**
  *  @brief Check if a scanned network compatible with the driver settings
  *
  *   WEP     WPA     WPA2    ad-hoc  encrypt                      Network
  * enabled enabled  enabled   AES     mode   Privacy  WPA  WPA2  Compatible
  *    0       0        0       0      NONE      0      0    0   yes No security
- *    1       0        0       0      NONE      1      0    0   yes Static WEP
  *    0       1        0       0       x        1x     1    x   yes WPA
  *    0       0        1       0       x        1x     x    1   yes WPA2
  *    0       0        0       1      NONE      1      0    0   yes Ad-hoc AES
+ *
+ *    1       0        0       0      NONE      1      0    0   yes Static WEP
  *    0       0        0       0     !=NONE     1      0    0   yes Dynamic WEP
  *
  *
@@ -313,107 +117,115 @@ DumpSetUserScanConfig(wlan_ioctl_user_scan_cfg scanReq)
 static int
 IsNetworkCompatible(wlan_adapter * Adapter, int index, int mode)
 {
+    BSSDescriptor_t *pBSSDesc;
+
     ENTER();
 
-    if (Adapter->ScanTable[index].InfrastructureMode == mode) {
+    pBSSDesc = &Adapter->ScanTable[index];
+
+    /* Don't check for compatibility if roaming */
+    if ((Adapter->MediaConnectStatus == WlanMediaStateConnected)
+        && (Adapter->InfrastructureMode == Wlan802_11Infrastructure)
+        && (pBSSDesc->InfrastructureMode == Wlan802_11Infrastructure)) {
+        LEAVE();
+        return index;
+    }
+
+    if (Adapter->wps.SessionEnable == TRUE) {
+        PRINTM(INFO, "Return success directly in WPS period\n");
+        LEAVE();
+        return index;
+    }
+
+    if (pBSSDesc->InfrastructureMode == mode) {
         if (Adapter->SecInfo.WEPStatus == Wlan802_11WEPDisabled
             && !Adapter->SecInfo.WPAEnabled
             && !Adapter->SecInfo.WPA2Enabled
-            && Adapter->ScanTable[index].wpa_supplicant.Wpa_ie[0] != WPA_IE
-            && Adapter->ScanTable[index].wpa2_supplicant.Wpa_ie[0] != WPA2_IE
+            && pBSSDesc->wpaIE.VendHdr.ElementId != WPA_IE
+            && pBSSDesc->rsnIE.IeeeHdr.ElementId != RSN_IE
             && !Adapter->AdhocAESEnabled
             && Adapter->SecInfo.EncryptionMode == CIPHER_NONE
-            && !Adapter->ScanTable[index].Privacy) {
+            && !pBSSDesc->Privacy) {
             /* no security */
             LEAVE();
             return index;
         } else if (Adapter->SecInfo.WEPStatus == Wlan802_11WEPEnabled
                    && !Adapter->SecInfo.WPAEnabled
                    && !Adapter->SecInfo.WPA2Enabled
-                   && !Adapter->AdhocAESEnabled
-                   && Adapter->ScanTable[index].Privacy) {
+                   && !Adapter->AdhocAESEnabled && pBSSDesc->Privacy) {
             /* static WEP enabled */
             LEAVE();
             return index;
         } else if (Adapter->SecInfo.WEPStatus == Wlan802_11WEPDisabled
                    && Adapter->SecInfo.WPAEnabled
                    && !Adapter->SecInfo.WPA2Enabled
-                   && (Adapter->ScanTable[index].wpa_supplicant.Wpa_ie[0]
-                       == WPA_IE)
+                   && (pBSSDesc->wpaIE.VendHdr.ElementId == WPA_IE)
                    && !Adapter->AdhocAESEnabled
                    /* Privacy bit may NOT be set in some APs like LinkSys WRT54G
-                      && Adapter->ScanTable[index].Privacy */
+                      && pBSSDesc->Privacy */
             ) {
             /* WPA enabled */
             PRINTM(INFO, "IsNetworkCompatible() WPA: index=%d wpa_ie=%#x "
                    "wpa2_ie=%#x WEP=%s WPA=%s WPA2=%s EncMode=%#x "
                    "privacy=%#x\n",
                    index,
-                   Adapter->ScanTable[index].wpa_supplicant.Wpa_ie[0],
-                   Adapter->ScanTable[index].wpa2_supplicant.Wpa_ie[0],
+                   pBSSDesc->wpaIE.VendHdr.ElementId,
+                   pBSSDesc->rsnIE.IeeeHdr.ElementId,
                    (Adapter->SecInfo.WEPStatus ==
                     Wlan802_11WEPEnabled) ? "e" : "d",
                    (Adapter->SecInfo.WPAEnabled) ? "e" : "d",
                    (Adapter->SecInfo.WPA2Enabled) ? "e" : "d",
-                   Adapter->SecInfo.EncryptionMode,
-                   Adapter->ScanTable[index].Privacy);
+                   Adapter->SecInfo.EncryptionMode, pBSSDesc->Privacy);
             LEAVE();
             return index;
         } else if (Adapter->SecInfo.WEPStatus == Wlan802_11WEPDisabled
                    && !Adapter->SecInfo.WPAEnabled
                    && Adapter->SecInfo.WPA2Enabled
-                   && (Adapter->ScanTable[index].wpa2_supplicant.Wpa_ie[0]
-                       == WPA2_IE)
+                   && (pBSSDesc->rsnIE.IeeeHdr.ElementId == RSN_IE)
                    && !Adapter->AdhocAESEnabled
                    /* Privacy bit may NOT be set in some APs like LinkSys WRT54G
-                      && Adapter->ScanTable[index].Privacy */
+                      && pBSSDesc->Privacy */
             ) {
             /* WPA2 enabled */
             PRINTM(INFO, "IsNetworkCompatible() WPA2: index=%d wpa_ie=%#x "
                    "wpa2_ie=%#x WEP=%s WPA=%s WPA2=%s EncMode=%#x "
                    "privacy=%#x\n",
                    index,
-                   Adapter->ScanTable[index].wpa_supplicant.Wpa_ie[0],
-                   Adapter->ScanTable[index].wpa2_supplicant.Wpa_ie[0],
+                   pBSSDesc->wpaIE.VendHdr.ElementId,
+                   pBSSDesc->rsnIE.IeeeHdr.ElementId,
                    (Adapter->SecInfo.WEPStatus ==
                     Wlan802_11WEPEnabled) ? "e" : "d",
                    (Adapter->SecInfo.WPAEnabled) ? "e" : "d",
                    (Adapter->SecInfo.WPA2Enabled) ? "e" : "d",
-                   Adapter->SecInfo.EncryptionMode,
-                   Adapter->ScanTable[index].Privacy);
+                   Adapter->SecInfo.EncryptionMode, pBSSDesc->Privacy);
             LEAVE();
             return index;
         } else if (Adapter->SecInfo.WEPStatus == Wlan802_11WEPDisabled
                    && !Adapter->SecInfo.WPAEnabled
                    && !Adapter->SecInfo.WPA2Enabled
-                   && (Adapter->ScanTable[index].wpa_supplicant.Wpa_ie[0]
-                       != WPA_IE)
-                   && (Adapter->ScanTable[index].wpa2_supplicant.Wpa_ie[0]
-                       != WPA2_IE)
+                   && (pBSSDesc->wpaIE.VendHdr.ElementId != WPA_IE)
+                   && (pBSSDesc->rsnIE.IeeeHdr.ElementId != RSN_IE)
                    && Adapter->AdhocAESEnabled
                    && Adapter->SecInfo.EncryptionMode == CIPHER_NONE
-                   && Adapter->ScanTable[index].Privacy) {
+                   && pBSSDesc->Privacy) {
             /* Ad-hoc AES enabled */
             LEAVE();
             return index;
         } else if (Adapter->SecInfo.WEPStatus == Wlan802_11WEPDisabled
                    && !Adapter->SecInfo.WPAEnabled
                    && !Adapter->SecInfo.WPA2Enabled
-                   && (Adapter->ScanTable[index].wpa_supplicant.Wpa_ie[0]
-                       != WPA_IE)
-                   && (Adapter->ScanTable[index].wpa2_supplicant.Wpa_ie[0]
-                       != WPA2_IE)
+                   && (pBSSDesc->wpaIE.VendHdr.ElementId != WPA_IE)
+                   && (pBSSDesc->rsnIE.IeeeHdr.ElementId != RSN_IE)
                    && !Adapter->AdhocAESEnabled
                    && Adapter->SecInfo.EncryptionMode != CIPHER_NONE
-                   && Adapter->ScanTable[index].Privacy) {
+                   && pBSSDesc->Privacy) {
             /* dynamic WEP enabled */
             PRINTM(INFO, "IsNetworkCompatible() dynamic WEP: index=%d "
                    "wpa_ie=%#x wpa2_ie=%#x EncMode=%#x privacy=%#x\n",
                    index,
-                   Adapter->ScanTable[index].wpa_supplicant.Wpa_ie[0],
-                   Adapter->ScanTable[index].wpa2_supplicant.Wpa_ie[0],
-                   Adapter->SecInfo.EncryptionMode,
-                   Adapter->ScanTable[index].Privacy);
+                   pBSSDesc->wpaIE.VendHdr.ElementId,
+                   pBSSDesc->rsnIE.IeeeHdr.ElementId,
+                   Adapter->SecInfo.EncryptionMode, pBSSDesc->Privacy);
             LEAVE();
             return index;
         }
@@ -422,14 +234,13 @@ IsNetworkCompatible(wlan_adapter * Adapter, int index, int mode)
         PRINTM(INFO, "IsNetworkCompatible() FAILED: index=%d wpa_ie=%#x "
                "wpa2_ie=%#x WEP=%s WPA=%s WPA2=%s EncMode=%#x privacy=%#x\n",
                index,
-               Adapter->ScanTable[index].wpa_supplicant.Wpa_ie[0],
-               Adapter->ScanTable[index].wpa2_supplicant.Wpa_ie[0],
+               pBSSDesc->wpaIE.VendHdr.ElementId,
+               pBSSDesc->rsnIE.IeeeHdr.ElementId,
                (Adapter->SecInfo.WEPStatus ==
                 Wlan802_11WEPEnabled) ? "e" : "d",
                (Adapter->SecInfo.WPAEnabled) ? "e" : "d",
                (Adapter->SecInfo.WPA2Enabled) ? "e" : "d",
-               Adapter->SecInfo.EncryptionMode,
-               Adapter->ScanTable[index].Privacy);
+               Adapter->SecInfo.EncryptionMode, pBSSDesc->Privacy);
         LEAVE();
         return -ECONNREFUSED;
     }
@@ -478,24 +289,22 @@ static void
 wlan_scan_process_results(wlan_private * priv)
 {
     wlan_adapter *Adapter = priv->adapter;
-    int foundCurrent;
     int i;
+    int foundCurrent;
 
     foundCurrent = FALSE;
 
     if (Adapter->MediaConnectStatus == WlanMediaStateConnected) {
-        /* try to find the current BSSID in the new scan list */
-        for (i = 0; i < Adapter->NumInScanTable; i++) {
-            if (!SSIDcmp(&Adapter->ScanTable[i].Ssid,
-                         &Adapter->CurBssParams.ssid) &&
-                !memcmp(Adapter->CurBssParams.bssid,
-                        Adapter->ScanTable[i].MacAddress,
-                        MRVDRV_ETH_ADDR_LEN)) {
-                foundCurrent = TRUE;
-            }
-        }
+        Adapter->CurBssParams.BSSDescriptor.pBeaconBuf = NULL;
+        Adapter->CurBssParams.BSSDescriptor.beaconBufSize = 0;
+        Adapter->CurBssParams.BSSDescriptor.beaconBufSizeMax = 0;
+        i = FindSSIDInList(Adapter,
+                           &Adapter->CurBssParams.BSSDescriptor.Ssid,
+                           Adapter->CurBssParams.BSSDescriptor.MacAddress,
+                           Adapter->InfrastructureMode);
 
-        if (foundCurrent) {
+        if (i >= 0) {
+            PRINTM(INFO, "Found current ssid/bssid in list @ index #%d\n", i);
             /* Make a copy of current BSSID descriptor */
             memcpy(&Adapter->CurBssParams.BSSDescriptor,
                    &Adapter->ScanTable[i],
@@ -515,11 +324,6 @@ wlan_scan_process_results(wlan_private * priv)
                Adapter->ScanTable[i].MacAddress[5],
                (s32) Adapter->ScanTable[i].Rssi,
                Adapter->ScanTable[i].Ssid.Ssid);
-
-#ifdef MOTO_DBG
-        PRINTM(MOTO_DEBUG, "Scanned:SSID[%s]\n",
-               Adapter->ScanTable[i].Ssid.Ssid);
-#endif
     }
 }
 
@@ -619,6 +423,25 @@ wlan_scan_create_channel_list(wlan_private * priv,
     }
 }
 
+static void
+wlan_add_wps_probe_request_ie(wlan_private * priv, u8 ** ppTlvOut)
+{
+    wlan_adapter *Adapter = priv->adapter;
+    MrvlIEtypesHeader_t *tlv;
+
+    if (Adapter->wps.wpsIe.VendHdr.Len) {
+        tlv = (MrvlIEtypesHeader_t *) * ppTlvOut;
+        tlv->Type = wlan_cpu_to_le16(TLV_TYPE_WPS_ENROLLEE_PROBE_REQ_TLV);
+        tlv->Len = wlan_cpu_to_le16(Adapter->wps.wpsIe.VendHdr.Len);
+        *ppTlvOut += sizeof(MrvlIEtypesHeader_t);
+        memcpy(*ppTlvOut,
+               Adapter->wps.wpsIe.VendHdr.Oui,
+               Adapter->wps.wpsIe.VendHdr.Len);
+        *ppTlvOut += (Adapter->wps.wpsIe.VendHdr.Len
+                      + sizeof(MrvlIEtypesHeader_t));
+    }
+}
+
 /**
  *  @brief Construct a wlan_scan_cmd_config structure to use in issue scan cmds
  *
@@ -671,7 +494,6 @@ wlan_scan_setup_scan_config(wlan_private * priv,
     wlan_adapter *Adapter = priv->adapter;
     const u8 zeroMac[ETH_ALEN] = { 0, 0, 0, 0, 0, 0 };
     MrvlIEtypes_NumProbes_t *pNumProbesTlv;
-    MrvlIEtypes_SsIdParamSet_t *pSsidTlv;
     u8 *pTlvPos;
     u16 numProbes;
     u16 ssidLen;
@@ -680,6 +502,9 @@ wlan_scan_setup_scan_config(wlan_private * priv,
     int scanDur;
     int channel;
     int radioType;
+    int ssidIdx;
+    BOOLEAN ssidFilter;
+
     MrvlIEtypes_WildCardSsIdParamSet_t *pWildCardSsidTlv;
 
     /* The tlvBufferLen is calculated for each scan command.  The TLVs added
@@ -700,10 +525,10 @@ wlan_scan_setup_scan_config(wlan_private * priv,
      *   BSSID or SSID is used, the number of channels in the scan command
      *   will be increased to the absolute maximum
      */
-    *pMaxChanPerScan = MRVDRV_CHANNELS_PER_SCAN_CMD;
+    *pMaxChanPerScan = MRVDRV_MAX_CHANNELS_PER_SCAN;
 
-    /* Initialize the scan as un-filtered by firmware, set to TRUE below if
-     *   a SSID or BSSID filter is sent in the command
+    /* Initialize the scan as un-filtered; the flag is later set to
+     *   TRUE below if a SSID or BSSID filter is sent in the command
      */
     *pFilteredScan = FALSE;
 
@@ -714,6 +539,12 @@ wlan_scan_setup_scan_config(wlan_private * priv,
     *pScanCurrentOnly = FALSE;
 
     if (pUserScanIn) {
+
+        /* Default the ssidFilter flag to TRUE, set false under certain 
+         *   wildcard conditions and qualified by the existence of an SSID 
+         *   list before marking the scan as filtered
+         */
+        ssidFilter = TRUE;
 
         /* Set the bss type scan filter, use Adapter setting if unset */
         pScanCfgOut->bssType = (pUserScanIn->bssType ? pUserScanIn->bssType :
@@ -731,44 +562,40 @@ wlan_scan_setup_scan_config(wlan_private * priv,
                pUserScanIn->specificBSSID,
                sizeof(pScanCfgOut->specificBSSID));
 
-        ssidLen = strlen(pUserScanIn->specificSSID);
+        for (ssidIdx = 0; ((ssidIdx < NELEMENTS(pUserScanIn->ssidList))
+                           && (*pUserScanIn->ssidList[ssidIdx].ssid
+                               || pUserScanIn->ssidList[ssidIdx].maxLen));
+             ssidIdx++) {
 
-        if (ssidLen) {
-#ifdef MOTO_DBG
-            PRINTM(MOTO_DEBUG,
-                   "scan_config: SSID Value from application = %s\n",
-                   pUserScanIn->specificSSID);
-#endif
-            if (pUserScanIn->wildcardssidlen) {
-                pWildCardSsidTlv =
-                    (MrvlIEtypes_WildCardSsIdParamSet_t *) pScanCfgOut->
-                    tlvBuffer;
-                pWildCardSsidTlv->Header.Type =
-                    wlan_cpu_to_le16(TLV_TYPE_WILDCARDSSID);
-                pWildCardSsidTlv->Header.Len =
-                    ssidLen + sizeof(pWildCardSsidTlv->MaxSsidLength);
-                pWildCardSsidTlv->MaxSsidLength =
-                    pUserScanIn->wildcardssidlen;
-                if (ssidLen <= MRVDRV_MAX_SSID_LENGTH + 1) {
-                    memcpy(pWildCardSsidTlv->SsId, pUserScanIn->specificSSID,
-                           ssidLen);
-                }
+            ssidLen = strlen(pUserScanIn->ssidList[ssidIdx].ssid) + 1;
 
-                pTlvPos +=
-                    sizeof(pWildCardSsidTlv->Header) +
-                    pWildCardSsidTlv->Header.Len;
-                pWildCardSsidTlv->Header.Len =
-                    wlan_cpu_to_le16(pWildCardSsidTlv->Header.Len);
-            } else {
-                pSsidTlv =
-                    (MrvlIEtypes_SsIdParamSet_t *) pScanCfgOut->tlvBuffer;
-                pSsidTlv->Header.Type = wlan_cpu_to_le16(TLV_TYPE_SSID);
-                pSsidTlv->Header.Len = wlan_cpu_to_le16(ssidLen);
-                if (ssidLen <= MRVDRV_MAX_SSID_LENGTH + 1) {
-                    memcpy(pSsidTlv->SsId, pUserScanIn->specificSSID,
-                           ssidLen);
-                }
-                pTlvPos += sizeof(pSsidTlv->Header) + ssidLen;
+            pWildCardSsidTlv = (MrvlIEtypes_WildCardSsIdParamSet_t *) pTlvPos;
+            pWildCardSsidTlv->Header.Type
+                = wlan_cpu_to_le16(TLV_TYPE_WILDCARDSSID);
+            pWildCardSsidTlv->Header.Len
+                = ssidLen + sizeof(pWildCardSsidTlv->MaxSsidLength);
+            pWildCardSsidTlv->MaxSsidLength
+                = pUserScanIn->ssidList[ssidIdx].maxLen;
+
+            memcpy(pWildCardSsidTlv->SsId,
+                   pUserScanIn->ssidList[ssidIdx].ssid, ssidLen);
+
+            pTlvPos += (sizeof(pWildCardSsidTlv->Header)
+                        + pWildCardSsidTlv->Header.Len);
+
+            pWildCardSsidTlv->Header.Len
+                = wlan_cpu_to_le16(pWildCardSsidTlv->Header.Len);
+
+            PRINTM(INFO, "Scan: ssidList[%d]: %s, %d\n",
+                   ssidIdx,
+                   pWildCardSsidTlv->SsId, pWildCardSsidTlv->MaxSsidLength);
+
+            /* Empty wildcard ssid with a maxlen will match many or potentially
+             *   all SSIDs (maxlen == 32), therefore do not treat the scan
+             *   as filtered.
+             */
+            if ((ssidLen == 0) && pWildCardSsidTlv->MaxSsidLength) {
+                ssidFilter = FALSE;
             }
         }
 
@@ -778,11 +605,11 @@ wlan_scan_setup_scan_config(wlan_private * priv,
          *    scan results.  That is not an issue with an SSID or BSSID
          *    filter applied to the scan results in the firmware.
          */
-        if (ssidLen || (memcmp(pScanCfgOut->specificBSSID,
-                               &zeroMac, sizeof(zeroMac)) != 0)) {
-            *pMaxChanPerScan = MRVDRV_MAX_CHANNELS_PER_SCAN;
+        if ((ssidIdx && ssidFilter)
+            || memcmp(pScanCfgOut->specificBSSID, &zeroMac, sizeof(zeroMac))) {
             *pFilteredScan = TRUE;
         }
+
     } else {
         pScanCfgOut->bssType = Adapter->ScanMode;
         numProbes = Adapter->ScanProbes;
@@ -790,6 +617,9 @@ wlan_scan_setup_scan_config(wlan_private * priv,
 
     /* If the input config or adapter has the number of Probes set, add tlv */
     if (numProbes) {
+
+        PRINTM(INFO, "Scan: numProbes = %d\n", numProbes);
+
         pNumProbesTlv = (MrvlIEtypes_NumProbes_t *) pTlvPos;
         pNumProbesTlv->Header.Type = wlan_cpu_to_le16(TLV_TYPE_NUMPROBES);
         pNumProbesTlv->Header.Len = sizeof(pNumProbesTlv->NumProbes);
@@ -800,6 +630,8 @@ wlan_scan_setup_scan_config(wlan_private * priv,
         pNumProbesTlv->Header.Len =
             wlan_cpu_to_le16(pNumProbesTlv->Header.Len);
     }
+
+    wlan_add_wps_probe_request_ie(priv, &pTlvPos);
 
     /*
      * Set the output for the channel TLV to the address in the tlv buffer
@@ -850,8 +682,9 @@ wlan_scan_setup_scan_config(wlan_private * priv,
         }
 
         /* Check if we are only scanning the current channel */
-        if ((chanIdx == 1) && (pUserScanIn->chanList[0].chanNumber
-                               == priv->adapter->CurBssParams.channel)) {
+        if ((chanIdx == 1)
+            && (pUserScanIn->chanList[0].chanNumber
+                == priv->adapter->CurBssParams.BSSDescriptor.Channel)) {
             *pScanCurrentOnly = TRUE;
             PRINTM(INFO, "Scan: Scanning current channel only");
         }
@@ -1077,8 +910,10 @@ wlan_scan_networks(wlan_private * priv,
 
     /* Keep the data path active if we are only scanning our current channel */
     if (!scanCurrentChanOnly) {
-        os_stop_queue(priv);
-        os_carrier_off(priv);
+        PRINTM(INFO, "Scan: WMM Queue stop\n");
+        priv->wlan_dev.netdev->watchdog_timeo = MRVDRV_SCAN_WATCHDOG_TIMEOUT;
+        /* If WMM queues are in use, only stop the internal data queues */
+        wmm_stop_queue(priv);
     }
 
     bBgScan = priv->adapter->bgScanConfig->Enable;
@@ -1102,6 +937,13 @@ wlan_scan_networks(wlan_private * priv,
         wlan_bg_scan_enable(priv, TRUE);
     }
 
+    PRINTM(INFO, "Scan: WMM Queue start\n");
+
+    priv->wlan_dev.netdev->watchdog_timeo = MRVDRV_DEFAULT_WATCHDOG_TIMEOUT;
+
+    if (Adapter->MediaConnectStatus == WlanMediaStateConnected) {
+        wmm_start_queue(priv);
+    }
     os_carrier_on(priv);
     os_start_queue(priv);
 
@@ -1112,55 +954,90 @@ wlan_scan_networks(wlan_private * priv,
 /**
  *  @brief Create a brief scan resp to relay basic BSS info to the app layer
  *
- *  When the beacon/probe response has not been buffered, use the fixed field
+ *  When the beacon/probe response has not been buffered, use the saved BSS
  *    information available to provide a minimum response for the application
- *    ioctl retrieval routines.
+ *    ioctl retrieval routines.  Include:
+ *        - Timestamp
+ *        - Beacon Period
+ *        - Capabilities (including WMM Element if available)
+ *        - SSID
  *
  *  @param ppBuffer  Output parameter: Buffer used to create basic scan rsp
- *  @param pBssDesc  Pointer to a BSS entry in the scan table to create
+ *  @param pBSSDesc  Pointer to a BSS entry in the scan table to create
  *                   scan response from for delivery to the application layer
  *
  *  @return          void
  */
 static void
-wlan_scan_create_brief_scan_table(u8 ** ppBuffer, BSSDescriptor_t * pBssDesc)
+wlan_scan_create_brief_table_entry(u8 ** ppBuffer, BSSDescriptor_t * pBSSDesc)
 {
     u8 *pTmpBuf = *ppBuffer;
     u8 tmpSSIDHdr[2];
+    u8 ieLen;
 
-    if (copy_to_user
-        (pTmpBuf, pBssDesc->TimeStamp, sizeof(pBssDesc->TimeStamp))) {
+    if (copy_to_user(pTmpBuf, pBSSDesc->TimeStamp,
+                     sizeof(pBSSDesc->TimeStamp))) {
         PRINTM(INFO, "Copy to user failed\n");
         return;
     }
-    pTmpBuf += sizeof(pBssDesc->TimeStamp);
+    pTmpBuf += sizeof(pBSSDesc->TimeStamp);
 
-    if (copy_to_user(pTmpBuf, &pBssDesc->BeaconPeriod,
-                     sizeof(pBssDesc->BeaconPeriod))) {
+    if (copy_to_user(pTmpBuf, &pBSSDesc->BeaconPeriod,
+                     sizeof(pBSSDesc->BeaconPeriod))) {
         PRINTM(INFO, "Copy to user failed\n");
         return;
     }
-    pTmpBuf += sizeof(pBssDesc->BeaconPeriod);
+    pTmpBuf += sizeof(pBSSDesc->BeaconPeriod);
 
-    if (copy_to_user(pTmpBuf, &pBssDesc->Cap, sizeof(pBssDesc->Cap))) {
+    if (copy_to_user(pTmpBuf, &pBSSDesc->Cap, sizeof(pBSSDesc->Cap))) {
         PRINTM(INFO, "Copy to user failed\n");
         return;
     }
-    pTmpBuf += sizeof(pBssDesc->Cap);
+    pTmpBuf += sizeof(pBSSDesc->Cap);
 
     tmpSSIDHdr[0] = 0;          /* Element ID for SSID is zero */
-    tmpSSIDHdr[1] = pBssDesc->Ssid.SsidLength;
+    tmpSSIDHdr[1] = pBSSDesc->Ssid.SsidLength;
     if (copy_to_user(pTmpBuf, tmpSSIDHdr, sizeof(tmpSSIDHdr))) {
         PRINTM(INFO, "Copy to user failed\n");
         return;
     }
     pTmpBuf += sizeof(tmpSSIDHdr);
 
-    if (copy_to_user(pTmpBuf, pBssDesc->Ssid.Ssid, pBssDesc->Ssid.SsidLength)) {
+    if (copy_to_user(pTmpBuf, pBSSDesc->Ssid.Ssid, pBSSDesc->Ssid.SsidLength)) {
         PRINTM(INFO, "Copy to user failed\n");
         return;
     }
-    pTmpBuf += pBssDesc->Ssid.SsidLength;
+    pTmpBuf += pBSSDesc->Ssid.SsidLength;
+
+    if (pBSSDesc->wmmIE.VendHdr.ElementId == WMM_IE) {
+        ieLen = sizeof(IEEEtypes_Header_t) + pBSSDesc->wmmIE.VendHdr.Len;
+        if (copy_to_user(pTmpBuf, &pBSSDesc->wmmIE, ieLen)) {
+            PRINTM(INFO, "Copy to user failed\n");
+            return;
+        }
+
+        pTmpBuf += ieLen;
+    }
+
+    if (pBSSDesc->wpaIE.VendHdr.ElementId == WPA_IE) {
+        ieLen = sizeof(IEEEtypes_Header_t) + pBSSDesc->wpaIE.VendHdr.Len;
+        if (copy_to_user(pTmpBuf, &pBSSDesc->wpaIE, ieLen)) {
+            PRINTM(INFO, "Copy to user failed\n");
+            return;
+        }
+
+        pTmpBuf += ieLen;
+    }
+
+    if (pBSSDesc->rsnIE.IeeeHdr.ElementId == RSN_IE) {
+        ieLen = sizeof(IEEEtypes_Header_t) + pBSSDesc->rsnIE.IeeeHdr.Len;
+        if (copy_to_user(pTmpBuf, &pBSSDesc->rsnIE, ieLen)) {
+            PRINTM(INFO, "Copy to user failed\n");
+            return;
+        }
+
+        pTmpBuf += ieLen;
+    }
 
     *ppBuffer = pTmpBuf;
 }
@@ -1174,14 +1051,14 @@ wlan_scan_create_brief_scan_table(u8 ** ppBuffer, BSSDescriptor_t * pBssDesc)
  *
  *  @param pTlv        Pointer to the start of the TLV buffer to parse
  *  @param tlvBufSize  Size of the TLV buffer
- *  @param pTsfTlv     Output parameter: Pointer to the TSF TLV if found
+ *  @param ppTsfTlv    Output parameter: Pointer to the TSF TLV if found
  *
  *  @return            void
  */
 static void
 wlan_ret_802_11_scan_get_tlv_ptrs(MrvlIEtypes_Data_t * pTlv,
                                   int tlvBufSize,
-                                  MrvlIEtypes_TsfTimestamp_t ** pTsfTlv)
+                                  MrvlIEtypes_TsfTimestamp_t ** ppTsfTlv)
 {
     MrvlIEtypes_Data_t *pCurrentTlv;
     int tlvBufLeft;
@@ -1190,7 +1067,7 @@ wlan_ret_802_11_scan_get_tlv_ptrs(MrvlIEtypes_Data_t * pTlv,
 
     pCurrentTlv = pTlv;
     tlvBufLeft = tlvBufSize;
-    *pTsfTlv = NULL;
+    *ppTsfTlv = NULL;
 
     PRINTM(INFO, "SCAN_RESP: tlvBufSize = %d\n", tlvBufSize);
     HEXDUMP("SCAN_RESP: TLV Buf", (u8 *) pTlv, tlvBufSize);
@@ -1201,7 +1078,8 @@ wlan_ret_802_11_scan_get_tlv_ptrs(MrvlIEtypes_Data_t * pTlv,
 
         switch (tlvType) {
         case TLV_TYPE_TSFTIMESTAMP:
-            *pTsfTlv = (MrvlIEtypes_TsfTimestamp_t *) pCurrentTlv;
+            PRINTM(INFO, "SCAN_RESP: TSF Timestamp TLV, len = %d\n", tlvLen);
+            *ppTsfTlv = (MrvlIEtypes_TsfTimestamp_t *) pCurrentTlv;
             break;
 
         default:
@@ -1240,18 +1118,18 @@ InterpretBSSDescriptionWithIE(BSSDescriptor_t * pBSSEntry,
     u8 *pCurrentPtr;
     u8 *pRate;
     u8 elemLen;
+    u16 totalIeLen;
     u8 bytesToCopy;
     u8 rateSize;
     u16 beaconSize;
     BOOLEAN foundDataRateIE;
     int bytesLeftForCurrentBeacon;
+    IEEEtypes_ERPInfo_t *pERPInfo;
 
-    PWPA_SUPPLICANT pwpa_supplicant;
-    PWPA_SUPPLICANT pwpa2_supplicant;
-    IE_WPA *pIe;
-    const u8 oui01[4] = { 0x00, 0x50, 0xf2, 0x01 };
-    const u8 oui02[4] = { 0x00, 0x50, 0xf2, 0x02 };
-    u8 wmmIeLen;
+    IEEEtypes_VendorSpecific_t *pVendorIe;
+    const u8 wpa_oui[4] = { 0x00, 0x50, 0xf2, 0x01 };
+    const u8 wmm_oui[4] = { 0x00, 0x50, 0xf2, 0x02 };
+    const u8 wps_oui[4] = { 0x00, 0x50, 0xf2, 0x04 };
 
     IEEEtypes_CountryInfoSet_t *pcountryinfo;
 
@@ -1286,11 +1164,8 @@ InterpretBSSDescriptionWithIE(BSSDescriptor_t * pBSSEntry,
 
     bytesLeftForCurrentBeacon = beaconSize;
 
-    pwpa_supplicant = &pBSSEntry->wpa_supplicant;
-    pwpa2_supplicant = &pBSSEntry->wpa2_supplicant;
-
     memcpy(pBSSEntry->MacAddress, pCurrentPtr, MRVDRV_ETH_ADDR_LEN);
-    PRINTM(INFO, "InterpretIE: AP MAC Addr-%x:%x:%x:%x:%x:%x\n",
+    PRINTM(INFO, "InterpretIE: AP MAC Addr-%02x:%02x:%02x:%02x:%02x:%02x\n",
            pBSSEntry->MacAddress[0], pBSSEntry->MacAddress[1],
            pBSSEntry->MacAddress[2], pBSSEntry->MacAddress[3],
            pBSSEntry->MacAddress[4], pBSSEntry->MacAddress[5]);
@@ -1368,6 +1243,7 @@ InterpretBSSDescriptionWithIE(BSSDescriptor_t * pBSSEntry,
     while (bytesLeftForCurrentBeacon >= 2) {
         elemID = (IEEEtypes_ElementId_e) (*((u8 *) pCurrentPtr));
         elemLen = *((u8 *) pCurrentPtr + 1);
+        totalIeLen = elemLen + sizeof(IEEEtypes_Header_t);
 
         if (bytesLeftForCurrentBeacon < elemLen) {
             PRINTM(INFO, "InterpretIE: Error in processing IE, "
@@ -1381,17 +1257,14 @@ InterpretBSSDescriptionWithIE(BSSDescriptor_t * pBSSEntry,
         case SSID:
             pBSSEntry->Ssid.SsidLength = elemLen;
             memcpy(pBSSEntry->Ssid.Ssid, (pCurrentPtr + 2), elemLen);
-#ifdef MOTO_DBG
-            PRINTM(MOTO_DEBUG, "InterpretBSSDescriptionWithIE: Ssid: %32s\n",
-                   pBSSEntry->Ssid.Ssid);
-#else
-            PRINTM(INFO, "Ssid: %32s", pBSSEntry->Ssid.Ssid);
-#endif
+            PRINTM(INFO, "InterpretIE: Ssid: %-32s\n", pBSSEntry->Ssid.Ssid);
             break;
 
         case SUPPORTED_RATES:
-            memcpy(pBSSEntry->DataRates, (pCurrentPtr + 2), elemLen);
-            memmove(pBSSEntry->SupportedRates, (pCurrentPtr + 2), elemLen);
+            memcpy(pBSSEntry->DataRates, pCurrentPtr + 2, elemLen);
+            memcpy(pBSSEntry->SupportedRates, pCurrentPtr + 2, elemLen);
+            HEXDUMP("InterpretIE: SupportedRates:",
+                    pBSSEntry->SupportedRates, elemLen);
             rateSize = elemLen;
             foundDataRateIE = TRUE;
             break;
@@ -1404,8 +1277,8 @@ InterpretBSSDescriptionWithIE(BSSDescriptor_t * pBSSEntry,
         case FH_PARAM_SET:
             pFH = (IEEEtypes_FhParamSet_t *) pCurrentPtr;
             pBSSEntry->NetworkTypeInUse = Wlan802_11FH;
-            memmove(&pBSSEntry->PhyParamSet.FhParamSet, pFH,
-                    sizeof(IEEEtypes_FhParamSet_t));
+            memcpy(&pBSSEntry->PhyParamSet.FhParamSet, pFH,
+                   sizeof(IEEEtypes_FhParamSet_t));
             pBSSEntry->PhyParamSet.FhParamSet.DwellTime
                 =
                 wlan_le16_to_cpu(pBSSEntry->PhyParamSet.FhParamSet.DwellTime);
@@ -1423,7 +1296,6 @@ InterpretBSSDescriptionWithIE(BSSDescriptor_t * pBSSEntry,
 
         case CF_PARAM_SET:
             pCF = (IEEEtypes_CfParamSet_t *) pCurrentPtr;
-
             memcpy(&pBSSEntry->SsParamSet.CfParamSet, pCF,
                    sizeof(IEEEtypes_CfParamSet_t));
             break;
@@ -1431,14 +1303,8 @@ InterpretBSSDescriptionWithIE(BSSDescriptor_t * pBSSEntry,
         case IBSS_PARAM_SET:
             pIbss = (IEEEtypes_IbssParamSet_t *) pCurrentPtr;
             pBSSEntry->ATIMWindow = wlan_le32_to_cpu(pIbss->AtimWindow);
-
-            memmove(&pBSSEntry->SsParamSet.IbssParamSet, pIbss,
-                    sizeof(IEEEtypes_IbssParamSet_t));
-
-            pBSSEntry->SsParamSet.IbssParamSet.AtimWindow
-                =
-                wlan_le16_to_cpu(pBSSEntry->SsParamSet.IbssParamSet.
-                                 AtimWindow);
+            memcpy(&pBSSEntry->SsParamSet.IbssParamSet, pIbss,
+                   sizeof(IEEEtypes_IbssParamSet_t));
             break;
 
             /* Handle Country Info IE */
@@ -1459,7 +1325,10 @@ InterpretBSSDescriptionWithIE(BSSDescriptor_t * pBSSEntry,
             HEXDUMP("InterpretIE: 11D- CountryInfo:",
                     (u8 *) pcountryinfo, (u32) (pcountryinfo->Len + 2));
             break;
-
+        case ERP_INFO:
+            pERPInfo = (IEEEtypes_ERPInfo_t *) pCurrentPtr;
+            pBSSEntry->ERPFlags = pERPInfo->ERPFlags;
+            break;
         case EXTENDED_SUPPORTED_RATES:
             /*
              * only process extended supported rate
@@ -1476,57 +1345,76 @@ InterpretBSSDescriptionWithIE(BSSDescriptor_t * pBSSEntry,
 
                 pRate = (u8 *) pBSSEntry->DataRates;
                 pRate += rateSize;
-                memmove(pRate, (pCurrentPtr + 2), bytesToCopy);
+                memcpy(pRate, pCurrentPtr + 2, bytesToCopy);
 
                 pRate = (u8 *) pBSSEntry->SupportedRates;
-
                 pRate += rateSize;
-                memmove(pRate, (pCurrentPtr + 2), bytesToCopy);
+                memcpy(pRate, pCurrentPtr + 2, bytesToCopy);
             }
+            HEXDUMP("InterpretIE: ExtSupportedRates:",
+                    pBSSEntry->SupportedRates, elemLen + rateSize);
             break;
 
         case VENDOR_SPECIFIC_221:
-#define IE_ID_LEN_FIELDS_BYTES 2
-            pIe = (IE_WPA *) pCurrentPtr;
+            pVendorIe = (IEEEtypes_VendorSpecific_t *) pCurrentPtr;
 
-            if (!memcmp(pIe->oui, oui01, sizeof(oui01))) {
-                pwpa_supplicant->Wpa_ie_len
-                    = MIN(elemLen + IE_ID_LEN_FIELDS_BYTES,
-                          sizeof(pwpa_supplicant->Wpa_ie));
-                memcpy(pwpa_supplicant->Wpa_ie,
-                       pCurrentPtr, pwpa_supplicant->Wpa_ie_len);
+            if ((!memcmp
+                 (pVendorIe->VendHdr.Oui, wpa_oui,
+                  sizeof(pVendorIe->VendHdr.Oui)))
+                && (pVendorIe->VendHdr.OuiType == wpa_oui[3])) {
+                pBSSEntry->wpaIE.VendHdr.Len
+                    = (MIN(totalIeLen, sizeof(pBSSEntry->wpaIE))
+                       - sizeof(IEEEtypes_Header_t));
+
+                memcpy(&pBSSEntry->wpaIE,
+                       pCurrentPtr,
+                       (pBSSEntry->wpaIE.VendHdr.Len
+                        + sizeof(IEEEtypes_Header_t)));
+
                 HEXDUMP("InterpretIE: Resp WPA_IE",
-                        pwpa_supplicant->Wpa_ie, elemLen);
-            } else if (!memcmp(pIe->oui, oui02, sizeof(oui02))) {
+                        (u8 *) & pBSSEntry->wpaIE,
+                        (pBSSEntry->wpaIE.VendHdr.Len
+                         + sizeof(IEEEtypes_Header_t)));
+            } else
+                if ((!memcmp
+                     (pVendorIe->VendHdr.Oui, wmm_oui,
+                      sizeof(pVendorIe->VendHdr.Oui)))
+                    && (pVendorIe->VendHdr.OuiType == wmm_oui[3])) {
+                if (totalIeLen == sizeof(IEEEtypes_WmmParameter_t)
+                    || totalIeLen == sizeof(IEEEtypes_WmmInfo_t)) {
 
-                wmmIeLen = pIe->Len + IE_ID_LEN_FIELDS_BYTES;
-                if (wmmIeLen == sizeof(WMM_PARAMETER_IE)
-                    || wmmIeLen == sizeof(WMM_INFO_IE)) {
                     /* Only accept and copy the WMM IE if it matches
                      *  the size expected for the WMM Info IE or the
                      *  WMM Parameter IE.
                      */
-                    memcpy((u8 *) & pBSSEntry->wmmIE, pCurrentPtr, wmmIeLen);
+                    memcpy((u8 *) & pBSSEntry->wmmIE, pCurrentPtr,
+                           totalIeLen);
                     HEXDUMP("InterpretIE: Resp WMM_IE",
-                            (u8 *) & pBSSEntry->wmmIE, wmmIeLen);
+                            (u8 *) & pBSSEntry->wmmIE, totalIeLen);
                 }
+            } else
+                if ((!memcmp
+                     (pVendorIe->VendHdr.Oui, wps_oui,
+                      sizeof(pVendorIe->VendHdr.Oui)))
+                    && (pVendorIe->VendHdr.OuiType == wps_oui[3])) {
+                memcpy((u8 *) & pBSSEntry->wpsIE, pCurrentPtr, totalIeLen);
+                HEXDUMP("InterpretIE: Resp WPS_IE",
+                        (u8 *) & pBSSEntry->wpsIE, totalIeLen);
             }
             break;
-        case WPA2_IE:
-            pIe = (IE_WPA *) pCurrentPtr;
-            pwpa2_supplicant->Wpa_ie_len
-                = MIN(elemLen + IE_ID_LEN_FIELDS_BYTES,
-                      sizeof(pwpa2_supplicant->Wpa_ie));
-            memcpy(pwpa2_supplicant->Wpa_ie,
-                   pCurrentPtr, pwpa2_supplicant->Wpa_ie_len);
+        case RSN_IE:
+            pBSSEntry->rsnIE.IeeeHdr.Len
+                = (MIN(totalIeLen, sizeof(pBSSEntry->rsnIE))
+                   - sizeof(IEEEtypes_Header_t));
 
-            HEXDUMP("InterpretIE: Resp WPA2_IE",
-                    pwpa2_supplicant->Wpa_ie, elemLen);
-            break;
-        case TIM:
-            break;
+            memcpy(&pBSSEntry->rsnIE,
+                   pCurrentPtr,
+                   pBSSEntry->rsnIE.IeeeHdr.Len + sizeof(IEEEtypes_Header_t));
 
-        case CHALLENGE_TEXT:
+            HEXDUMP("InterpretIE: Resp RSN_IE",
+                    (u8 *) & pBSSEntry->rsnIE,
+                    pBSSEntry->rsnIE.IeeeHdr.Len +
+                    sizeof(IEEEtypes_Header_t));
             break;
         }
 
@@ -1612,40 +1500,46 @@ FindBSSIDInList(wlan_adapter * Adapter, u8 * bssid, int mode)
 /**
  *  @brief This function finds ssid in ssid list.
  *
- *  @param Adapter  A pointer to wlan_adapter
- *  @param ssid     SSID to find in the list
- *  @param bssid    BSSID to qualify the SSID selection (if provided)
- *  @param mode     Network mode: Infrastructure or IBSS
+ *  @param Adapter      A pointer to wlan_adapter
+ *  @param ssid         SSID to find in the list
+ *  @param bssid        BSSID to qualify the SSID selection (if provided)
+ *  @param mode         Network mode: Infrastructure or IBSS
  *
  *  @return         index in BSSID list
  */
 int
-FindSSIDInList(wlan_adapter * Adapter,
-               WLAN_802_11_SSID * ssid, u8 * bssid, int mode)
+FindSSIDInList(wlan_adapter * Adapter, WLAN_802_11_SSID * ssid,
+               u8 * bssid, int mode)
 {
     int net = -ENETUNREACH;
     u8 bestrssi = 0;
-    int i;
-    int j;
+    int i, j;
 
     PRINTM(INFO, "Num of Entries in Table = %d\n", Adapter->NumInScanTable);
 
-    for (i = 0; i < Adapter->NumInScanTable; i++) {
-        if (!SSIDcmp(&Adapter->ScanTable[i].Ssid, ssid) &&
-            (!bssid ||
-             !memcmp(Adapter->ScanTable[i].MacAddress, bssid, ETH_ALEN))) {
+    /* Loop through the table until the maximum is reached or until a match
+     *   is found based on the bssid field comparison 
+     */
+    for (i = 0;
+         i < Adapter->NumInScanTable && (bssid == NULL || (bssid && net < 0));
+         i++) {
+
+        if (!SSIDcmp(&Adapter->ScanTable[i].Ssid, ssid) && ((bssid == NULL)
+                                                            ||
+                                                            !memcmp(Adapter->
+                                                                    ScanTable
+                                                                    [i].
+                                                                    MacAddress,
+                                                                    bssid,
+                                                                    ETH_ALEN)))
+        {
             switch (mode) {
             case Wlan802_11Infrastructure:
             case Wlan802_11IBSS:
                 j = IsNetworkCompatible(Adapter, i, mode);
 
                 if (j >= 0) {
-                    if (bssid) {
-                        return i;
-                    }
-
-                    if (SCAN_RSSI(Adapter->ScanTable[i].Rssi)
-                        > bestrssi) {
+                    if (SCAN_RSSI(Adapter->ScanTable[i].Rssi) > bestrssi) {
                         bestrssi = SCAN_RSSI(Adapter->ScanTable[i].Rssi);
                         net = i;
                     }
@@ -1657,8 +1551,11 @@ FindSSIDInList(wlan_adapter * Adapter,
                 break;
             case Wlan802_11AutoUnknown:
             default:
-                if (SCAN_RSSI(Adapter->ScanTable[i].Rssi)
-                    > bestrssi) {
+                /* Do not check compatibility if the mode requested is 
+                 *   AutoUnknown.  Allows generic find to work without 
+                 *   verifying against the Adapter security settings
+                 */
+                if (SCAN_RSSI(Adapter->ScanTable[i].Rssi) > bestrssi) {
                     bestrssi = SCAN_RSSI(Adapter->ScanTable[i].Rssi);
                     net = i;
                 }
@@ -1866,40 +1763,6 @@ wlan_scan_delete_table_entry(wlan_private * priv, int tableIdx)
 }
 
 /**
- *  @brief Find the first entry in the scan table that matches the given SSID
- *
- *  @param priv       A pointer to wlan_private structure
- *  @param pReqSSID   Pointer to an SSID struct to use in finding an SSID
- *                    match in the scan table
- *
- *  @return           -1 if not found, else index of the found entry
- *
- */
-static int
-wlan_scan_find_entry_by_ssid(wlan_private * priv, WLAN_802_11_SSID * pReqSSID)
-{
-    wlan_adapter *Adapter = priv->adapter;
-    int retval;
-    int tableIdx;
-
-    retval = -1;
-    tableIdx = 0;
-
-    /* Iterate through the scan table, exit the loop if a match for the
-     *   SSID is found or if the end of the table has been reached 
-     */
-    while ((retval < 0) && (tableIdx < Adapter->NumInScanTable)) {
-        if (SSIDcmp(&Adapter->ScanTable[tableIdx].Ssid, pReqSSID) == 0) {
-            retval = tableIdx;
-        } else {
-            tableIdx++;
-        }
-    }
-
-    return retval;
-}
-
-/**
  *  @brief Delete all occurrences of a given SSID from the scan table
  *
  *  Iterate through the scan table and delete all entries that match a given
@@ -1927,7 +1790,9 @@ wlan_scan_delete_ssid_table_entry(wlan_private * priv,
      *   searching the table for multiple entires for the SSID until no
      *   more are found 
      */
-    while ((tableIdx = wlan_scan_find_entry_by_ssid(priv, pDelSSID)) >= 0) {
+    while ((tableIdx = FindSSIDInList(priv->adapter,
+                                      pDelSSID,
+                                      NULL, Wlan802_11AutoUnknown)) >= 0) {
         PRINTM(INFO, "Scan: Delete Ssid Entry: Found Idx = %d\n", tableIdx);
         retval = WLAN_STATUS_SUCCESS;
         wlan_scan_delete_table_entry(priv, tableIdx);
@@ -1955,14 +1820,12 @@ wlan_set_scan(struct net_device *dev, struct iw_request_info *info,
     wlan_private *priv = dev->priv;
     wlan_adapter *Adapter = priv->adapter;
     union iwreq_data wrqu;
+#if WIRELESS_EXT >= 18
+    struct iw_scan_req *req;
+    struct iw_point *dwrq = (struct iw_point *) vwrq;
     wlan_ioctl_user_scan_cfg scanCfg;
-
-    ENTER();
-
-#ifdef MOTO_DBG
-    PRINTM(MOTO_DEBUG,
-           "SIOCSIWSCAN (wlan_set_scan) called by upper layer.\n");
 #endif
+    ENTER();
 
     if (!Is_Command_Allowed(priv)) {
         PRINTM(MSG, "%s: not allowed\n", __FUNCTION__);
@@ -1974,29 +1837,31 @@ wlan_set_scan(struct net_device *dev, struct iw_request_info *info,
         return -EBUSY;
     }
 #endif
-    if (Adapter->wildcardssidlen) {
-        memset(&scanCfg, 0x00, sizeof(scanCfg));
-        scanCfg.wildcardssidlen = Adapter->wildcardssidlen;
-        memcpy(scanCfg.specificSSID, Adapter->wildcardssid.Ssid,
-               Adapter->wildcardssid.SsidLength);
-        if (!wlan_scan_networks(priv, &scanCfg)) {
-            memset(&wrqu, 0, sizeof(union iwreq_data));
-            wireless_send_event(priv->wlan_dev.netdev, SIOCGIWSCAN, &wrqu,
-                                NULL);
-#ifdef MOTO_DBG
-            PRINTM(MOTO_MSG, "SCAN: Scan event sent to upper layer.\n");
-#endif
+#if WIRELESS_EXT >= 18
+    if ((dwrq->flags & IW_SCAN_THIS_ESSID) &&
+        (dwrq->length == sizeof(struct iw_scan_req))) {
+        req = (struct iw_scan_req *) extra;
+        if (req->essid_len <= WLAN_MAX_SSID_LENGTH) {
+            memset(&scanCfg, 0x00, sizeof(scanCfg));
+            memcpy(scanCfg.ssidList[0].ssid, (u8 *) req->essid,
+                   req->essid_len);
+            if (!wlan_scan_networks(priv, &scanCfg)) {
+                memset(&wrqu, 0, sizeof(union iwreq_data));
+                wireless_send_event(priv->wlan_dev.netdev, SIOCGIWSCAN, &wrqu,
+                                    NULL);
+            }
         }
     } else {
+#endif
+
         if (!wlan_scan_networks(priv, NULL)) {
             memset(&wrqu, 0, sizeof(union iwreq_data));
             wireless_send_event(priv->wlan_dev.netdev, SIOCGIWSCAN, &wrqu,
                                 NULL);
-#ifdef MOTO_DBG
-            PRINTM(MOTO_MSG, "SCAN: Scan event sent to upper layer.\n");
-#endif
         }
+#if WIRELESS_EXT >= 18
     }
+#endif
 
 #ifdef REASSOCIATION
     OS_REL_SEMAPHORE(&Adapter->ReassocSem);
@@ -2033,8 +1898,8 @@ SendSpecificSSIDScan(wlan_private * priv, WLAN_802_11_SSID * pRequestedSSID)
 
     memset(&scanCfg, 0x00, sizeof(scanCfg));
 
-    memcpy(scanCfg.specificSSID, pRequestedSSID->Ssid,
-           pRequestedSSID->SsidLength);
+    memcpy(scanCfg.ssidList[0].ssid,
+           pRequestedSSID->Ssid, pRequestedSSID->SsidLength);
     scanCfg.keepPreviousScan = TRUE;
 
     wlan_scan_networks(priv, &scanCfg);
@@ -2049,8 +1914,8 @@ SendSpecificSSIDScan(wlan_private * priv, WLAN_802_11_SSID * pRequestedSSID)
 /**
  *  @brief scan an AP with specific BSSID
  *
- *  @param priv             A pointer to wlan_private structure
- *  @param bssid            A pointer to AP's bssid
+ *  @param priv      A pointer to wlan_private structure
+ *  @param bssid     A pointer to AP's bssid
  *
  *  @return          WLAN_STATUS_SUCCESS-success, otherwise fail
  */
@@ -2104,6 +1969,7 @@ wlan_get_scan(struct net_device *dev, struct iw_request_info *info,
 
     u8 buf[16 + 256 * 2];
     u8 *ptr;
+    u8 *pRawData;
 
     ENTER();
 
@@ -2112,16 +1978,12 @@ wlan_get_scan(struct net_device *dev, struct iw_request_info *info,
         return -EBUSY;
     }
 
-    if (Adapter->MediaConnectStatus == WlanMediaStateConnected)
-        PRINTM(INFO, "Current Ssid: %32s\n", Adapter->CurBssParams.ssid.Ssid);
+    if (Adapter->MediaConnectStatus == WlanMediaStateConnected) {
+        PRINTM(INFO, "Current Ssid: %-32s\n",
+               Adapter->CurBssParams.BSSDescriptor.Ssid.Ssid);
+    }
 
-#ifdef MOTO_DBG
-    PRINTM(MOTO_MSG,
-           "Get_scan ioctl called by upper layer: NumInScanTable = %d\n",
-           Adapter->NumInScanTable);
-#else
     PRINTM(INFO, "Scan: Get: NumInScanTable = %d\n", Adapter->NumInScanTable);
-#endif
 
 #if WIRELESS_EXT > 13
     /* The old API using SIOCGIWAPLIST had a hard limit of IW_MAX_AP.
@@ -2139,7 +2001,7 @@ wlan_get_scan(struct net_device *dev, struct iw_request_info *info,
 
         pScanTable = &Adapter->ScanTable[i];
 
-        PRINTM(INFO, "i=%d  Ssid: %32s\n", i, pScanTable->Ssid.Ssid);
+        PRINTM(INFO, "i=%d  Ssid: %-32s\n", i, pScanTable->Ssid.Ssid);
 
         cfp =
             find_cfp_by_band_and_channel(Adapter, 0,
@@ -2162,17 +2024,6 @@ wlan_get_scan(struct net_device *dev, struct iw_request_info *info,
         iwe.len = IW_EV_ADDR_LEN;
         current_ev = iwe_stream_add_event(current_ev, end_buf, &iwe, iwe.len);
 
-#ifdef MOTO_DBG
-        PRINTM(MOTO_DEBUG,
-               "Get_scan i=%d: bss: %02x:%02x:%02x:%02x:%02x:%02x\n", i,
-               Adapter->ScanTable[i].MacAddress[0],
-               Adapter->ScanTable[i].MacAddress[1],
-               Adapter->ScanTable[i].MacAddress[2],
-               Adapter->ScanTable[i].MacAddress[3],
-               Adapter->ScanTable[i].MacAddress[4],
-               Adapter->ScanTable[i].MacAddress[5]);
-#endif
-
         //Add the ESSID
         iwe.u.data.length = Adapter->ScanTable[i].Ssid.SsidLength;
 
@@ -2181,15 +2032,11 @@ wlan_get_scan(struct net_device *dev, struct iw_request_info *info,
         }
 
         iwe.cmd = SIOCGIWESSID;
-        iwe.u.data.flags = 1;
+        iwe.u.essid.flags = (i + 1) & IW_ENCODE_INDEX;
         iwe.len = IW_EV_POINT_LEN + iwe.u.data.length;
         current_ev = iwe_stream_add_point(current_ev, end_buf, &iwe,
                                           (s8 *) Adapter->ScanTable[i].Ssid.
                                           Ssid);
-#ifdef MOTO_DBG
-        PRINTM(MOTO_DEBUG, "Get_scan i=%d  Ssid: %32s\n", i,
-               Adapter->ScanTable[i].Ssid.Ssid);
-#endif
 
         //Add mode
         iwe.cmd = SIOCGIWMODE;
@@ -2214,7 +2061,8 @@ wlan_get_scan(struct net_device *dev, struct iw_request_info *info,
             iwe.u.qual.noise = CAL_NF(Adapter->NF[TYPE_BEACON][TYPE_NOAVG]);
         }
         if ((Adapter->InfrastructureMode == Wlan802_11IBSS) &&
-            !SSIDcmp(&Adapter->CurBssParams.ssid, &Adapter->ScanTable[i].Ssid)
+            !SSIDcmp(&Adapter->CurBssParams.BSSDescriptor.Ssid,
+                     &Adapter->ScanTable[i].Ssid)
             && Adapter->AdhocCreate) {
             ret = PrepareAndSendCommand(priv,
                                         HostCmd_CMD_802_11_RSSI,
@@ -2271,7 +2119,8 @@ wlan_get_scan(struct net_device *dev, struct iw_request_info *info,
 
         }
         if ((Adapter->ScanTable[i].InfrastructureMode == Wlan802_11IBSS) &&
-            !SSIDcmp(&Adapter->CurBssParams.ssid, &Adapter->ScanTable[i].Ssid)
+            !SSIDcmp(&Adapter->CurBssParams.BSSDescriptor.Ssid,
+                     &Adapter->ScanTable[i].Ssid)
             && Adapter->AdhocCreate) {
             iwe.u.bitrate.value = 22 * 500000;
         }
@@ -2282,16 +2131,23 @@ wlan_get_scan(struct net_device *dev, struct iw_request_info *info,
         /* Add new value to event */
         current_val = current_ev + IW_EV_LCP_LEN;
 
-        if (Adapter->ScanTable[i].wpa2_supplicant.Wpa_ie[0] == WPA2_IE) {
+        if (Adapter->ScanTable[i].rsnIE.IeeeHdr.ElementId == RSN_IE) {
+            pRawData = (u8 *) & Adapter->ScanTable[i].rsnIE;
             memset(&iwe, 0, sizeof(iwe));
             memset(buf, 0, sizeof(buf));
             ptr = buf;
+#if WIRELESS_EXT >= 18
+            memcpy(buf, pRawData,
+                   Adapter->ScanTable[i].rsnIE.IeeeHdr.Len + 2);
+            iwe.cmd = IWEVGENIE;
+            iwe.u.data.length = Adapter->ScanTable[i].rsnIE.IeeeHdr.Len + 2;
+#else
             ptr += sprintf(ptr, "rsn_ie=");
 
             for (j = 0;
-                 j < Adapter->ScanTable[i].wpa2_supplicant.Wpa_ie_len; j++) {
-                ptr += sprintf(ptr, "%02x", (Adapter->ScanTable[i]
-                                             .wpa2_supplicant.Wpa_ie[j]));
+                 j < (Adapter->ScanTable[i].rsnIE.IeeeHdr.Len
+                      + sizeof(IEEEtypes_Header_t)); j++) {
+                ptr += sprintf(ptr, "%02x", *(pRawData + j));
             }
             iwe.u.data.length = strlen(buf);
 
@@ -2299,20 +2155,27 @@ wlan_get_scan(struct net_device *dev, struct iw_request_info *info,
             PRINTM(INFO, "WPA2 BUF: %s \n", buf);
 
             iwe.cmd = IWEVCUSTOM;
+#endif
             iwe.len = IW_EV_POINT_LEN + iwe.u.data.length;
             current_ev = iwe_stream_add_point(current_ev, end_buf, &iwe, buf);
         }
-        if (Adapter->ScanTable[i].wpa_supplicant.Wpa_ie[0] == WPA_IE) {
+        if (Adapter->ScanTable[i].wpaIE.VendHdr.ElementId == WPA_IE) {
+            pRawData = (u8 *) & Adapter->ScanTable[i].wpaIE;
             memset(&iwe, 0, sizeof(iwe));
             memset(buf, 0, sizeof(buf));
             ptr = buf;
+#if WIRELESS_EXT >= 18
+            memcpy(buf, pRawData,
+                   Adapter->ScanTable[i].wpaIE.VendHdr.Len + 2);
+            iwe.cmd = IWEVGENIE;
+            iwe.u.data.length = Adapter->ScanTable[i].wpaIE.VendHdr.Len + 2;
+#else
             ptr += sprintf(ptr, "wpa_ie=");
 
             for (j = 0;
-                 j < Adapter->ScanTable[i].wpa_supplicant.Wpa_ie_len; j++) {
-                ptr += sprintf(ptr, "%02x",
-                               Adapter->ScanTable[i].wpa_supplicant.
-                               Wpa_ie[j]);
+                 j < (Adapter->ScanTable[i].wpaIE.VendHdr.Len
+                      + sizeof(IEEEtypes_Header_t)); j++) {
+                ptr += sprintf(ptr, "%02x", *(pRawData + j));
             }
             iwe.u.data.length = strlen(buf);
 
@@ -2320,29 +2183,32 @@ wlan_get_scan(struct net_device *dev, struct iw_request_info *info,
             PRINTM(INFO, "WPA BUF: %s \n", buf);
 
             iwe.cmd = IWEVCUSTOM;
+#endif
+            iwe.len = IW_EV_POINT_LEN + iwe.u.data.length;
+            current_ev = iwe_stream_add_point(current_ev, end_buf, &iwe, buf);
+        }
+        if (Adapter->ScanTable[i].wpsIE.VendHdr.ElementId == WPS_IE) {
+            pRawData = (u8 *) & Adapter->ScanTable[i].wpsIE;
+            memset(&iwe, 0, sizeof(iwe));
+            memset(buf, 0, sizeof(buf));
+            ptr = buf;
+            ptr += sprintf(ptr, "wps_ie=");
+
+            for (j = 0;
+                 j < (Adapter->ScanTable[i].wpsIE.VendHdr.Len
+                      + sizeof(IEEEtypes_Header_t)); j++) {
+                ptr += sprintf(ptr, "%02x", *(pRawData + j));
+            }
+            iwe.u.data.length = strlen(buf);
+
+            PRINTM(INFO, "iwe.u.data.length %d\n", iwe.u.data.length);
+            PRINTM(INFO, "WPS BUF: %s \n", buf);
+
+            iwe.cmd = IWEVCUSTOM;
             iwe.len = IW_EV_POINT_LEN + iwe.u.data.length;
             current_ev = iwe_stream_add_point(current_ev, end_buf, &iwe, buf);
         }
 
-        /* Add beacon period to scan results */
-        memset(&iwe, 0, sizeof(iwe));
-        memset(buf, 0, sizeof(buf));
-        ptr = buf;
-        ptr += sprintf(ptr, "beacon_period=");
-
-        ptr += sprintf(ptr, "%d",
-                           Adapter->ScanTable[i].BeaconPeriod);
-            
-        iwe.u.data.length = strlen(buf);
-
-        PRINTM(INFO, "iwe.u.data.length %d\n", iwe.u.data.length);
-        PRINTM(INFO, "Beacon period BUF: %s \n", buf);
-
-        iwe.cmd = IWEVCUSTOM;
-        iwe.len = IW_EV_POINT_LEN + iwe.u.data.length;
-        current_ev = iwe_stream_add_point(current_ev, end_buf, &iwe, buf);
-	
-	
 #if WIRELESS_EXT > 14
 
         if (Adapter->ScanTable[i].extra_ie != 0) {
@@ -2373,12 +2239,130 @@ wlan_get_scan(struct net_device *dev, struct iw_request_info *info,
     dwrq->length = (current_ev - extra);
     dwrq->flags = 0;
 
-#ifdef MOTO_DBG
-    PRINTM(MOTO_DEBUG, "Get_scan ioctl end\n");
-#endif
-
     LEAVE();
 #endif
+    return WLAN_STATUS_SUCCESS;
+}
+
+/** 
+ *  @brief Create a wlan_ioctl_get_scan_table_entry for a given BSS 
+ *         Descriptor for inclusion in the ioctl response to the user space
+ *         application.
+ *
+ *
+ *  @param priv      A pointer to wlan_private structure
+ *  @param pBSSDesc  Pointer to a BSS entry in the scan table to form
+ *                   scan response from for delivery to the application layer
+ *  @param ppBuffer  Output parameter: Buffer used to output scan return struct
+ *  @param pSpaceLeft Output parameter: Number of bytes available in the 
+ *                    response buffer.
+ *
+ *  @return WLAN_STATUS_SUCCESS, or < 0 with IOCTL error code
+ */
+static int
+wlan_get_scan_table_ret_entry(wlan_private * priv,
+                              BSSDescriptor_t * pBSSDesc,
+                              u8 ** ppBuffer, int *pSpaceLeft)
+{
+    wlan_adapter *Adapter;
+    wlan_ioctl_get_scan_table_entry *pRspEntry;
+    wlan_ioctl_get_scan_table_entry tmpRspEntry;
+    int spaceNeeded;
+    u8 *pCurrent;
+    int variableSize;
+
+    const int fixedSize = (sizeof(tmpRspEntry.fixedFieldLength)
+                           + sizeof(tmpRspEntry.fixedFields)
+                           + sizeof(tmpRspEntry.bssInfoLength));
+
+    ENTER();
+
+    Adapter = priv->adapter;
+    pCurrent = *ppBuffer;
+
+    /* The variable size returned is the stored beacon size */
+    variableSize = pBSSDesc->beaconBufSize;
+
+    /* If we stored a beacon and its size was zero, set the variable
+     *  size return value to the size of the brief scan response 
+     *  wlan_scan_create_brief_table_entry creates.  Also used if 
+     *  we are not configured to store beacons in the first place
+     */
+    if (variableSize == 0) {
+        variableSize = pBSSDesc->Ssid.SsidLength + 2;
+        variableSize += (sizeof(pBSSDesc->BeaconPeriod)
+                         + sizeof(pBSSDesc->TimeStamp)
+                         + sizeof(pBSSDesc->Cap));
+        if (pBSSDesc->wmmIE.VendHdr.ElementId == WMM_IE) {
+            variableSize += (sizeof(IEEEtypes_Header_t)
+                             + pBSSDesc->wmmIE.VendHdr.Len);
+        }
+
+        if (pBSSDesc->wpaIE.VendHdr.ElementId == WPA_IE) {
+            variableSize += (sizeof(IEEEtypes_Header_t)
+                             + pBSSDesc->wpaIE.VendHdr.Len);
+        }
+
+        if (pBSSDesc->rsnIE.IeeeHdr.ElementId == RSN_IE) {
+            variableSize += (sizeof(IEEEtypes_Header_t)
+                             + pBSSDesc->rsnIE.IeeeHdr.Len);
+        }
+    }
+
+    spaceNeeded = fixedSize + variableSize;
+
+    PRINTM(INFO, "GetScanTable: need(%d), left(%d)\n",
+           spaceNeeded, *pSpaceLeft);
+
+    if (spaceNeeded >= *pSpaceLeft) {
+        *pSpaceLeft = 0;
+        LEAVE();
+        return -E2BIG;
+    }
+
+    *pSpaceLeft -= spaceNeeded;
+
+    tmpRspEntry.fixedFieldLength = sizeof(pRspEntry->fixedFields);
+
+    memcpy(tmpRspEntry.fixedFields.bssid,
+           pBSSDesc->MacAddress, sizeof(pRspEntry->fixedFields.bssid));
+
+    tmpRspEntry.fixedFields.rssi = pBSSDesc->Rssi;
+    tmpRspEntry.fixedFields.channel = pBSSDesc->Channel;
+    tmpRspEntry.fixedFields.networkTSF = pBSSDesc->networkTSF;
+    tmpRspEntry.bssInfoLength = variableSize;
+
+    /*
+     *  Copy fixed fields to user space
+     */
+    if (copy_to_user(pCurrent, &tmpRspEntry, fixedSize)) {
+        PRINTM(INFO, "Copy to user failed\n");
+        LEAVE();
+        return -EFAULT;
+    }
+
+    pCurrent += fixedSize;
+
+    if (pBSSDesc->pBeaconBuf) {
+        /*
+         *  Copy variable length elements to user space
+         */
+        if (copy_to_user(pCurrent, pBSSDesc->pBeaconBuf,
+                         pBSSDesc->beaconBufSize)) {
+            PRINTM(INFO, "Copy to user failed\n");
+            LEAVE();
+            return -EFAULT;
+        }
+
+        pCurrent += pBSSDesc->beaconBufSize;
+    } else {
+        wlan_scan_create_brief_table_entry(&pCurrent, pBSSDesc);
+    }
+
+    *ppBuffer = pCurrent;
+
+    LEAVE();
+
     return WLAN_STATUS_SUCCESS;
 }
 
@@ -2394,169 +2378,109 @@ int
 wlan_get_scan_table_ioctl(wlan_private * priv, struct iwreq *wrq)
 {
     wlan_adapter *Adapter;
-    BSSDescriptor_t *pBssInfo;
+    BSSDescriptor_t *pBSSDesc;
     wlan_ioctl_get_scan_table_info *pRspInfo;
-    wlan_ioctl_get_scan_table_entry *pRspEntry;
-    wlan_ioctl_get_scan_table_entry tmpRspEntry;
     int retcode;
     int retlen;
-    int spaceNeeded;
     int spaceLeft;
     u8 *pCurrent;
     u8 *pBufferEnd;
     u32 scanStart;
     u32 numScansDone;
-    int variableSize;
 
-    const int fixedSize = (sizeof(tmpRspEntry.fixedFieldLength)
-                           + sizeof(tmpRspEntry.fixedFields)
-                           + sizeof(tmpRspEntry.bssInfoLength));
-
-    retlen = 0;
+    numScansDone = 0;
+    retcode = WLAN_STATUS_SUCCESS;
+    Adapter = priv->adapter;
 
     if (copy_from_user(&scanStart,
                        wrq->u.data.pointer, sizeof(scanStart)) != 0) {
         /* copy_from_user failed  */
-#ifdef MOTO_DBG
-        PRINTM(ERROR, "GetScanTable: copy from user failed\n");
-#else
         PRINTM(INFO, "GetScanTable: copy from user failed\n");
-#endif
-        retcode = -EFAULT;
-
-    } else {
-
-#ifdef MOTO_DBG
-        PRINTM(MOTO_DEBUG,
-               "GetScanTable ioctl called by upper layer: scanStart req = %d\n",
-               scanStart);
-        PRINTM(MOTO_DEBUG,
-               "GetScanTable ioctl called by upper layer: length avail = %d\n",
-               wrq->u.data.length);
-#else
-        PRINTM(INFO, "GetScanTable: scanStart req = %d\n", scanStart);
-        PRINTM(INFO, "GetScanTable: length avail = %d\n", wrq->u.data.length);
-#endif
-
-        Adapter = priv->adapter;
-
-        numScansDone = 0;
-
-        pRspInfo = (wlan_ioctl_get_scan_table_info *) wrq->u.data.pointer;
-        pCurrent = pRspInfo->scan_table_entry_buffer;
-        pBufferEnd = wrq->u.data.pointer + wrq->u.data.length - 1;
-        spaceLeft = pBufferEnd - pCurrent;
-
-        while (spaceLeft &&
-               scanStart + numScansDone < Adapter->NumInScanTable) {
-
-            pBssInfo = &Adapter->ScanTable[scanStart + numScansDone];
-
-            /* The variable size returned is the stored beacon size */
-            variableSize = pBssInfo->beaconBufSize;
-
-            /* If we stored a beacon and its size was zero, set the variable
-             *  size return value to the size of the brief scan response 
-             *  wlan_scan_create_brief_scan_table creates.  Also used if 
-             *  we are not configured to store beacons in the first place
-             */
-            if (variableSize == 0) {
-                variableSize = pBssInfo->Ssid.SsidLength + 2;
-                variableSize += (sizeof(pBssInfo->BeaconPeriod)
-                                 + sizeof(pBssInfo->TimeStamp)
-                                 + sizeof(pBssInfo->Cap));
-            }
-
-            spaceNeeded = fixedSize + variableSize;
-            spaceLeft = pBufferEnd - pCurrent;
-
-#ifdef MOTO_DBG
-            PRINTM(MOTO_DEBUG, "GetScanTable: bss[%d], need(%d), left(%d)\n",
-                   scanStart + numScansDone, spaceNeeded, spaceLeft);
-#else
-            PRINTM(INFO, "GetScanTable: bss[%d], need(%d), left(%d)\n",
-                   scanStart + numScansDone, spaceNeeded, spaceLeft);
-#endif
-
-            if (spaceNeeded >= spaceLeft) {
-                spaceLeft = 0;
-            } else {
-
-#ifdef MOTO_DBG
-                PRINTM(MOTO_DEBUG, "GetScanTable: bss[%d] = "
-                       "%02x:%02x:%02x:%02x:%02x:%02x\n",
-                       scanStart + numScansDone,
-                       pBssInfo->MacAddress[0], pBssInfo->MacAddress[1],
-                       pBssInfo->MacAddress[2], pBssInfo->MacAddress[3],
-                       pBssInfo->MacAddress[4], pBssInfo->MacAddress[5]);
-#else
-                PRINTM(INFO, "GetScanTable: bss[%d] = "
-                       "%02x:%02x:%02x:%02x:%02x:%02x\n",
-                       scanStart + numScansDone,
-                       pBssInfo->MacAddress[0], pBssInfo->MacAddress[1],
-                       pBssInfo->MacAddress[2], pBssInfo->MacAddress[3],
-                       pBssInfo->MacAddress[4], pBssInfo->MacAddress[5]);
-#endif
-
-#ifdef MOTO_DBG
-                PRINTM(MOTO_DEBUG, "GetScanTable ssid[%d] = %s\n",
-                       scanStart + numScansDone, pBssInfo->Ssid.Ssid);
-#endif
-
-                tmpRspEntry.fixedFieldLength = sizeof(pRspEntry->fixedFields);
-
-                memcpy(tmpRspEntry.fixedFields.bssid,
-                       pBssInfo->MacAddress,
-                       sizeof(pRspEntry->fixedFields.bssid));
-
-                tmpRspEntry.fixedFields.rssi = pBssInfo->Rssi;
-                tmpRspEntry.fixedFields.channel = pBssInfo->Channel;
-                tmpRspEntry.fixedFields.networkTSF = pBssInfo->networkTSF;
-                tmpRspEntry.bssInfoLength = variableSize;
-
-                /*
-                 *  Copy fixed fields to user space
-                 */
-                if (copy_to_user(pCurrent, &tmpRspEntry, fixedSize)) {
-                    PRINTM(INFO, "Copy to user failed\n");
-                    return -EFAULT;
-                }
-
-                pCurrent += fixedSize;
-
-                if (pBssInfo->pBeaconBuf) {
-                    /*
-                     *  Copy variable length elements to user space
-                     */
-                    if (copy_to_user(pCurrent, pBssInfo->pBeaconBuf,
-                                     pBssInfo->beaconBufSize)) {
-                        PRINTM(INFO, "Copy to user failed\n");
-                        return -EFAULT;
-                    }
-
-                    pCurrent += pBssInfo->beaconBufSize;
-                } else {
-                    wlan_scan_create_brief_scan_table(&pCurrent, pBssInfo);
-                }
-
-                numScansDone++;
-
-            }                   /* else */
-
-        }                       /* while (spaceLeft && ... ) */
-
-        pRspInfo->scanNumber = numScansDone;
-        retlen = pCurrent - (u8 *) wrq->u.data.pointer;
-
-        retcode = WLAN_STATUS_SUCCESS;
+        return -EFAULT;
     }
 
-    wrq->u.data.length = retlen;
-#ifdef MOTO_DBG
-    PRINTM(MOTO_DEBUG, "GetScanTable ioctl end\n");
-#endif
+    pRspInfo = (wlan_ioctl_get_scan_table_info *) wrq->u.data.pointer;
+    pCurrent = pRspInfo->scan_table_entry_buffer;
+    pBufferEnd = wrq->u.data.pointer + wrq->u.data.length - 1;
+    spaceLeft = pBufferEnd - pCurrent;
 
-    return retcode;
+    PRINTM(INFO, "GetScanTable: scanStart req = %d\n", scanStart);
+    PRINTM(INFO, "GetScanTable: length avail = %d\n", wrq->u.data.length);
+
+    if (scanStart == 0) {
+        PRINTM(INFO, "GetScanTable: get current BSS Descriptor\n");
+
+        /* Use to get current association saved descriptor */
+        pBSSDesc = &Adapter->CurBssParams.BSSDescriptor;
+
+        retcode = wlan_get_scan_table_ret_entry(priv,
+                                                pBSSDesc,
+                                                &pCurrent, &spaceLeft);
+
+        if (retcode == WLAN_STATUS_SUCCESS) {
+            numScansDone = 1;
+        }
+
+    } else {
+        scanStart--;
+
+        while (spaceLeft
+               && (scanStart + numScansDone < Adapter->NumInScanTable)
+               && (retcode == WLAN_STATUS_SUCCESS)) {
+
+            pBSSDesc = &Adapter->ScanTable[scanStart + numScansDone];
+
+            PRINTM(INFO, "GetScanTable: get current BSS Descriptor [%d]\n",
+                   scanStart + numScansDone);
+
+            retcode = wlan_get_scan_table_ret_entry(priv,
+                                                    pBSSDesc,
+                                                    &pCurrent, &spaceLeft);
+
+            if (retcode == WLAN_STATUS_SUCCESS) {
+                numScansDone++;
+            }
+        }
+    }
+
+    pRspInfo->scanNumber = numScansDone;
+    retlen = pCurrent - (u8 *) wrq->u.data.pointer;
+
+    wrq->u.data.length = retlen;
+
+    /* Return retcode (EFAULT or E2BIG) in the case where no scan results were
+     *   successfully encoded.
+     */
+    return (numScansDone ? WLAN_STATUS_SUCCESS : retcode);
+}
+
+/**
+ *  @brief Update the scan entry TSF timestamps to reflect a new association
+ *
+ *  @param priv         A pointer to wlan_private structure
+ *  @param pNewBssDesc  A pointer to the newly associated AP's scan table entry
+ *
+ *  @return             void
+ */
+void
+wlan_scan_update_tsf_timestamps(wlan_private * priv,
+                                BSSDescriptor_t * pNewBssDesc)
+{
+    wlan_adapter *Adapter = priv->adapter;
+    int tableIdx;
+    u64 newTsfBase;
+    s64 tsfDelta;
+
+    memcpy(&newTsfBase, pNewBssDesc->TimeStamp, sizeof(newTsfBase));
+
+    tsfDelta = newTsfBase - pNewBssDesc->networkTSF;
+
+    PRINTM(INFO, "TSF: Update TSF timestamps, 0x%016llx -> 0x%016llx\n",
+           pNewBssDesc->networkTSF, newTsfBase);
+
+    for (tableIdx = 0; tableIdx < Adapter->NumInScanTable; tableIdx++) {
+        Adapter->ScanTable[tableIdx].networkTSF += tsfDelta;
+    }
 }
 
 /**
@@ -2575,33 +2499,32 @@ wlan_set_user_scan_ioctl(wlan_private * priv, struct iwreq *wrq)
     int retcode;
     union iwreq_data wrqu;
 
+#ifdef REASSOCIATION
+    if (OS_ACQ_SEMAPHORE_BLOCK(&priv->adapter->ReassocSem)) {
+        PRINTM(ERROR, "Acquire semaphore error, wlan_extscan_ioctl\n");
+        return -EBUSY;
+    }
+#endif
+
     memset(&scanReq, 0x00, sizeof(scanReq));
 
     if (copy_from_user(&scanReq,
                        wrq->u.data.pointer,
                        MIN(wrq->u.data.length, sizeof(scanReq))) != 0) {
         /* copy_from_user failed  */
-#ifdef MOTO_DBG
-        PRINTM(ERROR, "SetUserScan: copy from user failed\n");
-#else
         PRINTM(INFO, "SetUserScan: copy from user failed\n");
-#endif
         retcode = -EFAULT;
 
     } else {
-
-#ifdef MOTO_DBG
-        DumpSetUserScanConfig(scanReq);
-#endif
-
         retcode = wlan_scan_networks(priv, &scanReq);
 
         memset(&wrqu, 0x00, sizeof(union iwreq_data));
         wireless_send_event(priv->wlan_dev.netdev, SIOCGIWSCAN, &wrqu, NULL);
-#ifdef MOTO_DBG
-        PRINTM(MOTO_MSG, "SCAN: Scan event sent to upper layer.\n");
-#endif
     }
+
+#ifdef REASSOCIATION
+    OS_REL_SEMAPHORE(&priv->adapter->ReassocSem);
+#endif
 
     return retcode;
 }
@@ -2918,10 +2841,12 @@ wlan_ret_802_11_scan(wlan_private * priv, HostCmd_DS_COMMAND * resp)
     int idx;
     int tlvBufSize;
     u64 tsfVal;
+    BOOLEAN bgScanResp;
 
     ENTER();
 
-    if (resp->Command == HostCmd_RET_802_11_BG_SCAN_QUERY) {
+    bgScanResp = (resp->Command == HostCmd_RET_802_11_BG_SCAN_QUERY);
+    if (bgScanResp) {
         pScan = &resp->params.bgscanqueryresp.scanresp;
     } else {
         pScan = &resp->params.scanresp;
@@ -2937,7 +2862,8 @@ wlan_ret_802_11_scan(wlan_private * priv, HostCmd_DS_COMMAND * resp)
     bytesLeft = wlan_le16_to_cpu(pScan->BSSDescriptSize);
     PRINTM(INFO, "SCAN_RESP: BSSDescriptSize %d\n", bytesLeft);
 
-    scanRespSize = wlan_le16_to_cpu(resp->Size);
+    scanRespSize = resp->Size;
+
     PRINTM(CMND, "SCAN_RESP: returned %d APs before parsing\n",
            pScan->NumberOfSets);
 
@@ -3025,8 +2951,8 @@ wlan_ret_802_11_scan(wlan_private * priv, HostCmd_DS_COMMAND * resp)
                                               bssIdx,
                                               numInTable, &newBssEntry);
             /*
-             * If the TSF TLV was appended to the scan results, save the
-             *   this entries TSF value in the networkTSF field.  The
+             * If the TSF TLV was appended to the scan results, save
+             *   this entry's TSF value in the networkTSF field.  The
              *   networkTSF is the firmware's TSF value at the time the
              *   beacon or probe response was received.
              */
@@ -3080,11 +3006,7 @@ wlan_extscan_ioctl(wlan_private * priv, struct ifreq *req)
     ENTER();
 
     if (copy_from_user(&Ext_Scan_SSID, req->ifr_data, sizeof(Ext_Scan_SSID))) {
-#ifdef MOTO_DBG
-        PRINTM(ERROR, "copy of SSID for ext scan from user failed \n");
-#else
         PRINTM(INFO, "copy of SSID for ext scan from user failed \n");
-#endif
         LEAVE();
         return -EFAULT;
     }
@@ -3095,23 +3017,15 @@ wlan_extscan_ioctl(wlan_private * priv, struct ifreq *req)
     }
 #endif
 
-#ifdef MOTO_DBG
-    PRINTM(MOTO_MSG,
-           "Extscan ioctl called by upper layer providing SSID=%s\n",
-           Ext_Scan_SSID.Ssid);
-#endif
     memset(&scanCfg, 0x00, sizeof(scanCfg));
 
-    memcpy(scanCfg.specificSSID, Ext_Scan_SSID.Ssid,
+    memcpy(scanCfg.ssidList[0].ssid, Ext_Scan_SSID.Ssid,
            Ext_Scan_SSID.SsidLength);
 
     wlan_scan_networks(priv, &scanCfg);
 
     memset(&wrqu, 0, sizeof(union iwreq_data));
     wireless_send_event(priv->wlan_dev.netdev, SIOCGIWSCAN, &wrqu, NULL);
-#ifdef MOTO_DBG
-    PRINTM(MOTO_MSG, "SCAN: Scan event sent to upper layer.\n");
-#endif
 
 #ifdef REASSOCIATION
     OS_REL_SEMAPHORE(&Adapter->ReassocSem);
@@ -3141,6 +3055,7 @@ sendBgScanQueryCmd(wlan_private * priv)
            sizeof(BSSDescriptor_t) * MRVDRV_MAX_BSSID_LIST);
     Adapter->NumInScanTable = 0;
     Adapter->pBeaconBufEnd = Adapter->beaconBuffer;
+
     return PrepareAndSendCommand(priv, HostCmd_CMD_802_11_BG_SCAN_QUERY,
                                  0, 0, 0, NULL);
 }
@@ -3236,10 +3151,6 @@ wlan_do_bg_scan_config_ioctl(wlan_private * priv, struct ifreq *req)
         if (buf)
             kfree(buf);
 
-#ifdef MOTO_DBG
-        DumpBGScanConfig(Adapter);
-#endif
-
         break;
     }
 
@@ -3279,7 +3190,6 @@ wlan_cmd_802_11_bg_scan_config(wlan_private * priv,
     bgcfg->ScanInterval = wlan_cpu_to_le32(bgcfg->ScanInterval);
     bgcfg->StoreCondition = wlan_cpu_to_le32(bgcfg->StoreCondition);
     bgcfg->ReportConditions = wlan_cpu_to_le32(bgcfg->ReportConditions);
-    bgcfg->MaxScanResults = wlan_cpu_to_le16(bgcfg->MaxScanResults);
 
     return WLAN_STATUS_SUCCESS;
 }

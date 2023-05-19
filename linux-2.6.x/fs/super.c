@@ -3,7 +3,7 @@
  *
  *  Copyright (C) 1991, 1992  Linus Torvalds
  *
- *  Copyright (C) 2006-2007 Motorola, Inc.
+ *  Copyright 2006 Motorola, Inc.
  *
  *  super.c contains code to handle: - mount structures
  *                                   - super-block tables
@@ -21,16 +21,10 @@
  *  Added devfs support: Richard Gooch <rgooch@atnf.csiro.au>, 13-JAN-1998
  *  Heavily rewritten for 'one fs - one tree' dcache architecture. AV, Mar 2000
  */
- 
-/* ChangeLog:
- * (mm-dd-yyyy)  Author    Comment
- * 10-26-2007    Motorola  Change the sync sequency for LJ6.1
- */
- 
+
 /* Date         Author          Comment
  * ===========  ==============  ==============================================
  * 31-Oct-2006  Motorola        Added inotify    
- * 15-Nov-2007  Motorola        Upmerge from 6.1 (Change the sync sequency)
  */
 
 
@@ -362,7 +356,7 @@ void sync_supers(void)
 	struct super_block * sb;
 restart:
 	spin_lock(&sb_lock);
-	sb = sb_entry(super_blocks.prev);
+	sb = sb_entry(super_blocks.next);
 	while (sb != sb_entry(&super_blocks))
 		if (sb->s_dirt) {
 			sb->s_count++;
@@ -372,7 +366,7 @@ restart:
 			drop_super(sb);
 			goto restart;
 		} else
-			sb = sb_entry(sb->s_list.prev);
+			sb = sb_entry(sb->s_list.next);
 	spin_unlock(&sb_lock);
 }
 
@@ -399,8 +393,8 @@ void sync_filesystems(int wait)
 
 	down(&mutex);		/* Could be down_interruptible */
 	spin_lock(&sb_lock);
-	for (sb = sb_entry(super_blocks.prev); sb != sb_entry(&super_blocks);
-			sb = sb_entry(sb->s_list.prev)) {
+	for (sb = sb_entry(super_blocks.next); sb != sb_entry(&super_blocks);
+			sb = sb_entry(sb->s_list.next)) {
 		if (!sb->s_op->sync_fs)
 			continue;
 		if (sb->s_flags & MS_RDONLY)
@@ -411,8 +405,8 @@ void sync_filesystems(int wait)
 
 restart:
 	spin_lock(&sb_lock);
-	for (sb = sb_entry(super_blocks.prev); sb != sb_entry(&super_blocks);
-			sb = sb_entry(sb->s_list.prev)) {
+	for (sb = sb_entry(super_blocks.next); sb != sb_entry(&super_blocks);
+			sb = sb_entry(sb->s_list.next)) {
 		if (!sb->s_need_sync_fs)
 			continue;
 		sb->s_need_sync_fs = 0;

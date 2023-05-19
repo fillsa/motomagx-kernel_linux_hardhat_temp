@@ -8,7 +8,7 @@
 /** 
   * @section copyright_sec Copyright
   *
-  * (c) Copyright Motorola 2006 - 2008
+  * (c) Copyright Motorola 2006 - 2007
   * This file is free software; you can redistribute it and/or modify
   * it under the terms of the GNU General Public License as published by
   * the Free Software Foundation; either version 2 of the License, or
@@ -25,7 +25,6 @@
   * Motorola         22-Nov-2006     Enable Host Wakeup on Multicast/Broadcast.
   * Motorola         29-Mar-2007     Implement chipset wake up by WLAN_CLIENT_WAKE_B
   * Motorola         31-May-2007     Add host sleep configuration when FW is in PS Mode at connection time.
-  * Motorola         21-Mar-2008     Export datasession variable.
   */
   
 /*---------------------------------- Includes --------------------------------*/
@@ -98,7 +97,6 @@ extern unsigned int wprm_tm_ps_cmd_no;                         /* Traffic meter 
 extern BOOLEAN      wprm_tm_ps_cmd_in_list;                    /* is Traffic meter command in list */
 extern BOOLEAN      is_wprm_traffic_meter_timer_set;           /* traffic meter timer is set or not */
 extern unsigned int voicesession_status;
-extern unsigned int datasession_status;
 
 extern int wlan_set_power(struct net_device *dev, struct iw_request_info *info, \
                 struct iw_param *vwrq, char *extra);           /* change wlan power mode */

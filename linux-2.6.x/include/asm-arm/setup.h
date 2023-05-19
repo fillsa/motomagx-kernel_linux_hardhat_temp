@@ -2,7 +2,7 @@
  *  linux/include/asm/setup.h
  *
  *  Copyright (C) 1997-1999 Russell King
- *  Copyright(C) 2006-2007 Motorola, Inc.
+ *  Copyright (C) 2006-2007 Motorola, Inc.
  *    
  * Date         Author          Comment
  * 10/2006      Motorola        Added Motorola specific ATAGs support.

@@ -76,18 +76,30 @@
 
 	IntCounter = <interrupt count, cleared when interrupt handled>
 	ConnectStatus = <0/1, disconnected/connected>
-	TxSkbNum = <number of tx packets in tx skb queue>
+	wmmQStp = <0/1, WMM queue started/stopped>
+	wmmPkts = <number of tx packets in WMM queues>
+	wmmAcVo = <number of packets sent to device from WMM AcVo queue>
+	wmmAcVi = <number of packets sent to device from WMM AcVi queue>
+	wmmAcBE = <number of packets sent to device from WMM AcBE queue>
+	wmmAcBK = <number of packets sent to device from WMM AcBK queue>
 	PSMode = <0/1, CAM mode/PS mode>
 	PSState = <0/1/2/3, full power state/awake state/pre-sleep state/sleep state>
-	HS_Configured = <0/1, host sleep not configured/configured>
+	IsDeepSleep = <0/1, not deep sleep state/deep sleep state>
+	IsAutoDeepSleepEnabled = <0/1, not auto deep sleep mode/auto deep sleep mode>
 	WakeupDevReq = <0/1, wakeup device not required/required>
 	WakeupTries = <wakeup device count, cleared when device awake>
+	HS_Configured = <0/1, host sleep not configured/configured>
 	num_tx_timeout = <number of tx timeout>
 	num_cmd_timeout = <number of timeout commands>
 	TimeoutCmdId = <command id of the last timeout command>
 	TimeoutCmdAct = <command action of the last timeout command>
-	LastCmdId = <command id of the last command sent to device>
-	LastCmdRespId = <command id of the last command response received from device>
+	LastCmdId = <command id of the last several commands sent to device>
+	LastCmdAct = <command action of the last several commands sent to device>
+	LastCmdIndex = <0 based last command index>
+	LastCmdRespId = <command id of the last several command responses received from device>
+	LastCmdRespIndex = <0 based last command response index>
+	LastEvent = <event id of the last several events received from device>
+	LastEventIndex = <0 based last event index>
 	num_cmd_h2c_fail = <number of commands failed to send to device>
 	num_cmd_sleep_cfm_fail = <number of sleep confirm failed to send to device>
 	num_tx_h2c_fail = <number of data packets failed to send to device>
@@ -121,6 +133,7 @@ SYNOPSIS
 	iwpriv <ethX> <command> [sub-command] ...
 
 	iwpriv ethX version
+	iwpriv ethX verext
 	iwpriv ethX scantype [sub-command]
 	iwpriv ethX getSNR <n>
 	iwpriv ethX getNF <n>
@@ -143,7 +156,7 @@ SYNOPSIS
 	iwpriv ethX getmultipledtim
 	iwpriv ethX atimwindow <n>
 	iwpriv ethX deepsleep <n>
-	iwpriv ethX hostsleepcfg <n>
+	iwpriv ethX autodeepsleep <n>
 	iwpriv ethX hscfg <n>
 	iwpriv ethX deauth
 	iwpriv ethX adhocstop
@@ -162,14 +175,12 @@ SYNOPSIS
 	iwpriv ethX adhocgrate <n>
 
 Version 4 Command:
-	iwpriv ethX inactvityto <n>
+	iwpriv ethX inactivityto <n>
 	iwpriv ethX sleeppd <n>
 	iwpriv ethX enable11d <n>
 	iwpriv ethX bgscan <n>
 	iwpriv ethX wmm <n>
 	iwpriv ethX tpccfg <n>
-	iwpriv ethX setafc <n>
-	iwpriv ethX getafc
 	iwpriv ethX sdioclock <n>
 
 Version 5 Command:
@@ -182,23 +193,23 @@ Version 5 Command:
 	iwpriv ethX txcontrol <n>
 	iwpriv ethX uapsdnullgen <n>
 	iwpriv ethX psnullinterval <n>
-	iwpriv ethX prescan <n>
 	iwpriv ethX getrxinfo
 	iwpriv ethX gettxrate
 	iwpriv ethX bcninterval [n]
 	iwpriv ethX setcoalescing <n>
 	iwpriv ethX bcnmisto <n>
-	iwpriv ethX setwcssid <n>
-	iwpriv ethX getwcssid 
 	iwpriv ethX adhocawakepd <n>
 	iwpriv ethX scantime [s] [a] [p]
 	iwpriv ethX ldocfg [n]
-
 	iwpriv ethX dataevtcfg [a] [b] [c] [d] [e] [f] [g] [h] [i]
 	iwpriv ethX sdiomode [n]
 	iwpriv ethX drvdbg [n] [m]
+	iwpriv ethX adhocgprot [n]
 	iwpriv ethX getrate 
-	iwpriv ethX inactoext [n] [m] [l]
+	iwpriv ethX associate <n>
+	iwpriv ethX inactoext  <n> <m> <l> [k] 
+	iwpriv ethX dbgscfg [n] [m] [l] [k] [j] [i] [h]
+       iwpriv eth1 bcnmonpd  <n>
 
 DESCRIPTION
 	Those commands are used to send additional commands to the Marvell WLAN
@@ -209,6 +220,15 @@ DESCRIPTION
 
 version	
 	This is used to get the current version of the driver and the firmware.
+
+verext
+    Retrieve and display an extended version string from the firmware
+
+	Usage:
+		iwpriv ethX verext [#]
+
+     where [#] is an optional argument to retrieve a specific version string,
+        omission of the argument retrieves the 0 indexed string
 
 scantype	
 	This command is used to set the scan type to be used by the driver in 
@@ -424,35 +444,19 @@ deepsleep
 	iwpriv ethX deepsleep 2
 			Display deepsleep setting
 
-hostsleepcfg	
-	This command is used to configure the host sleep parameters.
-		(Condition, GPIO pin , Gap).
+autodeepsleep                    
+	This command is used to configure the station in auto deepsleep mode.
 
-	where Condition is:
-		bit 0 = 1 	-- broadcast data
-		bit 1 = 1 	-- unicast data
-		bit 2 = 1 	-- mac event
-		bit 3 = 1 	-- multicast packet
-
-	where GPIO is the pin number of GPIO used to wakeup the host.
- 		It could be any valid pin # (e.g. 0-7) or 0xff (Interface, e.g. SDIO will be used instead).
-		
-	where Gap is the gap in milli seconds between wakeup signal and wakeup event.
-
-	Where GPIO and Gap are one byte Hexical data.
-
+	where the option is:
+			1 	-- Enable auto deepsleep mode
+			0 	-- Disable auto deepsleep mode
 	Usage:
-		iwpriv eth1 hostsleepcfg  "2 1 80"		# unicast data
-								# GPIO 1
-								# gap: 128ms
-
-		iwpriv eth1 hostsleepcfg  "2 0ff 0"		# unicast data
-								# Interface (e.g. SDIO) is used
-								# gap: 0ms
-
-		iwpriv eth1 hostsleepcfg  "0ffffffff 0 0"	# cancel host sleep config
-
-	Note: if the condition is 0ffffffff, the GPIO and GAP values will be ignored.
+	iwpriv ethX autodeepsleep
+			Read the current auto deepsleep setting
+	iwpriv ethX autodeepsleep 1
+			Enable auto deepsleep mode
+	iwpriv ethX autodeepsleep 0
+			Disable auto deepsleep mode
 
 hscfg	
 	This command is used to configure the host sleep parameters.
@@ -645,37 +649,6 @@ tpccfg
 		iwpriv ethX tpccfg 0x01 0x01 0x05 0x0a 0x0d: enable auto TPC; use SNR;
 							     P0=0x05; P1=0x0a; P2=0x0d.
 
-getafc
-	This command returns automatic frequency control parameters.  It returns
-	three integers:
-		-P0: automatic is on (1), or off (0),
-		-P1: current timing offset in PPM (part per million), and
-		-P2: current frequency offset in PPM.
-
-setafc
-	Set automatic frequency control options.
-
-	The first parameter turns automatic on (1) or off (0).
-	The user must supply two more parameters in either case, in the following
-  order:
-
-  When auto is on:
-
-		-P0 (automatic adjustment frequency threshold in PPM),
-		-P1 (automatic adjustment period in beacon period),
-
-  When auto is off:
-
-		-P0 (manual adjustment timing offset in PPM), and
-		-P1 (manual adjustment frequency offset in PPM).
-
-	Usage:
-		iwpriv ethX setafc 0 10 10: manual adjustment, both timing and frequcncy 
-    offset are 10 PPM.
-
-		iwpriv ethX setafc 1 10 10 enable afc, automatic adjustment,
-    frequency threshold 10 PPM, for every 10 beacon periods.
-
 sdioclock
 	Turn On(1) or Off(0) the SDIO clock.
 
@@ -769,7 +742,7 @@ fwwakeupmethod
 
 	Usage:
 	iwpriv ethX fwwakeupmethod
-			Read the currect firmware wakeup method setting
+			Read the current firmware wakeup method setting
 	iwpriv ethX fwwakeupmethod 0
 			Leave the current method to wakeup firmware unchanged
 	iwpriv ethX fwwakeupmethod 1
@@ -777,26 +750,48 @@ fwwakeupmethod
 	iwpriv ethX fwwakeupmethod 2
 			Firmware wakeup through the GPIO pin
 
-txcontrol
-	This command is used to set the Tx rate, ack policy, and retry limit on a per packet basis.
+txcontrol [DefaultFlags (if no UP setting)] [UserPriority] [UserPriorityFlags]
+    This command is used to set/get the TX rate, WMM ack policy, and 
+       retry limit for all packets, or selectively the packets with a specific
+       user priority.
 
-	Where value <n> is:
-	    if bit[4] == 1:
-		bit[3:0]        -- 0   1   2   3   4   5   6   7   8   9   10   11   12   13-16
-		Data Rate(Mbps) -- 1   2   5.5 11  Rsv 6   9   12  18  24  36   48   54   Rsv
+    The DefaultFlags setting is ignored for any command with 2 or more 
+       arguments.
 
-	    bit[12:8] 
-		if bit[12] == 1, bit[11:8] specifies the Tx retry limit.
+    The value of the u32 txcontrol flags returned and input for 
+       DefaultFlags or UserPriorityFlags specific settings is given by the
+       following bitmap:
 
-	    bit[14:13] specifies per packet ack policy:
-		bit[14:13]   
-		     1  0	use immediate ack policy for this packet
-		     1  1       use no ack policy for this packet
-		     0  x	use the per-packet ack policy setting
-			
-	Usage:
-	iwpriv ethX txcontrol 0x7513
-			Use no-ack policy, 5 retires for Tx, 11Mbps rate
+    bit[4:0], if bit[4] == 1:
+      bit[3:0]        -- 0  1  2    3   4   5  6  7   8   9   10  11  12  13-16
+      Data Rate(Mbps) -- 1  2  5.5  11  Rsv 6  9  12  18  24  36  48  54  Rsv
+
+    bit[12:8] 
+      if bit[12] == 1, bit[11:8] specifies the Tx retry limit.
+
+    bit[14:13] specifies per packet ack policy:
+      if bit[14] == 1, bit[13] == 1 specifies No Ack Policy
+
+    All unused and reserved bits should be set to zero for the entire 
+      u32 field.
+
+    Usage:
+      Number of arguments given:
+
+      0: Return the default setting for the txcontrol flags
+         > iwpriv eth1 txcontrol
+
+      1: Set the default value for the txcontrol flags
+         > iwpriv eth1 txcontrol 0x6013  - No ACK, 11Mbps
+         > iwpriv eth1 txcontrol 0x151A  - 5 retries, 36Mbps
+
+      2: Return a specific User Priority setting.  If the UP setting is zero,
+         the default value will be used and returned:
+         > iwpriv eth1 txcontrol 0 7  - Return UP 7 txcontrol value (UP7 = VO)
+
+      3: Set a User Priority specific value for the txcontrol flags.  A value
+         of zero will revert to the default setting:
+         > iwpriv eth1 txcontrol 0 5 0x6013 - (UP5 = VI), No ACK 11Mbps.
 
 uapsdnullgen
 	This command is used to enable(1) UAPSD null package generation, 
@@ -816,14 +811,6 @@ psnullinterval
 	where value is:
 		-1	-- Disable
 		n>0	-- Set interval as n (seconds)
-
-prescan
-	This command is used to enable (1)/disable(0) auto prescan before assoicate to the ap 
-
-	where value is:
-		0	-- Disable
-		1	-- Enable
-		2       -- Get
 
 getrxinfo
 	This command gets non average value of Signal to Noise Ratio of Data and rate index.
@@ -899,22 +886,6 @@ bcnmisto
 		0 -- no change
 		1--50  (miliseconds)
 
-setwcssid 
-	This command is used to configure wildcard ssid filtering for normal scan.
-
-	Usage:
-		iwpriv ethx setwcssid "Link*ys"
-		(scan command will return all the ssid which match with "Link*ys")
-
-		iwpriv ethX setwcssid "Linksys 10"  
-		(scan command will only return all the ssid which match with "Linksys*" and max ssid length is 10)
-		
-		iwpriv ethX setwcssid
-		(clear the wildcard ssid filtering parameter)
-
-getwcssid 
-	This command is used to get current setting of wildcard ssid filtering in driver.
-
 adhocawakepd 
 	This command is used to set/get adhoc awake period for Power Save Mode.
 
@@ -972,28 +943,28 @@ dataevtcfg
 	Where value <c> is:
 			RSSI_LOW reporting frequency. if set to 0, event will only report once. 
 			if set to 1, event will be reported every time it occur. 
-			if set to N, event will be reported N time when it occur.
+			if set to N, event will be reported only when the condition happens N consecutive times.
 
 	Where value <d> is:				
 			SNR_LOW threshold
 	Where value <e> is:
 			SNR_LOW reporting frequency. if set to 0, event will only report once. 
 			if set to 1, event will be reported every time it occur. 
-			if set to N, event will be reported N time when it occur.
+			if set to N, event will be reported only when the condition happens N consecutive times.
 
 	Where value <f> is:				
 			RSSI_HIGH threshold (Absolute value, the actual value should be negative)
 	Where value <g> is:
 			RSSI_HIGH reporting frequency. if set to 0, event will only report once. 
 			if set to 1, event will be reported every time it occur. 
-			if set to N, event will be reported N time when it occur.
+			if set to N, event will be reported only when the condition happens N consecutive times.
 
 	Where value <h> is:				
 			SNR_HIGH threshold
 	Where value <i> is:
 			SNR_HIGH reporting frequency. if set to 0, event will only report once. 
 			if set to 1, event will be reported every time it occur. 
-			if set to N, event will be reported N time when it occur.
+			if set to N, event will be reported only when the condition happens N consecutive times.
 
 	Usage:
 		iwpriv ethX dataevtcfg		(get current data subscribe event settings)
@@ -1001,13 +972,13 @@ dataevtcfg
 		                      		(set current data subscribe event, 
 		                      		 when avg data RSSI below -70, such as -80,
 		                      		 RSSI_LOW event will be generated every time;
-		                      		 when avg data RSSI above -40, such as -30,
-		                      		 RSSI_HIGH event will be generated up to 5 times; 
+		                      		 when avg data RSSI above -40 happens 5 consecutive times, 
+						 such as -30,-32,-34,-29,-33, RSSI_HIGH event will be generated 1 times; 
 		                      		 when avg data SNR below 56 or above 86, 
 		                      		 SNR_LOW or SNR_HIGHT event will be generated once)
 
 sdiomode
-	This command is used to set/get sdio mode.
+	This command is used to set/get sdio mode. 
 	The setting will take effect when next command 53 is issued.
 
 	where the parameter <n> is,
@@ -1070,20 +1041,39 @@ drvdbg
 		                             enable IF_D message)
 		iwpriv ethX drvdbg -1 -1    (enable all the debug messages)
 
+adhocgprot 
+	This command is used to set/get 802.11g ad-hoc protection state.
+
+	where value is:
+		0	-- Disable
+		1	-- Enable
+		2	-- Get
+	Usage:
+		iwpriv ethX adhocgprot 0        (disable 802.11g ad-hoc g protection)
+		iwpriv ethX adhocgprot 1        (enable 802.11g ad-hoc g protection)
+		iwpriv ethX adhocgprot 2        (get 802.11g ad-hoc g protection state)
+
 getrate 
 	This command is used to get the supported rates. Returned rates are in 0.5M unit.
+
+associate <scan table index>
+    Associate to a specific BSS entry in the scan table.  The enumeration
+       of the entries in the scan table is determined by the 
+       getscantable API or from the iwlist scan results.  A re-scan is not
+       performed before the association attempt is made.
 
 inactoext 
 	This command is used by the host to set/get the inactivity timeout value, 
 	which specifies when WLAN device is put to sleep.
 	
 	Usage:
-		iwpriv ethX inactoext [n] [m] [l]
+		iwpriv ethX inactoext  <n> <m> <l> [k] 
 
 	where the parameter are:
 		<n>: timeout unit in microseconds. 
 		<m>: Inactivity timeout for unicast data.
 		<l>: Inactivity timeout for multicast data.
+		<k>: Inactivity timeout for new RX traffic after PS notification to AP
 	Example:
 		iwpriv eth1 inactoext
 			"get the timeout value"
@@ -1091,6 +1081,62 @@ inactoext
 		iwpriv eth1 inactoext 1000 2 3 
 			"set timeout unit to 1000 us(1ms), inactivity timeout for unicast data is 2ms(2*1ms),
 			inactivity timeout for multicast data is 3ms(3*1ms)"
+
+dbgscfg 
+	This command is used by the host to configure the Small Debug Print facility. 
+
+	Usage:
+		iwpriv ethX dbgscfg [n] [m] [l] [k] [j] [i] [h]
+	
+	where the parmeter are:
+		<n>: Destination
+		bit 0:  Debug packet to Debug Viewer on host
+		bit 1:  Debug packet to air
+		bit 2:  Accumulate in trace memory in firmware
+		<m>: ToAirChan
+		0 	 -- assoicated channel
+		Non zero -- Value is the channel to send debug print
+		<l>: En_NumEntries
+		bit 7 	-- 0 Let subsequent enable entries specify id's to enable  
+			   1 Enable all debug print's (Subsequent entries are ignored)
+		bit 6:0 -- NumEntries(Valid range: 0 through 2)
+
+		<k><j>: Enable Entry_1 (No needed when NumEntries equal 0)
+		<k>   : EnableMode_Mask
+		bit 15:13 -- 2 Enable range of id's specified by Mask and Base
+			     3 Inversion of EnableMode=2
+		bit 12:0 -- Is 13-bit Mask for range method
+		<j>    : Base
+		bit 12:0 -- Is 13-bit Base for range method
+
+		<i><h>: Enable Etnry_2 (No needed when NumEntries equal 1)
+		<i>   : EnableMode_Mask
+		bit 15:13 -- 2 Enable range of id's specified by Mask and Base
+			     3 Inversion of EnableMode=2
+		bit 12:0 -- Is 13-bit Mask for range method
+		<h>    : Base
+		bit 12:0 -- Is 13-bit Base for range method
+		Example:
+			iwpriv eth1 dbgscfg 1 0 0x80
+			"Set debug destination to DbgViewer, and Enable all debug print"
+			iwpriv eth1 dbgscfg 2 0 1 0x5f80 0x100
+			"Set debug destination to air, and send to the assoicated channel.
+			Use 1 enable entry, Enable Mode is 2(range method), with Mask 0x1f80, Base 0x100"	
+
+bcnmonpd 
+	This command is used to set/get the IBSS beacon monitor period to/from the firmware.    
+     	Usage:
+		iwpriv eth1 bcnmonpd
+		   Gets the beacon monitor period value from firmware.
+		iwpriv ethX bcnmonpd <n>
+		    Sets the beacon monitor period value to the firmware.
+		where the value of <n> is the beacon monitor period value set to the firmware for the generation
+		of ADHOC_BCN_LOST event to the host.
+		If the value of <n> is set to "-1" the firmware will not generate ADHOC_BCN_LOST event to the host
+
+		Note: If the value is set to <n>, In the firmware it calculates down to n*beacon interval TUS.
+		Setting it to a very low value could lead to a false generation of ADHOC_BCN_LOST event to the host.
+		The default value is 20.
 
 ===============================================================================
 
@@ -1118,14 +1164,12 @@ wlanconfig ethX getscanlist
 
 Version 4 Command:
 wlanconfig ethX bgscanconfig <filename>
-wlanconfig ethx wmmtspec <filename>
-wlanconfig ethx wmmparaie <filename>
-wlanconfig ethx wmm_ack_policy <AC> <Ack Policy>
 
 Version 5 Command:
 wlanconfig ethX hostcmd <hostcmd.conf> <subevent_get>
 wlanconfig ethX hostcmd <hostcmd.conf> <subevent_set>
-wlanconfig ethX reassociate <current bssid> <desired bssid> <desired ssid>
+wlanconfig ethX hostcmd <hostcmd.conf> <subevent_bitwise_set>
+wlanconfig ethX hostcmd <hostcmd.conf> <subevent_bitwise_clear>
 
 Version 6 Command:
 wlanconfig ethX setuserscan [ARGS]
@@ -1147,8 +1191,14 @@ wlanconfig ethX hostcmd <hostcmd.conf> <arp_filter>
 wlanconfig ethX hostcmd <hostcmd.conf> <auto_tx_get>
 wlanconfig ethX hostcmd <hostcmd.conf> <NatKeepAlive>
 wlanconfig ethX hostcmd <hostcmd.conf> <auto_tx_unreg>
+wlanconfig ethX hostcmd <hostcmd.conf> <ledctrl_get>
 wlanconfig ethX getcfptable [region]
+
+Version 9
+wlanconfig ethX gettsf
+wlanconfig ethX getfwmem <StartAddr> <Len>
 wlanconfig ethX arpfilter <arpfilter.conf>
+wlanconfig ethX txpktstats
 
 DESCRIPTION
 
@@ -1313,6 +1363,16 @@ hostcmd <hostcmd.conf> <subevent_set>
 		wlanconfig ethX hostcmd hostcmd.conf subevent_get
 		wlanconfig ethX hostcmd hostcmd.conf subevent_set
 
+hostcmd <hostcmd.conf> <subevent_bitwise_set>
+hostcmd <hostcmd.conf> <subevent_bitwise_clear>
+	This commands are used to set and clear the bitwise configurations for 
+		subscribed event without modifying the setting of other events.
+	subevent_bitwise_set:set the bitwise subscribed event parameters
+	subevent_bitwise_clear : clears the bitwise subscribed event parameters
+
+		wlanconfig ethX hostcmd hostcmd.conf subevent_bitwise_set
+		wlanconfig ethX hostcmd hostcmd.conf subevent_bitwise_clear
+
 extscan
 	This command is used to do a specific scan.
 	
@@ -1331,22 +1391,6 @@ getscanlist
 	Example:
 		wlanconfig ethX getscanlist
 
-reassociate
-    Send a reassociation request to the desired bssid or ssid
-
-    Usage:  
-       reassociate <xx:xx:xx:xx:xx:xx> <yy:yy:yy:yy:yy:yy> <ssid string>
-    
-      where xx..xx is the current AP BSSID to be included in the reassoc req
-            yy..yy is the desired AP to send the reassoc req to
-            <ssid string> is the desired AP SSID to send the reassoc req to.
-    
-      The current and desired AP BSSIDs are required.  
-      The SSID string can be omitted if the desired BSSID is provided.
-    
-      If we fail to find the desired BSSID, we attempt the SSID.
-      If the desired BSSID is set to all 0's, the ssid string is used.
-
 setuserscan
     Initiate a customized scan and retrieve the results
 
@@ -1359,9 +1403,13 @@ setuserscan
                                blank for active or 'p' for passive
       bssid=xx:xx:xx:xx:xx:xx  specify a BSSID filter for the scan
       ssid="[SSID]"            specify a SSID filter for the scan
+      wc="[WILDCARD SSID]"     specify a UNIX pattern matching filter (using *
+                               and ?) for SSIDs found in a broadcast probe 
       keep=[0 or 1]            keep the previous scan results (1), discard (0)
       dur=[scan time]          time to scan for each channel in milliseconds
       probes=[#]               number of probe requests to send on each chan
+                               for each broadcast probe required and each SSID
+                               specific probe required
       type=[1,2,3]             BSS type: 1 (Infra), 2(Adhoc), 3(Any)
  
     Any combination of the above arguments can be supplied on the command line.
@@ -1394,6 +1442,12 @@ setuserscan
        BSSID/SSID matches with the new scan data:
             setuserscan chan=6g type=1 probes=2 keep=1
 
+    7) Scan channel 1 and 6, for all networks matching the Mrvl*AP
+       or AP*Mrvl? patterns and for MrvlTst SSID.  Generate 3 broadcast
+       probes for the patterns and 3 SSID specific probes for MrvlTst on
+       both channel 1 and channel 6.
+            chan=1g,6g probes=3 wc="Mrvl*AP" wc="AP*Mrvl?" ssid="MrvlTst"
+
     All entries in the scan table (not just the new scan data when keep=1) 
     will be displayed upon completion by use of the getscantable ioctl.
 
@@ -1402,9 +1456,22 @@ getscantable
 
     Usage:
        wlanconfig ethX getscantable
+       wlanconfig ethX getscantable [#]
+       wlanconfig ethX getscantable tsf
+       wlanconfig ethX getscantable help
+
+    1) Without argument, the entire scantable is displayed.
+    2) Specifying a # will display detailed information about a specific scan
+       table entry.  '0' displays driver cached information regarding the 
+       current association (if any).
+    3) The tsf argument will display the entire scan table with the recorded
+       TSF timestamp for the entry.
+    4) The help argument will display the legend for the capability field
 
 getassocrsp
-    Display the contents of the driver association response buffer
+    Display the contents of the driver association response buffer.  The 
+       driver buffer is cleared after the response is returned to prevent
+       state response buffer returns.
 
     Usage:
        wlanconfig ethX getassocrsp
@@ -1538,12 +1605,43 @@ hostcmd <hostcmd.conf> <auto_tx_unreg>
 	
 	Edit the auto_tx section in hostcmd.conf file to change the settings
 
+hostcmd <hostcmd.conf> <ledctrl_get>
+	This command is used to set/get LED control.
+
+	Usage:
+		wlanconfig ethX hostcmd hostcmd.conf ledctrl_get
+		wlanconfig ethX hostcmd hostcmd.conf ledctrl_set
+
+	hostcmd.conf is a generic configuration file containing multiple configuration enties
+		for LED Ctrl
+	led_ctrl_get: get auto_tx parameters
+	led_ctrl_set: set auto_tx parameters
+	
+	Edit the ledctrl section in hostcmd.conf file to change the settings
+	
+
 getcfptable
 	This command is used to get Channel-Freq-MaxTxPower table based on the region code.
 	If no parameter provided, the CFP table for current region code will be returned.
 
 	Usage:
 		wlanconfig ethX getcfptable [region]
+
+gettsf
+    Display the current MAC TSF value.
+
+getfwmem <StartAddr> <Len>
+	This command is used to get firmware memory.
+	Usage:
+		wlanconfig ethX getfwmem 1 0
+
+	StartAddr: 1 -- vitals dump in firmware. 
+		   2 -- trace memory in firmware. 
+                   xx -- segment address of firmware memory (4 byte aligned)
+		   
+	Len must be set to 0 if StartAddr is 1 or 2. 
+	
+	Len specifies the number of bytes to get. 
 
 arpfilter <arpfilter.conf>
 	This command is used to configure the ARP filtering parameters.
@@ -1552,4 +1650,19 @@ arpfilter <arpfilter.conf>
 		wlanconfig ethX arpfilter arpfilter.conf
 
 	Edit arpfilter.conf file to change the settings
+
+txpktstats
+    Retrieve and clear transmit packet statistics collected by the firmware:
+
+    The API displays the following statistics for each rate:
+       - Number of packets initially queued using the rate
+       - Number of total attempts for the packets queued using this initial
+         rate.  This includes attempts at other rates in case of hardware or
+         single rate drop modes.
+       - Number of retry exhaustion failures for packets queued using this
+         initial rate.
+       - Number of MSDU lifetime expiry failures for packets queued using 
+         this initial rate.
+       - Number of packets successfully completed at this rate
+
 ==============================================================================

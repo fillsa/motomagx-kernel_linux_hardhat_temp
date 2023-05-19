@@ -1,13 +1,4 @@
 /*
- * Copyright 2006 Motorola, Inc.
- *
- * Changelog:
- * Date        Author         Comment
- * 10/05/2006  Motorola       added Freescale product name changes to existing source
- *                            base to allow compilation
-*/
-                                                                                                                                                          
-/*
  * Copyright 2004 Freescale Semiconductor, Inc. All Rights Reserved.
  */
 

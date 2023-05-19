@@ -15,6 +15,7 @@
 /* Date         Author          Comment
  * ===========  ==============  ==============================================
  * 18-Oct-2007  Motorola        Fix deadlock problem in JFFS2.
+ *                             
  */
 
 #include <linux/kernel.h>

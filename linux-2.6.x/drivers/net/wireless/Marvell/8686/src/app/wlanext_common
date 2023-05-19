@@ -127,6 +127,11 @@ else
     #echo
 
     #echo ">>> inactive timeout <<<"
+    #
+    # Enable registration with FMA
+    iwpriv $ethx fmasupport 1
+    #
+
     iwpriv $ethx inactivityto 20
     
     #echo ">>> enable power adaptation <<<"

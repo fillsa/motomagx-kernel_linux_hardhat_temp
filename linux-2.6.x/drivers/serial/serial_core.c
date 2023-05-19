@@ -7,7 +7,7 @@
  *
  *  Copyright 1999 ARM Limited
  *  Copyright (C) 2000-2001 Deep Blue Solutions Ltd.
- *  Copyright (C) 2006-2008 Motorola, Inc.
+ *  Copyright (C) 2007 Motorola, Inc.		 
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -22,14 +22,11 @@
  * You should have received a copy of the GNU General Public License
  * along with this program; if not, write to the Free Software
  * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+ *
+ * Date		Author		Comment
+ * 12/06/2007	Motorola	Add up function in uart_pm_functions.
+ *			
  */
-/*
- * Date         Author          Comment
- * 10/05/2006  Motorola       added support for power mgmt and for kgdb 
- * 01/03/2008   Motorola        Add up function in uart_pm_functions.
-*/
-
-
 #include <linux/config.h>
 #include <linux/module.h>
 #include <linux/tty.h>
@@ -1066,12 +1063,12 @@ int uart_pm_functions(struct tty_struct *tty,  unsigned int cmd, unsigned long a
 
         case TIOCPMTXIDLE:
                 ret = -EAGAIN;
-                up(&state->sem);
+		up(&state->sem);
                 if(state->pm_state == UART_STATE_RESUME)
                         ret = (state->port->ops)->tx_empty(state->port); /* Returns 0 if TX not idle */
                 break;
-	default:
-                up(&state->sem);
+	default: 
+		up(&state->sem);
 		break;
         }
 	return ret;

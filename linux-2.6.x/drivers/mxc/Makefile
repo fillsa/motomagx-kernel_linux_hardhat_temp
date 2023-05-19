@@ -10,7 +10,6 @@ obj-$(CONFIG_MXC_DPTC)			+= pm/
 obj-$(CONFIG_MXC_SDMA_API)		+= sdma/
 obj-$(CONFIG_MXC_HMP4E)         	+= hmp4e/
 obj-y                                   += security/
-obj-$(CONFIG_APAL)		+= apal/
 obj-$(CONFIG_MOT_FEAT_ACTIVE_AND_LOW_POWER_INTERVAL_TIMERS) += alpit/
 obj-$(CONFIG_MOT_FEAT_OTP_EFUSE)	+= efuse/ ks_otp/
 

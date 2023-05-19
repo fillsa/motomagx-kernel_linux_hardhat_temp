@@ -2,6 +2,7 @@
  *  @brief Low level SDIO Driver
  * 
  * (c) Copyright © 2003-2006, Marvell International Ltd. 
+ * (c) Copyright © 2007, Motorola
  *
  * This software file (the "File") is distributed by Marvell International 
  * Ltd. under the terms of the GNU General Public License Version 2, June 1991 
@@ -16,6 +17,11 @@
  * ARE EXPRESSLY DISCLAIMED.  The License provides additional details about 
  * this warranty disclaimer.
  *
+ * Date         Author         Comment
+ * ==========   ===========    ==========================
+ * 20-Aug-2007  Motorola       Add build support for next platform.
+ * 14-Sep-2007  Motorola       WIFI driver :integrate Marvell 8686 v9 31/08 release (91043p17_26409p38)
+ * 22-Oct-2007  Motorola       WIFI driver :integrate Marvell 8686 v9 22/10 release (91043p19_26409p42)
  */
 
 /*
@@ -32,9 +38,15 @@
 #include <linux/interrupt.h>
 #include <linux/blkdev.h>
 #include <linux/dma-mapping.h>
+#ifndef V9_ON_LJ63
+#include <sddriver/include/host.h>
+#include <sddriver/include/card.h>
+#include <sddriver/include/protocol.h>
+#else
 #include <linux/mmc/host.h>
 #include <linux/mmc/card.h>
 #include <linux/mmc/protocol.h>
+#endif
 #include <linux/delay.h>
 
 #include <asm/dma.h>

@@ -7,7 +7,7 @@ obj-y     = sched.o fork.o exec_domain.o panic.o printk.o profile.o \
 	    sysctl.o capability.o ptrace.o timer.o user.o \
 	    signal.o sys.o kmod.o workqueue.o pid.o \
 	    rcupdate.o intermodule.o extable.o params.o posix-timers.o \
-	    kthread.o wait.o kfifo.o sys_ni.o lspinfo.o
+	    kthread.o wait.o kfifo.o sys_ni.o lspinfo.o 
 
 obj-$(CONFIG_PREEMPT_RT) += rt.o
 obj-$(CONFIG_GCOV_PROFILE) += gcov/
@@ -42,8 +42,10 @@ obj-$(CONFIG_KPROBES) += kprobes.o
 obj-$(CONFIG_KGDB) += kgdb.o
 obj-$(CONFIG_SYSFS) += ksysfs.o
 obj-$(CONFIG_GENERIC_HARDIRQS) += irq/
-# For log the schedule events
-obj-$(CONFIG_MOT_FEAT_LOG_SCHEDULE_EVENTS) += mem-log.o
+
+# For debug the GNPO Label with panic issue
+obj-$(CONFIG_DEBUG_GNPO) += mem-log.o
+
 
 ifneq ($(CONFIG_IA64),y)
 # According to Alan Modra <alan@linuxcare.com.au>, the -fno-omit-frame-pointer is

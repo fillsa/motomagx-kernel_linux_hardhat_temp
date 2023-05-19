@@ -1,12 +1,4 @@
 /*
- * Copyright 2006 Motorola, Inc.
- *
- * Changelog:
- * Date        Author         Comment
- * 10/5/2006   Motorola       added extern 'usb_hcd_operations' from MV upmerge dated 060512
-*/
-                                                                                                                                                          
-/*
  * Copyright (c) 2001-2002 by David Brownell
  *
  * This program is free software; you can redistribute it and/or modify it

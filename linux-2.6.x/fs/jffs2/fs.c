@@ -48,12 +48,10 @@
  * 03-23-2007    Motorola    Give more accurate available space with statfs.
  * 06-25-2007    Motorola    Update EM regarding new Driver release.
  * 06-28-2007    Motorola    Modify compliance issues in hardhat source files.
- * 08-02-2007    Motorola    Add comments for oss compliance.
  * 08-07-2007	 Mororola    Fix a bug in jffs2 to prevent kernel panic.
- * 08-10-2007    Motorola    Add comments.
- * 10-11-2007   Motorola  Change inode blocks when update for LJ6.1
- * 11-06-2007    Motorola    Upmerge from 6.1.  (Change inode blocks when update)
- * 11-13-2007    Motorola    Fix deadlock problem in JFFS2.
+ * 10-18-2007    Motorola    Fix deadlock problem in JFFS2.
+ *                          
+ * 10-29-2007   Motorola     Change inode blocks when update
  */
 
 #include <linux/config.h>
@@ -217,9 +215,9 @@ static int jffs2_do_setattr (struct inode *inode, struct iattr *iattr)
 	   generic inode semaphore. */
 	if (ivalid & ATTR_SIZE && inode->i_size > iattr->ia_size)
 		vmtruncate(inode, iattr->ia_size);
-
-        /* update inode blocks */
-        inode->i_blocks = (inode->i_size + 511) >> 9;
+	
+	/* update inode blocks */
+	inode->i_blocks = (inode->i_size + 511) >> 9;
 
 	return 0;
 }

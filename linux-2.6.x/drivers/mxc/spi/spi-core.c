@@ -1,6 +1,6 @@
 /*
  * Copyright 2004-2006 Freescale Semiconductor, Inc. All Rights Reserved.
- * Copyright 2006 Motorola, Inc.
+ * Copyright 2006-2007 Motorola, Inc.
  */
 
 /*
@@ -17,6 +17,8 @@
  * ----------   --------  -----------------
  * 10/06/2006   Motorola  Added SPI support
  * 10/27/2006   Motorola  Added support for generic ArgonLV-based phones.
+ * 07/16/2007   Motorola  Implement Dynamic Clock Gating
+ * 08/10/2007   Motorola  Add spin_lock() to protect clock gating calls
  *
  */
 
@@ -35,7 +37,6 @@
 #include <asm/io.h>
 #include <asm/arch/gpio.h>
 #include <asm/arch/clock.h>
-
 
 #if defined(CONFIG_MOT_FEAT_GPIO_API_MC13783)
 #include <asm/mot-gpio.h>
@@ -305,6 +306,13 @@ int spi_hw_init(void)
 	int spi = 0;
 	int error = 0;
 
+#ifdef CONFIG_MOT_FEAT_PM
+	spin_lock(&mxc_spi_lock);
+	/* Enable our clocks */
+	mxc_clks_enable(CSPI1_CLK);
+	mxc_clks_enable(CSPI2_CLK);
+#endif
+
 	/* Configure GPIO */
 	for (spi = 0; spi < CONFIG_SPI_NB_MAX; spi++) {
 		if (spi_present[spi]) {
@@ -326,8 +334,7 @@ int spi_hw_init(void)
 	spi_init_spba();
 
 	/* Setup SPI version specific defines */
-	if (machine_is_mxc27530evb() || machine_is_ascension() ) {	
-//	if (machine_is_mxc27530evb() || machine_is_scma11phone()) {
+	if (machine_is_mxc27530evb() || machine_is_scma11phone()) {
 		if (system_rev >= CHIP_REV_2_0) {
 			mxc_spi_unique_def = &spi_ver_0_7;
 		} else {
@@ -335,8 +342,7 @@ int spi_hw_init(void)
 		}
 	} else if (machine_is_mxc91131evb()) {
 		mxc_spi_unique_def = &spi_ver_0_5;
-	} else if (machine_is_mxc30030evb() || machine_is_mxc30030ads() || machine_is_argonlvref()) {		
-//	} else if (machine_is_mxc30030evb() || machine_is_mxc30030ads() || machine_is_argonlvphone()) {
+	} else if (machine_is_mxc30030evb() || machine_is_mxc30030ads() || machine_is_argonlvphone()) {
 		mxc_spi_unique_def = &spi_ver_0_7;
 	} else {
 		mxc_spi_unique_def = &spi_ver_0_4;
@@ -361,6 +367,13 @@ int spi_hw_init(void)
 		}
 	}
 
+#ifdef CONFIG_MOT_FEAT_PM
+	/* Disable our clocks */
+	mxc_clks_disable(CSPI1_CLK);
+	mxc_clks_disable(CSPI2_CLK);
+	spin_unlock(&mxc_spi_lock);
+#endif
+
 	return 0;
 
       cleanup:
@@ -370,6 +383,13 @@ int spi_hw_init(void)
 			gpio_spi_inactive(spi);
 		}
 	}
+
+#ifdef CONFIG_MOT_FEAT_PM
+	/* Disable our clocks */
+	mxc_clks_disable(CSPI1_CLK);
+	mxc_clks_disable(CSPI2_CLK);
+	spin_unlock(&mxc_spi_lock);
+#endif
 
 	return error;
 }
@@ -385,6 +405,7 @@ int spi_hw_init(void)
 static int spi_hard_config(module_nb_t mod, spi_config * client_config)
 {
 	int error = 0;
+
 	error = spi_set_baudrate(mod, client_config->bit_rate);
 	if (error < 0) {
 		return error;
@@ -424,6 +445,7 @@ static int spi_hard_config(module_nb_t mod, spi_config * client_config)
 	} else {
 		spi_set_polarity(mod, SPI_POLARITY_ACTIVE_LOW);
 	}
+
 	return 0;
 }
 
@@ -450,6 +472,12 @@ ssize_t spi_send_frame(unsigned char *buffer, unsigned int bytes,
 	}
 	result = -1;
 	spin_lock(&mxc_spi_lock);
+
+#ifdef CONFIG_MOT_FEAT_PM
+	/* Enable our clocks */
+	mxc_clks_enable(CSPI1_CLK);
+	mxc_clks_enable(CSPI2_CLK);
+#endif
 
 	if ((bytes * 8) > (client_config->bit_count * 8)) {
 		goto error_out;
@@ -490,6 +518,12 @@ ssize_t spi_send_frame(unsigned char *buffer, unsigned int bytes,
 	result = bytes - result;
 
       error_out:
+#ifdef CONFIG_MOT_FEAT_PM
+	/* Disable our clocks */
+	mxc_clks_disable(CSPI1_CLK);
+	mxc_clks_disable(CSPI2_CLK);
+#endif
+
 	spin_unlock(&mxc_spi_lock);
 	return result;
 }
@@ -544,8 +578,6 @@ static int __init mxc_spi_init(void)
 #endif /* ! CONFIG_MOT_WFN408 */
 
 	return spi_hw_init();
-
-
 }
 
 /*!

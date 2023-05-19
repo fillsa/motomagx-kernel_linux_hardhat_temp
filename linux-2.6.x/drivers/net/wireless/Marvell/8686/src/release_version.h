@@ -16,4 +16,4 @@
   *
   */
 
-#define DRIVER_RELEASE_VERSION		"26340.p78"
+#define DRIVER_RELEASE_VERSION		"26409.p42"

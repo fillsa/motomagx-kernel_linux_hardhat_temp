@@ -25,8 +25,7 @@
  * ===========  ==============  ==============================================
  * 19-Oct-2006  Motorola        Initial revision.
  * 02-Jan-2007  Motorola        Added support for Lido P2.
- * 28-May-2007  Motorola        Added external prototypes for xPIXL remapping
- * 30-May-2007  Motorola        Added support for xPIXL PWM backlight
+ * 26-Feb-2007  Motorola        Update for HWCFG tree.
  */
 
 #ifndef __MOT_GPIO_SCMA11__H__
@@ -40,84 +39,7 @@
 
 #include "../iomux.h"
 
-/**
- * Contains an IOMUX pad register and its desired setting.
- */
-struct iomux_pad_setting {
-    enum iopad_group grp;
-    __u32 config;
-};
-
-#define IOMUX_PAD_SETTING_COUNT 28 /* highest index in array is 27 */
-#define IOMUX_PAD_SETTING_START  9 /* MBM initializes SDRAM pad registers */
-#define IOMUX_PAD_SETTING_STOP  (IOMUX_PAD_SETTING_COUNT-1)
-
-extern struct iomux_pad_setting __initdata iomux_pad_register_settings[IOMUX_PAD_SETTING_COUNT];
-
-#if defined(CONFIG_MACH_SCMA11REF)
-extern void __init scma11ref_gpio_signal_fixup(void);
-extern void __init scma11ref_iomux_mux_fixup(void);
-#endif /* CONFIG_MACH_SCMA11REF */
-
-#if defined(CONFIG_MACH_ASCENSION)
-extern void __init gpio_setting_fixup_p1a(void);
-#endif /* CONFIG_MACH_ASCENSION */
-
-#if defined(CONFIG_MACH_ELBA)
-extern void __init elba_gpio_signal_fixup(void);
-#endif /* CONFIG_MACH_ELBA */
-
-#if defined(CONFIG_MACH_LIDO)
-extern void __init lido_gpio_signal_fixup(void);
-extern void __init lido_iomux_mux_fixup(void);
-#endif /* CONFIG_MACH_LIDO */
-    
-#if defined(CONFIG_MACH_XPIXL)
-extern void __init pixl_gpio_signal_fixup(void);
-extern void __init pixl_iomux_mux_fixup(void);
-#endif
-
-extern void __init scma11_iomux_pad_init(void);
-extern void __init scma11_iomux_mux_init(void);
-
 extern void __init scma11phone_gpio_init(void);
-
-/*
- * PWM Registers for backlight brightness control.
- */
-#define PWMCR               IO_ADDRESS(PWM_BASE_ADDR + 0x00)
-#define PWMSAR              IO_ADDRESS(PWM_BASE_ADDR + 0x0c)
-#define PWMPR               IO_ADDRESS(PWM_BASE_ADDR + 0x10)
-
-#if defined(CONFIG_MACH_XPIXL)
-// Settings used with PWM of backligt on xPIXL
-
-// PWM enabled, PWM clock is 32k, clock source is 32K, active in wait and doze mode
-#define ENABLE_PWM      0x01830001
-
-// PWM disable, PWM clock is 32k, clock source is 32K, active in wait and doze mode
-#define DISABLE_PWM     0x01830000
-
-#define DUTY_CYCLE_0   0
-#define DUTY_CYCLE_40  40
-#define DUTY_CYCLE_45  45
-#define DUTY_CYCLE_50  50
-#define DUTY_CYCLE_55  55
-#define DUTY_CYCLE_60  60
-#define DUTY_CYCLE_65  65
-#define DUTY_CYCLE_70  70
-#define DUTY_CYCLE_75  75
-#define DUTY_CYCLE_80  80
-#define DUTY_CYCLE_85  85
-#define DUTY_CYCLE_90  90
-#define DUTY_CYCLE_95  95
-#define DUTY_CYCLE_100 100
-
-#else
-#define DUTY_CYCLE_0   0x00000000
-#define DUTY_CYCLE_50  0x00000007
-#define DUTY_CYCLE_100 0x0000000F
-#endif /* CONFIG_MACH_XPIXL */
 
 #endif /* defined(CONFIG_ARCH_MXC91231) && defined(CONFIG_MOT_FEAT_GPIO_API) */
 

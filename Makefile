@@ -16,36 +16,48 @@
 # along with this program; if not, write to the Free Software
 # Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
 #
+# Changelog: 
+#
 # Date         Author          Comment
 # ===========  ==============  ==============================================
 # 09-Nov-2006  Motorola        Initial revision.
 # 20-Nov-2006  Motorola        Added HW_RF_PYTHON
 # 21-Nov-2006  Motorola        HW_MM_ACCEL_IPU check added
 # 06-Dec-2006  Motorola        Added FEAT_ETM check.
-
 # 15-Dec-2006  Motorola        Added memory dump support (DBG_MEMDUMP)
-
 # 25-Dec-2006  Motorola        Export WLAN driver header file to application
+# 07-Feb-2007  Motorola        Remove MMC/SD support
+# 12-Jan-2007  Motorola        HW_PWR_KEY_LOCK and HW_OMEGA checks added
+# 19-Jan-2007  Motorola        Added FEAT_VIRTUAL_KEYMAP
+# 26-Jan-2007  Motorola        Added FM_RADIO check.
+# 29-Jan-2007  Motorola        exported linux/mmc/external.h
 # 09-Jan-2007  Motorola        Removed an incorrect export
-
+# 07-Feb-2007  Motorola        Add HW_MAX6946 check
 # 12-Jan-2007  Motorola        HW_PWR_KEY_LOCK and HW_OMEGA checks added
 # 19-Jan-2007  Motorola        Added FEAT_VIRTUAL_KEYMAP
 # 23-Jan-2007  Motorola        Fixed kernel rebuild issue
 # 26-Jan-2007  Motorola        Added FM_RADIO check.
 # 29-Jan-2007  Motorola        exported linux/mmc/external.h
-# 01-Feb-2007  Motorola        Added TEST_ALLOW_MODULES.
 # 07-Feb-2007  Motorola        Export light_sensor.h.
-# 07-Feb-2007  Motorola        Add HW_MAX6946 check
-# 02-Apr-2007  Motorola        Add TEST_COVERAGE.   
+# 06-Apr-2007  Motorola        removed PowerIC exports
+# 01-Feb-2007  Motorola        Added TEST_ALLOW_MODULES.
+# 20-Feb-2007  Motorola        Added HW_USB_HS_ANTIOCH
+# 02-Apr-2007  Motorola        Add TEST_COVERAGE.
+# 06-Apr-2007  Motorola	       Export mpm.h
+# 11-Apr-2007  Motorola        TOOLPREFIX dump functionality
+# 11-Apr-2007  Motorola        Export mtd/jffs-user.h & linux/jffs2.h
+# 19-Apr-2007  Motorola        Updated ckbuild export for x86
+# 25-Apr-2007  Motorola        Removed sierra kconfig hack
 # 04-May-2007  Motorola        Export mxc_ipc.h
-# 05-Jun-2007  Motorola        Add FEAT_AV
-# 23-Nov-2007  Motorola        Add BT LED debug option processing
-# 30-Jun-2008  Motorola        Export inotify.h
-# 29-Jan-2008  Motorola        Added header file morphing_mode.h to API_INCS
-# 23-Apr-2008  Motorola        Add FEAT_EPSON_LTPS_DISPLAY check
-# 29-Jul-2008  Motorola        Add FEAT_32_BIT_DISPLAY check
-# 01-Aug-2008  Motorola        Fix Wifi/Marvell Drivers compliance issues
-# 10-Oct-2008  Motorola        Export inotify.h
+# 12-May-2007  Motorola	       Removed keypad.h
+# 29-May-2007  Motorola        Removed sdhc_user.h and usr_blk_dev.h
+# 05-Jun-2007  Motorola        Add FEAT_AV support
+# 07-Jun-2007  Motorola        Added motfb.h and mxcfb.h
+# 28-Jun-2007  Motorola        Removed some SiERRA variables
+# 03-Aug-2007  Motorola	       Enable ptrace
+# 04-Sep-2007  Motorola        Export ssi and dam header files
+# 14-Nov-2007  Motorola        Export mpm.h for the previous incorrect merge.
+# 30-Jue-2008  Motorola        Export inotify.h. 		
 # ###########################################################################
 
 include $(BOOTSTRAP)
@@ -54,8 +66,6 @@ include $(BOOTSTRAP)
 # ###########################################################################
 # Variable Setup
 # ###########################################################################
-MARVELL_8686_SRC_DIR = $(COMPTOP)/linux-2.6.x/drivers/net/wireless/Marvell/8686/src
-MARVELL_8686_WLANCONFIG_DIR = $(MARVELL_8686_SRC_DIR)/app/wlanconfig
 
 KERNEL_VERSION = 2.6
 LINUXROOT = $(COMPTOP)/linux-$(KERNEL_VERSION).x
@@ -67,15 +77,9 @@ LINUXBUILD = $(PRODUCT_DIR)/linux_build
 
 LINUXBUILD_KERNEL = $(PRODUCT_DIR)/kernel/linux_build
 
-API_INCS = $(COMPTOP)/linux-2.6.x/include//linux/moto_accy.h \
-	$(COMPTOP)/linux-2.6.x/include//linux/camera.h \
+API_INCS = $(COMPTOP)/linux-2.6.x/include//linux/camera.h \
 	$(COMPTOP)/linux-2.6.x/include//linux/videodev.h \
-	$(COMPTOP)/linux-2.6.x/include//linux/lights_funlights.h \
 	$(COMPTOP)/linux-2.6.x/include//linux/light_sensor.h \
-	$(COMPTOP)/linux-2.6.x/include//linux/power_ic.h \
-	$(COMPTOP)/linux-2.6.x/include//linux/lights_backlight.h \
-	$(COMPTOP)/linux-2.6.x/include//linux/keypad.h \
-	$(COMPTOP)/linux-2.6.x/include//linux/keyv.h \
 	$(COMPTOP)/linux-2.6.x/include//linux/mmc/external.h \
 	$(COMPTOP)/linux-2.6.x/include//linux/sahara/sahara.h \
 	$(COMPTOP)/linux-2.6.x/include//linux/sahara/fsl_shw.h \
@@ -95,17 +99,26 @@ API_INCS = $(COMPTOP)/linux-2.6.x/include//linux/moto_accy.h \
 	$(COMPTOP)/linux-2.6.x/drivers/net/wireless/Marvell/8686/src/wlan/wlan_types.h \
 	$(COMPTOP)/linux-2.6.x/drivers/net/wireless/Marvell/8686/src/wlan/wlan_wext.h \
 	$(COMPTOP)/linux-2.6.x/drivers/media/video/mxc/capture/capture_2mp_wrkarnd.h \
-	$(COMPTOP)/linux-2.6.x/include//mtd/jffs2-user.h \
-	$(COMPTOP)/linux-2.6.x/include//linux/jffs2.h \
-	$(COMPTOP)/linux-2.6.x/include//linux/motfb.h \
-	$(COMPTOP)/linux-2.6.x/include//linux/mxcfb.h \
-	$(COMPTOP)/linux-2.6.x/include//linux/morphing_mode.h \
+	$(COMPTOP)/linux-2.6.x/include//linux/spi_display.h \
+        $(COMPTOP)/linux-2.6.x/include//mtd/jffs2-user.h \
+	$(COMPTOP)/linux-2.6.x/include//linux/jffs2.h    \
+	$(COMPTOP)/linux-2.6.x/include//linux/mpm.h    \
+        $(COMPTOP)/linux-2.6.x/include//linux/motfb.h    \
+	$(COMPTOP)/linux-2.6.x/include//linux/mxcfb.h    \
+	$(COMPTOP)/linux-2.6.x/drivers/mxc/ssi/ssi.h \
+	$(COMPTOP)/linux-2.6.x/drivers/mxc/ssi/ssi_types.h \
+	$(COMPTOP)/linux-2.6.x/drivers/mxc/dam/dam.h \
+	$(COMPTOP)/linux-2.6.x/drivers/mxc/dam/dam_types.h \
 	$(COMPTOP)/linux-2.6.x/include//linux/inotify.h
+
+
+
+API_DIRS += $(COMPTOP)/ckbuild
 
 # don't build kernel for x86
 ifneq ($(HW_ARCH),i686)
 
-API_DIRS = $(LINUXBUILD) $(COMPTOP)/kernel_include $(COMPTOP)/ckbuild
+API_DIRS += $(LINUXBUILD) $(COMPTOP)/kernel_include
 
 DOTCONFIG = $(LINUXBUILD)/.config
 
@@ -165,37 +178,13 @@ ifneq ($(HW_USB_HS_FX2LP),0)
         ${LJAPDEFCONFIGSRC}/feature/usb_hs_fx2lp.${PRODUCT}_config 
 endif 
 
-# Multi-Media Card support
-ifneq ($(HW_MMC),0)
+# High Speed USB using Antioch
+ifneq ($(HW_USB_HS_ANTIOCH),0)
     PRODUCT_SPECIFIC_DEFCONFIGS += \
-        ${LJAPDEFCONFIGSRC}/feature/mmc_sdhc.config \
-        ${LJAPDEFCONFIGSRC}/feature/mmc_sdhc.${PRODUCT_FAMILY}_config \
-        ${LJAPDEFCONFIGSRC}/feature/mmc_sdhc.${PRODUCT}_config 
+        ${LJAPDEFCONFIGSRC}/feature/usb_hs_antioch.config \
+        ${LJAPDEFCONFIGSRC}/feature/usb_hs_antioch.${PRODUCT_FAMILY}_config \
+        ${LJAPDEFCONFIGSRC}/feature/usb_hs_antioch.${PRODUCT}_config 
 endif 
-
-# Internal SD Card Slot
-ifneq ($(HW_MMC_INTERNAL),0)
-    PRODUCT_SPECIFIC_DEFCONFIGS += \
-        ${LJAPDEFCONFIGSRC}/feature/mmc_internal.config \
-        ${LJAPDEFCONFIGSRC}/feature/mmc_internal.${PRODUCT_FAMILY}_config \
-        ${LJAPDEFCONFIGSRC}/feature/mmc_internal.${PRODUCT}_config 
-endif
-
-# External SD Card Slot
-ifneq ($(HW_MMC_EXTERNAL),0)
-    PRODUCT_SPECIFIC_DEFCONFIGS += \
-        ${LJAPDEFCONFIGSRC}/feature/mmc_external.config \
-        ${LJAPDEFCONFIGSRC}/feature/mmc_external.${PRODUCT_FAMILY}_config \
-        ${LJAPDEFCONFIGSRC}/feature/mmc_external.${PRODUCT}_config 
-endif
-
-# Megasim SD Card
-ifneq ($(HW_MMC_MEGASIM),0)
-    PRODUCT_SPECIFIC_DEFCONFIGS += \
-        ${LJAPDEFCONFIGSRC}/feature/mmc_megasim.config \
-        ${LJAPDEFCONFIGSRC}/feature/mmc_megasim.${PRODUCT_FAMILY}_config \
-        ${LJAPDEFCONFIGSRC}/feature/mmc_megasim.${PRODUCT}_config 
-endif
 
 # CS89x0 Ethernet Support
 ifneq ($(HW_ETHERNET),0)
@@ -241,20 +230,6 @@ ifeq ($(TEST_I2CDEV),1)
 	${LJAPDEFCONFIGSRC}/feature/i2cdev.${PRODUCT}_config
 endif
 
-ifeq ($(DBG_TURBO_INDICATOR),1)
-    PRODUCT_SPECIFIC_DEFCONFIGS += \
-        ${LJAPDEFCONFIGSRC}/feature/turbo.config \
-        ${LJAPDEFCONFIGSRC}/feature/turbo.${PRODUCT_FAMILY}_config \
-        ${LJAPDEFCONFIGSRC}/feature/turbo.${PRODUCT}_config
-endif
-
-ifeq ($(DBG_DSM_INDICATOR),1)
-    PRODUCT_SPECIFIC_DEFCONFIGS += \
-        ${LJAPDEFCONFIGSRC}/feature/dsm.config \
-        ${LJAPDEFCONFIGSRC}/feature/dsm.${PRODUCT_FAMILY}_config \
-        ${LJAPDEFCONFIGSRC}/feature/dsm.${PRODUCT}_config
-endif
-
 ifeq ($(TEST_ALLOW_MODULES),1)
     PRODUCT_SPECIFIC_DEFCONFIGS += \
 	${LJAPDEFCONFIGSRC}/feature/allowmodules.config
@@ -263,8 +238,8 @@ endif
 ifeq ($(DBG_OPROFILE),1) 
         PRODUCT_SPECIFIC_DEFCONFIGS += \
         ${LJAPDEFCONFIGSRC}/feature/oprofile.config 
-endif 
- 
+endif
+
 ifeq ($(DBG_MEMDUMP),1)
 	PRODUCT_SPECIFIC_DEFCONFIGS += \
 	${LJAPDEFCONFIGSRC}/feature/memdump.config
@@ -278,93 +253,22 @@ ifneq ($(HW_RF_PYTHON),0)
 	${LJAPDEFCONFIGSRC}/feature/rf_python.${PRODUCT_FAMILY}_config \
 	${LJAPDEFCONFIGSRC}/feature/rf_python.${PRODUCT}_config
 endif
- 
-# SiERRA: Linear Vibrator
-ifneq ($(HW_LINEARVIBRATOR),0)
-    PRODUCT_SPECIFIC_DEFCONFIGS += \
-        ${LJAPDEFCONFIGSRC}/feature/linearvibrator.config \
-        ${LJAPDEFCONFIGSRC}/feature/linearvibrator.${PRODUCT_FAMILY}_config \
-        ${LJAPDEFCONFIGSRC}/feature/linearvibrator.${PRODUCT}_config
-endif
 
-# SiERRA: Capacitive Touch
-ifneq ($(HW_CAPTOUCH),0)
-    PRODUCT_SPECIFIC_DEFCONFIGS += \
-        ${LJAPDEFCONFIGSRC}/feature/captouch.config \
-        ${LJAPDEFCONFIGSRC}/feature/captouch.${PRODUCT_FAMILY}_config \
-        ${LJAPDEFCONFIGSRC}/feature/captouch.${PRODUCT}_config
-endif
-
-# SiERRA: Ceramic Speaker
-ifneq ($(HW_CERAMICSPEAKER),0)
-    PRODUCT_SPECIFIC_DEFCONFIGS += \
-        ${LJAPDEFCONFIGSRC}/feature/ceramicspeaker.config \
-        ${LJAPDEFCONFIGSRC}/feature/ceramicspeaker.${PRODUCT_FAMILY}_config \
-        ${LJAPDEFCONFIGSRC}/feature/ceramicspeaker.${PRODUCT}_config
-endif
-
-ifeq ($(FEAT_PTRACE),1)
-    PRODUCT_SPECIFIC_DEFCONFIGS += \
-	${LJAPDEFCONFIGSRC}/feature/ptrace.config \
-	${LJAPDEFCONFIGSRC}/feature/ptrace.${PRODUCT_FAMILY}_config \
-	${LJAPDEFCONFIGSRC}/feature/ptrace.${PRODUCT}_config
-endif
+# OS: ptrace 
+PRODUCT_SPECIFIC_DEFCONFIGS += \
+    ${LJAPDEFCONFIGSRC}/feature/ptrace.config \
+    ${LJAPDEFCONFIGSRC}/feature/ptrace.${PRODUCT_FAMILY}_config \
+    ${LJAPDEFCONFIGSRC}/feature/ptrace.${PRODUCT}_config
 
 # Security: antivirus
 ifneq ($(FEAT_AV),0)
-    PRODUCT_SPECIFIC_DEFCONFIGS += \
+	PRODUCT_SPECIFIC_DEFCONFIGS += \
 	${LJAPDEFCONFIGSRC}/feature/av.config \
 	${LJAPDEFCONFIGSRC}/feature/av.${PRODUCT_FAMILY}_config \
 	${LJAPDEFCONFIGSRC}/feature/av.${PRODUCT}_config
- endif
-
-# SiERRA: Proximity Sensor
-ifneq ($(HW_PROXSENSOR),0)
-    PRODUCT_SPECIFIC_DEFCONFIGS += \
-	${LJAPDEFCONFIGSRC}/feature/proxsensor.config \
-	${LJAPDEFCONFIGSRC}/feature/proxsensor.${PRODUCT_FAMILY}_config \
-	${LJAPDEFCONFIGSRC}/feature/proxsensor.${PRODUCT}_config
-endif
-
-# SiERRA: MAX6946 support
-ifneq ($(HW_MAX6946),0)
-    PRODUCT_SPECIFIC_DEFCONFIGS += \
-        ${LJAPDEFCONFIGSRC}/feature/max6946.config \
-        ${LJAPDEFCONFIGSRC}/feature/max6946.${PRODUCT_FAMILY}_config \
-        ${LJAPDEFCONFIGSRC}/feature/max6946.${PRODUCT}_config 
-endif
-
-# SiERRA: MAX7314 support
-ifneq ($(HW_MAX7314),0)
-    PRODUCT_SPECIFIC_DEFCONFIGS += \
-        ${LJAPDEFCONFIGSRC}/feature/max7314.config \
-        ${LJAPDEFCONFIGSRC}/feature/max7314.${PRODUCT_FAMILY}_config \
-        ${LJAPDEFCONFIGSRC}/feature/max7314.${PRODUCT}_config 
-endif
-
-# SiERRA: Omega Wheel
-ifneq ($(HW_OMEGA),0)
-    PRODUCT_SPECIFIC_DEFCONFIGS += \
-        ${LJAPDEFCONFIGSRC}/feature/omega.config \
-        ${LJAPDEFCONFIGSRC}/feature/omega.${PRODUCT_FAMILY}_config \
-        ${LJAPDEFCONFIGSRC}/feature/omega.${PRODUCT}_config 
-endif
-
-# SiERRA: Power/Keylock
-ifneq ($(HW_PWR_KEY_LOCK),0)
-    PRODUCT_SPECIFIC_DEFCONFIGS += \
-        ${LJAPDEFCONFIGSRC}/feature/pwr_key_lock.config \
-        ${LJAPDEFCONFIGSRC}/feature/pwr_key_lock.${PRODUCT_FAMILY}_config \
-        ${LJAPDEFCONFIGSRC}/feature/pwr_key_lock.${PRODUCT}_config 
-endif
 
 
-# SiERRA: FM radio
-ifneq ($(HW_FM_RADIO),0)
-    PRODUCT_SPECIFIC_DEFCONFIGS += \
-        ${LJAPDEFCONFIGSRC}/feature/fm_radio.config \
-        ${LJAPDEFCONFIGSRC}/feature/fm_radio.${PRODUCT_FAMILY}_config \
-        ${LJAPDEFCONFIGSRC}/feature/fm_radio.${PRODUCT}_config 
+
 endif
 
 # MME: Landscape Main Display
@@ -439,18 +343,6 @@ ifneq ($(FEAT_VIRTUAL_KEYMAP),0)
 	${LJAPDEFCONFIGSRC}/feature/virtualkeymap.${PRODUCT}_config
 endif
 
-# Enable epson display driver
-ifneq ($(FEAT_EPSON_LTPS_DISPLAY),0)
-    PRODUCT_SPECIFIC_DEFCONFIGS += \
-    ${LJAPDEFCONFIGSRC}/feature/display_epson.config
-endif
-                
-# Enable 32bit Display
-ifneq ($(FEAT_32_BIT_DISPLAY),0)
-    PRODUCT_SPECIFIC_DEFCONFIGS += \
-    ${LJAPDEFCONFIGSRC}/feature/display_32bit.config
-endif
-
 # filter out any non-existent files
 PRODUCT_SPECIFIC_DEFCONFIGS := \
     $(strip $(foreach FILE, $(PRODUCT_SPECIFIC_DEFCONFIGS), \
@@ -489,7 +381,7 @@ endif
 .NOTPARALLEL: 
 
 # kernel clean must come first, but cannot be a dependency
-api_build: kernel_clean sierraOmegaWheelKconfig $(DOTCONFIG)
+api_build: kernel_clean $(DOTCONFIG)
 
 impl: modules
 
@@ -524,25 +416,12 @@ endif
 	# JOBS tells gnumake to use the j option.
 	cd $(LINUXBUILD_KERNEL) && $(MAKE) JOBS=-j4 ARCH=$(ARCH) zImage
 
-modules: kernel wlanconfig
+modules: kernel
 	mkdir -p $(PRODUCT_ROOTFS)
 	# Build the modules in the kernel area, so that the LINUXBUILD area is not contaminated.
 	cd $(LINUXBUILD_KERNEL) && $(MAKE) ARCH=$(ARCH) INSTALL_MOD_PATH=${PRODUCT_ROOTFS} modules modules_install
 
-wlanconfig:
-	$(CC) -I$(MARVELL_8686_SRC_DIR)/wlan -I$(MARVELL_8686_SRC_DIR)/os/linux -DMOTO_PLATFORM  -o $(MARVELL_8686_WLANCONFIG_DIR)/wlanconfig $(MARVELL_8686_WLANCONFIG_DIR)/wlanconfig.c
-
-
 distclean: clean
-
-sierraOmegaWheelKconfig:
-# Hack source in /vobs/3gsm_sierra/gpl_drivers/Kconfig if the virtual keypad is turned on
-	mkdir -p $(LINUXBUILD)/drivers
-ifneq ($(FEAT_VIRTUAL_KEYMAP),0)
-	@echo 'source "/vobs/3gsm_sierra/gpl_drivers/Kconfig"' > $(LINUXBUILD)/drivers/sierraOmegaWheelKconfig
-else
-	@echo "" > $(LINUXBUILD)/drivers/sierraOmegaWheelKconfig
-endif
 
 endif
 

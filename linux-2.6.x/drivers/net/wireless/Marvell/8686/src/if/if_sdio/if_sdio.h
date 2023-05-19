@@ -99,6 +99,7 @@ Change log:
 /* Special registers in function 0 of the SDxx card */
 #define	SCRATCH_0_REG			0x80fe
 #define	SCRATCH_1_REG			0x80ff
+
 #define HOST_F1_RD_BASE_0		0x0010
 #define HOST_F1_RD_BASE_1		0x0011
 #define HOST_F1_CARD_RDY		0x0020

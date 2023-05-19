@@ -51,11 +51,6 @@ config MACH_MXC30030EVB
 	  Include support for MXC300-30 EVB platform. This includes specific
 	  configurations for the board and its peripherals.
 
-config MACH_ARGONLVREF
-	bool "Support ArgonLV Reference platforms"
-	help
-	  Include support for the ArgonLV Reference platform. This includes specific 
-	  configurations for the board and its peripherals.
 
 config MACH_MXC30030ADS
 	bool "Support MXC300-30 ADS platforms"
@@ -66,6 +61,7 @@ config MACH_MXC30030ADS
 config MACH_ARGONLVPHONE
         bool "Support Motorola ArgonLV-based Phones"
         default n
+	depends on MOT_FEAT_POWER_IC_API
         help
           Include support for Motorola products based on the ArgonLV SOC.
 
@@ -79,14 +75,6 @@ config MACH_ARGONLVREF
         default n
 	help
           Include support for the ArgonLV-based LJ7.1 Reference Platform.
-
-config MACH_BUTEREF
-        bool "Support deprecated BUTE platform"
-        default n
-        depends on MACH_ARGONLVREF
-        help
-	  Include support for the Bute P3 brassboard, P4 wingboard,
-          P4 closed-phone, and P5 closed-phone.
 
 config MACH_KEYWEST
         bool "Support Motorola product: Key West"
@@ -109,6 +97,8 @@ config MACH_PAROS
 endmenu
 
 endmenu
+
+
 
 
 

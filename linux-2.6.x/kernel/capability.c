@@ -2,17 +2,9 @@
  * linux/kernel/capability.c
  *
  * Copyright (C) 1997  Andrew Main <zefram@fysh.org>
- * Copyright 2006 Motorola, Inc.
  *
  * Integrated into 2.1.97+,  Andrew G. Morgan <morgan@transmeta.com>
  * 30 May 2002:	Cleanup, Robert M. Love <rml@tech9.net>
- *
- * Revision History:
- *
- * Date         Author    Comment
- * ----------   --------  ---------------------------
- * 03/15/2006   Motorola  Added new capability for secure clock manipulation
- *                        on Motorola handsets
  *
  */ 
 
@@ -189,14 +181,6 @@ asmlinkage long sys_capset(cap_user_header_t header, const cap_user_data_t data)
 	 copy_from_user(&inheritable, &data->inheritable, sizeof(inheritable)) ||
 	 copy_from_user(&permitted, &data->permitted, sizeof(permitted)))
 	     return -EFAULT; 
-
-#ifdef CONFIG_MOT_FEAT_SECURE_CLOCK
-     /* We do not allow the possibility of setting CAP_SECURE_CLOCK from userspace */
-
-     effective   &= ~(CAP_TO_MASK(CAP_SECURE_CLOCK));
-     inheritable &= ~(CAP_TO_MASK(CAP_SECURE_CLOCK));
-     permitted   &= ~(CAP_TO_MASK(CAP_SECURE_CLOCK));
-#endif /* CONFIG_MOT_FEAT_SECURE_CLOCK */
 
      spin_lock(&task_capability_lock);
      read_lock(&tasklist_lock);

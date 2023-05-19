@@ -1,6 +1,7 @@
 /*
  *  linux/fs/fat/inode.c
  *
+ *  Copyright (C) 2007-2008 Motorola, Inc. 
  *
  *  Written 1992,1993 by Werner Almesberger
  *  VFAT extensions by Gordon Chaffee, merged with msdos fs by Henrik Storner
@@ -10,18 +11,17 @@
  *
  *  	Max Cohan: Fixed invalid FSINFO offset when info_sector is 0
  */
-/* 
- * Copyright (C) 2007-2008 Motorola, Inc.
- * 
- * ChangeLog:
+
+/* ChangeLog:
  * (mm-dd-yyyy)  Author    Comment
- * 07-18-2007    Motorola  Added direct sync system call to FAT
- * 10-26-2007    Motorola  Added conditional sync dirt mark for LJ6.1
- * 10-31-2007    Motorola  Added hidden and system attr to inode for LJ6.1
- * 10-24-2007    Motorola  Added direct sync system call to FAT
- * 11-15-2007    Motorola  Upmerge from 6.1 (Added conditional sync dirt mark and added hidde and system attr to inode)
- * 02-20-2008    Motorola  remove sticky mode
+ * 08-23-2007    Motorola  Added direct sync system call to FAT
+ * 10-31-2007    Motorola  Added hidden and system attr to inode
+ * 11-20-2007    Motorola  Added simple auto repair FAT
+ * 01-25-2008    Motorola  Remove repair FAT and fix issue in App
+ * 02-20-2008    Motorola  Remove sticky mode
+ * 06-25-2008    Motorola  Change lookup position for the lookup.
  */
+
 
 #include <linux/module.h>
 #include <linux/time.h>
@@ -35,11 +35,6 @@
 #include <linux/vfs.h>
 #include <linux/parser.h>
 #include <asm/unaligned.h>
-
-#ifdef CONFIG_MOT_FEAT_FAT_SYNC
-#include <linux/loop.h>
-#endif
-
 
 #ifndef CONFIG_FAT_DEFAULT_IOCHARSET
 /* if user don't select VFAT, this is undefined. */
@@ -189,17 +184,16 @@ static void fat_clear_inode(struct inode *inode)
 #ifdef CONFIG_MOT_FEAT_FAT_SYNC
 static int fat_sync_fs (struct super_block *sb, int wait)
 {
-	fat_clusters_flush(sb);
-	return 0;
+        fat_clusters_flush(sb);
+        return 0;
 }
 static void fat_write_super(struct super_block *sb)
 {
-	if (!(sb->s_flags & MS_RDONLY))
-		fat_clusters_flush(sb);
-	sb->s_dirt = 0;
+        if (!(sb->s_flags & MS_RDONLY))
+                fat_clusters_flush(sb);
+        sb->s_dirt = 0;
 }
 #endif
-
 static void fat_put_super(struct super_block *sb)
 {
 	struct msdos_sb_info *sbi = MSDOS_SB(sb);
@@ -596,6 +590,9 @@ static int fat_read_root(struct inode *inode)
 	inode->i_mtime.tv_nsec = inode->i_atime.tv_nsec = inode->i_ctime.tv_nsec = 0;
 	MSDOS_I(inode)->i_ctime_ms = 0;
 	inode->i_nlink = fat_subdirs(inode)+2;
+#ifdef CONFIG_MOT_FAT_LOOKUP
+	MSDOS_I(inode)->i_epos = 0;
+#endif
 
 	return 0;
 }
@@ -773,6 +770,9 @@ static void init_once(void * foo, kmem_cache_t * cachep, unsigned long flags)
 		spin_lock_init(&ei->cache_lru_lock);
 		ei->nr_caches = 0;
 		ei->cache_valid_id = FAT_CACHE_VALID + 1;
+#ifdef CONFIG_MOT_FAT_LOOKUP
+		ei->i_epos = 0;
+#endif
 		INIT_LIST_HEAD(&ei->cache_lru);
 		INIT_HLIST_NODE(&ei->i_fat_hash);
 		inode_init_once(&ei->vfs_inode);
@@ -808,8 +808,8 @@ static struct super_operations fat_sops = {
 	.write_inode	= fat_write_inode,
 	.delete_inode	= fat_delete_inode,
 #ifdef CONFIG_MOT_FEAT_FAT_SYNC
-	.write_super    = fat_write_super,
-	.sync_fs        = fat_sync_fs,
+        .write_super    = fat_write_super,
+        .sync_fs        = fat_sync_fs,
 #endif
 	.put_super	= fat_put_super,
 	.statfs		= fat_statfs,
@@ -1175,9 +1175,7 @@ fat_commit_write(struct file *file, struct page *page,
 {
 	kunmap(page);
 #ifdef CONFIG_MOT_FEAT_FAT_SYNC
-        if (MAJOR(page->mapping->host->i_sb->s_dev) == LOOP_MAJOR) {
-                page->mapping->host->i_sb->s_dirt = 1;
-        }
+        page->mapping->host->i_sb->s_dirt = 1;
 #endif
 	return generic_commit_write(file, page, from, to);
 }
@@ -1247,8 +1245,10 @@ static int fat_fill_inode(struct inode *inode, struct msdos_dir_entry *de)
 	if(de->attr & ATTR_SYS)
 		if (sbi->options.sys_immutable)
 			inode->i_flags |= S_IMMUTABLE;
-//        if(de->attr & ATTR_INV)
-//		inode->i_mode |= S_ISVTX; 
+#ifndef CONFIG_MOT_FEAT_ENABLE_HIDE_SYSFILE
+	if(de->attr & ATTR_INV)
+		inode->i_mode |= S_ISVTX;
+#endif
 	MSDOS_I(inode)->i_attrs = de->attr & ATTR_UNUSED;
 	/* this is as close to the truth as we can get ... */
 	inode->i_blksize = sbi->cluster_size;
@@ -1307,8 +1307,10 @@ retry:
 	}
 	raw_entry->attr |= MSDOS_MKATTR(inode->i_mode) |
 	    MSDOS_I(inode)->i_attrs;
-//	if(inode->i_mode & S_ISVTX)
-//		raw_entry->attr |= ATTR_INV; 
+#ifndef CONFIG_MOT_FEAT_ENABLE_HIDE_SYSFILE
+	if(inode->i_mode & S_ISVTX)
+		raw_entry->attr |= ATTR_INV;
+#endif
 	raw_entry->start = cpu_to_le16(MSDOS_I(inode)->i_logstart);
 	raw_entry->starthi = cpu_to_le16(MSDOS_I(inode)->i_logstart >> 16);
 	fat_date_unix2dos(inode->i_mtime.tv_sec, &raw_entry->time, &raw_entry->date);
@@ -1368,8 +1370,8 @@ int fat_notify_change(struct dentry * dentry, struct iattr * attr)
 		mask = sbi->options.fs_dmask;
 	else
 		mask = sbi->options.fs_fmask;
-        inode->i_mode &= S_IFMT | (S_IALLUGO & ~mask);
-           mark_inode_dirty(inode);
+	inode->i_mode &= S_IFMT | (S_IALLUGO & ~mask);
+	mark_inode_dirty(inode);
 out:
 	unlock_kernel();
 	return error;

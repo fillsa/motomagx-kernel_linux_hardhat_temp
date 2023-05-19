@@ -3,6 +3,7 @@
  *
  *  Copyright (C) 1992 Linus Torvalds
  *  Modifications for ARM processor Copyright (C) 1995-2000 Russell King.
+ *  Copyright (C) 2007-2008 Motorola, Inc.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 as
@@ -16,15 +17,15 @@
  *
  *  IRQ's are in fact implemented a bit like signal handlers for the kernel.
  *  Naturally it's not a 1:1 relation, but there are similarities.
- */
-/*
- * Copyright (C) 2007 Motorola, Inc.
  *
- * Date           Author            Comment
- * ===========  ==========  ====================================
- * 10/15/2007   Motorola    FIQ related modified.
+ * Revision History:
+ * Date         Author    Comment
+ * ---------    --------  ---------------------------
+ * 10/02/2007   Motorola  Added FIQ C dispatcher in kernel.
+ * 12/03/2007   Motorola  Added DBG code.
+ * 01/11/2008   Motorola  Remove print log in mem log.
  */
-
+ 
 #include <linux/config.h>
 #include <linux/kernel_stat.h>
 #include <linux/module.h>

@@ -13,14 +13,12 @@
  * Date     Author      Comment
  * 10/2006  Motorola    Removed unnecessary delays in ipu_adc_write_cmd
  *                      and filed a WFN bug fix for DISP2 clock polarity.
- * 02/2007  Motorola  Added ipu_adc_read_cmd() function
+ * 02/2007  Motorola    Added ipu_adc_read_cmd() function
  * 06/2007  Motorola    Fix to support setting of ADC serial interface
  *                      bit width in ipu driver.
  * 08/2007  Motorola    Add comments for oss compliance.
  * 08/2007  Motorola    Add comments.
  * 01/2008  Motorola    Add error check in ipu_adc_write_cmd.
- * 02/2008  Motorola    Fix signal polarity issue in ipu_adc_init_panel() for DISP0
- * 04/2008  Motorola    Add code for new display
  */
 
 /*
@@ -417,8 +415,8 @@ int32_t ipu_adc_init_panel(display_port_t disp,
 
 		old_pol &= ~0x2000003FL;
 		old_pol |= sig.data_pol | sig.cs_pol << 1 |
-		    sig.addr_pol << 2 | sig.read_pol << 4 |
-		    sig.write_pol << 3 | sig.Vsync_pol << 5 |
+		    sig.addr_pol << 2 | sig.read_pol << 3 |
+		    sig.write_pol << 4 | sig.Vsync_pol << 5 |
 		    sig.burst_pol << 29;
 		__raw_writel(old_pol, DI_DISP_SIG_POL);
 
@@ -650,9 +648,9 @@ struct ipu_adc_di_map {
 static const struct ipu_adc_di_map di_mappings[] = {
 	{
 	 /* RGB888, 8-bit bus */
-	 .map_byte1 = 0x1C00AAAA,
+	 .map_byte1 = 0x1600AAAA,
 	 .map_byte2 = 0x00E05555,
-	 .map_byte3 = 0x00070000,
+	 .map_byte2 = 0x00070000,
 	 .cycle_cnt = 3,
 	 }, {
 	     /* RGB666, 8-bit bus */
@@ -684,13 +682,7 @@ static const struct ipu_adc_di_map di_mappings[] = {
 			     .map_byte2 = 0x000A000F,
 			     .map_byte3 = 0x000F003F,
 			     .cycle_cnt = 1,
-			     }, {
-                     /* RGB888, 16-bit bus */
-                     .map_byte1 = 0x000F0000,
-                     .map_byte2 = 0x00070000,
-                     .map_byte3 = 0x00000000,
-                     .cycle_cnt = 1,
-                     } 
+			     }
 };
 
 /* Private methods */
@@ -725,9 +717,6 @@ static void _ipu_set_cmd_data_mappings(display_port_t disp,
 		case IPU_PIX_FMT_RGB565:
 			map = 5;
 			break;
-        case IPU_PIX_FMT_GENERIC_16:
-            map = 6;
-            break;
 		default:
 			break;
 		}
@@ -801,4 +790,5 @@ EXPORT_SYMBOL(ipu_adc_write_cmd);
 EXPORT_SYMBOL(ipu_adc_set_update_mode);
 EXPORT_SYMBOL(ipu_adc_init_panel);
 EXPORT_SYMBOL(ipu_adc_init_ifc_timing);
+EXPORT_SYMBOL(ipu_adc_read_cmd);
 EXPORT_SYMBOL(ipu_adc_set_ifc_width);

@@ -1,5 +1,5 @@
 #
-# Copyright (C) 2007 - 2008 Motorola, Inc.
+# Copyright (C) 2007-2008 Motorola, Inc.
 #
 # For a description of the syntax of this configuration file,
 # see Documentation/kbuild/kconfig-language.txt.
@@ -13,25 +13,41 @@
 #
 # Bug fix configuration options should go into Kconfig.wfn.
 #
-# Date         Author          Comment
-# 04/2007      Motorola        UMA DSCP support - 
-#                              new config option MOT_FEAT_DSCP_UMA added
-# 07/2007      Motorola        Fix the problem about test case failed.
-# 08/2007      Motorola        Add comments.
-# 09/2007      Motorola        Enable config option MOT_FEAT_I2C_BLK_SUSPEND
-# 10/2007      Motorola	       Enable config option MOT_FEAT_YAFFS_SYNC and MOT_FEAT_FAT_SYNC 
-# 10/2007      Motorola        Added MOT_FEAT_FIQ_IN_C
-# 11/2007      Motorola        Add BT LED debug option processing
-# 11/2007      Motorola        Added MOT_FEAT_MSS_CMCC
-# 01/2008      Motorola        Added MOT_FEAT_BT_WLAN_SINGLE_ANTENNA switch
-# 03/2008      Motorola        Added MOT_FEAT_LOG_SCHEDULE_EVENTS
-# 04/2008      Motorola        Added MOT_FEAT_GETTIMEOFFSET_2618
-# 04/2008      Motorola        Added MOT_FEAT_DISPLAY_EPSON
-# 07/2008      Motorola        Added MOT_FEAT_MSS_XL_SPAIN
-# 07/2008      Motorola        Added MOT_FEAT_FLUSH_LOCKED_TLB
-# 07/2008      Motorola        Added MOT_FEAT_APP_COREDUMP_DISPLAY
-# 07/2008      Motorola        Added MOT_FEAT_32_BIT_DISPLAY
+#
+# Date        Author            Comment
+# ==========  ================  ========================
+# 09/27/2007  Motorola          Initial version
+# 02/21/2007  Motorola          Added WFN477
+# 02/26/2007  Motorola          Removed MOT_KEYPAD dependencies
+# 02/27/2007  Motorola          Added PRINT_PC_ON_PANIC
+# 03/07/2007  Motorola          Added DEBUG_WDOG
+# 03/28/2007  Motorola          Added CACHE_OPTIMIZATION
+# 04/06/2007  Motorola          Added WDOG_CLEANUP and WDOG1_ENABLE
+# 04/20/2007  Motorola          Added WFN482
+# 04/2007     Motorola          UMA DSCP support - 
+#                               new config option MOT_FEAT_DSCP_UMA added
+# 05/22/2007  Motorola          Added FEAT_DRM_COREDUMP
+# 06/08/2007  Motorola          Removed Sierra features
+# 06/23/2007  Motorola          Added MOT_FEAT_YAFFS_SYNC & MOT_FEAT_FAT_SYNC
+# 09/27/2007  Motorola		Added MOT_FEAT_IPU_MEM_SIZE
+# 09/30/2007  Motorola          Added MOT_FEAT_FIQ_IN_C
+# 11/27/2007  Motorola          Added MOT_FEAT_MSS_CMCC
+# 12/03/2007  Motorola          Added MOT_FEAT_ENABLE_WD_IN_DSM
+# 12/07/2007  Motorola          Added DEBUG_GNPO
+# 12/25/2007  Motorola          Added CONFIG_MOT_FEAT_MOVINAND
+# 01/21/2008  Motorola          Added MOT_FEAT_ENABLE_JFFS2VFS_PATCH
+# 03/25/2008  Motorola          Added MOT_FEAT_ENABLE_HIDE_SYSFILE
+# 06/24/2008  Motorola          Added MOT_FEAT_FLUSH_LOCKED_TLB 
+# 07/23/2008  Motorola          Added MOT_FAT_LOOKUP
+#
 menu "Motorola Features"
+
+config MOT_FEAT_POWER_IC_API
+        bool "Enables Power IC API hooks"
+        default n
+        help
+           This adds Power IC API hooks that allow the Power IC driver to be
+           loaded as a module
 
 config MOT_FEAT_RAW_I2C_API
 	bool "enable raw i2c r/w interface"
@@ -44,7 +60,6 @@ config MOT_FEAT_I2C_BLK_SUSPEND
         default n
         help
           This setting will block suspend when I2C transaction is in progress and also keep clock gating on when the phone is awake.
-
 
 config MOT_FEAT_BRDREV
 	bool "Board Revision Feature"
@@ -64,8 +79,8 @@ config MOT_FEAT_BOOTINFO
 
 config MOT_FEAT_RF_PYTHON
         bool "Support Freescale Python Chipset"
-	default n
-	help
+        default n
+        help
             Set this option if the phone is using the Python RF chip from
             Freescale.
 
@@ -75,12 +90,6 @@ config MOT_FEAT_DOWN_TIMEOUT
 	help
 	  This enables semaphore down services with timeout parameter.
 
-config FEAT_MXC31_CORE_OVERCLOCK_740
-	bool "freq 636 and 740"
-	default n
-	help
-	  add mcu core overclock freq 636 and 740
-	  
 config MOT_FEAT_POWERUP_LOGO
 	bool "Powerup LOGO Feature"
 	depends on MOT_FEAT_BOOTINFO
@@ -166,13 +175,6 @@ config MOT_FEAT_EMULATED_CLI
 	  This feature enables an emulated CLI display, which displays its 
 	  contents on the main display instead of a physical CLI display.
 
-config MOT_FEAT_LCD_ESD_RECOVERY
-	bool "LCD display recovery from ESD"
-	default n
-	help
-	  This feature enables support for recovering from electrostatic 
-	  discharge automatically every 5 seconds on the LCD display.  
-
 config MOT_FEAT_IPU_PF_PERM666
 	bool "set MXC MPEG4/H.264 Post Filter Driver permission to rw-rw-rw-"
 	depends on MXC_IPU_PF
@@ -228,14 +230,18 @@ config MOT_FEAT_IPU_MEM_ADDR
 	help
 	  This feature dynamically determines at boot time how much memory is 
 	  allocated to the kernel, and reserves space immediately after the 
-	  kernel for the IPU framebuffer. If an optional ipu_mem=size@addr is 
-	  specified at the boot command line, the kernel will reserve this 
-	  region and let the IPU driver use it. In this case, mem=size@addr
-	  option must include the region specified by ipu_mem option. 
+	  kernel for the IPU framebuffer. 
+
+config MOT_FEAT_IPU_MEM_SIZE
+	bool "IPU memory allocation size"
+	default n
+	help
+	  Reserve more IPU memory for Keywest.
 
 config MOT_FEAT_IPU_IOCTL
 	bool "IPU ioctl definition relocation"
 	default n
+	depends on MOT_FEAT_POWER_IC_API
 	help
 	  This feature relocates all nonstandard ioctl definitions into 
 	  Motorola and architecture specific header files.
@@ -512,14 +518,6 @@ config MOT_FEAT_MU_TEST
 		under any circumstances other than testing so this feature
 		was defined.
 
-config MOT_FEAT_SECURE_CLOCK
-        bool "Enable capability to set the secure real-time clock"
-        depends on MOT_FEAT_LSM
-        default n
-        help
-                Enabling this feature will allow certain processes to be able
-		to set the secure real-time clock.
-
 config MOT_FEAT_OTP_EFUSE
         bool "Sets the type of OTP storage used to E-Fuses."
         default n
@@ -571,6 +569,12 @@ config MOT_FEAT_FX2LP_I2C
 		done using the I2C protocol with the MXC I2C bus acting as
 		the slave.
 
+config MOT_FEAT_ANTIOCH
+	bool "Antioch USB High Speed support"
+	default n
+	help
+		This turns on support for the Antioch USB High Speed chip.
+
 config MOT_FEAT_SECURE_USERMEM
     bool "Remove userspace access to raw memory (/dev/mem, /dev/kmem, /proc entries)"
     default n
@@ -579,34 +583,20 @@ config MOT_FEAT_SECURE_USERMEM
         /dev/kmem device functionality as well as /proc entries
         for direct memory access in userspace.
 
+config MOT_FEAT_ALLOW_MEM_ACCESS
+	bool "Allow all users access the file /dev/mem"
+	depends on !MOT_FEAT_SECURE_USERMEM
+	default n
+	help
+		Enabling this feature will give all the users the
+		right to access the file /dev/mem.
+
 config MOT_FEAT_NO_PTRACE
         bool "Disables ptrace functionality"
         default n
         help
                 Enabling this feature will remove ptrace functionality  
                 from the kernel.
-
-config MOT_FEAT_LSM
-    bool "Motorola Security Module"
-    depends on SECURITY
-    default n
-    help
-        If enabled the Motorola Security Module LSM will be compiled       
-
-config MOT_FEAT_SECURE_MOUNT
-    bool "Enable filesystem mount protection"
-    depends on MOT_FEAT_LSM
-    default n
-    help
-        If enabled mounts will be secured using the Motorola LSM
-
-config MOT_FEAT_SECURE_MOUNT_SYSFS
-    tristate "Enable filesystem mount protection sysfs interface"
-    depends on MOT_FEAT_SECURE_MOUNT
-    default n
-    help
-        If enabled a sysfs interface will be created to supply trusted
-        mounts to the filesystem mount protection 
 
 config MOT_FEAT_PANIC_DECISION
 	bool "Enable proper decision making during kernel panic"
@@ -616,18 +606,15 @@ config MOT_FEAT_PANIC_DECISION
 		set of actions will be taken (depending upon whether the
 		phone is in production or engineering mode).
 
-config MOT_FEAT_SECURE_DRM
-	bool "Enable additional security for Janus DRM "
-    depends on MOT_FEAT_LSM
+config MOT_FEAT_SECURE_MTD
+	bool "Enable MTD user/pds partition protection"
 	default n
 	help
-		Feature 11396 requires additional mandatory-access control
-		security to protect the DRM key files. Setting this config
-		option to 'y' enables that additional security.
+		Enabling this option protects MTD user and pds partitions.
 
 config MOT_FEAT_DRM_COREDUMP
 	bool "Enable full coredump for non-security related application."
-	depends on MOT_FEAT_APP_DUMP && MOT_FEAT_SECURE_DRM
+	depends on MOT_FEAT_APP_DUMP && SECURITY
 	default n
 	help
 		This feature enables full coredump for non-security related
@@ -641,6 +628,14 @@ config MOT_FEAT_SECURE_MODULE
         By enabling this feature only modules that have a trusted
         SHA1 digest in /etc/modules.hash will be able to be
         inserted into the kernel.
+
+config MOT_FEAT_SECURE_MODULE_SYSFS
+	tristate "Build sysfs interface for secure modules"
+	depends on MOT_FEAT_SECURE_MODULE
+	default n
+	help
+		Enabling this option creates a sysfs entry that can be used
+		to load the kernel with the hashes of modules allowed
 
 config MOT_FEAT_DISABLE_UART3_DMA
         bool "Disable DMA on MXC internal UART 3"
@@ -829,6 +824,15 @@ config MOT_FEAT_SD1_TF_DET
                 interrupt 4 that can be used to detect the insertion and
                 removal of transflash cards.
 
+config MMC_MXC
+        tristate "Freescale MXC Multimedia Card Interface support"
+        depends on ARCH_MXC
+        help
+                This selects the Freescale MXC Multimedia card Interface.
+                If you have a MXC platform with a Multimedia Card slot,
+                say Y or M here.
+                If unsure, say N.
+
 config MOT_FEAT_YAFFS_PARSE_MOUNT_OPTIONS
 	bool "Enable parsing of yaffs specific mount options" 
 	default n
@@ -859,7 +863,6 @@ config MOT_FEAT_FAT_SYNC
                 If this feature is enabled the fat will sync the
                 contents to disk on a sync call
 
-
 config MOT_FEAT_2MP_CAMERA_WRKARND
 	bool "Enable bandwidth-improvement workarounds for 2MP image capture"
 	default n
@@ -884,62 +887,12 @@ config MOT_FEAT_BOOT_BACKLIGHT
 		Enabling this feature will cause the backlight
 		to turn on during the boot process.
 
-config MOT_FEAT_INTERN_SD
-	bool "Create internal sd block device for mmc/sd driver"
-	default n
-	help
-	  Create internal sd block device automaticly on mmc/sd driver 
-          initial time.
-
-config MOT_FEAT_EXTERN_SD
-	bool "Create external sd block device for mmc/sd driver"
-	default n
-	help
-	  Create external sd block device automaticly on mmc/sd driver 
-          initial time.
-
-config MOT_FEAT_MEGASIM
-	bool "Create MegaSIM block device for mmc/sd driver"
-	default n
-	help
-	  Create MegaSIM block device automaticly on mmc/sd driver 
-          initial time.
-
-config MOT_FEAT_MMC_SDHC1
-	bool "Enable MMC driver on MXC SDHC1"
-	depends on MMC
-	default n
-	help
-	  Enable probing for MMC devices on SDHC1.
-
-config MOT_FEAT_MMC_SDHC2
-	bool "Enable MMC driver of MXC SDHC2"
-	depends on MMC
-	default n
-	help
-	  Enable probing for MMC devices on SDHC2.
-	  
-config MOT_FEAT_BT_WLAN_SINGLE_ANTENNA
-	bool "Support Single BT WLAN antenna solution"
-	default n
-	help
-	  This feature is required when BT and WLAN
-	  are sharing the same antenna.
-	  	  
 config MOT_FEAT_LANDSCAPE_IMODULE
         bool "Enable the landscape I module main display"
         default n
         help
            This feature was just required by Elba phone, as it uses the unique
            LCD landscape I display mode.
-
-config MOT_FEAT_MMCSD_DEV_HOST_BIND
-        bool "Bind mmc/sd driver device number to sdhc host id"
-        default n
-        help
-          Fix the mmc/sd device number to sdhc host id.
-          eg. /dev/mmc/blk0 --> sdhc host 1
-              /dev/mmc/blk1 --> sdhc host 2
 
 config MOT_FEAT_VFP_RUNFAST_PANIC
        bool "Enable kernel panics if an application leaves VFP RunFast mode"
@@ -975,8 +928,8 @@ config MOT_FEAT_INOTIFY
 
 config MOT_FEAT_SYNC_INODE
         bool "Enable inode sync during wb_kupdate function"
-        default n
-        help
+	default n
+	help
          Syncs the inodes for yaffs and vfat files during the wbkupdate function call (~ 5secs)
 
 config MOT_WFN475
@@ -1021,7 +974,7 @@ config MOT_WFN479
 	default n
 	help
 		This bugfix initializes the jiffie counter to zero to avoid a problem
-		that occurs with the times() system call when the counter rolls over 
+		that occurs with the times() system call when the counter rolls over
 
 config MOT_WFN493
         bool "Fix the bug that when access /proc/[pid]/memmap the phone hangs sometimes"
@@ -1031,11 +984,11 @@ config MOT_WFN493
           show_mem_node_map to prevent from deadlock.
 
 config MOT_FEAT_HOTPLUG_FILTER
-	bool "Enables hotplug event filtering"
-	default n
-	help
-	   This adds in hotplug event filtering. A sysfs entry will
-	   be created which takes a list of events allowed.
+        bool "Enables hotplug event filtering"
+        default n
+        help
+           This adds in hotplug event filtering. A sysfs entry will
+           be created which takes a list of events allowed.
 
 config MOT_FEAT_NO_READ_AHEAD
 	bool "Initializes block device read ahead kb to zero"
@@ -1043,11 +996,60 @@ config MOT_FEAT_NO_READ_AHEAD
 	help
 	    Set the read ahead default to zero for all block devices
 
+
+config MOT_WFN483
+        bool "Update SDMA Driver SuperGem script"
+        default n
+        help
+          With this option the SDMA SuperGem scripts will run.
+
+config MOT_WFN487
+	bool "Update IPC code for IPCv2 API
+	default n
+	help
+		With this option the FSL IPCv2 API will be available.
+	
+config MOT_WFN487
+	bool "Update IPC code for IPCv2 API
+	default n
+	help
+		With this option the FSL IPCv2 API will be available.
+config MOT_FEAT_FASTPATHNAME
+	bool "Allow for fast path name resolution within the vfs"
+	default n
+	help
+		Allow path names to be resolved quickly from within the vfs.
+
+config MOT_WFN484
+	bool "Memory mapped files not updating timestamps"
+	default n
+	help
+	  With this bugfix, add support to detect when the modification time needs to be
+	  updated by placing a hook in __set_pages_dirty_buffers and
+	  __set_pages_dirty_nobuffers.
+
 config MOT_FEAT_PRINT_PC_ON_PANIC
 	bool "When a kernel panic occurs, print out the PC from where panic was called"
 	default n
 	help
 	  This feature helps identify where a panic originated.
+
+
+config MOT_WFN482
+	bool "Fix high resolution timer bug"
+	default n
+	help
+	   This will fix a bug that causes high resolution timers to spin until the
+	   timer expires instead of setting up the timer in hardware and continuing 
+	   until the interrupt.
+
+
+config MOT_FEAT_GETTIMEOFFSET_2618
+	bool "Update the mxc_gettimeoffset function to the 2618 version from Freescale"
+	default n
+	help
+		The latest version of mxc_gettimeoffset() does not allow for potential divide
+		by 0.
 
 config MOT_FEAT_PANIC_ON_OOM
 	bool "Panic the phone in an out of memory situation"
@@ -1056,6 +1058,23 @@ config MOT_FEAT_PANIC_ON_OOM
 	help
 	   Instead of selecting a process and killing it in hopes that it'll free up
 	   memory, just panic the phone.
+
+config MOT_FEAT_INVERTED_SPI_DISPLAY
+	tristate "Enable display inversion"
+	default n
+	help
+	   Certain Paros and Keywest hardware revisions have an inverted display 
+           connected via the CSPI2 interface. Enabling this option allows a user space 
+           application to SPI send commands to invert the display when necessary.
+
+config MOT_FEAT_SDMA_DEBUG
+        bool "enable ioctl debuggins of sdma controller"
+        default n
+        help
+           This will help debug an issue with the SDMA controller locking up after a
+           very long time. It creates an ioctl to retrieve sdma registers and channel
+           debugging information.
+
 
 config MOT_FEAT_32KHZ_GPT
 	bool "Enable 32KHz clock source for GPT"
@@ -1073,91 +1092,73 @@ config MOT_FEAT_DSCP_UMA
            DSCP values of inner and outer ip packets is stored when tunnelled data is received 
            and used when sending tunnelled data
 
+config MOT_FEAT_MOVINAND
+	bool "increase the speed of Sansung internal memory card"
+	default n
+	help  	
+		if this changes are added the performance will improve a lot 
+
+config MOT_FEAT_FIQ_IN_C
+        bool "Implemented FIQ handler in C"
+        default n
+        help
+           FIQ handler could be implemented in C format 
+
+config MOT_FEAT_MSS_CMCC
+        bool "Set the MSS in CMCC network"
+        default n
+        help
+           If this feature is enabled, 
+	   MSS will be set to 0x055C for CMCC network.
+
+config MOT_FEAT_ENABLE_WD_IN_DSM
+        bool "Enable Watchdog in DSM mode"
+        default n
+        help
+           If this feature is enabled, watchdog will be enabled in DSM mode. A user space
+           needs to wake up to kick up watchdog. 
+
+config MOT_FEAT_ENABLE_JFFS2VFS_PATCH
+        bool "Enable jffs2 inode sync with VFS patch"
+        default n
+        help
+           If this feature is enabled, this patch prevent the two read_inode() calles 
+           without clear_inode() call between. In VFS change for jffs2.
+
+config MOT_FEAT_ENABLE_HIDE_SYSFILE
+        bool "Enable hide system file without using sticky mode"
+        default n
+        help
+           If this feature is enabled, it will not use the sticky mode to hide the . prefix 
+           and system file.
+
 config MOT_FEAT_FLUSH_LOCKED_TLB
 	bool "Enable flush main locked TLB"
 	default n
   	help
   	   If this feature is enabled, it will flush main locked TLB.
 
-config MOT_WFN482
-	bool "Fix high resolution timer bug"
-	default n
-	help
-	   This will fix a bug that causes high resolution timers to spin until the
-	   timer expires instead of setting up the timer in hardware and continuing 
-	   until the interrupt.
-
-config MOT_WFN484
-	bool "Memory mapped files not updating timestamps"
-	default n
-	help
-
-config MOT_FEAT_SDMA_DEBUG
-        bool "enable ioctl debuggins of sdma controller"
+config MOT_FAT_LOOKUP
+        bool "Use a loop when search a entry from directory"
         default n
-        help
-           This will help debug an issue with the SDMA controller locking up after a
-           very long time. It creates an ioctl to retrieve sdma registers and channel
-           debugging information.
-
-config MOT_FEAT_FIQ_IN_C
-        bool "Implemented FIQ handler in C"
-        default n
-        help
-           FIQ handler could be implemented in C format
-
-config MOT_TURBO_INDICATOR
-        bool "Use BT LED as an AP turbo mode"
-        default n
-        help
-           This is a debug option to use the BT LED as turbo mode indicator showing
-           when the AP runs in turbo mode.
-
-config MOT_DSM_INDICATOR
-        bool "Use BT LED as an AP DSM(Deep Sleep Mode) mode"
-        default n
-        help
-           This is a debug option to use the BT LED as DSM(Deep Sleep Mode) mode indicator showing when
-           the AP runs out of DSM mode.
-
-config MOT_FEAT_MSS_CMCC
-        bool "Set TCP MSS to solve compatibility issue with CMCC"
-        default n
-        help
-           If this feature is enabled, 
-	   TCP MSS will be set to 0x055C for compatibility issue with CMCC network.
-
-config MOT_FEAT_LOG_SCHEDULE_EVENTS 
-	bool "Log the schedule events"
-        default n
-        help
-           This is an option to log the latest schedule events to debug Watchdog timeout issue.
-
-config MOT_FEAT_GETTIMEOFFSET_2618
-        bool "Update the mxc_gettimeoffset function to the 2618 version from Freescale"
-        default n
-        help
-           The latest version of mxc_gettimeoffset() does not allow for potential divide by 0.
-
-config MOT_FEAT_DISPLAY_EPSON
-    bool "epson display driver support"
-        default n
-        help
-           This is an option to support epson round display.
-
-config MOT_FEAT_APP_COREDUMP_DISPLAY
-        bool "Display the coredump prompt"
-        depends on MOT_FEAT_FB_PANIC_TEXT 
-        default n
-        help
-           This is an option to enable coredump prompt.
-
-config MOT_FEAT_32_BIT_DISPLAY
-    bool "32 bit display support"
-        default n
-        help
-           This is an option to support 32bit display on nevis hardware.
+        help 
+	    If this feature is enabled, vfat filesystem  will get a ascending lookup.
 
 comment 'End of Motorola Features'
+
+
+config MOT_FEAT_LOG_SCHEDULE_EVENTS
+        bool "Log the schedule events"
+        default n
+        help
+           This is an option to log the latest schedule events to debug Watchdog timeout issue
+
+#for debug the GNPO Label with panic issue
+config DEBUG_GNPO
+        bool "for debug the GNPO Label with panic issue"
+        default n
+        help
+          Say Y here if you want debug print more panic information for GNPO
+          label. The chosen GNPO  must have been configured before it is used.
 
 endmenu

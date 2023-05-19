@@ -3,7 +3,7 @@
  *
  * SCM-A11 implementation of Motorola GPIO API for Lighting.
  *
- * Copyright (C) 2006, 2008 Motorola, Inc.
+ * Copyright (C) 2007 Motorola, Inc.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -18,14 +18,13 @@
  * You should have received a copy of the GNU General Public License
  * along with this program; if not, write to the Free Software
  * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+ * Revision History:
  *
- * Date           Author        Comments
- * ============  ==========    ====================================================
- * 01-Jan-2006  Motorola        Intial version.
- * 20-Mar-2008   Motorola      Remove code not related to signal in Nevis product 
- * 28-Jun-2007  Motorola        Removed and renamed MARCO specific signal code in relation to xPIXL.
- * 03-Jul-2008  Motorola        OSS CV fix.
+ * Date         Author    Comment
+ * ----------   --------  -------------------
+ * 10/16/2007   Motorola  Added support for SCMA11REF
  */
+
 
 #include <linux/kernel.h>
 #include <linux/init.h>
@@ -53,10 +52,8 @@ void gpio_camera_flash_enable(int enable)
  */
 void gpio_camera_torch_enable(int enable)
 {
-#if ! defined(CONFIG_MACH_NEVIS) && ! defined(CONFIG_MACH_XPIXL)
     gpio_signal_set_data(GPIO_SIGNAL_CAM_TORCH_EN,
-           enable ? GPIO_DATA_HIGH : GPIO_DATA_LOW);
-#endif
+            enable ? GPIO_DATA_HIGH : GPIO_DATA_LOW);
 }
 #endif /* CONFIG_MOT_FEAT_GPIO_API_LIGHTING_CAM_TORCH */
 
@@ -69,16 +66,14 @@ void gpio_camera_torch_enable(int enable)
  */
 void gpio_backlight_numbers_enable(int enable)
 {
-#if defined(CONFIG_MACH_SCMA11REF) //||  defined(CONFIG_MACH_ASCENSION)
+#if defined(CONFIG_MACH_SCMA11REF)
     if(GPIO_SIGNAL_IS_VALID(GPIO_SIGNAL_EL_NUM_EN)) {
         gpio_signal_set_data(GPIO_SIGNAL_EL_NUM_EN,
                 enable ? GPIO_DATA_HIGH : GPIO_DATA_LOW);
     } else {
 #endif
-#if ! defined(CONFIG_MACH_NEVIS) && ! defined(CONFIG_MACH_XPIXL)
-       gpio_signal_set_data(GPIO_SIGNAL_EL_EN,
-              enable ? GPIO_DATA_HIGH : GPIO_DATA_LOW);
-#endif
+    gpio_signal_set_data(GPIO_SIGNAL_EL_EN,
+            enable ? GPIO_DATA_HIGH : GPIO_DATA_LOW);
 #if defined(CONFIG_MACH_SCMA11REF)
     }
 #endif
@@ -98,10 +93,8 @@ void gpio_backlight_navigation_enable(int enable)
                 enable ? GPIO_DATA_HIGH : GPIO_DATA_LOW);
     } else {
 #endif
-#if ! defined(CONFIG_MACH_NEVIS) && ! defined(CONFIG_MACH_XPIXL)
-        gpio_signal_set_data(GPIO_SIGNAL_EL_EN,
-               enable ? GPIO_DATA_HIGH : GPIO_DATA_LOW);
-#endif
+    gpio_signal_set_data(GPIO_SIGNAL_EL_EN,
+            enable ? GPIO_DATA_HIGH : GPIO_DATA_LOW);
 #if defined(CONFIG_MACH_SCMA11REF)
     }
 #endif
@@ -120,16 +113,13 @@ void gpio_lcd_backlight_enable(bool enable)
     /* PWM_BKL (GP_AP_B17) is no longer connected to the backlight driver
      * on P1A and P1D wingboards. It is only connected to the ETM connectors.
      */
-#ifndef CONFIG_MACH_XPIXL
     gpio_signal_set_data(GPIO_SIGNAL_PWM_BKL,
             enable ? GPIO_DATA_HIGH : GPIO_DATA_LOW);
+
     gpio_signal_set_data(GPIO_SIGNAL_MAIN_BKL,
             enable ? GPIO_DATA_HIGH : GPIO_DATA_LOW);
-#else
-	gpio_signal_set_data(GPIO_SIGNAL_LCD_BACKLIGHT,
-			     enable ? GPIO_DATA_HIGH : GPIO_DATA_LOW);
-#endif
 }
+
 
 /**
  * Get status of lcd backlight gpio signals.
@@ -138,10 +128,6 @@ void gpio_lcd_backlight_enable(bool enable)
  */
 int gpio_get_lcd_backlight(void)
 {
-#ifndef CONFIG_MACH_XPIXL
     return gpio_signal_get_data_check(GPIO_SIGNAL_MAIN_BKL);
-#else
-	return gpio_signal_get_data_check(GPIO_SIGNAL_LCD_BACKLIGHT);
-#endif
 }
 #endif /* CONFIG_MOT_FEAT_GPIO_API_LIGHTING_LCD */

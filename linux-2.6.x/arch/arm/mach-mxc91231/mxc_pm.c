@@ -21,24 +21,17 @@
  * 12/25/2006   Motorola  Changed local_irq_disable/local_irq_enable to
  *                        local_irq_save/local_irq_restore.
  * 01/08/2007   Motorola  Implemented MGPER fix for crash after WFI.
- * 01/16/2007   Motorola  Reset DSM(Deep Sleep Mode) state machine upon wakeup.
+ * 01/16/2007   Motorola  Reset DSM state machine upon wakeup.
  * 01/19/2007   Motorola  Resolved issue with 133Mhz operating point
  *                        and its divider ratios.
- * 02/14/2007   Motorola  Add code for DSM(Deep Sleep Mode) statistics gathering.
+ * 02/14/2007   Motorola  Add code for DSM statistics gathering.
+ * 02/26/2007   Motorola  Make DSM change dividers in two steps for 133.
  * 02/15/2007   Motorola  Cache optimization changes
- * 02/20/2007   Motorola  Added an LCD callback handler for DVFS changes
- * 02/26/2007   Motorola  Make DSM(Deep Sleep Mode) change dividers in two steps for 133.
- * 03/20/2007   Motorola  Removed LCD callback handler for DVFS changes
  * 04/30/2007   Motorola  Wait for end of dithering cycle before
- *                        changing PLL settings.
- * 05/12/2007   Motorola  Changed comments.
- * 06/05/2007   Motorola  Changed comments.
- * 07/31/2007   Motorola  Fix the problem that KernelPanic when inserted USB cable with PC.
- * 08/09/2007   Motorola  Add comments.
- * 25/09/2007   Motorola  Change max value of PPM for PLL dithering from 1000 to 2000.
- * 11/23/2007   Motorola  Add BT LED debug option processing
- * 01/08/2008   Motorola  Changed some debug information. 
- * 			EXL, Ant-On, fill.sa add cpu core overclock freq 636 and 740 & test stable and temperature
+ *                        changing PLL settings
+ * 07/31/2007   Motorola  Fix the problem that Kernel Panic when
+ *                        inserted USB cable with PC.
+ * 03/19/2008   Motorola  Fix dead loop in wait for end of dithering cycle.
  */
 
 
@@ -181,7 +174,7 @@ static DEFINE_RAW_SPINLOCK(dvfs_lock);
 /*
  * De-sense feature: Max value of PPM for PLL dithering
  */
-#define MAX_PLL_PPM_VALUE                       2000
+#define MAX_PLL_PPM_VALUE                       1000
 
 /* ESDCTL MDDREN bit description used for automatic SDR / DDR detection */
 #define ESDCTL_MISC                             IO_ADDRESS(ESDCTL_BASE_ADDR + 0x10)
@@ -296,10 +289,7 @@ static DEFINE_RAW_SPINLOCK(dvfs_lock);
 #define L2CC_LATENCY_266 0x00000012
 #define L2CC_LATENCY_399 0x0000001B
 #define L2CC_LATENCY_532 0x00000024
-#ifdef CONFIG_FEAT_MXC31_CORE_OVERCLOCK_740
-	#define L2CC_LATENCY_636 0x00000036
-	#define L2CC_LATENCY_740 0x0000003F
-#endif /* CONFIG_MOT_FEAT_CORE_740 */
+
 #endif /* CONFIG_MOT_FEAT_PM */
 
 /*!
@@ -324,10 +314,6 @@ typedef enum {
 	CORE_266 = CORE_FREQ_266,
 	CORE_399 = CORE_FREQ_399,
 	CORE_532 = CORE_FREQ_532,
-#ifdef CONFIG_FEAT_MXC31_CORE_OVERCLOCK_740
-	CORE_636 = CORE_FREQ_636,
-	CORE_740 = CORE_FREQ_740,
-#endif /* CONFIG_FEAT_MXC31_CORE_OVERCLOCK_740 */
 } dvfs_op_point_t;
 #else
 /*!
@@ -338,10 +324,6 @@ typedef enum {
         CORE_266 = 266,
         CORE_399 = 399,
         CORE_532 = 532,
-#ifdef CONFIG_FEAT_MXC31_CORE_OVERCLOCK_740
-        CORE_636 = 636,
-        CORE_740 = 740,
-#endif /* CONFIG_FEAT_MXC31_CORE_OVERCLOCK_740 */
 } dvfs_op_point_t;
 #endif
 
@@ -386,13 +368,7 @@ static unsigned int l2cc_latency[NUM_DVFSOP_INDEXES] = {
                                                            L2CC_LATENCY_133, 
                                                            L2CC_LATENCY_266, 
                                                            L2CC_LATENCY_399, 
-#ifdef CONFIG_FEAT_MXC31_CORE_OVERCLOCK_740
-                                                           L2CC_LATENCY_532,
-                                                           L2CC_LATENCY_636,
-                                                           L2CC_LATENCY_740
-#else
                                                            L2CC_LATENCY_532
-#endif /* CONFIG_FEAT_MXC31_CORE_OVERCLOCK_740 */
                                                        };
 
 /*
@@ -435,20 +411,6 @@ static ap_pll_mfn_values_t opinfo[NUM_DVFSOP_INDEXES] = {
                        ap_pll_dp_hfs_mfd:   0x01FFFFFE,
 		       divider_ratio:       ARM_AHB_IPG_RATIO_148,
                      },
-#ifdef CONFIG_FEAT_MXC31_CORE_OVERCLOCK_740
-        /* 636Mhz */ {
-                       ap_pll_dp_hfs_op:    0x000000C0,
-                       ap_pll_dp_hfs_mfn:   0x00762762,
-                       ap_pll_dp_hfs_mfd:   0x01FFFFFE,
-		       divider_ratio:       ARM_AHB_IPG_RATIO_148,
-                     },
-        /* 740Mhz */ {
-                       ap_pll_dp_hfs_op:    0x000000E0,
-                       ap_pll_dp_hfs_mfn:   0x00762762,
-                       ap_pll_dp_hfs_mfd:   0x01FFFFFE,
-		       divider_ratio:       ARM_AHB_IPG_RATIO_148,
-                     },
-#endif /* CONFIG_FEAT_MXC31_CORE_OVERCLOCK_740 */
 };
 
 /*
@@ -770,10 +732,6 @@ static dvfs_op_point_index_t dvfsop2index (dvfs_op_point_t dvfs_op)
 	case CORE_266:  dvfs_indx = INDX_266; break;
 	case CORE_399:  dvfs_indx = INDX_399; break;
 	case CORE_532:  dvfs_indx = INDX_532; break;
-#ifdef CONFIG_FEAT_MXC31_CORE_OVERCLOCK_740
-	case CORE_636:  dvfs_indx = INDX_636; break;
-	case CORE_740:  dvfs_indx = INDX_740; break;
-#endif /* CONFIG_FEAT_MXC31_CORE_OVERCLOCK_740 */
 	}
 
 	return dvfs_indx;
@@ -922,7 +880,7 @@ static void mxc_pm_chgfreq_common(dvfs_op_point_index_t dvfs_op_index)
 	mxc_pll_release_pll(MCUPLL);
 
 	/* Change voltage if necessary. */
-	if (dvfs_op_index >= INDX_532) {
+	if (dvfs_op_index == INDX_532) {
 		mxc_pm_chgvoltage(HI_VOLT);
 	} else {
 		if (mxc_pm_chkvoltage() == HI_VOLT)
@@ -969,6 +927,13 @@ static void mxc_pm_chgfreq_common(dvfs_op_point_index_t dvfs_op_index)
 	__raw_writel(opinfo[dvfs_op_index].ap_pll_dp_hfs_mfd, pll_dp_hfs_mfdreg[MCUPLL]);
 	__raw_writel(opinfo[dvfs_op_index].ap_pll_dp_hfs_mfn, pll_dp_hfs_mfnreg[MCUPLL]);
 
+#ifdef E8_g71.01.2DR
+	/* Setup dithering of AP Core Normal PLL, if dithering enabled */
+	if ((__raw_readl(pll_dp_mfn_togc[MCUPLL]) & TOG_DIS) == 0)
+	{
+		mxc_pm_dither_pll_setup(MCUPLL, &opinfo[dvfs_op_index]);
+	}
+#endif
 	
 	/* Request MCUPLL.  When this returns, the MCUPLL is started and locked. */
 	mxc_pll_request_pll(MCUPLL);
@@ -1239,10 +1204,6 @@ static int mxc_pm_chgfreq(dvfs_op_point_t dvfs_op)
 		break;
 
 	case CORE_532:
-#ifdef CONFIG_FEAT_MXC31_CORE_OVERCLOCK_740
-	case CORE_636:
-	case CORE_740:
-#endif /* CONFIG_FEAT_MXC31_CORE_OVERCLOCK_740 */
 		/* if DFS_DIV_EN = 1 and LOW voltage: 133 or 266 -> 532 */
 		if ((dfs_div == DFS_ENABLE) && (voltage == LO_VOLT)) {
 			/* This implies core is at 133 or 266 on P2 */
@@ -1353,18 +1314,8 @@ int mxc_pm_dvfs(unsigned long armfreq, long ahbfreq, long ipfreq)
 
 	case CORE_532:
 		dvfs_op_point = CORE_532;
- 		break;
- 
-#ifdef CONFIG_FEAT_MXC31_CORE_OVERCLOCK_740
-	case CORE_636:
-		dvfs_op_point = CORE_636;
-		break;
-	
-	case CORE_740:
-		dvfs_op_point = CORE_740;
 		break;
 
-#endif /* CONFIG_FEAT_MXC31_CORE_OVERCLOCK_740 */
 	default:
 		/* Releasing lock */
 		spin_unlock_irqrestore(&dvfs_lock, flags);
@@ -1796,13 +1747,6 @@ void mxc_pm_lowpower(int mode)
 #else
         local_irq_enable();
 #endif
-
-#if defined(CONFIG_MOT_DSM_INDICATOR) || defined(CONFIG_MOT_TURBO_INDICATOR)  
-        printk("MPM: restore from sleep,exit_test_point=%d, rtc_before = 0x%x, rtc_after= 0x%x, pending_interrupt=0x%x,0x%x\n",
-                     exit_test_point, rtc_before, rtc_after, avic_nipndl, avic_nipndh);
-
-#endif
-
 
 #ifdef CONFIG_MOT_FEAT_PM_STATS
         MPM_REPORT_TEST_POINT(5, exit_test_point, rtc_before, rtc_after,

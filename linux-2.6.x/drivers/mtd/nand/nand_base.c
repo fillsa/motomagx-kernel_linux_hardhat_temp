@@ -87,6 +87,8 @@
  *
  * 06-15-2007   Motorola: update read disturb max value for threshold from 2^8 to 2^16.
  *
+ * 08-23-2007   Motorola: remove WFN455
+ *
  * Credits:
  *	David Woodhouse for adding multichip support  
  *	
@@ -568,7 +570,6 @@ static int nand_block_bad(struct mtd_info *mtd, loff_t ofs, int getchip)
  * return translated block from reserved pool - offset from device start
  */
 loff_t nand_translate_block(struct mtd_info *mtd, loff_t ofs)
-//old loff_t nand_replaced_block(struct mtd_info *mtd, loff_t ofs)
 {
 	struct nand_chip *this = mtd->priv;
 	int orig_block;
@@ -1347,17 +1348,6 @@ static int nand_verify_pages (struct mtd_info *mtd, struct nand_chip *this, int 
 	int	hweccbytes; 
 	u_char 	oobdata[64];
 
-#if defined(CONFIG_MTD_NAND_BBM)
-#ifdef CONFIG_MOT_FEAT_NAND_RDDIST
-	if (nand_rddist_check(mtd, page<<this->page_shift))
-		/* read disturb fix inprogress, don't do block replacement */
-		DEBUG (MTD_DEBUG_LEVEL0, "no block replacement\n");
-	else
-#endif
-	/* Check for block replacement if the given page is in bad block */
-	if (nand_isbad_bbt (mtd, page<<this->page_shift, 0)) 
-		page = nand_replaced_block(mtd, page<<this->page_shift) >> this->page_shift;
-#endif
 	hweccbytes = (this->options & NAND_HWECC_SYNDROME) ? (oobsel->eccbytes / eccsteps) : 0;
 
 #ifdef CONFIG_MOT_FEAT_NAND_RDDIST
@@ -3489,10 +3479,6 @@ int nand_erase_nand (struct mtd_info *mtd, struct erase_info *instr, int allowbb
 	unsigned int bbt_masked_page;		/* bbt mask to compare to page being erased. */
 						/* It is used to see if the current page is in the same */
 						/*   256 block group and the same bank as the bbt. */
-#ifdef CONFIG_MOT_WFN455
-	int retry_cnt = 0;
-	cycles_t start_erase = 0, end_erase = 0;
-#endif
 #if defined(CONFIG_MTD_NAND_BBM)
 	loff_t  orig_addr = instr->addr;
 	int block_replace_flag = 0;
@@ -3603,14 +3589,8 @@ int nand_erase_nand (struct mtd_info *mtd, struct erase_info *instr, int allowbb
 		   the current cached page */
 		if (page <= this->pagebuf && this->pagebuf < (page + pages_per_block))
 			this->pagebuf = -1;
-#ifdef CONFIG_MOT_WFN455
-	retry:
-		start_erase = get_cycles();
-		this->erase_cmd (mtd, page & this->pagemask);
-		end_erase = get_cycles();
-#else
-		this->erase_cmd (mtd, page & this->pagemask);
-#endif
+		
+                this->erase_cmd (mtd, page & this->pagemask);
 		status = this->waitfunc (mtd, this, FL_ERASING);
 
 		/* See if operation failed and additional status checks are available */
@@ -3631,23 +3611,6 @@ int nand_erase_nand (struct mtd_info *mtd, struct erase_info *instr, int allowbb
 			goto erase_exit;
 		}
 
-#ifdef CONFIG_MOT_WFN455
-		if ((end_erase-start_erase)/(CLOCK_TICK_RATE/1000) < 1)  /* block erase time less than 1 millisec */
-		{
-			if (retry_cnt++ < 10)
-			{
-				printk(KERN_NOTICE "HW bug: %d retry to erase on page 0x%08x\n",retry_cnt ,page);
-				goto retry;
-			}
-			else
-			{
-				printk(KERN_ERR "block erase failed with 10 retries on page 0x%08x\n", page);
-				instr->state = MTD_ERASE_FAILED;
-				instr->fail_addr = (page << this->page_shift);
-				goto erase_exit;
-			}
-		}
-#endif
 #ifdef CONFIG_MOT_FEAT_MTD_AUTO_BBM
 	auto_bbm_exit:
 #endif

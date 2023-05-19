@@ -3,6 +3,7 @@
  *
  *  Copyright (C) 1996,1997,1998 Russell King.
  *  ARM700 fix by Matthew Godbolt (linux-user@willothewisp.demon.co.uk)
+ *  Copyright (C) 2007 Motorola, Inc.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 as
@@ -12,13 +13,11 @@
  *
  *  Note:  there is a StrongARM bug in the STMIA rn, {regs}^ instruction that causes
  *  it to save wrong values...  Be aware!
- */
-/*
- * Copyright (C) 2007 Motorola, Inc.
  *
- * Date           Author            Comment
- * ===========  ==========  ====================================
- * 10/15/2007   Motorola    FIQ related modified.
+ * Revision History:
+ * Date         Author    Comment
+ * ---------    --------  ---------------------------
+ * 10/02/2007   Motorola  Added FIQ C dispatcher in kernel.
  */
 #include <linux/config.h>
 #include <linux/init.h>

@@ -1,7 +1,7 @@
 /** @file wlan_debug.c
   * @brief This file contains functions for debug proc file.
   *   
-  * (c) Copyright © 2003-2006, Marvell International Ltd.  
+  * (c) Copyright © 2003-2007, Marvell International Ltd.  
   *   
   * This software file (the "File") is distributed by Marvell International 
   * Ltd. under the terms of the GNU General Public License Version 2, June 1991 
@@ -26,6 +26,7 @@ Change log:
 
 #include  "include.h"
 
+#ifdef CONFIG_PROC_FS
 /********************************************************
 		Local Variables
 ********************************************************/
@@ -55,14 +56,27 @@ static struct debug_data items[] = {
     {"IntCounter", item_size(IntCounter), 0, item_addr(IntCounter)},
     {"ConnectStatus", item_size(MediaConnectStatus), 0,
      item_addr(MediaConnectStatus)},
-    {"TxSkbNum", item_size(TxSkbNum), 0, item_addr(TxSkbNum)},
+    {"wmmQStp", item_size(wmm.queueStopped), 0, item_addr(wmm.queueStopped)},
+    {"wmmPkts", item_size(wmm.packetsQueued), 0,
+     item_addr(wmm.packetsQueued)},
+    {"wmmAcVo", item_size(wmm.packetsOut[WMM_AC_VO]), 0,
+     item_addr(wmm.packetsOut[WMM_AC_VO])},
+    {"wmmAcVi", item_size(wmm.packetsOut[WMM_AC_VI]), 0,
+     item_addr(wmm.packetsOut[WMM_AC_VI])},
+    {"wmmAcBE", item_size(wmm.packetsOut[WMM_AC_BE]), 0,
+     item_addr(wmm.packetsOut[WMM_AC_BE])},
+    {"wmmAcBK", item_size(wmm.packetsOut[WMM_AC_BK]), 0,
+     item_addr(wmm.packetsOut[WMM_AC_BK])},
     {"PSMode", item_size(PSMode), 0, item_addr(PSMode)},
     {"PSState", item_size(PSState), 0, item_addr(PSState)},
-    {"HS_Configured", item_size(bHostSleepConfigured), 0,
-     item_addr(bHostSleepConfigured)},
+    {"IsDeepSleep", item_size(IsDeepSleep), 0, item_addr(IsDeepSleep)},
+    {"IsAutoDeepSleepEnabled", item_size(IsAutoDeepSleepEnabled), 0,
+     item_addr(IsAutoDeepSleepEnabled)},
     {"WakeupDevReq", item_size(bWakeupDevRequired), 0,
      item_addr(bWakeupDevRequired)},
     {"WakeupTries", item_size(WakeupTries), 0, item_addr(WakeupTries)},
+    {"HS_Configured", item_size(bHostSleepConfigured), 0,
+     item_addr(bHostSleepConfigured)},
     {"num_tx_timeout", item_dbg_size(num_tx_timeout), 0,
      item_dbg_addr(num_tx_timeout)},
     {"num_cmd_timeout", item_dbg_size(num_cmd_timeout), 0,
@@ -72,8 +86,16 @@ static struct debug_data items[] = {
     {"TimeoutCmdAct", item_dbg_size(TimeoutCmdAct), 0,
      item_dbg_addr(TimeoutCmdAct)},
     {"LastCmdId", item_dbg_size(LastCmdId), 0, item_dbg_addr(LastCmdId)},
+    {"LastCmdAct", item_dbg_size(LastCmdAct), 0, item_dbg_addr(LastCmdAct)},
+    {"LastCmdIndex", item_dbg_size(LastCmdIndex), 0,
+     item_dbg_addr(LastCmdIndex)},
     {"LastCmdRespId", item_dbg_size(LastCmdRespId), 0,
      item_dbg_addr(LastCmdRespId)},
+    {"LastCmdRespIndex", item_dbg_size(LastCmdRespIndex), 0,
+     item_dbg_addr(LastCmdRespIndex)},
+    {"LastEvent", item_dbg_size(LastEvent), 0, item_dbg_addr(LastEvent)},
+    {"LastEventIndex", item_dbg_size(LastEventIndex), 0,
+     item_dbg_addr(LastEventIndex)},
     {"num_cmd_h2c_fail", item_dbg_size(num_cmd_host_to_card_failure), 0,
      item_dbg_addr(num_cmd_host_to_card_failure)},
     {"num_cmd_sleep_cfm_fail",
@@ -106,39 +128,6 @@ static int num_of_items = sizeof(items) / sizeof(items[0]);
 /********************************************************
 		Local Functions
 ********************************************************/
-
-/** 
- *  @brief convert string to number
- *
- *  @param s   	   pointer to numbered string
- *  @return 	   converted number from string s
- */
-int
-string_to_number(char *s)
-{
-    int r = 0;
-    int base = 0;
-
-    if ((strncmp(s, "0x", 2) == 0) || (strncmp(s, "0X", 2) == 0))
-        base = 16;
-    else
-        base = 10;
-    if (base == 16)
-        s += 2;
-    for (s = s; *s != 0; s++) {
-        if ((*s >= 48) && (*s <= 57))
-            r = (r * base) + (*s - 48);
-        else if ((*s >= 65) && (*s <= 70))
-            r = (r * base) + (*s - 55);
-        else if ((*s >= 97) && (*s <= 102))
-            r = (r * base) + (*s - 87);
-        else
-            break;
-    }
-
-    return r;
-}
-
 /** 
  *  @brief proc read function
  *
@@ -169,6 +158,17 @@ wlan_debug_read(char *page, char **s, off_t off, int cnt, int *eof,
             val = *((u16 *) d[i].addr);
         else if (d[i].size == 4)
             val = *((u32 *) d[i].addr);
+        else {
+            int j;
+            p += sprintf(p, "%s=", d[i].name);
+            for (j = 0; j < d[i].size; j += 2) {
+                val = *(u16 *) (d[i].addr + j);
+                p += sprintf(p, "0x%x ", val);
+            }
+            p += sprintf(p, "\n");
+            continue;
+        }
+
         if (strstr(d[i].name, "Id"))
             p += sprintf(p, "%s=0x%x\n", d[i].name, val);
         else
@@ -290,3 +290,5 @@ wlan_debug_remove(wlan_private * priv)
 {
     remove_proc_entry("debug", priv->proc_entry);
 }
+
+#endif

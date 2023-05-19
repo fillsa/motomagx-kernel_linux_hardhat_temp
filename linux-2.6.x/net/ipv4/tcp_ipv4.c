@@ -54,11 +54,7 @@
 
 /*
  * Copyright (c) 2006 Motorola, Inc. 
- *
- * Changelog:
- * Date               Author           Comment
- * ------------       ------------     ------------------------------------------------
- * 08/15/2006         Motorola         Use recvived TOS for TCP socket 
+ * 08/15/2006          Use recvived TOS for TCP socket 
  */
 
 #include <linux/config.h>

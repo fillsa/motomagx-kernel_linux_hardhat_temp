@@ -1,7 +1,7 @@
 # File: Makefile
 #
 # (c) Copyright © 2003-2006, Marvell International Ltd. 
-# (c) Copyright © 2006-2008, Motorola.
+# (c) Copyright © 2006-2007, Motorola
 #
 # This software file (the "File") is distributed by Marvell International 
 # Ltd. under the terms of the GNU General Public License Version 2, June 1991 
@@ -25,15 +25,17 @@
 # 13-Dec-2006  Motorola       WIFI driver :integrate Marvell 8686 12/12 release (81043p34_26340p37)
 # 18-Jan-2006  Motorola       WIFI driver :integrate Marvell 8686 16/01 release (81044p3_26340p44)
 # 02-Mar-2007  Motorola       WIFI driver :integrate Marvell 8686 01/03 release (81047p1_26340p54)
-# 11-Apr-2007  Motorola       WIFI driver :integrate Marvell 8686 11/04 release (81047p5_26340p65)
-# 30-May-2007  Motorola       WIFI driver :integrate Marvell 8686 30/05 release (81047p8_26340p68) 
-# 10-Jul-2007  Motorola       WIFI driver :integrate Marvell 8686 09/07 release (81047p12_26340p72)
-# 16-Oct-2007  Motorola       WIFI driver :integrate Marvell 8686 10/15 release (81048p0_26340p75)
-# 09-Jun-2008  Motorola       WIFI driver :integrate Marvell 8686 06/01 pre release (81048p4_26340p77)
-# 17-Jun-2008  Motorola       WIFI driver :integrate Marvell 8686 release (81048p5_26340p78)
+# 04-Apr-2007  Motorola       WIFI driver :integrate Marvell 8686 v9 01/04 release (91043p4_26409p9)
+# 22-May-2007  Motorola       WIFI driver :integrate Marvell 8686 v9 18/05 release (91043p8_26409p17)
+# 19-Jul-2007  Motorola       WIFI driver :integrate Marvell 8686 v9 13/07 release (91043p12_26409p29)
+# 20-Aug-2007  Motorola       Add build support for next platform.
+# 11-Sep-2007  Motorola       WIFI driver :integrate Marvell 8686 v9 31/08 release (91043p17_26409p38)
+# 22-Oct-2007  Motorola       WIFI driver :integrate Marvell 8686 v9 22/10 release (91043p19_26409p42)
+# 23-Oct-2007  Motorola       Add Frequency and Medium Arbiter(FMA) support - WFMA_SUPPORT
 
-
-MARVELL_SRC_DIR = drivers/net/wireless/Marvell/8686/src
+MARVELL_SRC_DIR        = drivers/net/wireless/Marvell/8686/src
+GPL_DRIVERS_DIR        = /vobs/3gsm_sierra/gpl_drivers
+LINUXJAVA_DRIVER_DIR   = /vobs/linuxjava/drivers_1
 
 # Use SCMA11 official CC & LD
 #CC=        $(CROSS)gcc
@@ -70,8 +72,11 @@ CONFIG_WPRM_DRV=y
 # Moto Platform
 CONFIG_MOTO_PLATFORM=y
 
-# Moto Debug
-CONFIG_MOTO_DBG=y
+# To Build V9 release on LJ63 baseline
+CONFIG_V9_ON_LJ63=n
+
+# Motorola FMA Support, this value has to be set based on FEAT_FMA value
+CONFIG_WFMA_SUPPORT=n
 
 #############################################################################
 # Select Platform Tools
@@ -80,6 +85,10 @@ CONFIG_MOTO_DBG=y
 MODEXT = ko
 CFLAGS += -I$(MARVELL_SRC_DIR)/os/linux
 CFLAGS += -I$(MARVELL_SRC_DIR)/wlan
+
+ifeq ($(CONFIG_WFMA_SUPPORT),y)
+CFLAGS += -I$(PLATFORM_DIR)/api/include
+endif
 
 	BUILD_ENV_SCMA11=/usr/local/arm/3.4.3/v6_vfp_le
 	TOOLPATH_SCMA11=$(BUILD_ENV_SCMA11)/bin/
@@ -106,6 +115,8 @@ CFLAGS += -I$(MARVELL_SRC_DIR)/wlan
 #############################################################################
 
 	CFLAGS += -I$(KERNELDIR)/include
+	CFLAGS += -I$(GPL_DRIVERS_DIR)
+	CFLAGS += -I$(LINUXJAVA_DRIVER_DIR)
 	CFLAGS += -Wno-deprecated-declarations
 
 	CFLAGS += -DFPNUM='"104"'
@@ -141,14 +152,18 @@ ifeq ($(CONFIG_WPRM_DRV),y)
 	CFLAGS += -DWPRM_DRV
 endif
 
+ifeq ($(CONFIG_WFMA_SUPPORT),y)
+	CFLAGS += -DWFMA_SUPPORT
+endif
+
 ifeq ($(CONFIG_MOTO_PLATFORM),y)
 	CFLAGS += -DMOTO_PLATFORM
 endif
 
-ifeq ($(CONFIG_MOTO_DBG),y)
-	CFLAGS += -DMOTO_DBG
+ifeq ($(CONFIG_V9_ON_LJ63),y)
+	CFLAGS += -DV9_ON_LJ63
 endif
-
+		
 #############################################################################
 # Make Targets
 #############################################################################
@@ -158,17 +173,24 @@ ifneq ($(KERNELRELEASE),)
 WLANOBJS =	wlan/wlan_main.o wlan/wlan_fw.o wlan/wlan_wext.o \
 		wlan/wlan_rx.o wlan/wlan_tx.o \
 		wlan/wlan_cmd.o wlan/wlan_cmdresp.o \
-		wlan/wlan_proc.o wlan/wlan_scan.o wlan/wlan_join.o
+		wlan/wlan_scan.o wlan/wlan_join.o
 
 WLANOBJS += wlan/wlan_wmm.o
 WLANOBJS += wlan/wlan_11d.o
-WLANOBJS += wlan/wlan_procfw.o
 
+ifdef CONFIG_PROC_FS
+WLANOBJS += wlan/wlan_proc.o
+WLANOBJS += wlan/wlan_procfw.o
 ifeq ($(CONFIG_PROC_DEBUG), y)
 WLANOBJS += wlan/wlan_debug.o
 endif
+endif
 ifeq ($(CONFIG_WPRM_DRV),y)
 WLANOBJS += wlan/wlan_wprm_drv.o
+endif
+
+ifeq ($(CONFIG_WFMA_SUPPORT),y)
+WLANOBJS += wlan/wlan_fma_interface.o
 endif
 
 IFOBJS := if/if_sdio/if_sdio.o

@@ -1,6 +1,6 @@
 /*
  * Copyright 2005-2006 Freescale Semiconductor, Inc. All Rights Reserved.
- * Copyright  (C) 2005-2006, 2008 Motorola, Inc. 
+ * Copyright 2005-2006 Motorola, Inc. 
  */
 
 /*
@@ -14,7 +14,6 @@
  * Date     Author    Comment
  * 10/2006  Motorola  Added support for additional pixel packing formats
  *                    and Video 4 Linux 1.
- * 04/2008  Motorola  Add code for new display
  */
 #ifndef _INCLUDE_IPU_PARAM_MEM_H_
 #define _INCLUDE_IPU_PARAM_MEM_H_
@@ -45,11 +44,6 @@ static __inline void _ipu_ch_param_set_size(uint32_t * params,
 		params[7] |= (7UL << (81 - 64)) | (7L << (89 - 64));	/* BPP & PFS */
 		params[8] = 2;	/* SAT = use 32-bit access */
 		break;
-	case IPU_PIX_FMT_GENERIC_16:
-		/*Repraesents 16-bit Generic data */
-		params[7] |= 2 | (7UL << (81 - 64)) | (7L << (89 - 64));    /* BPP & PFS */
-		params[8] = 2;  /* SAT = use 32-bit access */
- 		break;
 	case IPU_PIX_FMT_RGB565:
 		params[7] |= 2L | (4UL << (81 - 64)) | (7L << (89 - 64));/* BPP & PFS*/
 		params[8] = 2 |	/* SAT = 32-bit access */

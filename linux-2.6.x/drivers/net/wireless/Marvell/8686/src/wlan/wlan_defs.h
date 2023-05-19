@@ -2,8 +2,8 @@
  *  @brief This header file contains global constant/enum definitions,
  *  global variable declaration.
  *       
- *  (c) Copyright © 2003-2007, Marvell International Ltd.   
- *  (c) Copyright © 2008, Motorola.
+ *  (c) Copyright © 2003-2007, Marvell International Ltd.
+ *  (c) Copyright © 2006-2007, Motorola
  *
  *  This software file (the "File") is distributed by Marvell International 
  *  Ltd. under the terms of the GNU General Public License Version 2, June 1991 
@@ -25,21 +25,21 @@ Change log:
 	01/11/06: Add NELEMENTS, BAND_XX defines
 	04/10/06: Add hostcmd generic API and power_adapt_cfg_ext command
 ************************************************************/
-/*****************************************************
- Date         Author         Comment
- ==========   ===========    ==========================
- 21-Mar-2008  Motorola       Integrate Marvell recovery mechanism in getSNR
- 19-May-2008  Motorola       Add MPM support.
- 12-Jun-2008  Motorola       Integrate Marvell fix for ARP filtering
- 13-Jun-2008  Motorola       Increase Timer on getSNR.
- 17-Jun-2008  Motorola       WIFI driver :integrate Marvell 8686 release (81048p5_26340p78)
-*******************************************************/
-
+/* Date         Author         Comment
+ * ==========   ===========    ==========================
+ * 01-Feb-2006  Motorola       WIFI driver :integrate Marvell 8686 16/01 release (81044p3_26340p44)
+ * 02-Mar-2007  Motorola       WIFI driver :integrate Marvell 8686 01/03 release (81047p1_26340p54)
+ * 11-Apr-2007  Motorola       WIFI driver :integrate Marvell 8686 11/04 release (81047p5_26340p65)
+ * 22-May-2007  Motorola       WIFI driver :integrate Marvell 8686 v9 18/05 release (91043p8_26409p17)
+ * 19-Jul-2007  Motorola       WIFI driver :integrate Marvell 8686 v9 13/07 release (91043p12_26409p29)
+ * 11-Sep-2007  Motorola       WIFI driver :integrate Marvell 8686 v9 31/08 release (91043p17_26409p38)
+ * 22-Oct-2007  Motorola       WIFI driver :integrate Marvell 8686 v9 22/10 release (91043p19_26409p42)
+ */
+ 
 #ifndef _WLAN_DEFS_H_
 #define _WLAN_DEFS_H_
 
 #include	"os_defs.h"
-#include <linux/mpm.h>
 
 /** Double-Word(32Bit) Bit definition */
 #define DW_BIT_0	0x00000001
@@ -117,11 +117,7 @@ extern u32 ifdbg;
 #define DBG_CMND	DW_BIT_4
 #define DBG_EVENT	DW_BIT_5
 #define DBG_INTR	DW_BIT_6
-
-#ifdef MOTO_DBG
-#define DBG_MOTO_MSG    DW_BIT_7
-#define DBG_MOTO_DEBUG  DW_BIT_8
-#endif
+#define DBG_DEBUG       DW_BIT_7
 
 #define DBG_DAT_D	DW_BIT_16
 #define DBG_CMD_D	DW_BIT_17
@@ -134,41 +130,28 @@ extern u32 ifdbg;
 /* Debug message control bit definition for ifdbg */
 #define DBG_IF_D	DW_BIT_0
 
-#ifdef	DEBUG_LEVEL2
-#define	PRINTM_INFO(msg...)  {if (drvdbg & DBG_INFO) printk(KERN_DEBUG msg);}
-#define	PRINTM_WARN(msg...)  {if (drvdbg & DBG_WARN) printk(KERN_DEBUG msg);}
-#define	PRINTM_ENTRY(msg...) {if (drvdbg & DBG_ENTRY) printk(KERN_DEBUG msg);}
-#else
-#define	PRINTM_INFO(msg...)  do {} while (0)
-#define	PRINTM_WARN(msg...)  do {} while (0)
-#define	PRINTM_ENTRY(msg...) do {} while (0)
-#endif /* DEBUG_LEVEL2 */
 
-#define	PRINTM_FW_D(msg...)  {if (drvdbg & DBG_FW_D) printk(KERN_DEBUG msg);}
-#define	PRINTM_CMD_D(msg...) {if (drvdbg & DBG_CMD_D) printk(KERN_DEBUG msg);}
-#define	PRINTM_DAT_D(msg...) {if (drvdbg & DBG_DAT_D) printk(KERN_DEBUG msg);}
+#define	PRINTM_INFO(msg...)  {if (drvdbg & DBG_INFO) printk(KERN_ALERT msg);}
+#define	PRINTM_WARN(msg...)  {if (drvdbg & DBG_WARN) printk(KERN_ALERT msg);}
+#define	PRINTM_ENTRY(msg...) {if (drvdbg & DBG_ENTRY) printk(KERN_ALERT msg);}
 
-#ifdef MOTO_DBG
-#define	PRINTM_MOTO_DEBUG(msg...)  {if (drvdbg & DBG_MOTO_DEBUG) printk(KERN_DEBUG msg);}
-#define	PRINTM_MOTO_MSG(msg...)    {if (drvdbg & DBG_MOTO_MSG) printk(KERN_ALERT msg);}
-#endif
 
-#define	PRINTM_INTR(msg...)  {if (drvdbg & DBG_INTR) printk(KERN_DEBUG msg);}
+#define	PRINTM_FW_D(msg...)  {if (drvdbg & DBG_FW_D) printk(KERN_ALERT msg);}
+#define	PRINTM_CMD_D(msg...) {if (drvdbg & DBG_CMD_D) printk(KERN_ALERT msg);}
+#define	PRINTM_DAT_D(msg...) {if (drvdbg & DBG_DAT_D) printk(KERN_ALERT msg);}
+
+#define	PRINTM_DEBUG(msg...) {if (drvdbg & DBG_DEBUG) printk(KERN_ALERT msg);}
+#define	PRINTM_INTR(msg...)  {if (drvdbg & DBG_INTR) printk(KERN_ALERT msg);}
 #define	PRINTM_EVENT(msg...) {if (drvdbg & DBG_EVENT) printk(msg);}
-#define	PRINTM_CMND(msg...)  {if (drvdbg & DBG_CMND) printk(KERN_DEBUG msg);}
-#define	PRINTM_DATA(msg...)  {if (drvdbg & DBG_DATA) printk(KERN_DEBUG msg);}
-#ifdef MOTO_DBG
+#define	PRINTM_CMND(msg...)  {if (drvdbg & DBG_CMND) printk(KERN_ALERT msg);}
+#define	PRINTM_DATA(msg...)  {if (drvdbg & DBG_DATA) printk(KERN_ALERT msg);}
 #define	PRINTM_ERROR(msg...) {if (drvdbg & DBG_ERROR) printk(KERN_ALERT msg);}
 #define	PRINTM_FATAL(msg...) {if (drvdbg & DBG_FATAL) printk(KERN_ALERT msg);}
-#else
-#define	PRINTM_ERROR(msg...) {if (drvdbg & DBG_ERROR) printk(KERN_DEBUG msg);}
-#define	PRINTM_FATAL(msg...) {if (drvdbg & DBG_FATAL) printk(KERN_DEBUG msg);}
-#endif
 #define	PRINTM_MSG(msg...)   {if (drvdbg & DBG_MSG) printk(KERN_ALERT msg);}
 
-#define	PRINTM_IF_D(msg...)  {if (ifdbg & DBG_IF_D) printk(KERN_DEBUG msg);}
+#define	PRINTM_IF_D(msg...)  {if (ifdbg & DBG_IF_D) printk(KERN_ALERT msg);}
 
-#define	PRINTM(level,msg...) PRINTM_##level("WLAN: " msg)
+#define	PRINTM(level,msg...) PRINTM_##level(msg)
 
 #else
 
@@ -200,7 +183,7 @@ hexdump(char *prompt, u8 * buf, int len)
     char dbgdumpbuf[DBG_DUMP_BUF_LEN];
     char *ptr = dbgdumpbuf;
 
-    printk(KERN_DEBUG "WLAN: %s:\n", prompt);
+    printk(KERN_DEBUG "%s:\n", prompt);
     for (i = 1; i <= len; i++) {
         ptr += sprintf(ptr, "%02x ", *buf);
         buf++;
@@ -216,9 +199,11 @@ hexdump(char *prompt, u8 * buf, int len)
     }
 }
 
+
 #define DBG_HEXDUMP_CMD_D(x,y,z)    {if (drvdbg & DBG_CMD_D) hexdump(x,y,z);}
 #define DBG_HEXDUMP_DAT_D(x,y,z)    {if (drvdbg & DBG_DAT_D) hexdump(x,y,z);}
 #define DBG_HEXDUMP_IF_D(x,y,z)     {if (ifdbg & DBG_IF_D) hexdump(x,y,z);}
+#define DBG_HEXDUMP_FW_D(x,y,z)     {if (drvdbg & DBG_FW_D) hexdump(x,y,z);}
 
 #define	DBG_HEXDUMP(level,x,y,z)    DBG_HEXDUMP_##level(x,y,z)
 
@@ -226,7 +211,7 @@ hexdump(char *prompt, u8 * buf, int len)
 #define DBG_HEXDUMP(level,x,y,z)    do {} while (0)
 #endif
 
-#if defined(DEBUG_LEVEL2) && defined(__KERNEL__)
+#if defined(DEBUG_LEVEL1) && defined(__KERNEL__)
 #define HEXDUMP(x,y,z)              {if (drvdbg & DBG_INFO) hexdump(x,y,z);}
 #else
 #define HEXDUMP(x,y,z)              do {} while (0)
@@ -274,13 +259,10 @@ hexdump(char *prompt, u8 * buf, int len)
 #define MRVDRV_TIMER_10S		10000
 #define MRVDRV_TIMER_5S			5000
 #define MRVDRV_TIMER_1S			1000
-//#define MRVDRV_TIMER_2S			2*HZ
-//#define MRVDRV_TIME_OUT_5S		5*HZ
-#define MRVDRV_CMD_TIME_OUT_5S	5*HZ
-
 #define MRVDRV_SNAP_HEADER_LEN          8
 #define MRVDRV_ETH_HEADER_SIZE          14
-#define ARP_FILTER_MAX_BUF_SIZE		68
+
+#define ARP_FILTER_MAX_BUF_SIZE		20
 
 #define	WLAN_UPLD_SIZE			2312
 #define DEV_NAME_LEN			32
@@ -303,13 +285,14 @@ hexdump(char *prompt, u8 * buf, int len)
 #define MRVDRV_DEFAULT_LISTEN_INTERVAL		10
 #define MRVDRV_DEFAULT_LOCAL_LISTEN_INTERVAL		0
 
-#define	MRVDRV_CHANNELS_PER_SCAN		4
-#define	MRVDRV_MAX_CHANNELS_PER_SCAN		14
-
 #define	MRVDRV_CHANNELS_PER_ACTIVE_SCAN		14
 #define MRVDRV_MIN_BEACON_INTERVAL		20
 #define MRVDRV_MAX_BEACON_INTERVAL		1000
 #define MRVDRV_BEACON_INTERVAL			100
+
+#define MRVDRV_DEFAULT_WATCHDOG_TIMEOUT (2 * HZ)
+#define MRVDRV_SCAN_WATCHDOG_TIMEOUT    (10 * HZ)
+#define MRVDRV_DEEP_SLEEP_EXIT_TIMEOUT  (10 * HZ)
 
 /** TxPD Status */
 
@@ -385,18 +368,15 @@ hexdump(char *prompt, u8 * buf, int len)
 
 /* A few details needed for WEP (Wireless Equivalent Privacy) */
 /* 104 bits */
-#define MAX_KEY_SIZE		13
+#define MAX_WEP_KEY_SIZE	13
 /*40 bits RC4 - WEP*/
-#define MIN_KEY_SIZE		5
+#define MIN_WEP_KEY_SIZE	5
 
 #define RF_ANTENNA_1		0x1
 #define RF_ANTENNA_2		0x2
 #define RF_ANTENNA_AUTO		0xFFFF
 
 #define KEY_INFO_ENABLED	0x01
-
-/* For Wireless Extensions */
-#define		OID_MRVL_MFG_COMMAND	1
 
 #define SNR_BEACON		0
 #define SNR_RXPD		1
@@ -422,10 +402,11 @@ hexdump(char *prompt, u8 * buf, int len)
 
 #define WLAN_STATUS_SUCCESS			(0)
 #define WLAN_STATUS_FAILURE			(-1)
-#define WLAN_STATUS_NOT_ACCEPTED    (-2)
-#define WLAN_STATUS_CMD_TIME_OUT    (-3)
+#define WLAN_STATUS_NOT_ACCEPTED                (-2)
 
-#define	MAX_LEDS			8
+#define	MAX_LEDS			3
+#define	LED_DISABLED			16
+#define	LED_BLINKING			2
 
 /* S_SWAP : To swap 2 u8 */
 #define S_SWAP(a,b) 	do { \
@@ -446,6 +427,10 @@ hexdump(char *prompt, u8 * buf, int len)
 #define wlan_cpu_to_le32(x) x
 #define wlan_cpu_to_le64(x) x
 
+#define endian_convert_TxPD(x)
+#define endian_convert_RxPD(x)
+#define endian_convert_GET_LOG(x)
+
 /** Global Varibale Declaration */
 typedef struct _wlan_private wlan_private;
 typedef struct _wlan_adapter wlan_adapter;
@@ -465,22 +450,7 @@ extern u8 AdhocRates_G[G_SUPPORTED_RATES];
 extern u8 AdhocRates_B[4];
 extern wlan_private *wlanpriv;
 
-#ifdef ENABLE_PM
-extern int wlan_mpm_advice_id;
-extern BOOLEAN wlan_mpm_active;
-#endif
-
 #ifdef MFG_CMD_SUPPORT
-/* For the mfg command */
-typedef struct PkHeader
-{
-    u16 cmd;
-    u16 len;
-    u16 seq;
-    u16 result;
-    u32 MfgCmd;
-} PkHeader;
-
 #define SIOCCFMFG SIOCDEVPRIVATE
 #endif /* MFG_CMD_SUPPORT */
 
@@ -509,16 +479,6 @@ typedef enum _WLAN_802_11_AUTH_ALG
     AUTH_ALG_NETWORK_EAP = 8,
 } WLAN_802_11_AUTH_ALG;
 
-/** WLAN_802_1X_AUTH_ALG */
-typedef enum _WLAN_802_1X_AUTH_ALG
-{
-    WLAN_1X_AUTH_ALG_NONE = 1,
-    WLAN_1X_AUTH_ALG_LEAP = 2,
-    WLAN_1X_AUTH_ALG_TLS = 4,
-    WLAN_1X_AUTH_ALG_TTLS = 8,
-    WLAN_1X_AUTH_ALG_MD5 = 16,
-} WLAN_802_1X_AUTH_ALG;
-
 /** WLAN_802_11_ENCRYPTION_MODE */
 typedef enum _WLAN_802_11_ENCRYPTION_MODE
 {
@@ -538,7 +498,7 @@ typedef enum _WLAN_802_11_POWER_MODE
 
     /*not a real mode, defined as an upper bound */
     Wlan802_11PowerModeMax
-} WLAN_802_11_POWER_MODE, *PWLAN_802_11_POWER_MODE;
+} WLAN_802_11_POWER_MODE;
 
 /** PS_STATE */
 typedef enum _PS_STATE
@@ -562,14 +522,14 @@ typedef enum _WLAN_MEDIA_STATE
 {
     WlanMediaStateDisconnected,
     WlanMediaStateConnected
-} WLAN_MEDIA_STATE, *PWLAN_MEDIA_STATE;
+} WLAN_MEDIA_STATE;
 
 /** WLAN_802_11_PRIVACY_FILTER */
 typedef enum _WLAN_802_11_PRIVACY_FILTER
 {
     Wlan802_11PrivFilterAcceptAll,
     Wlan802_11PrivFilter8021xWEP
-} WLAN_802_11_PRIVACY_FILTER, *PWLAN_802_11_PRIVACY_FILTER;
+} WLAN_802_11_PRIVACY_FILTER;
 
 /** mv_ms_type */
 typedef enum _mv_ms_type
@@ -588,7 +548,7 @@ typedef enum _WLAN_HARDWARE_STATUS
     WlanHardwareStatusReset,
     WlanHardwareStatusClosing,
     WlanHardwareStatusNotReady
-} WLAN_HARDWARE_STATUS, *PWLAN_HARDWARE_STATUS;
+} WLAN_HARDWARE_STATUS;
 
 /** WLAN_802_11_AUTHENTICATION_MODE */
 typedef enum _WLAN_802_11_AUTHENTICATION_MODE
@@ -596,7 +556,7 @@ typedef enum _WLAN_802_11_AUTHENTICATION_MODE
     Wlan802_11AuthModeOpen = 0x00,
     Wlan802_11AuthModeShared = 0x01,
     Wlan802_11AuthModeNetworkEAP = 0x80,
-} WLAN_802_11_AUTHENTICATION_MODE, *PWLAN_802_11_AUTHENTICATION_MODE;
+} WLAN_802_11_AUTHENTICATION_MODE;
 
 /** WLAN_802_11_WEP_STATUS */
 typedef enum _WLAN_802_11_WEP_STATUS
@@ -604,12 +564,8 @@ typedef enum _WLAN_802_11_WEP_STATUS
     Wlan802_11WEPEnabled,
     Wlan802_11WEPDisabled,
     Wlan802_11WEPKeyAbsent,
-    Wlan802_11WEPNotSupported, Wlan802_11Encryption2Enabled,
-    Wlan802_11Encryption2KeyAbsent,
-    Wlan802_11Encryption3Enabled,
-    Wlan802_11Encryption3KeyAbsent
-} WLAN_802_11_WEP_STATUS, *PWLAN_802_11_WEP_STATUS,
-    WLAN_802_11_ENCRYPTION_STATUS, *PWLAN_802_11_ENCRYPTION_STATUS;
+    Wlan802_11WEPNotSupported
+} WLAN_802_11_WEP_STATUS;
 
 /** SNMP_MIB_INDEX_e */
 typedef enum _SNMP_MIB_INDEX_e
@@ -691,5 +647,6 @@ typedef enum
 extern struct iw_handler_def wlan_handler_def;
 struct iw_statistics *wlan_get_wireless_stats(struct net_device *dev);
 int wlan_do_ioctl(struct net_device *dev, struct ifreq *req, int i);
-#endif /* __KERNEL__ */
+#endif
+
 #endif /* _WLAN_DEFS_H_ */

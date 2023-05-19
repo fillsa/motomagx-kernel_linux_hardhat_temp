@@ -16,7 +16,6 @@
  * Date         Author          Comment
  * 10/2006      Motorola        Added __down_op_ret_timeout
  * 07/2007      Motorola        Fix bugs in up() function
- * 08/2007      Motorola        Add comments.
  */
 
 #ifndef __ASM_PROC_LOCKS_H

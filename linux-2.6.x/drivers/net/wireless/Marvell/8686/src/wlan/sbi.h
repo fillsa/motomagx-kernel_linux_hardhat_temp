@@ -101,7 +101,6 @@ int sbi_prog_helper(wlan_private *);
 int sbi_prog_firmware_w_helper(wlan_private *);
 
 int sbi_read_event_cause(wlan_private *);
-int sbi_reenable_host_interrupt(wlan_private *, u8);
 int sbi_host_to_card(wlan_private * priv, u8 type, u8 * payload, u16 nb);
 int sbi_card_to_host(wlan_private * priv, u32 type, u32 * nb, u8 * payload,
                      u16 npayload);

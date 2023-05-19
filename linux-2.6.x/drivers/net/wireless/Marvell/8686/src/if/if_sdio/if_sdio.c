@@ -26,7 +26,15 @@ Change log:
 	06/06/06: add macro SD_BLOCK_SIZE_FW_DL for firmware download
 		  add macro ALLOC_BUF_SIZE for cmd resp/Rx data skb buffer allocation
 ****************************************************/
-
+/* Date         Author         Comment
+ * ==========   ===========    ==========================
+ * 29-Mar-2007  Motorola       Implement chipset wake up by WLAN_CLIENT_WAKE_B 
+ * 25-Apr-2007  Motorola       WIFI driver :integrate Marvell 8686 11/04 Release (81047p251_26340p65)
+ * 22-May-2007  Motorola       WIFI driver :integrate Marvell 8686 v9 18/05 release (91043p8_26409p17)
+ * 19-Jul-2007  Motorola       WIFI driver :integrate Marvell 8686 v9 13/07 release (91043p12_26409p29)
+ * 11-Sep-2007  Motorola       WIFI driver :integrate Marvell 8686 v9 31/08 release (91043p17_26409p38)
+ */
+ 
 #include	"if_sdio.h"
 
 /* define SD block size for firmware download */
@@ -373,13 +381,6 @@ sbi_download_wlan_fw_image(wlan_private * priv,
            offset,txlen,txlen); */
         PRINTM(INFO, ".");
 
-        /* The host polls for the DN_LD_CARD_RDY and CARD_IO_READY bits */
-        ret = mv_sdio_poll_card_status(priv, CARD_IO_READY | DN_LD_CARD_RDY);
-        if (ret < 0) {
-            PRINTM(FATAL, "FW download with helper died @ %d\n", offset);
-            goto done;
-        }
-
         tx_blocks = (txlen + SD_BLOCK_SIZE_FW_DL - 1) / SD_BLOCK_SIZE_FW_DL;
 
         /* Copy payload to buffer */
@@ -494,7 +495,7 @@ mv_sdio_card_to_host(wlan_private * priv,
     /* Read the length of data to be transferred */
     ret = mv_sdio_read_scratch(priv, &buf_len);
     if (ret < 0) {
-        PRINTM(ERROR, "card_to_host, read scratch reg failed\n");
+        PRINTM(ERROR, "card_to_host, read RX length failed\n");
         ret = WLAN_STATUS_FAILURE;
         goto exit;
     }
@@ -508,14 +509,6 @@ mv_sdio_card_to_host(wlan_private * priv,
     /* Allocate buffer */
     blksz = SD_BLOCK_SIZE;
     buf_block_len = (buf_len + blksz - 1) / blksz;
-
-    /* The host polls for the CARD_IO_READY bit */
-    ret = mv_sdio_poll_card_status(priv, CARD_IO_READY);
-    if (ret < 0) {
-        PRINTM(ERROR, "card_to_host, poll status failed: %d\n", ret);
-        ret = WLAN_STATUS_FAILURE;
-        goto exit;
-    }
 
     ret = sdio_read_iomem(priv->wlan_dev.card, FN1, priv->wlan_dev.ioport,
                           BLOCK_MODE, FIXED_ADDRESS, buf_block_len,
@@ -717,26 +710,28 @@ int
 sbi_get_int_status(wlan_private * priv, u8 * ireg)
 {
     int ret = WLAN_STATUS_SUCCESS;
+    u8 sdio_ireg = 0;
     u8 *cmdBuf;
     wlan_dev_t *wlan_dev = &priv->wlan_dev;
     struct sk_buff *skb;
     mmc_card_t card = (mmc_card_t) wlan_dev->card;
 
-    if ((ret = sdio_read_ioreg(card, FN1, HOST_INTSTATUS_REG, ireg))) {
+    *ireg = 0;
+    if ((ret = sdio_read_ioreg(card, FN1, HOST_INTSTATUS_REG, &sdio_ireg))) {
         PRINTM(WARN, "sdio_read_ioreg: read int status register failed\n");
         ret = WLAN_STATUS_FAILURE;
         goto done;
     }
 
-    if (*ireg != 0) {
+    if (sdio_ireg != 0) {
         /*
          * DN_LD_HOST_INT_STATUS and/or UP_LD_HOST_INT_STATUS
          * Clear the interrupt status register and re-enable the interrupt
          */
-        PRINTM(INFO, "sdio_ireg = 0x%x\n", *ireg);
+        PRINTM(INFO, "sdio_ireg = 0x%x\n", sdio_ireg);
         if ((ret = sdio_write_ioreg(card, FN1, HOST_INTSTATUS_REG,
-                                    ~(*ireg) & (DN_LD_HOST_INT_STATUS |
-                                                UP_LD_HOST_INT_STATUS))) <
+                                    ~(sdio_ireg) & (DN_LD_HOST_INT_STATUS |
+                                                    UP_LD_HOST_INT_STATUS))) <
             0) {
             PRINTM(WARN,
                    "sdio_write_ioreg: clear int status register failed\n");
@@ -745,20 +740,19 @@ sbi_get_int_status(wlan_private * priv, u8 * ireg)
         }
     }
 
-    if (*ireg & DN_LD_HOST_INT_STATUS) {        /* tx_done INT */
+    if (sdio_ireg & DN_LD_HOST_INT_STATUS) {    /* tx_done INT */
         *ireg |= HIS_TxDnLdRdy;
         if (!priv->wlan_dev.dnld_sent) {        /* tx_done already received */
             PRINTM(INFO, "warning: tx_done already received:"
                    " dnld_sent=0x%x int status=0x%x\n",
-                   priv->wlan_dev.dnld_sent, *ireg);
+                   priv->wlan_dev.dnld_sent, sdio_ireg);
         } else {
-            if (priv->wlan_dev.dnld_sent == DNLD_DATA_SENT)
-                os_start_queue(priv);
+            wmm_process_fw_iface_tx_xfer_end(priv);
             priv->wlan_dev.dnld_sent = DNLD_RES_RECEIVED;
         }
     }
 
-    if (*ireg & UP_LD_HOST_INT_STATUS) {
+    if (sdio_ireg & UP_LD_HOST_INT_STATUS) {
 
         /* 
          * DMA read data is by block alignment,so we need alloc extra block
@@ -781,9 +775,10 @@ sbi_get_int_status(wlan_private * priv, u8 * ireg)
                                  ALLOC_BUF_SIZE) < 0) {
             u8 cr = 0;
 
-            PRINTM(ERROR, "Card to host failed: int status=0x%x\n", *ireg);
-            if (sdio_read_ioreg(wlan_dev->card, FN1,
-                                CONFIGURATION_REG, &cr) < 0)
+            PRINTM(ERROR, "Card to host failed: int status=0x%x\n",
+                   sdio_ireg);
+            if (sdio_read_ioreg(wlan_dev->card, FN1, CONFIGURATION_REG, &cr) <
+                0)
                 PRINTM(ERROR, "read ioreg failed (FN1 CFG)\n");
 
             PRINTM(INFO, "Config Reg val = %d\n", cr);
@@ -802,22 +797,23 @@ sbi_get_int_status(wlan_private * priv, u8 * ireg)
             goto done;
         }
 
-        if (wlan_dev->upld_typ == MVSD_DAT) {
+        switch (wlan_dev->upld_typ) {
+        case MVSD_DAT:
             PRINTM(DATA, "Data <= FW\n");
             *ireg |= HIS_RxUpLdRdy;
             skb_put(skb, priv->wlan_dev.upld_len);
             skb_pull(skb, SDIO_HEADER_LEN);
             list_add_tail((struct list_head *) skb,
                           (struct list_head *) &priv->adapter->RxSkbQ);
-        } else if (wlan_dev->upld_typ == MVSD_CMD) {
-            *ireg &= ~(HIS_RxUpLdRdy);
+            /* skb will be freed by kernel later */
+            break;
+
+        case MVSD_CMD:
             *ireg |= HIS_CmdUpLdRdy;
 
-            /* take care of CurCmd = NULL case by reading the 
-             * data to clear the interrupt */
+            /* take care of CurCmd = NULL case */
             if (!priv->adapter->CurCmd) {
                 cmdBuf = priv->wlan_dev.upld_buf;
-                priv->adapter->HisRegCpy &= ~HIS_CmdUpLdRdy;
             } else {
                 cmdBuf = priv->adapter->CurCmd->BufVirtualAddr;
             }
@@ -826,17 +822,24 @@ sbi_get_int_status(wlan_private * priv, u8 * ireg)
             memcpy(cmdBuf, skb->data + SDIO_HEADER_LEN,
                    MIN(MRVDRV_SIZE_OF_CMD_BUFFER, priv->wlan_dev.upld_len));
             kfree_skb(skb);
-        } else if (wlan_dev->upld_typ == MVSD_EVENT) {
-            *ireg |= HIS_CardEvent;
-            kfree_skb(skb);
-        }
+            break;
 
-        *ireg |= HIS_CmdDnLdRdy;
+        case MVSD_EVENT:
+            *ireg |= HIS_CardEvent;
+            /* event cause has been saved to priv->adapter->EventCause */
+            kfree_skb(skb);
+            break;
+
+        default:
+            PRINTM(ERROR, "SDIO unknown upld type = 0x%x\n",
+                   wlan_dev->upld_typ);
+            kfree_skb(skb);
+            break;
+        }
     }
 
     ret = WLAN_STATUS_SUCCESS;
   done:
-
     return ret;
 }
 
@@ -864,20 +867,6 @@ sbi_read_event_cause(wlan_private * priv)
 }
 
 /** 
- *  @brief This function reenables the host interrupts.
- *  
- *  @param priv    A pointer to wlan_private structure
- *  @param bits    the bit mask
- *  @return 	   WLAN_STATUS_SUCCESS
- */
-int
-sbi_reenable_host_interrupt(wlan_private * priv, u8 bits)
-{
-    sdio_enable_SDIO_INT();
-    return WLAN_STATUS_SUCCESS;
-}
-
-/** 
  *  @brief This function disables the host interrupts.
  *  
  *  @param priv    A pointer to wlan_private structure
@@ -898,7 +887,6 @@ sbi_disable_host_int(wlan_private * priv)
 int
 sbi_enable_host_int(wlan_private * priv)
 {
-
     return enable_host_int_mask(priv, HIM_ENABLE);
 }
 
@@ -1041,23 +1029,10 @@ sbi_host_to_card(wlan_private * priv, u8 type, u8 * payload, u16 nb)
                payload, nb);
     }
 
-    /* The host polls for the CARD_IO_READY bit */
-    ret = mv_sdio_poll_card_status(priv, CARD_IO_READY);
-    if (ret < 0) {
-        PRINTM(ERROR, "host_to_card, poll status failed: %d\n", ret);
-        ret = WLAN_STATUS_FAILURE;
-        goto exit;
-    }
-
     if (((mmc_card_t) ((priv->wlan_dev).card))->ctrlr->bus_width !=
         priv->adapter->sdiomode) {
         set_bus_width(priv, priv->adapter->sdiomode);
     }
-
-    if (type == MVSD_DAT)
-        priv->wlan_dev.dnld_sent = DNLD_DATA_SENT;
-    else
-        priv->wlan_dev.dnld_sent = DNLD_CMD_SENT;
 
     do {
         /* Transfer data to card */
@@ -1067,7 +1042,6 @@ sbi_host_to_card(wlan_private * priv, u8 type, u8 * payload, u16 nb)
                              priv->adapter->TmpTxBuf);
         if (ret < 0) {
             i++;
-
             PRINTM(ERROR, "host_to_card, write iomem (%d) failed: %d\n", i,
                    ret);
             if (sdio_write_ioreg
@@ -1075,15 +1049,18 @@ sbi_host_to_card(wlan_private * priv, u8 type, u8 * payload, u16 nb)
                 PRINTM(ERROR, "write ioreg failed (FN1 CFG)\n");
             }
             ret = WLAN_STATUS_FAILURE;
-            if (i > MAX_WRITE_IOMEM_RETRY) {
-                priv->wlan_dev.dnld_sent = DNLD_RES_RECEIVED;
+            if (i > MAX_WRITE_IOMEM_RETRY)
                 goto exit;
-            }
         } else {
             DBG_HEXDUMP(IF_D, "SDIO Blk Wr", priv->adapter->TmpTxBuf,
                         blksz * buf_block_len);
         }
     } while (ret == WLAN_STATUS_FAILURE);
+
+    if (type == MVSD_DAT)
+        priv->wlan_dev.dnld_sent = DNLD_DATA_SENT;
+    else
+        priv->wlan_dev.dnld_sent = DNLD_CMD_SENT;
 
   exit:
     LEAVE();

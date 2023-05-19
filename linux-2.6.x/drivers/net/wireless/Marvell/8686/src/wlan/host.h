@@ -28,12 +28,8 @@ Change log:
               implementation through generic hostcmd API
     05/03/06: Add auto_tx hostcmd
     05/04/06: Add IBSS coalescing related new hostcmd and event
+    08/28/06: Add LED_CTRL hostcmd
 ********************************************************/
-/*****************************************************
- Date         Author         Comment
- ==========   ===========    ==========================
- 21-Mar-2008  Motorola       Integrate Marvell recovery mechanism in getSNR
-*******************************************************/
 
 #ifndef _HOST_H_
 #define _HOST_H_
@@ -52,25 +48,17 @@ Change log:
 #define OID_802_11D_ENABLE                    0x00008007
 
 #define HostCmd_OPTION_WAITFORRSP             0x0002
-/** Host Command option for wait for RSP Timeout */
-#define HostCmd_OPTION_TIMEOUT	              0x0004
 
 /** Host Command ID */
 #define HostCmd_CMD_GET_HW_SPEC               0x0003
-#define HostCmd_CMD_EEPROM_UPDATE             0x0004
 #define HostCmd_CMD_802_11_RESET              0x0005
 #define HostCmd_CMD_802_11_SCAN               0x0006
 #define HostCmd_CMD_802_11_GET_LOG            0x000b
 #define HostCmd_CMD_MAC_MULTICAST_ADR         0x0010
-#define HostCmd_CMD_802_11_AUTHENTICATE       0x0011
 #define HostCmd_CMD_802_11_EEPROM_ACCESS      0x0059
-#define HostCmd_CMD_802_11_ASSOCIATE          0x0050
+#define HostCmd_CMD_802_11_ASSOCIATE          0x0012
 #define HostCmd_CMD_802_11_SET_WEP            0x0013
-#define HostCmd_CMD_802_11_GET_STAT           0x0014
-#define HostCmd_CMD_802_3_GET_STAT            0x0015
 #define HostCmd_CMD_802_11_SNMP_MIB           0x0016
-#define HostCmd_CMD_MAC_REG_MAP               0x0017
-#define HostCmd_CMD_BBP_REG_MAP               0x0018
 #define HostCmd_CMD_MAC_REG_ACCESS            0x0019
 #define HostCmd_CMD_BBP_REG_ACCESS            0x001a
 #define HostCmd_CMD_RF_REG_ACCESS             0x001b
@@ -82,32 +70,19 @@ Change log:
 
 #define HostCmd_CMD_802_11_PS_MODE	      0x0021
 
-#define HostCmd_CMD_802_11_DATA_RATE          0x0022
-#define HostCmd_CMD_RF_REG_MAP                0x0023
 #define HostCmd_CMD_802_11_DEAUTHENTICATE     0x0024
-#define HostCmd_CMD_802_11_REASSOCIATE        0x0025
-#define HostCmd_CMD_802_11_DISASSOCIATE       0x0026
 #define HostCmd_CMD_MAC_CONTROL               0x0028
 #define HostCmd_CMD_802_11_AD_HOC_START       0x002b
 #define HostCmd_CMD_802_11_AD_HOC_JOIN        0x002c
 
-#define HostCmd_CMD_802_11_QUERY_TKIP_REPLY_CNTRS  0x002e
-#define HostCmd_CMD_802_11_ENABLE_RSN              0x002f
-#define HostCmd_CMD_802_11_PAIRWISE_TSC       0x0036
-#define HostCmd_CMD_802_11_GROUP_TSC          0x0037
 #define HostCmd_CMD_802_11_KEY_MATERIAL       0x005e
 
 #define HostCmd_CMD_802_11_DEEP_SLEEP         0x003e
 
-#define HostCmd_CMD_802_11_SET_AFC            0x003c
-#define HostCmd_CMD_802_11_GET_AFC            0x003d
-
 #define HostCmd_CMD_802_11_AD_HOC_STOP        0x0040
 
-#define HostCmd_CMD_802_11_HOST_SLEEP_CFG   0x0043
-#define HostCmd_CMD_802_11_HOST_SLEEP_AWAKE_CONFIRM 0x0044
-
-#define HostCmd_CMD_802_11_BEACON_STOP        0x0049
+#define HostCmd_CMD_802_11_HOST_SLEEP_CFG     0x0043
+#define HostCmd_CMD_802_11_WAKEUP_CONFIRM     0x0044
 
 #define HostCmd_CMD_802_11_MAC_ADDRESS        0x004D
 #define HostCmd_CMD_802_11_EEPROM_ACCESS      0x0059
@@ -115,9 +90,6 @@ Change log:
 #define HostCmd_CMD_802_11_BAND_CONFIG        0x0058
 
 #define HostCmd_CMD_802_11D_DOMAIN_INFO       0x005b
-
-#define HostCmd_CMD_WMM_ACK_POLICY            0x005C
-#define HostCmd_CMD_WMM_PRIO_PKT_AVAIL        0x005D
 
 #define HostCmd_CMD_802_11_SLEEP_PARAMS          0x0066
 
@@ -138,9 +110,9 @@ Change log:
 
 #define HostCmd_CMD_802_11_TPC_CFG               0x0072
 
-#define HostCmd_CMD_802_11_FW_WAKEUP_METHOD      0x0074
+#define HostCmd_CMD_802_11_FW_WAKE_METHOD        0x0074
 
-#define HostCmd_CMD_802_11_LED_GPIO_CTRL         0x004e
+#define HostCmd_CMD_802_11_LED_CONTROL           0x004e
 
 #define HostCmd_CMD_802_11_SUBSCRIBE_EVENT       0x0075
 
@@ -167,7 +139,18 @@ Change log:
 #define HostCmd_CMD_INACTIVITY_TIMEOUT_EXT 	0x008a
 #define HostCmd_RET_INACTIVITY_TIMEOUT_EXT 	0x808a
 
+#define HostCmd_CMD_DBGS_CFG		      0x008b
+#define HostCmd_RET_DBGS_CFG		      0x808b
+#define HostCmd_CMD_GET_MEM		      0x008c
+#define HostCmd_RET_GET_MEM		      0x808c
+
+#define HostCmd_CMD_TX_PKT_STATS              0x008d
+
+#define Host_CMD_802_11_IBSS_BCN_MONITOR      0x008e
+
 #define HostCmd_CMD_802_11_LDO_CONFIG         0x0096
+
+#define HostCmd_CMD_VERSION_EXT               0x0097
 
 /* For the IEEE Power Save */
 #define HostCmd_SubCmd_Enter_PS               0x0030
@@ -178,24 +161,16 @@ Change log:
 
 /* Command RET code, MSB is set to 1 */
 #define HostCmd_RET_HW_SPEC_INFO              0x8003
-#define HostCmd_RET_EEPROM_UPDATE             0x8004
 #define HostCmd_RET_802_11_RESET              0x8005
 #define HostCmd_RET_802_11_SCAN               0x8006
 #define HostCmd_RET_802_11_GET_LOG            0x800b
 #define HostCmd_RET_MAC_CONTROL               0x8028
 #define HostCmd_RET_MAC_MULTICAST_ADR         0x8010
-#define HostCmd_RET_802_11_AUTHENTICATE       0x8011
 #define HostCmd_RET_802_11_DEAUTHENTICATE     0x8024
 #define HostCmd_RET_802_11_ASSOCIATE          0x8012
-#define HostCmd_RET_802_11_REASSOCIATE        0x8025
-#define HostCmd_RET_802_11_DISASSOCIATE       0x8026
 #define HostCmd_RET_802_11_SET_WEP            0x8013
-#define HostCmd_RET_802_11_STAT               0x8014
 #define HostCmd_RET_802_3_STAT                0x8015
 #define HostCmd_RET_802_11_SNMP_MIB           0x8016
-#define HostCmd_RET_MAC_REG_MAP               0x8017
-#define HostCmd_RET_BBP_REG_MAP               0x8018
-#define HostCmd_RET_RF_REG_MAP                0x8023
 #define HostCmd_RET_MAC_REG_ACCESS            0x8019
 #define HostCmd_RET_BBP_REG_ACCESS            0x801a
 #define HostCmd_RET_RF_REG_ACCESS             0x801b
@@ -205,33 +180,19 @@ Change log:
 #define HostCmd_RET_802_11_RF_TX_POWER        0x801e
 #define HostCmd_RET_802_11_RF_ANTENNA         0x8020
 #define HostCmd_RET_802_11_PS_MODE            0x8021
-#define HostCmd_RET_802_11_DATA_RATE          0x8022
 
 #define HostCmd_RET_802_11_AD_HOC_START       0x802B
 #define HostCmd_RET_802_11_AD_HOC_JOIN        0x802C
 
-#define HostCmd_RET_802_11_QUERY_TKIP_REPLY_CNTRS  0x802e
-#define HostCmd_RET_802_11_ENABLE_RSN              0x802f
-#define HostCmd_RET_802_11_PAIRWISE_TSC       0x8036
-#define HostCmd_RET_802_11_GROUP_TSC          0x8037
 #define HostCmd_RET_802_11_KEY_MATERIAL       0x805e
-
-#define HostCmd_ENABLE_RSN                    0x0001
-#define HostCmd_DISABLE_RSN                   0x0000
-#define TYPE_ANTENNA_DIVERSITY                0xffff
 
 #define HostCmd_ACT_SET                       0x0001
 #define HostCmd_ACT_GET                       0x0000
 
-#define HostCmd_RET_802_11_SET_AFC            0x803c
-#define HostCmd_RET_802_11_GET_AFC            0x803d
-
 #define HostCmd_RET_802_11_AD_HOC_STOP        0x8040
 
-#define HostCmd_RET_802_11_HOST_SLEEP_CFG  	 0x8043
-#define HostCmd_RET_802_11_HOST_SLEEP_AWAKE_CONFIRM 0x8044
-
-#define HostCmd_RET_802_11_BEACON_STOP        0x8049
+#define HostCmd_RET_802_11_HOST_SLEEP_CFG     0x8043
+#define HostCmd_RET_802_11_WAKEUP_CONFIRM     0x8044
 
 #define HostCmd_RET_802_11_MAC_ADDRESS        0x804D
 #define HostCmd_RET_802_11_EEPROM_ACCESS      0x8059
@@ -247,9 +208,6 @@ Change log:
 
 #define HostCmd_RET_802_11D_DOMAIN_INFO          0x805B
 
-#define HostCmd_RET_WMM_ACK_POLICY           0x805C
-#define HostCmd_RET_WMM_PRIO_PKT_AVAIL       0x805D
-
 #define HostCmd_RET_802_11_BG_SCAN_CONFIG    0x806b
 #define HostCmd_RET_802_11_BG_SCAN_QUERY     0x806c
 
@@ -262,11 +220,11 @@ Change log:
 
 #define HostCmd_RET_802_11_TPC_CFG           0x8072
 
-#define HostCmd_RET_802_11_LED_GPIO_CTRL     0x804e
+#define HostCmd_RET_802_11_LED_CONTROL       0x804e
 
-#define HostCmd_RET_802_11_FW_WAKEUP_METHOD	0x8074
+#define HostCmd_RET_802_11_FW_WAKE_METHOD    0x8074
 
-#define HostCmd_RET_802_11_SUBSCRIBE_EVENT	0x8075
+#define HostCmd_RET_802_11_SUBSCRIBE_EVENT   0x8075
 
 #define HostCmd_RET_802_11_RATE_ADAPT_RATESET	0x8076
 
@@ -279,11 +237,18 @@ Change log:
 #define HostCmd_RET_802_11_POWER_ADAPT_CFG_EXT	0x807e
 
 #define HostCmd_RET_802_11_AUTO_TX		0x8082
+
 #define HostCmd_RET_802_11_IBSS_COALESCING_STATUS	0x8083
 
 #define HostCmd_RET_MEM_ACCESS		      0x8086
 
+#define HostCmd_RET_TX_PKT_STATS              0x808d
+
+#define Host_RET_802_11_IBSS_BCN_MONITOR   0x808e
+
 #define HostCmd_RET_802_11_LDO_CONFIG         0x8096
+
+#define HostCmd_RET_VERSION_EXT               0x8097
 
 /** General Result Code*/
 /* OK */
@@ -306,7 +271,7 @@ Change log:
 #define HostCmd_ACT_GEN_WRITE                   0x0001
 #define HostCmd_ACT_GEN_GET                     0x0000
 #define HostCmd_ACT_GEN_SET                     0x0001
-#define HostCmd_ACT_GEN_REMOVE			0x0002
+#define HostCmd_ACT_GEN_REMOVE                  0x0002
 #define HostCmd_ACT_GEN_OFF                     0x0000
 #define HostCmd_ACT_GEN_ON                      0x0001
 
@@ -328,6 +293,7 @@ Change log:
 #define HostCmd_SCAN_TYPE_ACTIVE                0x0000
 #define HostCmd_SCAN_TYPE_PASSIVE               0x0001
 
+/* Radio type definitions for the channel TLV */
 #define HostCmd_SCAN_RADIO_TYPE_BG		0
 #define HostCmd_SCAN_RADIO_TYPE_A		1
 
@@ -336,30 +302,18 @@ Change log:
 #define HostCmd_ACT_MAC_TX_ON                   0x0002
 #define HostCmd_ACT_MAC_LOOPBACK_ON             0x0004
 #define HostCmd_ACT_MAC_WEP_ENABLE              0x0008
-#define HostCmd_ACT_MAC_INT_ENABLE              0x0010
-#define HostCmd_ACT_MAC_MULTICAST_ENABLE        0x0020
-#define HostCmd_ACT_MAC_BROADCAST_ENABLE        0x0040
+#define HostCmd_ACT_MAC_ETHERNETII_ENABLE       0x0010
 #define HostCmd_ACT_MAC_PROMISCUOUS_ENABLE      0x0080
 #define HostCmd_ACT_MAC_ALL_MULTICAST_ENABLE    0x0100
 #define HostCmd_ACT_MAC_STRICT_PROTECTION_ENABLE  0x0400
-#define HostCmd_ACT_MAC_WMM_ENABLE              0x0800
+#define HostCmd_ACT_MAC_ADHOC_G_PROTECTION_ON	  0x2000
 
 /* Define action or option or constant for HostCmd_CMD_MAC_MULTICAST_ADR */
 #define HostCmd_SIZE_MAC_ADR                    6
 #define HostCmd_MAX_MCAST_ADRS                  32
 
-/* Define action or option for HostCmd_CMD_802_11_RADIO_CONTROL */
-#define HostCmd_TYPE_AUTO_PREAMBLE              0x0001
-#define HostCmd_TYPE_SHORT_PREAMBLE             0x0002
-#define HostCmd_TYPE_LONG_PREAMBLE              0x0003
-
-#define TURN_ON_RF                              0x01
 #define RADIO_ON                                0x01
 #define RADIO_OFF                               0x00
-
-#define SET_AUTO_PREAMBLE                       0x05
-#define SET_SHORT_PREAMBLE                      0x03
-#define SET_LONG_PREAMBLE                       0x01
 
 /* Define action or option for CMD_802_11_RF_CHANNEL */
 #define HostCmd_OPT_802_11_RF_CHANNEL_GET       0x00
@@ -374,7 +328,8 @@ Change log:
 
 /** Card Event definition */
 #define MACREG_INT_CODE_DUMMY_HOST_WAKEUP_SIGNAL       0x00000001
-#define MACREG_INT_CODE_LINK_LOSE_NO_SCAN       0x00000003
+#define MACREG_INT_CODE_LINK_LOST_WITH_SCAN     0x00000002
+#define MACREG_INT_CODE_LINK_LOST       	0x00000003
 #define MACREG_INT_CODE_LINK_SENSED             0x00000004
 #define MACREG_INT_CODE_MIB_CHANGED             0x00000006
 #define MACREG_INT_CODE_INIT_DONE               0x00000007
@@ -396,8 +351,9 @@ Change log:
 #define MACREG_INT_CODE_RSSI_HIGH		0x0000001c
 #define MACREG_INT_CODE_SNR_HIGH		0x0000001d
 #define MACREG_INT_CODE_IBSS_COALESCED		0x0000001e
-#define MAC_WATCHDOG_TMOUT_EVENT    	0x00000032
+
 /* Define bitmap conditions for HOST_SLEEP_CFG */
 #define HOST_SLEEP_CFG_CANCEL			0xffffffff
+#define HOST_SLEEP_CFG_WAKEUP_THRU_INTERFACE	0xff
 
 #endif /* _HOST_H_ */

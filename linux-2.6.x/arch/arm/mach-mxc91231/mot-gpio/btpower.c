@@ -3,7 +3,7 @@
  *
  * SCM-A11 implementation of Motorola GPIO API for Bluetooth Power Management.
  *
- * Copyright (C) 2007-2008 Motorola, Inc.
+ * Copyright 2007 Motorola, Inc.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -23,7 +23,6 @@
 /* Date         Author          Comment
  * ===========  ==============  ==============================================
  * 26-Jan-2007  Motorola        Initial revision.
- * 13-Aug-2008  Motorola	GP_AP_C8(BT_RESET_B) toggle workaround for 300uA BT power issue
  */
 
 #include <linux/kernel.h>
@@ -31,35 +30,6 @@
 #include <asm/mot-gpio.h>
 
 #if defined(CONFIG_MOT_FEAT_GPIO_API_BTPOWER)
-
-//#if defined(CONFIG_MACH_NEVIS)
-#include <linux/delay.h>
-
-#define BT_POWER_TOGGLE_DELAY 200 /* jiffies * 10ms */
-#define BT_POWER_TOGGLE_HIGH 1 /* ms */
-
-struct timer_list bt_power_timer;
-
-/**
- * Add a timer to toggle GP_AP_C8 to remove 300uA extra current drain
- */
-void bt_power_timer_fn(unsigned long high)
-{
-	gpio_signal_set_data(GPIO_SIGNAL_BT_POWER, GPIO_DATA_HIGH);
-	mdelay(high);
-	gpio_signal_set_data(GPIO_SIGNAL_BT_POWER, GPIO_DATA_LOW);
-}
-
-void gpio_bluetooth_power_fixup(void)
-{
-	init_timer(&bt_power_timer);
-	bt_power_timer.data = BT_POWER_TOGGLE_HIGH;
-	bt_power_timer.function = bt_power_timer_fn;
-	bt_power_timer.expires = jiffies + BT_POWER_TOGGLE_DELAY;
-	add_timer(&bt_power_timer);
-}
-//#endif /* CONFIG_MACH_NEVIS */
-
 /**
  * Install handler for BT_HOST_WAKE_B interrupt.
  *

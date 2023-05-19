@@ -10,11 +10,13 @@
  * 				of power_ic.h
  * 11/2006      Motorola        Changed timestamp to use secure clock
  * 11/2006      Motorola        Added memory dump support
- * 02/2007      Motorola        Fixed merge issue with secure clock code
  * 02/2007      Motorola        Fixing PC value in panic
+ * 02/2007      Motorola        added hooks to allow power ic driver to be
+ *                              released as a module.
  * 05/2007      Motorola        Emit build label in kernel panic text
- * 03/2008	Motorola	Add mem print log in panic
- * 03/2008	Motorola	Make memory log more flexable
+ * 01/2008	Motorola	Add mem print log in panic
+ * 01/2008	Motorola	Make memory log more flexable.
+ * 03/2008      Motorola        Deleted APR PC.
  */
 
 /*
@@ -36,19 +38,17 @@
 #ifdef CONFIG_MOT_FEAT_FB_PANIC_TEXT
 #include <linux/motfb.h>
 #endif /* CONFIG_MOT_FEAT_FB_PANIC_TEXT */
-#ifdef CONFIG_MOT_POWER_IC_ATLAS
-#include <linux/power_ic_kernel.h>
-#endif /* CONFIG_MOT_POWER_IC_ATLAS */
 #include <linux/rtc.h>
 #include <linux/syscalls.h>
 #include <asm/rtc.h>
+#include <asm/power-ic-api.h>
 #endif /* CONFIG_MOT_FEAT_KPANIC */
 
-#define MOTO_BLD_FLAG "motobldlabel"
-
-#ifdef CONFIG_MOT_FEAT_LOG_SCHEDULE_EVENTS
+#ifdef CONFIG_DEBUG_GNPO
 #include <linux/mem-log.h>
-#endif /* CONFIG_MOT_FEAT_LOG_SCHEDULE_EVENTS */
+#endif
+
+#define MOTO_BLD_FLAG "motobldlabel"
 
 #ifdef CONFIG_MOT_FEAT_KPANIC
 extern int meminfo_read_proc(char *, char **, off_t, int, int *, void *);
@@ -64,7 +64,9 @@ extern char dumppart_name[64];
 extern int fb_panic_text(struct fb_info * fbi, const char * panic_text,
                          long panic_len, int do_timer);
 #endif /* CONFIG_MOT_FEAT_FB_PANIC_TEXT */
+
 #endif /* CONFIG_MOT_FEAT_KPANIC */
+
 
 int panic_timeout;
 int panic_on_oops;
@@ -162,8 +164,8 @@ NORET_TYPE void panic(const char * fmt, ...)
 	va_end(args);
 
 	printk(KERN_EMERG "Kernel panic - not syncing: %s\n",buf);
-
 	bust_spinlocks(0);
+
 #ifdef CONFIG_SMP
 	smp_send_stop();
 #endif
@@ -230,14 +232,15 @@ NORET_TYPE void panic(const char * fmt, ...)
 			label_len = strlen(MOTO_BLD_FLAG"=UNKNOWN");
 			label_len = min(label_len, sizeof(buf) - 1);
 			memcpy(buf, MOTO_BLD_FLAG"=UNKNOWN", label_len);
-		}		
+		}
 		buf_len = label_len;
 		buf_len += snprintf(&(buf[buf_len]), sizeof(buf)-buf_len, "\nKernel panic - not syncing: ");
-//old		buf_len = snprintf(buf, sizeof(buf), "Kernel panic - not syncing: ");
 		va_start(args, fmt);
 		buf_len += vsnprintf(&(buf[buf_len]), sizeof(buf)-buf_len, fmt, args);
 		va_end(args);
-		power_ic_rtc_get_time(&power_ic_time);
+
+		kernel_power_ic_rtc_get_time(&power_ic_time);        
+
 		rtc_time_to_tm((unsigned long)power_ic_time.tv_sec, &rtc_timestamp);
 		do_posix_clock_monotonic_gettime(&uptime);
 		/* displays current time (in ISO 8601 format) and uptime (in seconds) */
@@ -249,24 +252,14 @@ NORET_TYPE void panic(const char * fmt, ...)
 			(unsigned long)(uptime.tv_nsec/USEC_PER_SEC));
 		printk(KERN_EMERG "%s", buf);
 
+
+	
 		/* dump the entire printk buffer to flash */
 		if ((security_mode == MOT_SECURITY_MODE_ENGINEERING) ||
 		    (security_mode == MOT_SECURITY_MODE_NO_SECURITY) ||
 		    ((security_mode == MOT_SECURITY_MODE_PRODUCTION) &&
 		     (production_state == PRE_ACCEPTANCE_ACCEPTANCE) &&
 		     (bound_signature_state == BS_DIS_ENABLED))) {
-
-#ifdef CONFIG_MOT_FEAT_PRINT_PC_ON_PANIC
-			{
-				void* panic_caller_location;
-
-				panic_caller_location = __builtin_return_address(0);
-				if (aprdataprinted == 0) {
-					printk(KERN_ERR "[APR]PanicPC: %p\n", panic_caller_location);
-					aprdataprinted = 1;
-				}
-			}
-#endif
 
 			/* displays current memory statistics; the return value is being ignored */
 			meminfo_read_proc(buf, NULL, 0, 0, NULL, NULL);
@@ -283,7 +276,7 @@ NORET_TYPE void panic(const char * fmt, ...)
                                 printk(KERN_EMERG "Memory dump disabled\n");
 #endif /* CONFIG_MOT_FEAT_MEMDUMP */
 
-#ifdef CONFIG_MOT_FEAT_LOG_SCHEDULE_EVENTS
+#ifdef CONFIG_DEBUG_GNPO
 			/* reuse the static buffer declared above */
 			memset(buf, 0, sizeof(buf));
 			va_start(args, fmt);
@@ -293,7 +286,7 @@ NORET_TYPE void panic(const char * fmt, ...)
 			/* print out the event log if panic triggered by wdog timeout */
 			if (strstr(buf, wdog))
 				mem_print_log();
-#endif /* CONFIG_MOT_FEAT_LOG_SCHEDULE_EVENTS */
+#endif /* CONFIG_DEBUG_GNPO */
 			
 			/* dump the printk log buffer to flash */
 			dump_kpanic(NULL);
@@ -303,12 +296,11 @@ NORET_TYPE void panic(const char * fmt, ...)
 			dump_kpanic(buf);
 		}
 	}
-#ifdef CONFIG_MOT_POWER_IC_ATLAS
-	/* write the panic reason code */
-	if (power_ic_backup_memory_write(POWER_IC_BACKUP_MEMORY_ID_ATLAS_BACKUP_PANIC, 1) < 0) {
-		printk(KERN_EMERG "Error: Could not write the panic reason code\n");
-	}
-#endif /* CONFIG_MOT_POWER_IC_ATLAS */
+
+    if(kernel_power_ic_backup_memory_write(KERNEL_BACKUP_MEMORY_ID_PANIC, 1) < 0) {
+        printk(KERN_EMERG "Error: Could not write the panic reason code\n");
+    }
+
 	if ((security_mode == MOT_SECURITY_MODE_ENGINEERING) || (security_mode == MOT_SECURITY_MODE_NO_SECURITY)) {
 #ifdef CONFIG_MOT_FEAT_FB_PANIC_TEXT
 		/* display panic text to the screen */

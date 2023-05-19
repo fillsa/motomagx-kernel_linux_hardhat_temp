@@ -3,10 +3,13 @@
  *
  *  Copyright (C) 1991, 1992  Linus Torvalds
  *
- *  Copyright 2006 Motorola Inc.
+ *  Copyright 2006-2007 Motorola Inc.
  * Date         Author          Comment
  * 10/2006      Motorola        Added DRM MAC security support & 
  *				APLogger suppor
+ *
+ * 02/2007      Motorola        Removed DRM MAC security support
+ *
  */
 
 /*
@@ -924,16 +927,7 @@ static task_t *copy_process(unsigned long clone_flags,
 	p->utime = p->stime = 0;
 	p->lock_depth = -1;		/* -1 = no lock */
 	do_posix_clock_monotonic_gettime(&p->start_time);
-#ifdef CONFIG_MOT_FEAT_SECURE_DRM
-	/* Child threads must get the same permissions as the parent.
-	   The security member will get cleared across an exec boundary
-	   so, this should only give permission to other threads in the
-	   same process group. */
-
-	p->security = current->security;
-#else  /* CONFIG_MOT_FEAT_SECURE_DRM */
 	p->security = NULL;
-#endif /* CONFIG_MOT_FEAT_SECURE_DRM */
 	p->io_context = NULL;
 	p->io_wait = NULL;
 	p->audit_context = NULL;

@@ -1,7 +1,7 @@
 /*
  *  rtc_sw.c - EZX RTC Stopwatch
  *
- *  Copyright (C) 2006-2008 Motorola, Inc.
+ *  Copyright (C) 2006-2007 Motorola, Inc.
  *
  *  This program is free software; you can redistribute it and/or modify
  *  it under the terms of the GNU General Public License as published by
@@ -47,15 +47,18 @@
  * 01/04/2007    Motorola       Power management support to account for time in DSM
  * 02/23/2007    Motorola       Bug fix: Incorrectly updated clock when resume was
  *                              called without a suspend powering down the phone.
+ * 03/07/2007	 Motorola	Update fuzzy timer implementation to match EZX
  * 03/08/2007    Motorola       Replaced do_settimeofday() with
  *				set_normalized_timespec() in rtcsw_resume().
  * 03/16/2007    Motorola       Fixed incorrect wraparound handlings.
  * 03/27/2007    Motorola       Added fix to maintain interrupt state in resume
  *                              routine.
  * 04/29/2007    Motorola       Added support for GPT running at 32KHz.
- * 10/18/2007    Motorola	re-align to xtime when xtime changed somewhere for LJ6.1.
- * 11/15/2007    Motorola       Upmerge from 6.1.(re-align to xtime when xtime changed somewhere.)
- * 12/17/2008    Motorola       Calculate the time drift and make the time accurate.
+ * 10/25/2007    Motorola       Improved periodic job state collection for debug.
+ * 11/13/2007    Motorola	Resloved display time in CLI is one min delayed from 
+ * 				phone clock, re-align to xtime when xtime changed
+ * 				somewhere.	
+ * 12/3/2007     Motorola       Added API to get closest RTC timeout
  */
 
 
@@ -208,6 +211,9 @@ static unsigned int rtc_sw_poll(struct file *file, poll_table *wait)
                 /* request is ready to be handled */
                 req->running--;
                 req->pending++;
+#ifdef CONFIG_MOT_FEAT_PM_STATS
+                mpm_collect_pj_stat(1, current->comm, current->pid);
+#endif
                 RTC_SW_DPRINTK("\nEPIT: %s() %d - \"%s\" running - %d pending - %d\n", __FUNCTION__, current->pid, current->comm,req->running, req->pending ); 
                 data = 1;
                 break;
@@ -490,12 +496,6 @@ static unsigned long inline ticks_to_ms(unsigned long ticks)
     return (unsigned long)((tmp * 1000) / EPIT_COUNTER_TICK_RATE);
 }
 
-static unsigned long inline drift_in_ns(unsigned long ticks)
-{
-    unsigned long long tmp  = (unsigned long long)ticks;
-
-    return (unsigned long)(((tmp * 1000) % EPIT_COUNTER_TICK_RATE) * 1000000 / EPIT_COUNTER_TICK_RATE);                                                                                                                                                         
-}
 
 static unsigned long inline hundredths_to_ticks(unsigned long hun)
 {
@@ -567,11 +567,19 @@ static void inline update_one_request(struct rtc_sw_request *req, unsigned long 
 
             tasklet_schedule(&req->callback_data.task_data.task);
             req->remain = 0;
+#ifdef CONFIG_MOT_FEAT_PM_STATS
+            mpm_collect_pj_stat((unsigned long)req->callback_data.task_data.orig_func, \
+                                "NULL", 1);
+#endif
         } else {
             RTC_SW_DPRINTK("\nEPIT: %s() waking up process %d - \"%s\"\n", __FUNCTION__, req->callback_data.process->pid, req->callback_data.process->comm);
             /* wake up the process */
             wake_up_process(req->callback_data.process);
             req->remain = req->interval;
+#ifdef CONFIG_MOT_FEAT_PM_STATS
+            mpm_collect_pj_stat(1, req->callback_data.process->comm, \
+                                req->callback_data.process->pid);
+#endif
         }
     } else {
         /* subtract the time that has elapsed */
@@ -681,7 +689,41 @@ static void find_new_request(void)
 }
 
 /*
- * Grab the first fuzzy request we see. Assume we have the request lock.
+ * Get the least common multiple.
+ */
+static unsigned long get_least_multiple(unsigned long first, unsigned long second)
+{
+    unsigned long num1, num2;
+    u64 result;
+    unsigned long temp;
+
+    if (second >= first) {
+        temp = second;
+        second = first;
+        first = temp;
+    }
+
+    num1 = first;
+    num2 = second;
+
+    while (second != 0) {
+        temp = first % second;
+        first = second;
+        second = temp;
+    }
+
+    if (first != 0) {
+        result = num1 / first;
+        result = result * (u64)num2;
+    } else {
+        result = -1;
+    }
+
+    return result;
+}
+
+/*
+ * Grab the first fuzzy request in sw timer list.  Assume we have the request lock.
  */
 static inline struct rtc_sw_request *get_fuzz_req(void)
 {
@@ -694,6 +736,32 @@ static inline struct rtc_sw_request *get_fuzz_req(void)
         if (req->type == RTC_SW_FUZZ) {
             fuzz = req;
             break;
+        }
+        req = req->next;
+    }
+
+    return fuzz;
+}
+
+/*
+ * Grab the most closely aligned fuzzy request. Assume we have the request lock, least multiple version.
+ */
+static inline struct rtc_sw_request *get_fuzz_req_least_multiple(unsigned long interval)
+{
+    unsigned long lowest = LONG_MAX;
+    u64 temp;
+    struct rtc_sw_request *req = NULL;
+    struct rtc_sw_request *fuzz = NULL;
+
+    req = rtc_sw_request_head;
+
+    while (req != NULL) {
+        if (req->type == RTC_SW_FUZZ) {
+            temp =  get_least_multiple(req->interval/10000, interval/10000);
+            if (temp < lowest) {
+                    lowest = temp;
+            fuzz = req;
+            }
         }
         req = req->next;
     }
@@ -758,10 +826,10 @@ unsigned long rtc_sw_internal_to_ms(unsigned long ticks)
 }
 EXPORT_SYMBOL(rtc_sw_internal_to_ms);
 
-/*
- * rtc_sw_fuzz_req_realign
+/* 
+ * rtc_sw_fuzz_req_realign 
  *
- * This function is called when xtime is changed somewhere else and
+ * This function is called when xtime is changed somewhere else and 
  * consequently the fuzz request originally alignment is broken.
  *
  * We then use this function to re-align all the fuzz requests to the
@@ -769,71 +837,64 @@ EXPORT_SYMBOL(rtc_sw_internal_to_ms);
  */
 void rtc_sw_fuzz_req_realign(void)
 {
-        unsigned long slice;
-        unsigned long hundredths;
-        unsigned long tmp;
-        struct rtc_sw_request *req = NULL;
-        struct rtc_sw_request *fuzz_list = NULL;
+	unsigned long slice;
+	unsigned long hundredths;
+	unsigned long tmp;
+	unsigned long ticks;
+	struct rtc_sw_request *req = NULL;
+	struct rtc_sw_request *fuzz_list = NULL;
 
-       spin_lock_irq(&request_lock);
-        *_reg_EPIT_EPITCR &= ~EPITCR_EN;
+	spin_lock_irq(&request_lock);
+	*_reg_EPIT_EPITCR &= ~EPITCR_EN;
 
-        /* if no fuzz req, return quickly */
-        req = get_fuzz_req();
-        if (req == NULL)
-                goto out;
+	/* if no fuzz req, return quickly */
+	req = get_fuzz_req();
+	if (req == NULL)
+		goto out;
 
-        /* Get interval since the last time we updated the
-         * request list. If the list is empty slice is 0. */
-        slice = get_slice_passed();
+	/* Get interval since the last time we updated the
+	 * request list. If the list is empty slice is 0. */
+	slice = get_slice_passed();
 
-        /* update the list before we insert another request */
-        if (slice) {
-                update_request_list(slice);
-        }
+	/* update the list before we insert another request */
+	if (slice) {
+		update_request_list(slice);
+	}
 
-      /* kick out the fuzz requests to fuzz_list */
-        while (req) {
-                detach_from_list(req, LEAVE_RUNNING);
-                req->next = fuzz_list;
-                fuzz_list = req;
+	/* kick out the fuzz requests to fuzz_list */
+	while (req) {
+		detach_from_list(req, LEAVE_RUNNING);
+		req->next = fuzz_list;
+		fuzz_list = req;
 
-                req = get_fuzz_req();
-        }
+		req = get_fuzz_req();
+	}
 
-        /* re-align each req in fuzz_list, and re-insert the req */
-        hundredths = (60 * 100) - ((xtime.tv_sec % 60) * 100 +
-                        xtime.tv_nsec / 10000000);
-        tmp = hundredths_to_ticks(hundredths);
+	/* re-align each req in fuzz_list, and re-insert the req */
+	hundredths = (60 * 100) - ((xtime.tv_sec % 60) * 100 +
+			xtime.tv_nsec / 10000000);
+	tmp = hundredths_to_ticks(hundredths);
 
+	req = fuzz_list;
+	while (fuzz_list) {
+		fuzz_list = req->next;
 
-        req = fuzz_list;
-        while (fuzz_list) {
-                fuzz_list = req->next;
+		req->remain = tmp % req->interval;
+		request_add(req);
+		req = fuzz_list;
+	}
 
-                req->remain = tmp % req->interval;
-                request_add(req);
-                req = fuzz_list;
-        }
+	/* reschedule the next stopwatch interrupt */
+	/* req is now the next request that needs to be scheduled */
+	req = get_lowest_request();
 
-        /* reschedule the next stopwatch interrupt */
-        /* req is now the next request that needs to be scheduled */
-        req = get_lowest_request();
-
-        put_request_in_use(req);
+	put_request_in_use(req);
 
 out:
-        /* resume the counter */
-        *_reg_EPIT_EPITCR |= EPITCR_EN;
-        spin_unlock_irq(&request_lock);
+	/* resume the counter */
+	*_reg_EPIT_EPITCR |= EPITCR_EN;
+	spin_unlock_irq(&request_lock);
 }
-
-
-
-
-
-
-
 
 static int rtc_sw_ioctl(struct inode *inode, struct file *file,
                         unsigned int cmd, unsigned long arg)
@@ -969,7 +1030,7 @@ static int rtc_sw_ioctl(struct inode *inode, struct file *file,
         }
         
         /* check if there is a fuzzy request in the list */
-        fuzz = get_fuzz_req();
+        fuzz = get_fuzz_req_least_multiple(req->interval);
         
         if (fuzz != NULL) {
             /* sync with the previous fuzzy request */
@@ -980,9 +1041,10 @@ static int rtc_sw_ioctl(struct inode *inode, struct file *file,
              * This is done for the case of a CLI fuzzy request.
              * The CLI application will want to wake up on the
              * turn of each minute to update the clock. */
+            /* FIXME: no protection for xtime changing later */
             hundredths = (60 * 100) - ((xtime.tv_sec % 60) * 100 +
                                        xtime.tv_nsec / 10000000);
-             req->remain = hundredths_to_ticks(hundredths) % req->interval;
+            req->remain = hundredths_to_ticks(hundredths) % req->interval;
         }
         
         request_add(req);
@@ -1043,7 +1105,11 @@ static int rtc_sw_ioctl(struct inode *inode, struct file *file,
         spin_lock_irq(&request_lock);
         
         RTC_SW_DPRINTK("\nEPIT: %s() RTC_SW_JOB_DONE called from %d - \"%s\" \n", __FUNCTION__, current->pid, current->comm);
-        
+      
+#ifdef CONFIG_MOT_FEAT_PM_STATS 
+        mpm_collect_pj_stat(0, current->comm, current->pid);
+#endif
+ 
         req = rtc_sw_request_head;
         
         /* set the APP_SLEEP_READY status bit */
@@ -1290,6 +1356,11 @@ static void rtc_sw_task_tasklet_callback(unsigned long data)
 
     RTC_SW_DPRINTK("\nEPIT: %s() tasklet done jobs_running %d\n", __FUNCTION__,jobs_running);
 
+#ifdef CONFIG_MOT_FEAT_PM_STATS
+    mpm_collect_pj_stat((unsigned long)task->callback_data.task_data.orig_func, \
+                        "NULL", 0);
+#endif
+
     if(rtc_sw_periodic_jobs_running() == PJ_NOT_RUNNING) {
         RTC_SW_DPRINTK("\nEPIT: %s() Done Going to sleep\n", __FUNCTION__);
         mpm_periodic_jobs_done();
@@ -1340,6 +1411,20 @@ void rtc_sw_task_schedule(unsigned long offset, rtc_sw_task_t * task)
     spin_unlock_irqrestore(&request_lock, flags);
 }
 EXPORT_SYMBOL(rtc_sw_task_schedule);
+
+unsigned int rtc_sw_get_closest_timeout(void)
+{
+    unsigned int timeout = 0;
+    struct rtc_sw_request * req;
+
+    spin_lock(&request_lock);
+    req = get_lowest_request();
+    if(req)
+        timeout = req->remain;
+    spin_unlock(&request_lock);
+    return ticks_to_ms(timeout);
+}
+EXPORT_SYMBOL(rtc_sw_get_closest_timeout);
 
 static struct file_operations rtc_sw_fops = {
         .owner          = THIS_MODULE,
@@ -1503,7 +1588,7 @@ static int rtcsw_resume(struct device *dev, u32 level)
                 tv.tv_nsec = xtime.tv_nsec;
 
                 tv.tv_sec += timediffms / 1000;
-                tv.tv_nsec = tv.tv_nsec + (timediffms % 1000) * 1000000 + drift_in_ns(rtc_sw_dsm_timestamp - curtime);
+                tv.tv_nsec += (timediffms % 1000) * 1000000;
 
 		write_seqlock_irqsave(&xtime_lock, flags);
 		set_normalized_timespec(&wall_to_monotonic, wall_to_monotonic.tv_sec + xtime.tv_sec - tv.tv_sec, wall_to_monotonic.tv_nsec + xtime.tv_nsec - tv.tv_nsec);

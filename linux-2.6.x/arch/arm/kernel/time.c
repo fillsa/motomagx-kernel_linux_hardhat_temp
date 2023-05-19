@@ -1,9 +1,9 @@
 /*
  *  linux/arch/arm/kernel/time.c
  *
- *  Copyright (C) 2007 Motorola, Inc.
  *  Copyright (C) 1991, 1992, 1995  Linus Torvalds
  *  Modifications for ARM (C) 1994-2001 Russell King
+ *  Copyright (C) 2007 Motorola, Inc.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 as
@@ -18,9 +18,7 @@
  *              "A Kernel Model for Precision Timekeeping" by Dave Mills
  *  2007-10-18  Motorola
  *              Add a hook to re-align rtc_fuzz requests to xtime.
- *  2007-11-15  Motorola
- *              Upmrege from 6.1 ( Add a hook to re-align rtc_fuzz requests to xtime). 
-*/
+ */
 #include <linux/config.h>
 #include <linux/module.h>
 #include <linux/kernel.h>
@@ -323,9 +321,8 @@ int do_settimeofday(struct timespec *tv)
 	set_normalized_timespec(&xtime, sec, nsec);
 	set_normalized_timespec(&wall_to_monotonic, wtm_sec, wtm_nsec);
 
-        /* xtime was changed, need to realign rtc_sw fuzz requests */
-        rtc_sw_fuzz_req_realign();
-
+	/* xtime was changed, need to realign rtc_sw fuzz requests */
+	rtc_sw_fuzz_req_realign();
 
 	time_adjust = 0;		/* stop active adjtime() */
 	time_status |= STA_UNSYNC;

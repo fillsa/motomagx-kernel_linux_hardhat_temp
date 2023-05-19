@@ -30,8 +30,8 @@
  *
  * 04-15-2007   update part_read_distfix function with reason_code for CONFIG_MOT_FEAT_NAND_RDDIST
  *		feature
- * 01-03-2008	initialize rsvdblock_offset to avoid this variable being used without initialization. 
- * 02-26-2008   change flash rsvblock address for xpixl
+ * 12-20-2007	initialize rsvdblock_offset to avoid this variable being used without initialization. 
+ * 01-15-2008   Add support for new keypad
  */	
 
 #include <linux/module.h>
@@ -53,22 +53,14 @@
  * reserved block offset 
  * the last NAND partition will be used as reserved blocks 
  */
-#if defined(CONFIG_MACH_PICO) || defined(CONFIG_MACH_MARCO) || defined(CONFIG_MACH_NEVIS)
-unsigned long rsvdblock_offset = 0x07ce0000;
-
-#elif defined(CONFIG_MACH_XPIXL)
-unsigned long rsvdblock_offset = 0x1f560000;
-
-#else
-/* 
- * ATTENTION: rsvdblock_offset should be initialized here.
- * You can refer to the above initialization for Pico/Marco.
- * Find the correct value in bootup kernel log.
- */
-unsigned long rsvdblock_offset;
+#if defined(CONFIG_MACH_ELBA) || defined(CONFIG_MACH_PIANOSA)
+#define PRODUCT_RSV_OFFSET 0x07ce0000
 #endif
-
-#endif /* CONFIG_MTD_NAND_BBM */
+#ifdef CONFIG_MACH_KEYWEST
+#define PRODUCT_RSV_OFFSET 0x0fa60000
+#endif 
+unsigned long rsvdblock_offset = PRODUCT_RSV_OFFSET;
+#endif
 
 #ifdef CONFIG_MOT_FEAT_KPANIC
 struct mtd_info *kpanic_partition = NULL;
@@ -651,9 +643,10 @@ int add_mtd_partitions(struct mtd_info *master,
 				panic("%s's \"rsv\" partition does not exist, NAND Bad Block cann't be handled!\n",
 					master->name);
 
-			if (rsvdblock_offset != slave->offset)
-				printk(KERN_ERR "BUG: rsvdblock_offset (0x%08x) will be re-initialized to 0x%08x\n", rsvdblock_offset, slave->offset);
 			rsvdblock_offset = slave->offset;
+			if (rsvdblock_offset != PRODUCT_RSV_OFFSET)
+				printk (KERN_ERR "!!!!!!!rsvdblock_offset:0x%08x,PRODUCT_RSV_OFFSET:0x%08x\n",
+						rsvdblock_offset,PRODUCT_RSV_OFFSET);
 			printk (KERN_INFO "%s's capacity:%dMB, reserved block offset:0x%08x\n",
 					master->name, (master->size/(1024*1024)), rsvdblock_offset);
 		

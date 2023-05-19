@@ -119,10 +119,18 @@ wlan_setup_station_hw(wlan_private * priv)
             goto done;
         }
 
-        SetMacPacketFilter(priv);
+        ret = PrepareAndSendCommand(priv,
+                                    HostCmd_CMD_MAC_CONTROL,
+                                    0, HostCmd_OPTION_WAITFORRSP, 0,
+                                    &adapter->CurrentPacketFilter);
+
+        if (ret) {
+            ret = WLAN_STATUS_FAILURE;
+            goto done;
+        }
 
         ret = PrepareAndSendCommand(priv,
-                                    HostCmd_CMD_802_11_FW_WAKEUP_METHOD,
+                                    HostCmd_CMD_802_11_FW_WAKE_METHOD,
                                     HostCmd_ACT_GET,
                                     HostCmd_OPTION_WAITFORRSP, 0,
                                     &priv->adapter->fwWakeupMethod);
@@ -185,8 +193,8 @@ init_sync_objects(wlan_private * priv)
 
 #ifdef REASSOCIATION
     /* Initialize the timer for the reassociation */
-    InitializeTimer(&Adapter->MrvDrvTimer, MrvDrvTimerFunction, priv);
-    Adapter->TimerIsSet = FALSE;
+    InitializeTimer(&Adapter->MrvDrvTimer, MrvDrvReassocTimerFunction, priv);
+    Adapter->ReassocTimerIsSet = FALSE;
 #endif /* REASSOCIATION */
 
     return;
@@ -266,12 +274,13 @@ wlan_init_adapter(wlan_private * priv)
     Adapter->ATIMEnabled = FALSE;
 
     Adapter->MediaConnectStatus = WlanMediaStateDisconnected;
+
 #ifdef WPRM_DRV
     WPRM_DRV_TRACING_PRINT();
     /* Stop Traffic meter */
     wprm_traffic_meter_exit(priv);
 #endif
-    Adapter->LinkSpeed = MRVDRV_LINK_SPEED_1mbps;
+
     memset(Adapter->CurrentAddr, 0xff, MRVDRV_ETH_ADDR_LEN);
 
     /* Status variables */
@@ -305,7 +314,6 @@ wlan_init_adapter(wlan_private * priv)
 #endif
     Adapter->pBeaconBufEnd = Adapter->beaconBuffer;
 
-    Adapter->Prescan = CMD_ENABLED;
     Adapter->HisRegCpy |= HIS_TxDnLdRdy;
 
     memset(&Adapter->CurBssParams, 0, sizeof(Adapter->CurBssParams));
@@ -318,7 +326,11 @@ wlan_init_adapter(wlan_private * priv)
 
     Adapter->RadioOn = RADIO_ON;
 #ifdef REASSOCIATION
+#if (WIRELESS_EXT >= 18)
+    Adapter->Reassoc_on = FALSE;
+#else
     Adapter->Reassoc_on = TRUE;
+#endif
 #endif /* REASSOCIATION */
     Adapter->TxAntenna = RF_ANTENNA_2;
     Adapter->RxAntenna = RF_ANTENNA_AUTO;
@@ -326,11 +338,6 @@ wlan_init_adapter(wlan_private * priv)
     Adapter->HWRateDropMode = HW_TABLE_RATE_DROP;
     Adapter->Is_DataRate_Auto = TRUE;
     Adapter->BeaconPeriod = MRVDRV_BEACON_INTERVAL;
-
-    // set default value of capInfo.
-#define SHORT_PREAMBLE_ALLOWED		1
-    memset(&Adapter->capInfo, 0, sizeof(Adapter->capInfo));
-    Adapter->capInfo.ShortPreamble = SHORT_PREAMBLE_ALLOWED;
 
     Adapter->AdhocChannel = DEFAULT_AD_HOC_CHANNEL;
 
@@ -340,24 +347,16 @@ wlan_init_adapter(wlan_private * priv)
     Adapter->ListenInterval = MRVDRV_DEFAULT_LISTEN_INTERVAL;
 
     Adapter->PSState = PS_STATE_FULL_POWER;
-#ifdef MOTO_DBG
-    PRINTM(INFO, "PSState set to PS_STATE_AWAKE - KO for DSM\n");
-#endif
     Adapter->NeedToWakeup = FALSE;
     Adapter->LocalListenInterval = 0;   /* default value in firmware will be used */
     Adapter->fwWakeupMethod = WAKEUP_FW_UNCHANGED;
 
     Adapter->IsDeepSleep = FALSE;
+    Adapter->IsAutoDeepSleepEnabled = FALSE;
 
     Adapter->bWakeupDevRequired = FALSE;
-#ifdef MOTO_DBG
-    PRINTM(INFO, "bWakeupDevRequired set to FALSE - KO for DSM\n");
-#endif
-    Adapter->bHostSleepConfigured = FALSE;
     Adapter->WakeupTries = 0;
-#ifdef MOTO_DBG
-    PRINTM(INFO, "WakeupTries set to 0 - OK for DSM\n");
-#endif
+    Adapter->bHostSleepConfigured = FALSE;
     Adapter->HSCfg.conditions = HOST_SLEEP_CFG_CANCEL;
     Adapter->HSCfg.gpio = 0;
     Adapter->HSCfg.gap = 0;
@@ -367,19 +366,13 @@ wlan_init_adapter(wlan_private * priv)
     Adapter->adhoc_grate_enabled = FALSE;
 
     Adapter->IntCounter = Adapter->IntCounterSaved = 0;
-    memset(&Adapter->wmm, 0, sizeof(WMM_DESC));
-    for (i = 0; i < MAX_AC_QUEUES; i++)
-        INIT_LIST_HEAD((struct list_head *) &Adapter->wmm.TxSkbQ[i]);
-    INIT_LIST_HEAD((struct list_head *) &Adapter->RxSkbQ);
-    Adapter->gen_null_pkg = TRUE;       /*Enable NULL Pkg generation */
 
-    INIT_LIST_HEAD((struct list_head *) &Adapter->TxSkbQ);
-    Adapter->TxSkbNum = 0;
+    INIT_LIST_HEAD((struct list_head *) &Adapter->RxSkbQ);
+
+    Adapter->gen_null_pkg = TRUE;       /*Enable NULL Pkg generation */
 
     Adapter->fwstate = FW_STATE_NREADY;
     init_waitqueue_head(&Adapter->cmd_EncKey);
-
-    Adapter->EncryptionStatus = Wlan802_11WEPDisabled;
 
     spin_lock_init(&Adapter->CurrentTxLock);
 
@@ -457,9 +450,9 @@ wlan_free_adapter(wlan_private * priv)
     FreeTimer(&Adapter->MrvDrvCommandTimer);
 #ifdef REASSOCIATION
     PRINTM(INFO, "Free MrvDrvTimer\n");
-    if (Adapter->TimerIsSet) {
+    if (Adapter->ReassocTimerIsSet) {
         CancelTimer(&Adapter->MrvDrvTimer);
-        Adapter->TimerIsSet = FALSE;
+        Adapter->ReassocTimerIsSet = FALSE;
     }
     FreeTimer(&Adapter->MrvDrvTimer);
 #endif /* REASSOCIATION */
@@ -486,108 +479,6 @@ wlan_free_adapter(wlan_private * priv)
     LEAVE();
 }
 
-/** 
- *  @brief This function handles the timeout of command sending.
- *  It will re-send the same command again.
- *  
- *  @param FunctionContext    A pointer to FunctionContext
- *  @return 	   n/a
- */
-void
-MrvDrvCommandTimerFunction(void *FunctionContext)
-{
-    wlan_private *priv = (wlan_private *) FunctionContext;
-    wlan_adapter *Adapter = priv->adapter;
-    CmdCtrlNode *pTempNode;
-    HostCmd_DS_COMMAND *CmdPtr;
-
-    ENTER();
-
-    PRINTM(CMND, "Command timeout.\n");
-
-    Adapter->CommandTimerIsSet = FALSE;
-
-    if (!Adapter->num_cmd_timeout)
-        Adapter->dbg.num_cmd_timeout++;
-
-    pTempNode = Adapter->CurCmd;
-
-    if (pTempNode == NULL) {
-        PRINTM(INFO, "CurCmd Empty\n");
-        goto exit;
-    }
-
-    CmdPtr = (HostCmd_DS_COMMAND *) pTempNode->BufVirtualAddr;
-    if (CmdPtr == NULL) {
-        goto exit;
-    }
-
-    if (CmdPtr->Size) {
-        Adapter->dbg.TimeoutCmdId = wlan_cpu_to_le16(CmdPtr->Command);
-        Adapter->dbg.TimeoutCmdAct =
-            wlan_cpu_to_le16(*(u16 *) ((u8 *) CmdPtr + S_DS_GEN));
-        PRINTM(CMND, "Timeout cmd = 0x%x, act = 0x%x\n",
-               Adapter->dbg.TimeoutCmdId, Adapter->dbg.TimeoutCmdAct);
-    }
-#define MAX_CMD_TIMEOUT_COUNT	5
-    Adapter->num_cmd_timeout++;
-    if (Adapter->num_cmd_timeout > MAX_CMD_TIMEOUT_COUNT) {
-        PRINTM(FATAL, "num_cmd_timeout=%d\n", Adapter->num_cmd_timeout);
-        wlan_fatal_error_handle(priv);
-        goto exit;
-    }
-
-    /* Restart the timer to trace command response again */
-    ModTimer(&Adapter->MrvDrvCommandTimer, MRVDRV_TIMER_1S);
-    Adapter->CommandTimerIsSet = TRUE;
-
-    /* Wake up main thread to read int status register */
-    Adapter->IntCounter++;
-    wake_up_interruptible(&priv->MainThread.waitQ);
-
-  exit:
-    LEAVE();
-    return;
-}
-
-#ifdef REASSOCIATION
-/** 
- *  @brief This function triggers re-association by waking up
- *  re-assoc thread.
- *  
- *  @param FunctionContext    A pointer to FunctionContext
- *  @return 	   n/a
- */
-void
-MrvDrvTimerFunction(void *FunctionContext)
-{
-    wlan_private *priv = (wlan_private *) FunctionContext;
-    wlan_adapter *Adapter = priv->adapter;
-    OS_INTERRUPT_SAVE_AREA;
-
-    ENTER();
-
-    PRINTM(INFO, "MrvDrvTimer fired.\n");
-    Adapter->TimerIsSet = FALSE;
-    if (Adapter->PSState != PS_STATE_FULL_POWER) {
-        /* wait until Exit_PS command returns */
-        Adapter->TimerIsSet = TRUE;
-        ModTimer(&Adapter->MrvDrvTimer, MRVDRV_TIMER_1S);
-        PRINTM(INFO, "MrvDrvTimerFunction(PSState=%d) waiting"
-               "for Exit_PS done\n", Adapter->PSState);
-        LEAVE();
-        return;
-    }
-
-    PRINTM(INFO, "Waking Up the Reassoc Thread\n");
-
-    wake_up_interruptible(&priv->ReassocThread.waitQ);
-
-    LEAVE();
-    return;
-}
-#endif /* REASSOCIATION */
-
 #define CUS_EVT_FATAL_ERR	"EVENT=FATAL_ERROR"
 void
 wlan_fatal_error_handle(wlan_private * priv)
@@ -611,10 +502,6 @@ wlan_fatal_error_handle(wlan_private * priv)
         memset(wrqu.ap_addr.sa_data, 0x00, ETH_ALEN);
         wrqu.ap_addr.sa_family = ARPHRD_ETHER;
         wireless_send_event(priv->wlan_dev.netdev, SIOCGIWAP, &wrqu, NULL);
-#ifdef MOTO_DBG
-        PRINTM(MOTO_MSG,
-               "wlan_fatal_error_handle: Disconnected event sent to upper layer.\n");
-#endif
 
         /* Free Tx and Rx packets */
         /* report disconnect to upper layer */
@@ -629,13 +516,7 @@ wlan_fatal_error_handle(wlan_private * priv)
     }
     //clean up host sleep flags
     Adapter->bWakeupDevRequired = FALSE;
-#ifdef MOTO_DBG
-    PRINTM(INFO, "bWakeupDevRequired set to FALSE - KO for DSM\n");
-#endif
     Adapter->WakeupTries = 0;
-#ifdef MOTO_DBG
-    PRINTM(INFO, "WakeupTries set to 0 - OK for DSM\n");
-#endif
     //Release all the pending command               
     if (priv->adapter->CurCmd) {
         /* set error code that will be transferred back to PrepareAndSendCommand() */
@@ -660,10 +541,6 @@ wlan_fatal_error_handle(wlan_private * priv)
         CleanupAndInsertCmd(priv, CmdNode);
     }
     send_iwevcustom_event(priv, CUS_EVT_FATAL_ERR);
-#ifdef MOTO_DBG
-    PRINTM(MOTO_MSG,
-           "wlan_fatal_error_handle: Fatal error event sent to upper layer.\n");
-#endif
 
     LEAVE();
     return;

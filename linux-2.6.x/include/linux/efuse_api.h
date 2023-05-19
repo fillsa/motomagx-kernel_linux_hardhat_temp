@@ -1,7 +1,7 @@
 /* 
  * efuse_api.h - E-Fuse driver external definitions and types
  *
- * Copyright (C) 2005-2007 Motorola, Inc.
+ * Copyright (C) 2006-2007 Motorola, Inc.
  *
  */
 
@@ -29,7 +29,6 @@
  * 05-Sept-2005 Motorola        Modified header.
  * 04-Oct-2006  Motorola        Modified header.
  * 24-Apr-2007  Motorola        Added SCS1 access.
- * 18-Aug-2007  Motorola        Add comments.
  */
 
 #ifndef  _EFUSE_API_H_

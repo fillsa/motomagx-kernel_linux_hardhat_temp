@@ -34,7 +34,7 @@
  * 10/06/2006   Motorola  MBM support 
  * 12/14/2006   Motorola  Added new ATAGs.
  * 05/01/2007   Motorola  Add cli logo support.
- * 07/10/2008   Motorola  Add build label support.
+ * 04/16/2008   Motorola  Add build label support
  *
  */
 
@@ -298,13 +298,8 @@ static void mot_set_logo_version_common(u8 *dest, const u8 *src, u32 size)
 
 void mot_set_logo_version(const u8 *logo_version_string, u32 logo_version_size)
 {
-#if defined(CONFIG_MACH_ASCENSION) || defined(CONFIG_MACH_LIDO) || defined(CONFIG_MACH_SAIPAN)
-	memcpy (logo_version, logo_version_string, MOT_LOGO_VERSION_SIZE_OLD);
-	logo_version[MOT_LOGO_VERSION_SIZE_OLD] = 0;
-#else
         mot_set_logo_version_common(logo_version, logo_version_string,
                                     logo_version_size);
-#endif
 }
 
 EXPORT_SYMBOL(mot_set_logo_version);
@@ -506,14 +501,12 @@ static int get_bootinfo(char *buf, char **start,
     EMIT_MEMORY_TYPE();
     EMIT_BATTERY_STATUS_AT_BOOT();
     EMIT_BOOT_FREQUENCY();
-#if !defined(CONFIG_MACH_ASCENSION) || !defined(CONFIG_MACH_LIDO) || !defined(CONFIG_MACH_SAIPAN)
     EMIT_MEDL_PANEL_TAG_ID();
     EMIT_MEDL_PANEL_PIXEL_FORMAT();
     EMIT_MEDL_PANEL_STATUS();
     EMIT_MBM_BOOTUP_TIME();
     EMIT_BP_LOADER_VERSION();
     EMIT_CLI_LOGO_VERSION();
-#endif
 
     return len;
 }

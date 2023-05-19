@@ -16,13 +16,13 @@
  *
  * Date         Author    Comment
  * ----------   --------  ---------------------
- * 03/02/2007   Motorola  Add Lido boardrev check for MMC.
- * 02/28/2007   Motorola  Control which SDHCs are assigned to MMC.
  * 10/06/2006   Motorola  Remove ptrace support
  * 11/28/2006   Motorola  Add support for Marvell WiFi on SDHC2
- * 03/11/2007   Motorola  Control which SDHCs are assigned to MMC
+ * 11/28/2006   Motorola  Added FSL IPCv2 changes for WFN487
+ * 02/28/2007   Motorola  Control which SDHCs are assigned to MMC.
+ * 03/02/2007   Motorola  Add Lido boardrev check for MMC.
  * 04/27/2007   Motorola  Integrated FSL SDMA changes
- * 05/30/2007   Motorola  Updated mxc_sdma_get_script_info function
+ * 10/24/2007   Motorola  Integrated changes related to FSL SS13 patch
  *
  */
 #include <linux/config.h>
@@ -32,14 +32,16 @@
 #include <linux/device.h>
 
 #include <asm/hardware.h>
-#ifdef CONFIG_MOT_FEAT_BRDREV
-#include <asm/boardrev.h>
-#endif /* CONFIG_MOT_FEAT_BRDREV */
 
 #include <asm/arch/spba.h>
 #include <asm/arch/sdma.h>
 #include "sdma_script_code.h"
+
+#ifdef CONFIG_MXC_IPC_V2
+#include "sdma_script_code_pass2_ipcv2.h"
+#else
 #include "sdma_script_code_pass2.h"
+#endif
 
 #if 0
 int board_device_enable(u32 device_id);
@@ -133,7 +135,7 @@ void mxc_sdma_get_script_info(sdma_script_start_addrs * sdma_script_addr)
 		sdma_script_addr->mxc_sdma_mcu_2_ata_addr = -1;
 		sdma_script_addr->mxc_sdma_mcu_2_firi_addr = -1;
 		sdma_script_addr->mxc_sdma_mcu_2_mshc_addr = -1;
-		sdma_script_addr->mxc_sdma_mcu_2_shp_addr = mcu_2_shp_ADDR_2;
+		sdma_script_addr->mxc_sdma_mcu_2_shp_addr = mcu_2_shp_patched_ADDR_2;
 		sdma_script_addr->mxc_sdma_mcu_interrupt_only_addr =
 		    mcu_interrupt_only_ADDR_2;
 		sdma_script_addr->mxc_sdma_mshc_2_mcu_addr = -1;
@@ -235,8 +237,6 @@ static inline void mxc_init_ipu(void)
 /* MMC device data */
 
 #if defined(CONFIG_MMC_MXC) || defined(CONFIG_MMC_MXC_MODULE) || defined(CONFIG_MARVELL_WIFI_8686) || defined(CONFIG_MARVELL_WIFI_8686_MODULE)
-
-#if defined(CONFIG_MOT_FEAT_MMC_SDHC1)                                          
 /*!
  * Resource definition for the SDHC1
  */
@@ -252,9 +252,7 @@ static struct resource mxcsdhc1_resources[] = {
 	       .flags = IORESOURCE_IRQ,
 	       }
 };
-#endif
 
-#if defined(CONFIG_MOT_FEAT_MMC_SDHC2)
 /*!
  * Resource definition for the SDHC2
  */
@@ -270,9 +268,7 @@ static struct resource mxcsdhc2_resources[] = {
 	       .flags = IORESOURCE_IRQ,
 	       }
 };
-#endif
 
-#if defined(CONFIG_MOT_FEAT_MMC_SDHC1)
 /*! Device Definition for MXC SDHC1 */
 static struct platform_device mxcsdhc1_device = {
 	.name = "mxcmci",
@@ -283,9 +279,7 @@ static struct platform_device mxcsdhc1_device = {
 	.num_resources = ARRAY_SIZE(mxcsdhc1_resources),
 	.resource = mxcsdhc1_resources,
 };
-#endif
 
-#if defined(CONFIG_MOT_FEAT_MMC_SDHC2)
 /*! Device Definition for MXC SDHC2 */
 static struct platform_device mxcsdhc2_device = {
 #if defined(CONFIG_MARVELL_WIFI_8686) || defined(CONFIG_MARVELL_WIFI_8686_MODULE)
@@ -301,25 +295,13 @@ static struct platform_device mxcsdhc2_device = {
 	.num_resources = ARRAY_SIZE(mxcsdhc2_resources),
 	.resource = mxcsdhc2_resources,
 };
-#endif
 
 static inline void mxc_init_mmc(void)
 {
-#if defined(CONFIG_MOT_FEAT_MMC_SDHC1)
-#if defined(CONFIG_MACH_LIDO) && defined(CONFIG_MOT_FEAT_BRDREV)
-        /* boardrev P7A is used for Lido T1 */
-        if( (boardrev() >= BOARDREV_P7A) && (boardrev() != BOARDREV_UNKNOWN) ) {
-#endif /* CONFIG_MACH_LIDO && CONFIG_MOT_FEAT_BRDREV */
- 	spba_take_ownership(SPBA_SDHC1, SPBA_MASTER_A | SPBA_MASTER_C);
+	spba_take_ownership(SPBA_SDHC1, SPBA_MASTER_A | SPBA_MASTER_C);
 	(void)platform_device_register(&mxcsdhc1_device);
-#if defined(CONFIG_MACH_LIDO) && defined(CONFIG_MOT_FEAT_BRDREV)
-        }
-#endif /* CONFIG_MACH_LIDO && CONFIG_MOT_FEAT_BRDREV */
-#endif
-#if defined(CONFIG_MOT_FEAT_MMC_SDHC2)
 	spba_take_ownership(SPBA_SDHC2, SPBA_MASTER_A | SPBA_MASTER_C);
 	(void)platform_device_register(&mxcsdhc2_device);
-#endif
 }
 #else
 static inline void mxc_init_mmc(void)

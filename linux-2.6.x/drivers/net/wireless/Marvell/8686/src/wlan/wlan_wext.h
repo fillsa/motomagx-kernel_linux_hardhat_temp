@@ -2,6 +2,7 @@
  * @brief This file contains definition for IOCTL call.
  *  
  * (c) Copyright © 2003-2007, Marvell International Ltd.  
+ * (c) Copyright © 2007, Motorola
  *
  * This software file (the "File") is distributed by Marvell International 
  * Ltd. under the terms of the GNU Lesser General Public License version 2.1 
@@ -31,10 +32,18 @@ Change log:
 	04/18/06: Remove old Subscrive Event and add new Subscribe Event
 	          implementation through generic hostcmd API
 	06/08/06: Add definitions of custom events
+	08/29/06: Add ledgpio private command
 ********************************************************/
+/* Date         Author         Comment
+ * ==========   ===========    ==========================
+ * 22-Oct-2007  Motorola       WIFI driver :integrate Marvell 8686 v9 22/10 release (91043p19_26409p42)
+ * 11-Dec-2007  Motorola       Added FMA support 
+ */
+ 
 
 #ifndef	_WLAN_WEXT_H_
 #define	_WLAN_WEXT_H_
+
 #include "wlan_types.h"
 
 #define SUBCMD_OFFSET			4
@@ -62,11 +71,16 @@ Change log:
 #define WLANSDIOCLOCK				7
 #define WLANWMM_ENABLE				8
 #define WLANNULLGEN				10
-#define WLAN_SUBCMD_SET_PRESCAN			11
-#define WLANADHOCCSET				12
+#define WLANADHOCCSET				11
+#define WLAN_ADHOC_G_PROT			12
+
 #ifdef WPRM_DRV
 #define WLANMOTOTM				20
 #endif /* WPRM_DRV */
+
+#ifdef WFMA_SUPPORT
+#define WLANFMASUPPORT				21
+#endif /* WFMA_SUPPORT */
 
 #define WLAN_SETNONE_GETNONE	        (WLANIOCTL + 8)
 #define WLANDEAUTH                  		1
@@ -85,10 +99,7 @@ Change log:
 #define WLAN_SETCONF_GETCONF		(WLANIOCTL + 10)
 
 #define BG_SCAN_CONFIG				1
-#define WMM_ACK_POLICY              2
-#define WMM_PARA_IE                 3
-#define WMM_ACK_POLICY_PRIO         4
-#define CAL_DATA_EXT_CONFIG         5
+#define CAL_DATA_EXT_CONFIG         2
 
 #define WLANSCAN_TYPE			(WLANIOCTL + 11)
 
@@ -102,6 +113,8 @@ Change log:
 #define WLAN_QUEUE_CONFIG               7
 #define WLAN_QUEUE_STATS                8
 #define WLAN_GET_CFP_TABLE              9
+#define WLAN_GET_MEM                   11
+#define WLAN_TX_PKT_STATS              12
 
 #define WLAN_SETNONE_GETONEINT		(WLANIOCTL + 15)
 #define WLANGETREGION				1
@@ -115,13 +128,15 @@ Change log:
 #define WLAN_SUBCMD_GETRXANTENNA    1
 #define WLAN_SUBCMD_GETTXANTENNA    2
 #define WLAN_GET_TSF                3
+#define WLAN_WPS_SESSION            4
 
 #define WLAN_SETWORDCHAR_GETNONE	(WLANIOCTL + 20)
 #define WLANSETADHOCAES				1
 
-#define WLAN_SETNONE_GETWORDCHAR	(WLANIOCTL + 21)
+#define WLAN_SETONEINT_GETWORDCHAR	(WLANIOCTL + 21)
 #define WLANGETADHOCAES				1
 #define WLANVERSION				2
+#define WLANVEREXT				3
 
 #define WLAN_SETONEINT_GETONEINT	(WLANIOCTL + 23)
 #define WLAN_WMM_QOSINFO			2
@@ -131,25 +146,27 @@ Change log:
 #define WAKEUP_FW_THRU_INTERFACE		1
 #define WAKEUP_FW_THRU_GPIO			2
 
-#define WLAN_TXCONTROL				5
-#define WLAN_NULLPKTINTERVAL			6
-#define WLAN_BCN_MISS_TIMEOUT			7
-#define WLAN_ADHOC_AWAKE_PERIOD			8
-#define WLAN_LDO				9
-#define	WLAN_SDIO_MODE				10
+#define WLAN_NULLPKTINTERVAL			5
+#define WLAN_BCN_MISS_TIMEOUT			6
+#define WLAN_ADHOC_AWAKE_PERIOD			7
+#define WLAN_LDO				8
+#define	WLAN_SDIO_MODE				9
+#define WLAN_AUTODEEPSLEEP			12
+#define WLAN_WAKEUP_MT				13
 
 #define WLAN_SETONEINT_GETNONE		(WLANIOCTL + 24)
 #define WLAN_SUBCMD_SETRXANTENNA		1
 #define WLAN_SUBCMD_SETTXANTENNA		2
-#define WLANSETAUTHALG				5
-#define WLANSETENCRYPTIONMODE			6
-#define WLANSETREGION				7
-#define WLAN_SET_LISTEN_INTERVAL		8
+#define WLANSETAUTHALG				4
+#define WLANSETENCRYPTIONMODE			5
+#define WLANSETREGION				6
+#define WLAN_SET_LISTEN_INTERVAL		7
 
-#define WLAN_SET_MULTIPLE_DTIM			9
+#define WLAN_SET_MULTIPLE_DTIM			8
 
-#define WLANSETBCNAVG				10
-#define WLANSETDATAAVG				11
+#define WLANSETBCNAVG				9
+#define WLANSETDATAAVG				10
+#define WLANASSOCIATE				11
 
 #define WLAN_SET64CHAR_GET64CHAR	(WLANIOCTL + 25)
 #define WLANSLEEPPARAMS 			2
@@ -160,10 +177,8 @@ Change log:
 
 #define WLAN_SET_GEN_IE                 	10
 #define WLAN_GET_GEN_IE                 	11
-#define WLAN_REASSOCIATE                	12
-#define WLAN_WMM_QUEUE_STATUS               	14
-#define SET_WILDCARD_SSID			15
-#define GET_WILDCARD_SSID			16
+
+#define WLAN_WMM_QUEUE_STATUS               13
 
 #define WLANEXTSCAN			(WLANIOCTL + 26)
 #define WLANDEEPSLEEP			(WLANIOCTL + 27)
@@ -172,8 +187,6 @@ Change log:
 
 #define WLAN_SET_GET_SIXTEEN_INT       (WLANIOCTL + 29)
 #define WLAN_TPCCFG                             1
-#define WLAN_AUTO_FREQ_SET			3
-#define WLAN_AUTO_FREQ_GET			4
 #define WLAN_LED_GPIO_CTRL			5
 #define WLAN_SCANPROBES 			6
 #define WLAN_SLEEP_PERIOD			7
@@ -186,13 +199,16 @@ Change log:
 #define WLAN_BEACON_INTERVAL			14
 #define WLAN_SCAN_TIME				16
 #define WLAN_DATA_SUBSCRIBE_EVENT		18
-#define WLANHSCFG				20
-#define	WLAN_INACTIVITY_TIMEOUT_EXT	 	22
+#define WLAN_TXCONTROL				19
+#define WLANHSCFG				21
+#define	WLAN_INACTIVITY_TIMEOUT_EXT	 	23
+#define WLANDBGSCFG				24
 #ifdef DEBUG_LEVEL1
-#define WLAN_DRV_DBG				24
+#define WLAN_DRV_DBG				25
 #endif
+#define WLANBCNMONPD             		26
 #ifdef WPRM_DRV
-#define WLAN_SESSIONTYPE                        25
+#define WLAN_SESSIONTYPE                        27
 #endif
 
 #define WLANCMD52RDWR			(WLANIOCTL + 30)
@@ -214,6 +230,9 @@ Change log:
 #define SKIP_TYPE_SIZE			(SKIP_TYPE + SKIP_SIZE)
 #define SKIP_TYPE_ACTION		(SKIP_TYPE + SKIP_ACTION)
 
+#define MAX_SETGET_CONF_SIZE		2000    /* less than MRVDRV_SIZE_OF_CMD_BUFFER */
+#define MAX_SETGET_CONF_CMD_LEN		(MAX_SETGET_CONF_SIZE - SKIP_CMDNUM)
+
 /* define custom events */
 #define CUS_EVT_HWM_CFG_DONE		"HWM_CFG_DONE.indication "
 #define CUS_EVT_BEACON_RSSI_LOW		"EVENT=BEACON_RSSI_LOW"
@@ -223,6 +242,7 @@ Change log:
 #define CUS_EVT_MAX_FAIL		"EVENT=MAX_FAIL"
 #define CUS_EVT_MLME_MIC_ERR_UNI	"MLME-MICHAELMICFAILURE.indication unicast "
 #define CUS_EVT_MLME_MIC_ERR_MUL	"MLME-MICHAELMICFAILURE.indication multicast "
+
 #define CUS_EVT_DATA_RSSI_LOW		"EVENT=DATA_RSSI_LOW"
 #define CUS_EVT_DATA_SNR_LOW		"EVENT=DATA_SNR_LOW"
 #define CUS_EVT_DATA_RSSI_HIGH		"EVENT=DATA_RSSI_HIGH"
@@ -233,7 +253,6 @@ Change log:
 #define CUS_EVT_ADHOC_LINK_SENSED	"EVENT=ADHOC_LINK_SENSED"
 #define CUS_EVT_ADHOC_BCN_LOST		"EVENT=ADHOC_BCN_LOST"
 
-#define CUS_EVT_WATCH_DOG_TMOUT		"EVENT=WATCH_DOG_TMOUT"
 /**
  *  @brief Maximum number of channels that can be sent in a setuserscan ioctl
  *
@@ -282,16 +301,6 @@ typedef struct _wlan_ioctl_cfregrdwr
     u16 Value;
 } wlan_ioctl_cfregrdwr;
 
-/** wlan_ioctl_rdeeprom */
-typedef struct _wlan_ioctl_rdeeprom
-{
-    u16 WhichReg;
-    u16 Action;
-    u16 Offset;
-    u16 NOB;
-    u8 Value;
-} wlan_ioctl_rdeeprom;
-
 /** wlan_ioctl_adhoc_key_info */
 typedef struct _wlan_ioctl_adhoc_key_info
 {
@@ -328,12 +337,15 @@ typedef struct _wlan_ioctl_bca_timeshare_config
 } __ATTRIB_PACK__ wlan_ioctl_bca_timeshare_config,
     *pwlan_ioctl_bca_timeshare_config;
 
+
 typedef struct _wlan_ioctl_reassociation_info
 {
     u8 CurrentBSSID[6];
     u8 DesiredBSSID[6];
     char DesiredSSID[IW_ESSID_MAX_SIZE + 1];
 } __ATTRIB_PACK__ wlan_ioctl_reassociation_info;
+
+
 
 #define MAX_CFP_LIST_NUM	64
 
@@ -365,6 +377,17 @@ typedef struct
     u8 reserved;
     u16 scanTime;               //!< Scan duration in milliseconds; if 0 default used
 } __ATTRIB_PACK__ wlan_ioctl_user_scan_chan;
+/**
+ *  @brief IOCTL SSID List sub-structure sent in wlan_ioctl_user_scan_cfg
+ * 
+ *  Used to specify SSID specific filters as well as SSID pattern matching
+ *    filters for scan result processing in firmware.
+ */
+typedef struct
+{
+    char ssid[MRVDRV_MAX_SSID_LENGTH + 1];
+    u8 maxLen;
+} __ATTRIB_PACK__ wlan_ioctl_user_scan_ssid;
 
 /**
  *  @brief IOCTL input structure to configure an immediate scan cmd to firmware
@@ -404,24 +427,23 @@ typedef struct
      */
     u8 numProbes;
 
+    u8 reserved;
+
     /**
      *  @brief BSSID filter sent in the firmware command to limit the results
      */
     u8 specificBSSID[MRVDRV_ETH_ADDR_LEN];
 
     /**
-     *  @brief SSID filter sent in the firmware command to limit the results
+     *  @brief SSID filter list used in the to limit the scan results
      */
-    char specificSSID[MRVDRV_MAX_SSID_LENGTH + 1];
+    wlan_ioctl_user_scan_ssid ssidList[MRVDRV_MAX_SSID_LIST_LENGTH];
 
     /**
      *  @brief Variable number (fixed maximum) of channels to scan up
      */
     wlan_ioctl_user_scan_chan chanList[WLAN_IOCTL_USER_SCAN_CHAN_MAX];
-     /**
-     *  @brief the max length of wildcard SSID
-     */
-    u8 wildcardssidlen;
+
 } __ATTRIB_PACK__ wlan_ioctl_user_scan_cfg;
 
 #endif /* _WLAN_WEXT_H_ */

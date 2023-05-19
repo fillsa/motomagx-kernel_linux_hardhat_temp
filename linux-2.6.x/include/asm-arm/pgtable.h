@@ -1,28 +1,19 @@
 /*
- * linux/include/asm-arm/pgtable.h
+ *  linux/include/asm-arm/pgtable.h
  *
- * Copyright (C) 1995-2002 Russell King
- * Copyright (C) 2007 Motorola, Inc. 
+ *  Copyright (C) 1995-2002 Russell King
+ *  Copyright 2007 Motorola, Inc.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 as
  * published by the Free Software Foundation.
  *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ * Date     Author     Comment
+ * 02/2007  Motorola   Separated execute and read permissions to allow for 
+ *                     non-executable pages
+ * 06/2007  Motorola   Define CONFIG_MOT_FEAT_CHKSUM
  *
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software
- * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA
- * 02111-1307, USA
- *
- * Date         Author         Comment
- * ==========   ===========    ===================================
- * 06/01/2007   Motorola       Define CONFIG_MOT_FEAT_CHKSUM.
  */
-
 #ifndef _ASMARM_PGTABLE_H
 #define _ASMARM_PGTABLE_H
 
@@ -107,9 +98,9 @@ extern void __pmd_error(const char *file, int line, unsigned long val);
 extern void __pgd_error(const char *file, int line, unsigned long val);
 
 #ifdef CONFIG_MOT_FEAT_CHKSUM
-#define pte_ERROR(pte)		__pte_error("FILE", __LINE__, pte_val(pte))
-#define pmd_ERROR(pmd)		__pmd_error("FILE", __LINE__, pmd_val(pmd))
-#define pgd_ERROR(pgd)		__pgd_error("FILE", __LINE__, pgd_val(pgd))
+#define pte_ERROR(pte)          __pte_error("FILE", __LINE__, pte_val(pte))
+#define pmd_ERROR(pmd)          __pmd_error("FILE", __LINE__, pmd_val(pmd))
+#define pgd_ERROR(pgd)          __pgd_error("FILE", __LINE__, pgd_val(pgd))
 #else
 #define pte_ERROR(pte)		__pte_error(__FILE__, __LINE__, pte_val(pte))
 #define pmd_ERROR(pmd)		__pmd_error(__FILE__, __LINE__, pmd_val(pmd))
@@ -241,7 +232,12 @@ extern void __pgd_error(const char *file, int line, unsigned long val);
  * The following macros handle the cache and bufferable bits...
  */
 #define _L_PTE_DEFAULT	L_PTE_PRESENT | L_PTE_YOUNG | L_PTE_CACHEABLE | L_PTE_BUFFERABLE
+#ifdef CONFIG_MOT_WFN422
+/* Separate execute and read permissions */
+#define _L_PTE_READ	L_PTE_USER
+#else
 #define _L_PTE_READ	L_PTE_USER | L_PTE_EXEC
+#endif /* CONFIG_MOT_WFN422 */
 
 extern pgprot_t		pgprot_kernel;
 
@@ -249,6 +245,11 @@ extern pgprot_t		pgprot_kernel;
 #define PAGE_COPY       __pgprot(_L_PTE_DEFAULT | _L_PTE_READ)
 #define PAGE_SHARED     __pgprot(_L_PTE_DEFAULT | _L_PTE_READ | L_PTE_WRITE)
 #define PAGE_READONLY   __pgprot(_L_PTE_DEFAULT | _L_PTE_READ)
+#ifdef CONFIG_MOT_WFN422
+#define PAGE_COPY_EXEC       __pgprot(_L_PTE_DEFAULT | _L_PTE_READ | L_PTE_EXEC)
+#define PAGE_SHARED_EXEC     __pgprot(_L_PTE_DEFAULT | _L_PTE_READ | L_PTE_WRITE | L_PTE_EXEC)
+#define PAGE_READONLY_EXEC   __pgprot(_L_PTE_DEFAULT | _L_PTE_READ | L_PTE_EXEC)
+#endif /* CONFIG_MOT_WFN422 */
 #define PAGE_KERNEL	pgprot_kernel
 
 #endif /* __ASSEMBLY__ */
@@ -265,19 +266,33 @@ extern pgprot_t		pgprot_kernel;
 #define __P001  PAGE_READONLY
 #define __P010  PAGE_COPY
 #define __P011  PAGE_COPY
+#ifdef CONFIG_MOT_WFN422
+#define __P100  PAGE_READONLY_EXEC
+#define __P101  PAGE_READONLY_EXEC
+#define __P110  PAGE_COPY_EXEC
+#define __P111  PAGE_COPY_EXEC
+#else
 #define __P100  PAGE_READONLY
 #define __P101  PAGE_READONLY
 #define __P110  PAGE_COPY
 #define __P111  PAGE_COPY
+#endif /* CONFIG_MOT_WFN422 */
 
 #define __S000  PAGE_NONE
 #define __S001  PAGE_READONLY
 #define __S010  PAGE_SHARED
 #define __S011  PAGE_SHARED
+#ifdef CONFIG_MOT_WFN422
+#define __S100  PAGE_READONLY_EXEC
+#define __S101  PAGE_READONLY_EXEC
+#define __S110  PAGE_SHARED_EXEC
+#define __S111  PAGE_SHARED_EXEC
+#else
 #define __S100  PAGE_READONLY
 #define __S101  PAGE_READONLY
 #define __S110  PAGE_SHARED
 #define __S111  PAGE_SHARED
+#endif /* CONFIG_MOT_WFN422 */
 
 #ifndef __ASSEMBLY__
 /*

@@ -3,7 +3,7 @@
  *
  * Copyright (c) 2003 Patrick Mochel
  * Copyright (c) 2003 Open Source Development Labs
- * Copyright 2006 Motorola, Inc.
+ * Copyright 2006-2007 Motorola, Inc.
  *
  * This file is released under the GPLv2
  *
@@ -32,6 +32,7 @@
  * Date        Author    Comment
  * 10/04/2006  Motorola  Enhanced debugging support for device suspend/resume.
  *                       Added MPM logging for device suspend/resume.
+ * 04/04/2007  Motorola  Expanded support for device suspend/resume debug.
  */
 
 #include <linux/device.h>
@@ -42,12 +43,8 @@
 
 #ifdef CONFIG_MOT_FEAT_PM_DEVICE_SUSPEND_DEBUG
 struct device *serial_dev=NULL;
-#ifdef CONFIG_ARCH_MXC91231
 /* Pointer for tracking serial device during suspend/resume */
 #define SERIAL_DEVICE_NAME "mxcintuart.2"
-#else
-#error CONFIG_MOT_FEAT_PM_DEVICE_SUSPEND_DEBUG is only supported for SCMA11
-#endif
 #endif
 
 extern int sysdev_suspend(u32 state);

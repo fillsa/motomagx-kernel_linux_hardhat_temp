@@ -12,7 +12,8 @@
   * http://www.gnu.org/copyleft/lgpl.html
   */
 
-/*
+/* Changelog:
+ *
  * DATE          AUTHOR         COMMMENT
  * ----          ------         --------
  * 10/04/2006    Motorola       Fixed bug documented by WFN414.
@@ -21,7 +22,8 @@
  *                              Added function prototype for AP BP sleep
  *                              negotiation.
  * 04/26/2007    Motorola       Adding sdma debug ioctl
- * 12/14/2007    Motorola       Add a new ioctl to dump 24 SDMA register
+ * 10/17/2007    Motorola       Add a new ioctl to dump 24 SDMA register
+ * 11/14/2007    Motorola       Add functions to fix errata issue.
  */
 
 #ifndef MU_AS_H
@@ -165,7 +167,6 @@
 
 #if !defined(__KERNEL__) || defined(CONFIG_MOT_FEAT_SDMA_DEBUG)
 #define MXC_MU_SDMA_DUMP_DEBUG  10
-
 
 /*!
  * MXC_MU_SDMA_DUMP_REGISTER : Dump sdma registers when bp panic or suapi panic
@@ -351,6 +352,18 @@ int mxc_mu_intdisable(int chand, enum mu_oper muoper);
  */
 int mxc_mu_reset(void);
 
+#ifdef CONFIG_MOT_FEAT_PM
+/*!
+ * Inform the DSP that the MCU is now in DSM mode.
+ */
+void mxc_mu_inform_dsp_dsm_mode(void);
+
+/*!
+ * Inform the DSP that the MCU is now running.
+ */
+void mxc_mu_inform_dsp_run_mode(void);
+#endif /* CONFIG_MOT_FEAT_PM */
+
 /*!
  * This function is used by other modules to issue DSP hardware reset.
  */
@@ -386,8 +399,8 @@ unsigned int mxc_mu_dsp_pmode_status(void);
 
 #ifdef CONFIG_MOT_FEAT_PM
 /*!
- * This function is used by an IPC module to switch the Interrupt-of-Interest
- * behavior on and off for the MU channel used for the Power Management
+ * This function is used by an IPC module to switch the Interrupt-of-Interest 
+ * behavior on and off for the MU channel used for the Power Management 
  * messages.
  *
  * @param   swtch     boolean on/off indicator

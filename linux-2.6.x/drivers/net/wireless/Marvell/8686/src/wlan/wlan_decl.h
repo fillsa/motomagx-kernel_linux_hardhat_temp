@@ -30,11 +30,11 @@ Change log:
 #define _WLAN_DECL_H_
 
 /** Function Prototype Declaration */
+int wlan_init_fw(wlan_private * priv);
 int wlan_tx_packet(wlan_private * priv, struct sk_buff *skb);
 void wlan_free_adapter(wlan_private * priv);
-int SetMacPacketFilter(wlan_private * priv);
 
-int SendNullPacket(wlan_private * priv, u8 pwr_mgmt);
+int SendNullPacket(wlan_private * priv, u8 flags);
 BOOLEAN CheckLastPacketIndication(wlan_private * priv);
 
 void Wep_encrypt(wlan_private * priv, u8 * Buf, u32 Len);
@@ -60,30 +60,38 @@ int AllocateCmdBuffer(wlan_private * priv);
 int ExecuteNextCommand(wlan_private * priv);
 int wlan_process_event(wlan_private * priv);
 void wlan_interrupt(struct net_device *);
-int SetRadioControl(wlan_private * priv);
 u32 index_to_data_rate(u8 index);
 u8 data_rate_to_index(u32 rate);
 void HexDump(char *prompt, u8 * data, int len);
 void get_version(wlan_adapter * adapter, char *version, int maxlen);
 void wlan_read_write_rfreg(wlan_private * priv);
 
+#ifdef CONFIG_PROC_FS
 /** The proc fs interface */
 void wlan_proc_entry(wlan_private * priv, struct net_device *dev);
 void wlan_proc_remove(wlan_private * priv);
+int string_to_number(char *s);
+#ifdef PROC_DEBUG
 void wlan_debug_entry(wlan_private * priv, struct net_device *dev);
 void wlan_debug_remove(wlan_private * priv);
+#endif /* PROC_DEBUG */
+void wlan_firmware_entry(wlan_private * priv, struct net_device *dev);
+void wlan_firmware_remove(wlan_private * priv);
+int wlan_setup_station_hw(wlan_private * priv);
+#endif /* CONFIG_PROC_FS */
 int wlan_process_rx_command(wlan_private * priv);
 void wlan_process_tx(wlan_private * priv);
 void CleanupAndInsertCmd(wlan_private * priv, CmdCtrlNode * pTempCmd);
 void MrvDrvCommandTimerFunction(void *FunctionContext);
 
 #ifdef REASSOCIATION
-void MrvDrvTimerFunction(void *FunctionContext);
+void MrvDrvReassocTimerFunction(void *FunctionContext);
 #endif /* REASSOCIATION */
 
 int wlan_set_essid(struct net_device *dev, struct iw_request_info *info,
                    struct iw_point *dwrq, char *extra);
 int wlan_set_regiontable(wlan_private * priv, u8 region, u8 band);
+
 void wlan_clean_txrx(wlan_private * priv);
 
 int wlan_host_sleep_activated_event(wlan_private * priv);
@@ -111,14 +119,5 @@ extern void MacEventDisconnected(wlan_private * priv);
 void send_iwevcustom_event(wlan_private * priv, s8 * str);
 #endif
 
-void cleanup_txqueues(wlan_private * priv);
-void wlan_process_txqueue(wlan_private * priv);
-
-int string_to_number(char *s);
-void wlan_firmware_entry(wlan_private * priv, struct net_device *dev);
-void wlan_firmware_remove(wlan_private * priv);
-int wlan_setup_station_hw(wlan_private * priv);
-
 void wlan_fatal_error_handle(wlan_private * priv);
-
 #endif /* _WLAN_DECL_H_ */

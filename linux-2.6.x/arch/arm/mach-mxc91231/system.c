@@ -2,7 +2,7 @@
  *  Copyright (C) 1999 ARM Limited
  *  Copyright (C) 2000 Deep Blue Solutions Ltd
  *  Copyright 2004 Freescale Semiconductor, Inc. All Rights Reserved.
- *  
+
  *  Copyright (C) 2006-2007 Motorola, Inc.
  *
  * This program is free software; you can redistribute it and/or modify
@@ -25,8 +25,8 @@
  * ----------   --------  -----------------------------------------------------
  * 07/27/2006   Motorola  System reboot via CRM module
  * 03/22/2007   Motorola  Add arch_idle at reset
- * 05/07/2007   Motorola  Implement reboot via Atlas RTC alarm.
- * 08/29/2007   Motorola  Correct Atlas Backup Memory register access for soft reset.
+ * 05/30/2007   Motorola  Implement reboot via Atlas RTC alarm.
+ * 10/28/2007   Motorola  Align enum values with power ic changes
  *
  */
 
@@ -56,7 +56,7 @@
 
 #if defined(CONFIG_MOT_FEAT_SYSREBOOT_ATLAS)
 
-#include <linux/power_ic_kernel.h>
+#include <asm/power-ic-api.h>
 
 /* defined in scma11phone.c */
 extern void __mxc_power_off(void);
@@ -115,18 +115,16 @@ void arch_reset(char mode)
          * Set bit 4 of the Atlas MEMA register. This bit indicates to the
          * MBM that the phone is to be reset.
          */
-        retval = power_ic_backup_memory_read(POWER_IC_BACKUP_MEMORY_ID_ATLAS_BACKUP_SOFT_RESET,
-                &mema);
-        if(retval != 0) {
+        retval = kernel_power_ic_backup_memory_read(KERNEL_BACKUP_MEMORY_ID_SOFT_RESET, &mema);
+	if(retval != 0) {
             step = 1;
             goto die;
         }
 
         mema |= 1;
-
-        retval = power_ic_backup_memory_write(POWER_IC_BACKUP_MEMORY_ID_ATLAS_BACKUP_SOFT_RESET,
-                mema);
-        if(retval != 0) {
+	
+        retval = kernel_power_ic_backup_memory_write(KERNEL_BACKUP_MEMORY_ID_SOFT_RESET, mema);
+	if(retval != 0) {
             step = 2;
             goto die;
         }
@@ -135,7 +133,7 @@ void arch_reset(char mode)
          * Set the Atlas RTC alarm to go off in 2 seconds. Experience indicates
          * that values less than 2 may not work reliably.
          */
-        retval = power_ic_rtc_get_time(&tv);
+        retval = kernel_power_ic_rtc_get_time(&tv);
         if(retval != 0) {
             step = 3;
             goto die;
@@ -143,7 +141,7 @@ void arch_reset(char mode)
 
         tv.tv_sec += 2;
 
-        retval = power_ic_rtc_set_time_alarm(&tv);
+        retval = kernel_power_ic_rtc_set_time_alarm(&tv);
         if(retval != 0) {
             step = 4;
             goto die;

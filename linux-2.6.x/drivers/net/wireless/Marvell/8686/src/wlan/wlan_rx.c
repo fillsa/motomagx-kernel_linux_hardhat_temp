@@ -51,7 +51,6 @@ typedef struct
 
 typedef struct
 {
-    RxPD rx_pd;
     Eth803Hdr_t eth803_hdr;
     Rfc1042Hdr_t rfc1042_hdr;
 
@@ -158,27 +157,35 @@ wlan_check_subscribe_event(wlan_private * priv)
                       Adapter->NF[TYPE_RXPD][TYPE_AVG] / AVG_SCALE);
         if (Adapter->subevent.EventsBitmap & DATA_RSSI_LOW_BIT) {
             if (temp > Adapter->subevent.Rssi_low.value) {
-                if (!Adapter->subevent.Rssi_low.Freq)
+                if (!Adapter->subevent.Rssi_low.Freq) {
                     Adapter->subevent.EventsBitmap &= ~DATA_RSSI_LOW_BIT;
-                if (Adapter->subevent.Rssi_low.Freq > 1) {
-                    Adapter->subevent.Rssi_low.Freq--;
-                    if (Adapter->subevent.Rssi_low.Freq == 1)
-                        Adapter->subevent.Rssi_low.Freq = 0;
+                    send_iwevcustom_event(priv, CUS_EVT_DATA_RSSI_LOW);
+                } else {
+                    Adapter->subevent.Rssi_low_count++;
+                    if (Adapter->subevent.Rssi_low_count >=
+                        Adapter->subevent.Rssi_low.Freq) {
+                        Adapter->subevent.Rssi_low_count = 0;
+                        send_iwevcustom_event(priv, CUS_EVT_DATA_RSSI_LOW);
+                    }
                 }
-                send_iwevcustom_event(priv, CUS_EVT_DATA_RSSI_LOW);
-            }
+            } else
+                Adapter->subevent.Rssi_low_count = 0;
         }
         if (Adapter->subevent.EventsBitmap & DATA_RSSI_HIGH_BIT) {
             if (temp < Adapter->subevent.Rssi_high.value) {
-                if (!Adapter->subevent.Rssi_high.Freq)
+                if (!Adapter->subevent.Rssi_high.Freq) {
                     Adapter->subevent.EventsBitmap &= ~DATA_RSSI_HIGH_BIT;
-                if (Adapter->subevent.Rssi_high.Freq > 1) {
-                    Adapter->subevent.Rssi_high.Freq--;
-                    if (Adapter->subevent.Rssi_high.Freq == 1)
-                        Adapter->subevent.Rssi_high.Freq = 0;
+                    send_iwevcustom_event(priv, CUS_EVT_DATA_RSSI_HIGH);
+                } else {
+                    Adapter->subevent.Rssi_high_count++;
+                    if (Adapter->subevent.Rssi_high_count >=
+                        Adapter->subevent.Rssi_high.Freq) {
+                        Adapter->subevent.Rssi_high_count = 0;
+                        send_iwevcustom_event(priv, CUS_EVT_DATA_RSSI_HIGH);
+                    }
                 }
-                send_iwevcustom_event(priv, CUS_EVT_DATA_RSSI_HIGH);
-            }
+            } else
+                Adapter->subevent.Rssi_high_count = 0;
         }
     }
     if ((Adapter->subevent.EventsBitmap & DATA_SNR_LOW_BIT) ||
@@ -186,27 +193,36 @@ wlan_check_subscribe_event(wlan_private * priv)
         temp = Adapter->SNR[TYPE_RXPD][TYPE_AVG] / AVG_SCALE;
         if (Adapter->subevent.EventsBitmap & DATA_SNR_LOW_BIT) {
             if (temp < Adapter->subevent.Snr_low.value) {
-                if (!Adapter->subevent.Snr_low.Freq)
+                if (!Adapter->subevent.Snr_low.Freq) {
+                    send_iwevcustom_event(priv, CUS_EVT_DATA_SNR_LOW);
                     Adapter->subevent.EventsBitmap &= ~DATA_SNR_LOW_BIT;
-                if (Adapter->subevent.Snr_low.Freq > 1) {
-                    Adapter->subevent.Snr_low.Freq--;
-                    if (Adapter->subevent.Snr_low.Freq == 1)
-                        Adapter->subevent.Snr_low.Freq = 0;
+                } else {
+                    Adapter->subevent.Snr_low_count++;
+                    if (Adapter->subevent.Snr_low_count >=
+                        Adapter->subevent.Snr_low.Freq) {
+                        Adapter->subevent.Snr_low_count = 0;
+                        send_iwevcustom_event(priv, CUS_EVT_DATA_SNR_LOW);
+                    }
                 }
-                send_iwevcustom_event(priv, CUS_EVT_DATA_SNR_LOW);
-            }
+            } else
+                Adapter->subevent.Snr_low_count = 0;
         }
         if (Adapter->subevent.EventsBitmap & DATA_SNR_HIGH_BIT) {
             if (temp > Adapter->subevent.Snr_high.value) {
-                if (!Adapter->subevent.Snr_high.Freq)
+                if (!Adapter->subevent.Snr_high.Freq) {
                     Adapter->subevent.EventsBitmap &= ~DATA_SNR_HIGH_BIT;
-                if (Adapter->subevent.Snr_high.Freq > 1) {
-                    Adapter->subevent.Snr_high.Freq--;
-                    if (Adapter->subevent.Snr_high.Freq == 1)
-                        Adapter->subevent.Snr_high.Freq = 0;
+                    send_iwevcustom_event(priv, CUS_EVT_DATA_SNR_HIGH);
+                } else {
+                    Adapter->subevent.Snr_high_count++;
+                    if (Adapter->subevent.Snr_high_count >=
+                        Adapter->subevent.Snr_high.Freq) {
+                        Adapter->subevent.Snr_high_count = 0;
+                        send_iwevcustom_event(priv, CUS_EVT_DATA_SNR_HIGH);
+                    }
                 }
-                send_iwevcustom_event(priv, CUS_EVT_DATA_SNR_HIGH);
-            }
+
+            } else
+                Adapter->subevent.Snr_high_count = 0;
         }
     }
     return;
@@ -283,12 +299,31 @@ ProcessRxedPacket(wlan_private * priv, struct sk_buff *skb)
 
     ENTER();
 
-    pRxPkt = (RxPacketHdr_t *) skb->data;
-    pRxPD = &pRxPkt->rx_pd;
+    pRxPD = (RxPD *) skb->data;
+    pRxPkt = (RxPacketHdr_t *) ((u8 *) pRxPD + pRxPD->PktOffset);
 
     DBG_HEXDUMP(DAT_D, "Rx", skb->data, MIN(skb->len, MAX_DATA_DUMP_LEN));
 
-    if (skb->len < (ETH_HLEN + 8 + sizeof(RxPD))) {
+    endian_convert_RxPD(pRxPD);
+
+#define RX_PKT_TYPE_DEBUG  0xEF
+#define DBG_TYPE_SMALL  2
+#define SIZE_OF_DBG_STRUCT 4
+    if (pRxPD->RxPacketType == RX_PKT_TYPE_DEBUG) {
+        u8 dbgType;
+        dbgType = *(u8 *) & pRxPkt->eth803_hdr;
+        if (dbgType == DBG_TYPE_SMALL) {
+            PRINTM(FW_D, "\n");
+            DBG_HEXDUMP(FW_D, "FWDBG",
+                        (char *) ((u8 *) & pRxPkt->eth803_hdr +
+                                  SIZE_OF_DBG_STRUCT), pRxPD->PktLen);
+            PRINTM(FW_D, "FWDBG::\n");
+        }
+        kfree_skb(skb);
+        goto done;
+    }
+
+    if (skb->len < (ETH_HLEN + 8 + pRxPD->PktOffset)) {
         PRINTM(ERROR, "RX Error: FRAME RECEIVED WITH BAD LENGTH\n");
         priv->stats.rx_length_errors++;
         ret = WLAN_STATUS_SUCCESS;
@@ -296,8 +331,8 @@ ProcessRxedPacket(wlan_private * priv, struct sk_buff *skb)
         goto done;
     }
 
-    PRINTM(INFO, "RX Data: skb->len - sizeof(RxPd) = %d - %d = %d\n",
-           skb->len, sizeof(RxPD), skb->len - sizeof(RxPD));
+    PRINTM(INFO, "RX Data: skb->len - pRxPD->PktOffset = %d - %d = %d\n",
+           skb->len, pRxPD->PktOffset, skb->len - pRxPD->PktOffset);
 
     HEXDUMP("RX Data: Dest", pRxPkt->eth803_hdr.dest_addr,
             sizeof(pRxPkt->eth803_hdr.dest_addr));
@@ -331,13 +366,13 @@ ProcessRxedPacket(wlan_private * priv, struct sk_buff *skb)
         /* Chop off the RxPD + the excess memory from the 802.2/llc/snap header
          *   that was removed 
          */
-        hdrChop = (u8 *) pEthHdr - (u8 *) pRxPkt;
+        hdrChop = (u8 *) pEthHdr - (u8 *) pRxPD;
     } else {
         HEXDUMP("RX Data: LLC/SNAP",
                 (u8 *) & pRxPkt->rfc1042_hdr, sizeof(pRxPkt->rfc1042_hdr));
 
         /* Chop off the RxPD */
-        hdrChop = (u8 *) & pRxPkt->eth803_hdr - (u8 *) pRxPkt;
+        hdrChop = (u8 *) & pRxPkt->eth803_hdr - (u8 *) pRxPD;
     }
 
     /* Chop off the leading header bytes so the skb points to the start of 
@@ -365,6 +400,7 @@ ProcessRxedPacket(wlan_private * priv, struct sk_buff *skb)
     wprm_rx_packet_cnt++;
     wprm_traffic_measurement(priv, Adapter, FALSE);
 #endif
+
     ret = WLAN_STATUS_SUCCESS;
   done:
     LEAVE();

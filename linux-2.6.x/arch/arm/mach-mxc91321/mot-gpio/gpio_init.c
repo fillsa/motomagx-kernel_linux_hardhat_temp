@@ -3,7 +3,7 @@
  *
  * Initialize IOMUX and GPIO registers at boot time.
  *
- * Copyright 2006 Motorola, Inc.
+ * Copyright 2006-2007 Motorola, Inc.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -24,8 +24,10 @@
  * ===========  ==============  ==============================================
  * 01-Nov-2006  Motorola        Initial revision.
  * 28-Nov-2006  Motorola        Added call to GPU fixup function.
+ * 20-Feb-2007  Motorola        Update for HWCFG tree.
  */
 
+#include <asm/mot-gpio.h>
 #include "mot-gpio-argonlv.h"
 
 /**
@@ -33,18 +35,12 @@
  */
 void __init argonlvphone_gpio_init(void)
 {
-    unsigned i;
-
-#if defined(CONFIG_MACH_BUTEREF)
-    buteref_gpio_signal_fixup();
-#elif defined(CONFIG_MOT_FEAT_GPIO_API_GPU)
-    gpu_gpio_signal_fixup();
-#endif
-
     /* configure ArgonLV IOMUX pad registers to initial state */
-    argonlv_iomux_pad_init();
+    mot_iomux_pad_init();
 
-#if !defined(CONFIG_MACH_BUTEREF)
+    /* read the GPIO signal mappings from the HWCFG tree */
+    mot_gpio_update_mappings();
+
     /*
      * Care must be taken when transferring pin GPIO24 from Func mux set setting
      * to the the GPIO mux setting. GPIO24 is connected to the WDOG_AP signal;
@@ -54,34 +50,11 @@ void __init argonlvphone_gpio_init(void)
     gpio_signal_config(GPIO_SIGNAL_WDOG_AP, GPIO_GDIR_OUTPUT, GPIO_INT_NONE);
     gpio_signal_set_data(GPIO_SIGNAL_WDOG_AP, GPIO_DATA_HIGH);
     iomux_config_mux(PIN_GPIO24, OUTPUTCONFIG_GPIO, INPUTCONFIG_GPIO);
-#endif
 
     /* configure GPIO registers to desired initial state */
-    for(i = 0; i < MAX_GPIO_SIGNAL; i++) {
-        if(initial_gpio_settings[i].port != GPIO_INVALID_PORT) {
-            gpio_tracemsg("GPIO port: 0x%08x signal: 0x%08x output: 0x%08x "
-                    "data: 0x%08x",
-                    initial_gpio_settings[i].port,
-                    initial_gpio_settings[i].sig_no,
-                    initial_gpio_settings[i].out,
-                    initial_gpio_settings[i].data);
-
-            /* set data */
-            if(initial_gpio_settings[i].data != GPIO_DATA_INVALID) {
-                gpio_set_data(initial_gpio_settings[i].port,
-                        initial_gpio_settings[i].sig_no,
-                        initial_gpio_settings[i].data);
-            }
-
-            /* set direction */
-        gpio_config(initial_gpio_settings[i].port,
-                initial_gpio_settings[i].sig_no,
-                    initial_gpio_settings[i].out,
-                GPIO_INT_NONE); /* setup interrupts later */
-        }
-    }
+    mot_gpio_init();
 
     /* configure IOMUX settings to their prescribed initial state */
-    argonlv_iomux_mux_init();
+    mot_iomux_mux_init();
 }
 

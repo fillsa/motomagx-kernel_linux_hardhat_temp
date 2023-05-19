@@ -4,7 +4,7 @@
  *  Copyright (C)  1998,2000  Rik van Riel
  *	Thanks go out to Claus Fischer for some serious inspiration and
  *	for goading me into coding this file...
- *  Copyright (C) 2007 Motorola, Inc. 
+ *  Copyright (C) 2007-2008 Motorola, Inc. 
  *
  *  The routines in this file are used to kill a process when
  *  we're seriously out of memory. This gets called from kswapd()
@@ -19,8 +19,7 @@
  * ----          ------         --------
  * 03/16/2007    Motorola       Added memory usage information in out of memory
  *                              handler before kernel panic.
- * 11/21/2007    Motorola       Remove OOM kernel panic.
- *
+ * 03/05/2008    Motorola       Enable APR.
  */
 
 #include <linux/mm.h>
@@ -581,12 +580,15 @@ out_unlock:
 }
 
 #else
-
 /* Show the memory usage of each process */
 static void show_mem_usage(void)
 {
 	struct task_struct *task;
 	struct mm_struct *mm;
+#ifdef CONFIG_MOT_FEAT_PRINT_PC_ON_PANIC
+	unsigned long rss_apr = 0;
+	struct task_struct *task_apr;
+#endif	
 
 	printk("pid:command:VM:RSS:DATA:STACK\n");
 	for_each_process(task) {
@@ -599,39 +601,26 @@ static void show_mem_usage(void)
 			(mm->total_vm - mm->shared_vm - mm->stack_vm) << (PAGE_SHIFT-10), /* data */
 			mm->stack_vm << (PAGE_SHIFT-10)); /* stack */
 			mmput(mm);
+#ifdef CONFIG_MOT_FEAT_PRINT_PC_ON_PANIC
+			if(rss_apr < (mm->rss << (PAGE_SHIFT-10))) {
+				rss_apr = mm->rss << (PAGE_SHIFT-10);
+				task_apr = task;
+			}
+#endif
 		}
 	}
-}
-
-extern void dump_stack(void);
-#ifdef CONFIG_MOT_FEAT_KPANIC
-extern int meminfo_read_proc(char *, char **, off_t, int, int *, void *);
-extern int kpanic_in_progress;
+#ifdef CONFIG_MOT_FEAT_PRINT_PC_ON_PANIC 
+	printk("[APR]PanicPC: OOM thread:%s,mem:%lu\n",task_apr->comm,rss_apr);
 #endif
+}
 
 /**
  * out_of_memory - Intentionally panic in out of memory situations
  */
 void out_of_memory(int gfp_mask)
 {
-	char buf[1024];
-#ifdef CONFIG_MOT_FEAT_KPANIC
-	int kpanic = kpanic_in_progress;
-#endif
-
-	memset(buf, 0, sizeof(buf));
-
-	printk(KERN_ERR "Phone is in extremely low memory situation.\n");
-	printk(KERN_ERR "Dump some useful infomation:\n");
-
-	dump_stack();
-	show_mem_usage();
-
-#ifdef CONFIG_MOT_FEAT_KPANIC
-	kpanic_in_progress = 1; /* to make the meminfo_read_proc print out */
-	meminfo_read_proc(buf, NULL, 0, 0, NULL, NULL);
-	kpanic_in_progress = kpanic;
-#endif
+    show_mem_usage();
+    panic("The phone is in an extremely low memory situation");
 }
 
 #endif /* CONFIG_MOT_FEAT_PANIC_ON_OOM */

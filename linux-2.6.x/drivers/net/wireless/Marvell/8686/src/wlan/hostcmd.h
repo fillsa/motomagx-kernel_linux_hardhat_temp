@@ -34,6 +34,8 @@ Change log:
 	          implementation through generic hostcmd API
 	05/03/06: Add auto_tx hostcmd
 	05/04/06: Add IBSS coalescing related new hostcmd
+	08/28/06: Add LED_CTRL hostcmd
+	08/29/06: Add ledgpio private command
 ********************************************************/
 
 #ifndef __HOSTCMD__H
@@ -44,22 +46,22 @@ Change log:
 /** TxPD descriptor */
 typedef struct _TxPD
 {
-        /** Current Tx packet status */
+    /** Current Tx packet status */
     u32 TxStatus;
-        /** Tx Control */
+    /** Tx Control */
     u32 TxControl;
     u32 TxPacketLocation;
-        /** Tx packet length */
+    /** Tx packet length */
     u16 TxPacketLength;
         /**Destination MAC address */
     u8 TxDestAddr[MRVDRV_ETH_ADDR_LEN];
-        /** Pkt Priority */
+    /** Pkt Priority */
     u8 Priority;
-        /** Pkt Trasnit Power control*/
-    u8 PowerMgmt;
-        /** Amount of time the packet has been queued in the driver (units = 2ms)*/
+    /** Trasnit Pkt Flags*/
+    u8 Flags;
+    /** Amount of time the packet has been queued in the driver (units = 2ms)*/
     u8 PktDelay_2ms;
-        /** Reserved */
+    /** Reserved */
     u8 Reserved1;
 
 } __ATTRIB_PACK__ TxPD, *PTxPD;
@@ -85,8 +87,8 @@ typedef struct _RxPD
         /** Rx Packet Rate */
     u8 RxRate;
 
-        /** Pkt addr*/
-    u32 PktPtr;
+        /** Pkt offset */
+    u32 PktOffset;
     u8 RxPacketType;
     u8 Reserved_1[3];
         /** Pkt Priority */
@@ -146,7 +148,7 @@ typedef struct _WLAN_802_11_KEY
     WLAN_802_11_MAC_ADDRESS BSSID;
     WLAN_802_11_KEY_RSC KeyRSC;
     u8 KeyMaterial[MRVL_MAX_KEY_WPA_KEY_LENGTH];
-} __ATTRIB_PACK__ WLAN_802_11_KEY, *PWLAN_802_11_KEY;
+} __ATTRIB_PACK__ WLAN_802_11_KEY;
 
 /** MRVL_WPA_KEY */
 typedef struct _MRVL_WPA_KEY
@@ -165,15 +167,6 @@ typedef struct _MRVL_WLAN_WPA_KEY
     u8 MICKey2[8];
 } MRVL_WLAN_WPA_KEY, *PMRVL_WLAN_WPA_KEY;
 
-/** IE_WPA */
-typedef struct _IE_WPA
-{
-    u8 Elementid;
-    u8 Len;
-    u8 oui[4];
-    u16 version;
-} IE_WPA, *PIE_WPA;
-
 /* Received Signal Strength Indication  in dBm*/
 typedef LONG WLAN_802_11_RSSI;
 
@@ -191,7 +184,7 @@ typedef struct _WLAN_802_11_WEP
 
     /* variable length depending on above field */
     u8 KeyMaterial[1];
-} __ATTRIB_PACK__ WLAN_802_11_WEP, *PWLAN_802_11_WEP;
+} __ATTRIB_PACK__ WLAN_802_11_WEP;
 
 /** WLAN_802_11_SSID */
 typedef struct _WLAN_802_11_SSID
@@ -201,13 +194,7 @@ typedef struct _WLAN_802_11_SSID
 
     /* SSID information field */
     u8 Ssid[WLAN_MAX_SSID_LENGTH];
-} __ATTRIB_PACK__ WLAN_802_11_SSID, *PWLAN_802_11_SSID;
-
-typedef struct _WPA_SUPPLICANT
-{
-    u8 Wpa_ie[256];
-    u8 Wpa_ie_len;
-} WPA_SUPPLICANT, *PWPA_SUPPLICANT;
+} __ATTRIB_PACK__ WLAN_802_11_SSID;
 
 typedef u32 WLAN_802_11_FRAGMENTATION_THRESHOLD;
 typedef u32 WLAN_802_11_RTS_THRESHOLD;
@@ -226,7 +213,7 @@ typedef struct _WLAN_802_11_FIXED_IEs
     u8 Timestamp[8];
     u16 BeaconInterval;
     u16 Capabilities;
-} WLAN_802_11_FIXED_IEs, *PWLAN_802_11_FIXED_IEs;
+} WLAN_802_11_FIXED_IEs;
 
 /** WLAN_802_11_VARIABLE_IEs */
 typedef struct _WLAN_802_11_VARIABLE_IEs
@@ -234,7 +221,7 @@ typedef struct _WLAN_802_11_VARIABLE_IEs
     u8 ElementID;
     u8 Length;
     u8 data[1];
-} WLAN_802_11_VARIABLE_IEs, *PWLAN_802_11_VARIABLE_IEs;
+} WLAN_802_11_VARIABLE_IEs;
 
 /** WLAN_802_11_AI_RESFI */
 typedef struct _WLAN_802_11_AI_RESFI
@@ -242,7 +229,7 @@ typedef struct _WLAN_802_11_AI_RESFI
     u16 Capabilities;
     u16 StatusCode;
     u16 AssociationId;
-} WLAN_802_11_AI_RESFI, *PWLAN_802_11_AI_RESFI;
+} WLAN_802_11_AI_RESFI;
 
 /** WLAN_802_11_AI_REQFI */
 typedef struct _WLAN_802_11_AI_REQFI
@@ -250,7 +237,7 @@ typedef struct _WLAN_802_11_AI_REQFI
     u16 Capabilities;
     u16 ListenInterval;
     WLAN_802_11_MAC_ADDRESS CurrentAPAddress;
-} WLAN_802_11_AI_REQFI, *PWLAN_802_11_AI_REQFI;
+} WLAN_802_11_AI_REQFI;
 
 /* Define general data structure */
 /** HostCmd_DS_GEN */
@@ -260,8 +247,7 @@ typedef struct _HostCmd_DS_GEN
     u16 Size;
     u16 SeqNum;
     u16 Result;
-} __ATTRIB_PACK__ HostCmd_DS_GEN, *PHostCmd_DS_GEN,
-    HostCmd_DS_802_11_DEEP_SLEEP, *PHostCmd_DS_802_11_DEEP_SLEEP;
+} __ATTRIB_PACK__ HostCmd_DS_GEN, HostCmd_DS_802_11_DEEP_SLEEP;
 
 #define S_DS_GEN    sizeof(HostCmd_DS_GEN)
 /*
@@ -303,14 +289,7 @@ typedef struct _HostCmd_DS_GET_HW_SPEC
 
     /*FW/HW Capability */
     u32 fwCapInfo;
-} __ATTRIB_PACK__ HostCmd_DS_GET_HW_SPEC, *PHostCmd_DS_GET_HW_SPEC;
-
-/**  HostCmd_CMD_EEPROM_UPDATE */
-typedef struct _HostCmd_DS_EEPROM_UPDATE
-{
-    u16 Action;
-    u32 Value;
-} __ATTRIB_PACK__ HostCmd_DS_EEPROM_UPDATE, *PHostCmd_DS_EEPROM_UPDATE;
+} __ATTRIB_PACK__ HostCmd_DS_GET_HW_SPEC;
 
 typedef struct _HostCmd_DS_802_11_SUBSCRIBE_EVENT
 {
@@ -332,7 +311,7 @@ typedef struct _HostCmd_DS_802_11_SCAN
      * MrvlIEtypes_ChanListParamSet_t       ChanListParamSet;
      * MrvlIEtypes_RatesParamSet_t  OpRateSet; 
      * */
-} __ATTRIB_PACK__ HostCmd_DS_802_11_SCAN, *PHostCmd_DS_802_11_SCAN;
+} __ATTRIB_PACK__ HostCmd_DS_802_11_SCAN;
 
 typedef struct _HostCmd_DS_802_11_SCAN_RSP
 {
@@ -340,7 +319,7 @@ typedef struct _HostCmd_DS_802_11_SCAN_RSP
     u8 NumberOfSets;
     u8 BssDescAndTlvBuffer[1];
 
-} __ATTRIB_PACK__ HostCmd_DS_802_11_SCAN_RSP, *PHostCmd_DS_802_11_SCAN_RSP;
+} __ATTRIB_PACK__ HostCmd_DS_802_11_SCAN_RSP;
 
 /** HostCmd_CMD_802_11_GET_LOG */
 typedef struct _HostCmd_DS_802_11_GET_LOG
@@ -357,15 +336,15 @@ typedef struct _HostCmd_DS_802_11_GET_LOG
     u32 mcastrxframe;
     u32 fcserror;
     u32 txframe;
-    u32 wepundecryptable;
-} __ATTRIB_PACK__ HostCmd_DS_802_11_GET_LOG, *PHostCmd_DS_802_11_GET_LOG;
+    u32 reserved;
+} __ATTRIB_PACK__ HostCmd_DS_802_11_GET_LOG;
 
 /**  HostCmd_CMD_MAC_CONTROL */
 typedef struct _HostCmd_DS_MAC_CONTROL
 {
     u16 Action;
     u16 Reserved;
-} __ATTRIB_PACK__ HostCmd_DS_MAC_CONTROL, *PHostCmd_DS_MAC_CONTROL;
+} __ATTRIB_PACK__ HostCmd_DS_MAC_CONTROL;
 
 /**  HostCmd_CMD_MAC_MULTICAST_ADR */
 typedef struct _HostCmd_DS_MAC_MULTICAST_ADR
@@ -373,34 +352,14 @@ typedef struct _HostCmd_DS_MAC_MULTICAST_ADR
     u16 Action;
     u16 NumOfAdrs;
     u8 MACList[MRVDRV_ETH_ADDR_LEN * MRVDRV_MAX_MULTICAST_LIST_SIZE];
-} __ATTRIB_PACK__ HostCmd_DS_MAC_MULTICAST_ADR,
-    *PHostCmd_DS_MAC_MULTICAST_ADR;
-
-/** HostCmd_CMD_802_11_AUTHENTICATE */
-typedef struct _HostCmd_DS_802_11_AUTHENTICATE
-{
-    u8 MacAddr[ETH_ALEN];
-    u8 AuthType;
-    u8 Reserved[10];
-} __ATTRIB_PACK__ HostCmd_DS_802_11_AUTHENTICATE,
-    *PHostCmd_DS_802_11_AUTHENTICATE;
-
-/** HostCmd_RET_802_11_AUTHENTICATE */
-typedef struct _HostCmd_DS_802_11_AUTHENTICATE_RSP
-{
-    u8 MacAddr[6];
-    u8 AuthType;
-    u8 AuthStatus;
-} __ATTRIB_PACK__ HostCmd_DS_802_11_AUTHENTICATE_RSP,
-    *PHostCmd_DS_802_11_AUTHENTICATE_RSP;
+} __ATTRIB_PACK__ HostCmd_DS_MAC_MULTICAST_ADR;
 
 /**  HostCmd_CMD_802_11_DEAUTHENTICATE */
 typedef struct _HostCmd_DS_802_11_DEAUTHENTICATE
 {
     u8 MacAddr[6];
     u16 ReasonCode;
-} __ATTRIB_PACK__ HostCmd_DS_802_11_DEAUTHENTICATE,
-    *PHostCmd_DS_802_11_DEAUTHENTICATE;
+} __ATTRIB_PACK__ HostCmd_DS_802_11_DEAUTHENTICATE;
 
 /** HostCmd_DS_802_11_ASSOCIATE */
 typedef struct _HostCmd_DS_802_11_ASSOCIATE
@@ -408,24 +367,15 @@ typedef struct _HostCmd_DS_802_11_ASSOCIATE
     u8 PeerStaAddr[6];
     IEEEtypes_CapInfo_t CapInfo;
     u16 ListenInterval;
-    u16 BcnPeriod;
-    u8 DtimPeriod;
+    u8 Reserved1[3];
 
     /*
-     *      MrvlIEtypes_SsIdParamSet_t      SsIdParamSet;
-     *      MrvlIEtypes_PhyParamSet_t       PhyParamSet;
-     *      MrvlIEtypes_SsParamSet_t        SsParamSet;
-     *      MrvlIEtypes_RatesParamSet_t     RatesParamSet;
+     *  MrvlIEtypes_SsIdParamSet_t  SsIdParamSet;
+     *  MrvlIEtypes_PhyParamSet_t   PhyParamSet;
+     *  MrvlIEtypes_SsParamSet_t    SsParamSet;
+     *  MrvlIEtypes_RatesParamSet_t RatesParamSet;
      */
-} __ATTRIB_PACK__ HostCmd_DS_802_11_ASSOCIATE, *PHostCmd_DS_802_11_ASSOCIATE;
-
-/**  HostCmd_CMD_802_11_DISASSOCIATE */
-typedef struct _HostCmd_DS_802_11_DISASSOCIATE
-{
-    u8 DestMacAddr[6];
-    u16 ReasonCode;
-} __ATTRIB_PACK__ HostCmd_DS_802_11_DISASSOCIATE,
-    *PHostCmd_DS_802_11_DISASSOCIATE;
+} __ATTRIB_PACK__ HostCmd_DS_802_11_ASSOCIATE;
 
 /** HostCmd_RET_802_11_ASSOCIATE */
 typedef struct
@@ -438,8 +388,7 @@ typedef struct _HostCmd_DS_802_11_AD_HOC_RESULT
 {
     u8 PAD[3];
     u8 BSSID[MRVDRV_ETH_ADDR_LEN];
-} __ATTRIB_PACK__ HostCmd_DS_802_11_AD_HOC_RESULT,
-    *PHostCmd_DS_802_11_AD_HOC_RESULT;
+} __ATTRIB_PACK__ HostCmd_DS_802_11_AD_HOC_RESULT;
 
 /**  HostCmd_CMD_802_11_SET_WEP */
 typedef struct _HostCmd_DS_802_11_SET_WEP
@@ -460,54 +409,13 @@ typedef struct _HostCmd_DS_802_11_SET_WEP
     u8 WEP2[16];
     u8 WEP3[16];
     u8 WEP4[16];
-} __ATTRIB_PACK__ HostCmd_DS_802_11_SET_WEP, *PHostCmd_DS_802_11_SET_WEP;
-
-/**  HostCmd_CMD_802_3_GET_STAT */
-typedef struct _HostCmd_DS_802_3_GET_STAT
-{
-    u32 XmitOK;
-    u32 RcvOK;
-    u32 XmitError;
-    u32 RcvError;
-    u32 RcvNoBuffer;
-    u32 RcvCRCError;
-} __ATTRIB_PACK__ HostCmd_DS_802_3_GET_STAT, *PHostCmd_DS_802_3_GET_STAT;
-
-/** HostCmd_CMD_802_11_GET_STAT */
-typedef struct _HostCmd_DS_802_11_GET_STAT
-{
-    u32 TXFragmentCnt;
-    u32 MCastTXFrameCnt;
-    u32 FailedCnt;
-    u32 RetryCnt;
-    u32 MultipleRetryCnt;
-    u32 RTSSuccessCnt;
-    u32 RTSFailureCnt;
-    u32 ACKFailureCnt;
-    u32 FrameDuplicateCnt;
-    u32 RXFragmentCnt;
-    u32 MCastRXFrameCnt;
-    u32 FCSErrorCnt;
-    u32 BCastTXFrameCnt;
-    u32 BCastRXFrameCnt;
-    u32 TXBeacon;
-    u32 RXBeacon;
-    u32 WEPUndecryptable;
-} __ATTRIB_PACK__ HostCmd_DS_802_11_GET_STAT, *PHostCmd_DS_802_11_GET_STAT;
+} __ATTRIB_PACK__ HostCmd_DS_802_11_SET_WEP;
 
 /** HostCmd_DS_802_11_AD_HOC_STOP */
 typedef struct _HostCmd_DS_802_11_AD_HOC_STOP
 {
 
-} __ATTRIB_PACK__ HostCmd_DS_802_11_AD_HOC_STOP,
-    *PHostCmd_DS_802_11_AD_HOC_STOP;
-
-/** HostCmd_DS_802_11_BEACON_STOP */
-typedef struct _HostCmd_DS_802_11_BEACON_STOP
-{
-
-} __ATTRIB_PACK__ HostCmd_DS_802_11_BEACON_STOP,
-    *PHostCmd_DS_802_11_BEACON_STOP;
+} __ATTRIB_PACK__ HostCmd_DS_802_11_AD_HOC_STOP;
 
 /**  HostCmd_CMD_802_11_SNMP_MIB */
 typedef struct _HostCmd_DS_802_11_SNMP_MIB
@@ -516,31 +424,7 @@ typedef struct _HostCmd_DS_802_11_SNMP_MIB
     u16 OID;
     u16 BufSize;
     u8 Value[128];
-} __ATTRIB_PACK__ HostCmd_DS_802_11_SNMP_MIB, *PHostCmd_DS_802_11_SNMP_MIB;
-
-/**  HostCmd_CMD_MAC_REG_MAP */
-typedef struct _HostCmd_DS_MAC_REG_MAP
-{
-    u16 BufferSize;
-    u8 RegMap[128];
-    u16 Reserved;
-} __ATTRIB_PACK__ HostCmd_DS_MAC_REG_MAP, *PHostCmd_DS_MAC_REG_MAP;
-
-/*  HostCmd_CMD_BBP_REG_MAP */
-typedef struct _HostCmd_DS_BBP_REG_MAP
-{
-    u16 BufferSize;
-    u8 RegMap[128];
-    u16 Reserved;
-} __ATTRIB_PACK__ HostCmd_DS_BBP_REG_MAP, *PHostCmd_DS_BBP_REG_MAP;
-
-/** HostCmd_CMD_RF_REG_MAP */
-typedef struct _HostCmd_DS_RF_REG_MAP
-{
-    u16 BufferSize;
-    u8 RegMap[64];
-    u16 Reserved;
-} __ATTRIB_PACK__ HostCmd_DS_RF_REG_MAP, *PHostCmd_DS_RF_REG_MAP;
+} __ATTRIB_PACK__ HostCmd_DS_802_11_SNMP_MIB;
 
 /** HostCmd_CMD_MAC_REG_ACCESS */
 typedef struct _HostCmd_DS_MAC_REG_ACCESS
@@ -548,7 +432,7 @@ typedef struct _HostCmd_DS_MAC_REG_ACCESS
     u16 Action;
     u16 Offset;
     u32 Value;
-} __ATTRIB_PACK__ HostCmd_DS_MAC_REG_ACCESS, *PHostCmd_DS_MAC_REG_ACCESS;
+} __ATTRIB_PACK__ HostCmd_DS_MAC_REG_ACCESS;
 
 /** HostCmd_CMD_BBP_REG_ACCESS */
 typedef struct _HostCmd_DS_BBP_REG_ACCESS
@@ -557,7 +441,7 @@ typedef struct _HostCmd_DS_BBP_REG_ACCESS
     u16 Offset;
     u8 Value;
     u8 Reserved[3];
-} __ATTRIB_PACK__ HostCmd_DS_BBP_REG_ACCESS, *PHostCmd_DS_BBP_REG_ACCESS;
+} __ATTRIB_PACK__ HostCmd_DS_BBP_REG_ACCESS;
 
 /**  HostCmd_CMD_RF_REG_ACCESS */
 typedef struct _HostCmd_DS_RF_REG_ACCESS
@@ -566,15 +450,14 @@ typedef struct _HostCmd_DS_RF_REG_ACCESS
     u16 Offset;
     u8 Value;
     u8 Reserved[3];
-} __ATTRIB_PACK__ HostCmd_DS_RF_REG_ACCESS, *PHostCmd_DS_RF_REG_ACCESS;
+} __ATTRIB_PACK__ HostCmd_DS_RF_REG_ACCESS;
 
 /** HostCmd_CMD_802_11_RADIO_CONTROL */
 typedef struct _HostCmd_DS_802_11_RADIO_CONTROL
 {
     u16 Action;
     u16 Control;
-} __ATTRIB_PACK__ HostCmd_DS_802_11_RADIO_CONTROL,
-    *PHostCmd_DS_802_11_RADIO_CONTROL;
+} __ATTRIB_PACK__ HostCmd_DS_802_11_RADIO_CONTROL;
 
 /* HostCmd_DS_802_11_SLEEP_PARAMS */
 typedef struct _HostCmd_DS_802_11_SLEEP_PARAMS
@@ -599,8 +482,7 @@ typedef struct _HostCmd_DS_802_11_SLEEP_PARAMS
 
     /* Reserved field, should be set to zero */
     u16 Reserved;
-} __ATTRIB_PACK__ HostCmd_DS_802_11_SLEEP_PARAMS,
-    *PHostCmd_DS_802_11_SLEEP_PARAMS;
+} __ATTRIB_PACK__ HostCmd_DS_802_11_SLEEP_PARAMS;
 
 /* HostCmd_DS_802_11_SLEEP_PERIOD */
 typedef struct _HostCmd_DS_802_11_SLEEP_PERIOD
@@ -610,8 +492,7 @@ typedef struct _HostCmd_DS_802_11_SLEEP_PERIOD
 
     /* Sleep Period in msec */
     u16 Period;
-} __ATTRIB_PACK__ HostCmd_DS_802_11_SLEEP_PERIOD,
-    *PHostCmd_DS_802_11_SLEEP_PERIOD;
+} __ATTRIB_PACK__ HostCmd_DS_802_11_SLEEP_PERIOD;
 
 /* HostCmd_DS_802_11_BCA_TIMESHARE */
 typedef struct _HostCmd_DS_802_11_BCA_TIMESHARE
@@ -627,8 +508,7 @@ typedef struct _HostCmd_DS_802_11_BCA_TIMESHARE
 
     /* PTA arbiter time in msec */
     u32 BTTime;
-} __ATTRIB_PACK__ HostCmd_DS_802_11_BCA_TIMESHARE,
-    *PHostCmd_DS_802_11_BCA_TIMESHARE;
+} __ATTRIB_PACK__ HostCmd_DS_802_11_BCA_TIMESHARE;
 
 /* HostCmd_DS_802_11_INACTIVITY_TIMEOUT */
 typedef struct _HostCmd_DS_802_11_INACTIVITY_TIMEOUT
@@ -638,8 +518,7 @@ typedef struct _HostCmd_DS_802_11_INACTIVITY_TIMEOUT
 
     /* Inactivity timeout in msec */
     u16 Timeout;
-} __ATTRIB_PACK__ HostCmd_DS_802_11_INACTIVITY_TIMEOUT,
-    *PHostCmd_DS_802_11_INACTIVITY_TIMEOUT;
+} __ATTRIB_PACK__ HostCmd_DS_802_11_INACTIVITY_TIMEOUT;
 
 /** HostCmd_CMD_802_11_RF_CHANNEL */
 typedef struct _HostCmd_DS_802_11_RF_CHANNEL
@@ -649,8 +528,7 @@ typedef struct _HostCmd_DS_802_11_RF_CHANNEL
     u16 RFType;
     u16 Reserved;
     u8 ChannelList[32];
-} __ATTRIB_PACK__ HostCmd_DS_802_11_RF_CHANNEL,
-    *PHostCmd_DS_802_11_RF_CHANNEL;
+} __ATTRIB_PACK__ HostCmd_DS_802_11_RF_CHANNEL;
 
 /**  HostCmd_CMD_802_11_RSSI */
 typedef struct _HostCmd_DS_802_11_RSSI
@@ -661,7 +539,7 @@ typedef struct _HostCmd_DS_802_11_RSSI
     u16 Reserved_0;
     u16 Reserved_1;
     u16 Reserved_2;
-} __ATTRIB_PACK__ HostCmd_DS_802_11_RSSI, *PHostCmd_DS_802_11_RSSI;
+} __ATTRIB_PACK__ HostCmd_DS_802_11_RSSI;
 
 /** HostCmd_DS_802_11_RSSI_RSP */
 typedef struct _HostCmd_DS_802_11_RSSI_RSP
@@ -670,15 +548,14 @@ typedef struct _HostCmd_DS_802_11_RSSI_RSP
     u16 NoiseFloor;
     u16 AvgSNR;
     u16 AvgNoiseFloor;
-} __ATTRIB_PACK__ HostCmd_DS_802_11_RSSI_RSP, *PHostCmd_DS_802_11_RSSI_RSP;
+} __ATTRIB_PACK__ HostCmd_DS_802_11_RSSI_RSP;
 
 /** HostCmd_DS_802_11_MAC_ADDRESS */
 typedef struct _HostCmd_DS_802_11_MAC_ADDRESS
 {
     u16 Action;
     u8 MacAdd[ETH_ALEN];
-} __ATTRIB_PACK__ HostCmd_DS_802_11_MAC_ADDRESS,
-    *PHostCmd_DS_802_11_MAC_ADDRESS;
+} __ATTRIB_PACK__ HostCmd_DS_802_11_MAC_ADDRESS;
 
 /** HostCmd_CMD_802_11_RF_TX_POWER */
 typedef struct _HostCmd_DS_802_11_RF_TX_POWER
@@ -687,9 +564,14 @@ typedef struct _HostCmd_DS_802_11_RF_TX_POWER
     u16 CurrentLevel;
     u8 MaxPower;
     u8 MinPower;
-} __ATTRIB_PACK__ HostCmd_DS_802_11_RF_TX_POWER,
-    *PHostCmd_DS_802_11_RF_TX_POWER;
+} __ATTRIB_PACK__ HostCmd_DS_802_11_RF_TX_POWER;
 
+/**Host_CMD_802_11_IBSS_BCN_MONITOR*/
+typedef struct _HostCmd_DS_802_11_IBSS_BCN_MONITOR
+{
+    u16 Action;
+    u32 u32BcnMonpd;
+} __ATTRIB_PACK__ HostCmd_DS_802_11_IBSS_BCN_MONITOR;
 /** HostCmd_CMD_802_11_RF_ANTENNA */
 typedef struct _HostCmd_DS_802_11_RF_ANTENNA
 {
@@ -698,8 +580,7 @@ typedef struct _HostCmd_DS_802_11_RF_ANTENNA
     /*  Number of antennas or 0xffff(diversity) */
     u16 AntennaMode;
 
-} __ATTRIB_PACK__ HostCmd_DS_802_11_RF_ANTENNA,
-    *PHostCmd_DS_802_11_RF_ANTENNA;
+} __ATTRIB_PACK__ HostCmd_DS_802_11_RF_ANTENNA;
 
 /** HostCmd_CMD_802_11_PS_MODE */
 typedef struct _HostCmd_DS_802_11_PS_MODE
@@ -710,7 +591,7 @@ typedef struct _HostCmd_DS_802_11_PS_MODE
     u16 BCNMissTimeOut;
     u16 LocalListenInterval;
     u16 AdhocAwakePeriod;
-} __ATTRIB_PACK__ HostCmd_DS_802_11_PS_MODE, *PHostCmd_DS_802_11_PS_MODE;
+} __ATTRIB_PACK__ HostCmd_DS_802_11_PS_MODE;
 
 /** PS_CMD_ConfirmSleep */
 typedef struct _PS_CMD_ConfirmSleep
@@ -727,21 +608,12 @@ typedef struct _PS_CMD_ConfirmSleep
     u16 LocalListenInterval;
 } __ATTRIB_PACK__ PS_CMD_ConfirmSleep, *PPS_CMD_ConfirmSleep;
 
-/** HostCmd_CMD_802_11_FW_WAKEUP_METHOD */
+/** HostCmd_CMD_802_11_FW_WAKE_METHOD */
 typedef struct _HostCmd_DS_802_11_FW_WAKEUP_METHOD
 {
     u16 Action;
     u16 Method;
-} __ATTRIB_PACK__ HostCmd_DS_802_11_FW_WAKEUP_METHOD,
-    *PHostCmd_DS_802_11_FW_WAKEUP_METHOD;
-
-/** HostCmd_CMD_802_11_DATA_RATE */
-typedef struct _HostCmd_DS_802_11_DATA_RATE
-{
-    u16 Action;
-    u16 Reserverd;
-    u8 DataRate[HOSTCMD_SUPPORTED_RATES];
-} __ATTRIB_PACK__ HostCmd_DS_802_11_DATA_RATE, *PHostCmd_DS_802_11_DATA_RATE;
+} __ATTRIB_PACK__ HostCmd_DS_802_11_FW_WAKEUP_METHOD;
 
 /** HostCmd_DS_802_11_RATE_ADAPT_RATESET */
 typedef struct _HostCmd_DS_802_11_RATE_ADAPT_RATESET
@@ -751,8 +623,7 @@ typedef struct _HostCmd_DS_802_11_RATE_ADAPT_RATESET
     u16 Bitmap;
     u16 Threshold;
     u16 FinalRate;
-} __ATTRIB_PACK__ HostCmd_DS_802_11_RATE_ADAPT_RATESET,
-    *PHostCmd_DS_802_11_RATE_ADAPT_RATESET;
+} __ATTRIB_PACK__ HostCmd_DS_802_11_RATE_ADAPT_RATESET;
 
 /** HostCmd_DS_802_11_AD_HOC_START*/
 typedef struct _HostCmd_DS_802_11_AD_HOC_START
@@ -766,9 +637,7 @@ typedef struct _HostCmd_DS_802_11_AD_HOC_START
     u16 Reserved1;
     IEEEtypes_CapInfo_t Cap;
     u8 DataRate[HOSTCMD_SUPPORTED_RATES];
-    u8 tlv_memory_size_pad[100];
-} __ATTRIB_PACK__ HostCmd_DS_802_11_AD_HOC_START,
-    *PHostCmd_DS_802_11_AD_HOC_START;
+} __ATTRIB_PACK__ HostCmd_DS_802_11_AD_HOC_START;
 
 /** AdHoc_BssDesc_t */
 typedef struct _AdHoc_BssDesc_t
@@ -798,52 +667,7 @@ typedef struct _HostCmd_DS_802_11_AD_HOC_JOIN
     u16 Reserved1;
     u16 Reserved2;
 
-} __ATTRIB_PACK__ HostCmd_DS_802_11_AD_HOC_JOIN,
-    *PHostCmd_DS_802_11_AD_HOC_JOIN;
-
-/** HostCmd_DS_802_11_ENABLE_RSN */
-typedef struct _HostCmd_DS_802_11_ENABLE_RSN
-{
-    u16 Action;
-    u16 Enable;
-} __ATTRIB_PACK__ HostCmd_DS_802_11_ENABLE_RSN,
-    *PHostCmd_DS_802_11_ENABLE_RSN;
-
-/** HostCmd_DS_802_11_QUERY_TKIP_REPLY_CNTRS */
-typedef struct _HostCmd_DS_802_11_QUERY_TKIP_REPLY_CNTRS
-{
-    u16 CmdCode;
-    u16 Size;
-    u16 SeqNum;
-    u16 Result;
-    u32 NumTkipCntrs;
-} __ATTRIB_PACK__ HostCmd_DS_802_11_QUERY_TKIP_REPLY_CNTRS,
-    *PHostCmd_DS_802_11_QUERY_TKIP_REPLY_CNTRS;
-
-/** HostCmd_DS_802_11_PAIRWISE_TSC */
-typedef struct _HostCmd_DS_802_11_PAIRWISE_TSC
-{
-    u16 CmdCode;
-    u16 Size;
-    u16 SeqNum;
-    u16 Result;
-    u16 Action;
-    u32 Txlv32;
-    u16 Txlv16;
-} __ATTRIB_PACK__ HostCmd_DS_802_11_PAIRWISE_TSC,
-    *PHostCmd_DS_802_11_PAIRWISE_TSC;
-
-/** HostCmd_DS_802_11_GROUP_TSC */
-typedef struct _HostCmd_DS_802_11_GROUP_TSC
-{
-    u16 CmdCode;
-    u16 Size;
-    u16 SeqNum;
-    u16 Result;
-    u16 Action;
-    u32 Txlv32;
-    u16 Txlv16;
-} __ATTRIB_PACK__ HostCmd_DS_802_11_GROUP_TSC, *PHostCmd_DS_802_11_GROUP_TSC;
+} __ATTRIB_PACK__ HostCmd_DS_802_11_AD_HOC_JOIN;
 
 typedef union _KeyInfo_WEP_t
 {
@@ -940,8 +764,7 @@ typedef struct _HostCmd_DS_802_11_KEY_MATERIAL
     u16 Action;
 
     MrvlIEtype_KeyParamSet_t KeyParamSet;
-} __ATTRIB_PACK__ HostCmd_DS_802_11_KEY_MATERIAL,
-    *PHostCmd_DS_802_11_KEY_MATERIAL;
+} __ATTRIB_PACK__ HostCmd_DS_802_11_KEY_MATERIAL;
 
 /** HostCmd_DS_802_11_HOST_SLEEP_CFG */
 typedef struct _HostCmd_DS_HOST_802_11_HOST_SLEEP_CFG
@@ -959,15 +782,16 @@ typedef struct _HostCmd_DS_HOST_802_11_HOST_SLEEP_CFG
     u8 gap;
 } __ATTRIB_PACK__ HostCmd_DS_802_11_HOST_SLEEP_CFG;
 
+#define CAL_DATA_HEADER_LEN	6       /* sizeof(HostCmd_DS_802_11_CAL_DATA_EXT)-sizeof(CalData) */
+
 /** HostCmd_DS_802_11_CAL_DATA_EXT */
 typedef struct _HostCmd_DS_802_11_CAL_DATA_EXT
 {
     u16 Action;
     u16 Revision;
     u16 CalDataLen;
-    u8 CalData[1024];
-} __ATTRIB_PACK__ HostCmd_DS_802_11_CAL_DATA_EXT,
-    *pHostCmd_DS_802_11_CAL_DATA_EXT;
+    u8 CalData[1];
+} __ATTRIB_PACK__ HostCmd_DS_802_11_CAL_DATA_EXT;
 
 /** HostCmd_DS_802_11_EEPROM_ACCESS */
 typedef struct _HostCmd_DS_802_11_EEPROM_ACCESS
@@ -978,28 +802,33 @@ typedef struct _HostCmd_DS_802_11_EEPROM_ACCESS
     u16 Offset;
     u16 ByteCount;
     u8 Value;
-} __ATTRIB_PACK__ HostCmd_DS_802_11_EEPROM_ACCESS,
-    *pHostCmd_DS_802_11_EEPROM_ACCESS;
+} __ATTRIB_PACK__ HostCmd_DS_802_11_EEPROM_ACCESS;
 
 /** HostCmd_DS_802_11_BG_SCAN_CONFIG */
 typedef struct _HostCmd_DS_802_11_BG_SCAN_CONFIG
 {
-        /** Action */
+    /** Action */
     u16 Action;
 
-        /** Enable */
-    /*  0 - Disable 1 - Enable */
+    /** 
+     *  Enable/Disable
+     *  0 - Disable
+     *  1 - Enable 
+     */
     u8 Enable;
 
-        /** bssType */
-    /*  1 - Infrastructure
+    /**
+     *  bssType
+     *  1 - Infrastructure
      *  2 - IBSS
      *  3 - any 
      */
     u8 BssType;
 
-        /** ChannelsPerScan */
-    /* No of channels to scan at one scan */
+    /** 
+     * ChannelsPerScan 
+     *   Number of channels to scan during a single scanning opportunity
+     */
     u8 ChannelsPerScan;
 
     /* 0 - Discard old scan results
@@ -1009,55 +838,51 @@ typedef struct _HostCmd_DS_802_11_BG_SCAN_CONFIG
 
     u16 Reserved;
 
-        /** ScanInterval */
+    /** ScanInterval */
     u32 ScanInterval;
 
-        /** StoreCondition */
-    /* - SSID Match
-     * - Exceed RSSI threshold
-     * - SSID Match & Exceed RSSI Threshold 
-     * - Always 
+    /**
+     * StoreCondition
+     * - SSID Match
+     * - SSID Match & Exceed SNR Threshold 
      */
     u32 StoreCondition;
 
-        /** ReportConditions */
-    /* - SSID Match
-     * - Exceed RSSI threshold
-     * - SSID Match & Exceed RSSIThreshold
-     * - Exceed MaxScanResults
-     * - Entire channel list scanned once 
-     * - Domain Mismatch in country IE 
+    /** 
+     * ReportConditions
+     * - SSID Match
+     * - SSID Match & Exceed SNR Threshold
      */
     u32 ReportConditions;
 
-        /** MaxScanResults */
+    /** MaxScanResults */
     /* Max scan results that will trigger 
      * a scn completion event */
     u16 MaxScanResults;
 
-    /*      attach TLV based parameters as needed, e.g.
-     *      MrvlIEtypes_SsIdParamSet_t      SsIdParamSet;
-     *      MrvlIEtypes_ChanListParamSet_t  ChanListParamSet;
-     *      MrvlIEtypes_NumProbes_t         NumProbes;
+    /*  Attach TLV based parameters as needed:
+     *
+     *  MrvlIEtypes_SsIdParamSet_t          Set specific SSID filter
+     *  MrvlIEtypes_ChanListParamSet_t      Set the channels & channel params
+     *  MrvlIEtypes_NumProbes_t             Number of probes per SSID/broadcast
+     *  MrvlIEtypes_WildCardSsIdParamSet_t  Wildcard SSID matching patterns
+     *  MrvlIEtypes_SnrThreshold_t          SNR Threshold for match/report  
      */
 
-} __ATTRIB_PACK__ HostCmd_DS_802_11_BG_SCAN_CONFIG,
-    *pHostCmd_DS_802_11_BG_SCAN_CONFIG;
+} __ATTRIB_PACK__ HostCmd_DS_802_11_BG_SCAN_CONFIG;
 
 /** HostCmd_DS_802_11_BG_SCAN_QUERY */
 typedef struct _HostCmd_DS_802_11_BG_SCAN_QUERY
 {
     u8 Flush;
-} __ATTRIB_PACK__ HostCmd_DS_802_11_BG_SCAN_QUERY,
-    *pHostCmd_DS_802_11_BG_SCAN_QUERY;
+} __ATTRIB_PACK__ HostCmd_DS_802_11_BG_SCAN_QUERY;
 
 /** HostCmd_DS_802_11_BG_SCAN_QUERY_RSP */
 typedef struct _HostCmd_DS_802_11_BG_SCAN_QUERY_RSP
 {
     u32 ReportCondition;
     HostCmd_DS_802_11_SCAN_RSP scanresp;
-} __ATTRIB_PACK__ HostCmd_DS_802_11_BG_SCAN_QUERY_RSP,
-    *PHostCmd_DS_802_11_BG_SCAN_QUERY_RSP;
+} __ATTRIB_PACK__ HostCmd_DS_802_11_BG_SCAN_QUERY_RSP;
 
 /** HostCmd_DS_802_11_TPC_CFG */
 typedef struct _HostCmd_DS_802_11_TPC_CFG
@@ -1073,9 +898,10 @@ typedef struct _HostCmd_DS_802_11_TPC_CFG
 /** HostCmd_DS_802_11_LED_CTRL */
 typedef struct _HostCmd_DS_802_11_LED_CTRL
 {
-    u16 Action;
-    u16 NumLed;
-    u8 data[256];
+    u16 Action;                 /* 0 = ACT_GET; 1 = ACT_SET; */
+    u16 LedNums;                /* Numbers of LEDs supported */
+    MrvlIEtypes_LedGpio_t LedGpio;
+    MrvlIEtypes_LedBehavior_t LedBehavior[1];
 } __ATTRIB_PACK__ HostCmd_DS_802_11_LED_CTRL;
 
 /** HostCmd_DS_802_11_POWER_ADAPT_CFG_EXT */
@@ -1085,34 +911,7 @@ typedef struct _HostCmd_DS_802_11_POWER_ADAPT_CFG_EXT
     u16 Action;                 /* 0 = ACT_GET; 1 = ACT_SET; */
     u16 EnablePA;               /* 0 = disable; 1 = enable; */
     MrvlIEtypes_PowerAdapt_Group_t PowerAdaptGroup;
-} __ATTRIB_PACK__ HostCmd_DS_802_11_POWER_ADAPT_CFG_EXT,
-    *PHostCmd_DS_802_11_POWER_ADAPT_CFG_EXT;
-
-/** HostCmd_DS_802_11_AFC */
-typedef struct _HostCmd_DS_802_11_AFC
-{
-    u16 afc_auto;
-    union
-    {
-        struct
-        {
-            u16 threshold;
-            u16 period;
-        } auto_mode;
-
-        struct
-        {
-            s16 timing_offset;
-            s16 carrier_offset;
-        } manual_mode;
-    } b;
-} __ATTRIB_PACK__ HostCmd_DS_802_11_AFC;
-
-#define afc_data    b.data
-#define afc_thre    b.auto_mode.threshold
-#define afc_period  b.auto_mode.period
-#define afc_toff    b.manual_mode.timing_offset
-#define afc_foff    b.manual_mode.carrier_offset
+} __ATTRIB_PACK__ HostCmd_DS_802_11_POWER_ADAPT_CFG_EXT;
 
 typedef struct _HostCmd_DS_802_11_IBSS_Status
 {
@@ -1121,12 +920,13 @@ typedef struct _HostCmd_DS_802_11_IBSS_Status
     u8 BSSID[ETH_ALEN];
     u16 BeaconInterval;
     u16 ATIMWindow;
+    u16 UseGRateProtection;
 } __ATTRIB_PACK__ HostCmd_DS_802_11_IBSS_Status;
 
 typedef struct _HostCmd_TX_RATE_QUERY
 {
     u16 TxRate;
-} __ATTRIB_PACK__ HostCmd_TX_RATE_QUERY, *PHostCmd_TX_RATE_QUERY;
+} __ATTRIB_PACK__ HostCmd_TX_RATE_QUERY;
 
 /** HostCmd_DS_802_11_AUTO_TX */
 typedef struct _HostCmd_DS_802_11_AUTO_TX
@@ -1134,7 +934,7 @@ typedef struct _HostCmd_DS_802_11_AUTO_TX
         /** Action */
     u16 Action;                 /* 0 = ACT_GET; 1 = ACT_SET; */
     MrvlIEtypes_AutoTx_t AutoTx;
-} __ATTRIB_PACK__ HostCmd_DS_802_11_AUTO_TX, *PHostCmd_DS_802_11_AUTO_TX;
+} __ATTRIB_PACK__ HostCmd_DS_802_11_AUTO_TX;
 
 /** HostCmd_MEM_ACCESS */
 typedef struct _HostCmd_DS_MEM_ACCESS
@@ -1144,7 +944,7 @@ typedef struct _HostCmd_DS_MEM_ACCESS
     u16 Reserved;
     u32 Addr;
     u32 Value;
-} __ATTRIB_PACK__ HostCmd_DS_MEM_ACCESS, *PHostCmd_DS_MEM_ACCESS;
+} __ATTRIB_PACK__ HostCmd_DS_MEM_ACCESS;
 
 typedef struct
 {
@@ -1160,23 +960,27 @@ typedef struct _HostCmd_DS_802_11_LDO_CONFIG
     u16 PMSource;               /* 0 = LDO_INTERNAL; 1 = LDO_EXTERNAL */
 } __ATTRIB_PACK__ HostCmd_DS_802_11_LDO_CONFIG;
 
+typedef struct _HostCmd_DS_VERSION_EXT
+{
+    u8 versionStrSel;
+    char versionStr[128];
+} __ATTRIB_PACK__ HostCmd_DS_VERSION_EXT;
+
 /** Define data structure for HostCmd_CMD_802_11D_DOMAIN_INFO */
 typedef struct _HostCmd_DS_802_11D_DOMAIN_INFO
 {
     u16 Action;
     MrvlIEtypes_DomainParamSet_t Domain;
-} __ATTRIB_PACK__ HostCmd_DS_802_11D_DOMAIN_INFO,
-    *PHostCmd_DS_802_11D_DOMAIN_INFO;
+} __ATTRIB_PACK__ HostCmd_DS_802_11D_DOMAIN_INFO;
 
 /** Define data structure for HostCmd_RET_802_11D_DOMAIN_INFO */
 typedef struct _HostCmd_DS_802_11D_DOMAIN_INFO_RSP
 {
     u16 Action;
     MrvlIEtypes_DomainParamSet_t Domain;
-} __ATTRIB_PACK__ HostCmd_DS_802_11D_DOMAIN_INFO_RSP,
-    *PHostCmd_DS_802_11D_DOMIAN_INFO_RSP;
+} __ATTRIB_PACK__ HostCmd_DS_802_11D_DOMAIN_INFO_RSP;
 
-typedef struct _HostCmd_DS_INACTIVITY_TIMEOUT_EXT
+typedef struct
 {
     /* ACT_GET/ACT_SET */
     u16 Action;
@@ -1186,10 +990,57 @@ typedef struct _HostCmd_DS_INACTIVITY_TIMEOUT_EXT
     u16 UnicastTimeout;
     /*Inactivity timeout for multicast data */
     u16 MulticastTimeout;
+    /* Timeout for additional RX traffic after Null PM1 packet exchange */
+    u16 PsEntryTimeout;
     // Reserved to further expansion
-    u32 Reserved;
-} __ATTRIB_PACK__ HostCmd_DS_INACTIVITY_TIMEOUT_EXT,
-    *PHostCmd_DS_INACTIVITY_TIMEOUT_EXT;
+    u16 Reserved;
+} __ATTRIB_PACK__ HostCmd_DS_INACTIVITY_TIMEOUT_EXT;
+
+typedef struct _HostCmd_DS_DBGS_CFG
+{
+    u8 Destination;
+    u8 ToAirChan;
+    u8 reserved;
+    u8 En_NumEntries;
+} __ATTRIB_PACK__ HostCmd_DS_DBGS_CFG;
+
+typedef struct _DBGS_ENTRY_DATA
+{
+    u16 ModeAndMaskorID;
+    u16 BaseOrID;
+} __ATTRIB_PACK__ DBGS_ENTRY_DATA;
+
+typedef struct _DBGS_CFG_DATA
+{
+    u16 size;
+    HostCmd_DS_DBGS_CFG data;
+} __ATTRIB_PACK__ DBGS_CFG_DATA;
+
+typedef struct _HostCmd_DS_GET_MEM
+{
+    u32 StartAddr;
+    u16 Len;
+} __ATTRIB_PACK__ HostCmd_DS_GET_MEM;
+
+typedef struct _FW_MEM_DATA
+{
+    u16 size;
+    HostCmd_DS_GET_MEM data;
+} __ATTRIB_PACK__ FW_MEM_DATA;
+
+typedef struct
+{
+    u32 PktInitCnt;
+    u32 PktSuccessCnt;
+    u32 TxAttempts;
+    u32 RetryFailure;
+    u32 ExpiryFailure;
+} __ATTRIB_PACK__ HostCmd_DS_TX_PKT_STAT_Entry;
+
+typedef struct
+{
+    HostCmd_DS_TX_PKT_STAT_Entry StatEntry[HOSTCMD_SUPPORTED_RATES];
+} __ATTRIB_PACK__ HostCmd_DS_TX_PKT_STATS;
 
 /** _HostCmd_DS_COMMAND*/
 struct _HostCmd_DS_COMMAND
@@ -1216,14 +1067,9 @@ struct _HostCmd_DS_COMMAND
         HostCmd_DS_802_11_AD_HOC_START ads;
         HostCmd_DS_802_11_AD_HOC_RESULT result;
         HostCmd_DS_802_11_GET_LOG glog;
-        HostCmd_DS_802_11_AUTHENTICATE auth;
-        HostCmd_DS_802_11_AUTHENTICATE_RSP rauth;
-        HostCmd_DS_802_11_GET_STAT gstat;
-        HostCmd_DS_802_3_GET_STAT gstat_8023;
         HostCmd_DS_802_11_SNMP_MIB smib;
         HostCmd_DS_802_11_RF_TX_POWER txp;
         HostCmd_DS_802_11_RF_ANTENNA rant;
-        HostCmd_DS_802_11_DATA_RATE drate;
         HostCmd_DS_802_11_RATE_ADAPT_RATESET rateset;
         HostCmd_DS_MAC_MULTICAST_ADR madr;
         HostCmd_DS_802_11_AD_HOC_JOIN adj;
@@ -1231,15 +1077,13 @@ struct _HostCmd_DS_COMMAND
         HostCmd_DS_802_11_RF_CHANNEL rfchannel;
         HostCmd_DS_802_11_RSSI rssi;
         HostCmd_DS_802_11_RSSI_RSP rssirsp;
-        HostCmd_DS_802_11_DISASSOCIATE dassociate;
         HostCmd_DS_802_11_AD_HOC_STOP adhoc_stop;
+        HostCmd_DS_802_11_IBSS_BCN_MONITOR ibss_bcn_monpd;
         HostCmd_DS_802_11_MAC_ADDRESS macadd;
-        HostCmd_DS_802_11_ENABLE_RSN enbrsn;
         HostCmd_DS_802_11_KEY_MATERIAL keymaterial;
         HostCmd_DS_MAC_REG_ACCESS macreg;
         HostCmd_DS_BBP_REG_ACCESS bbpreg;
         HostCmd_DS_RF_REG_ACCESS rfreg;
-        HostCmd_DS_802_11_BEACON_STOP beacon_stop;
         HostCmd_DS_802_11_CAL_DATA_EXT caldataext;
         HostCmd_DS_802_11_HOST_SLEEP_CFG hostsleepcfg;
         HostCmd_DS_802_11_EEPROM_ACCESS rdeeprom;
@@ -1250,17 +1094,16 @@ struct _HostCmd_DS_COMMAND
         HostCmd_DS_802_11_BG_SCAN_QUERY bgscanquery;
         HostCmd_DS_802_11_BG_SCAN_QUERY_RSP bgscanqueryresp;
         HostCmd_DS_WMM_GET_STATUS getWmmStatus;
-        HostCmd_DS_WMM_ACK_POLICY ackpolicy;
         HostCmd_DS_WMM_ADDTS_REQ addTsReq;
         HostCmd_DS_WMM_DELTS_REQ delTsReq;
         HostCmd_DS_WMM_QUEUE_CONFIG queueConfig;
         HostCmd_DS_WMM_QUEUE_STATS queueStats;
+        HostCmd_DS_TX_PKT_STATS txPktStats;
         HostCmd_DS_802_11_SLEEP_PARAMS sleep_params;
         HostCmd_DS_802_11_BCA_TIMESHARE bca_timeshare;
         HostCmd_DS_802_11_INACTIVITY_TIMEOUT inactivity_timeout;
         HostCmd_DS_802_11_SLEEP_PERIOD ps_sleeppd;
         HostCmd_DS_802_11_TPC_CFG tpccfg;
-        HostCmd_DS_802_11_AFC afc;
         HostCmd_DS_802_11_LED_CTRL ledgpio;
         HostCmd_DS_802_11_FW_WAKEUP_METHOD fwwakeupmethod;
 
@@ -1268,6 +1111,9 @@ struct _HostCmd_DS_COMMAND
         HostCmd_DS_GET_TSF gettsf;
         HostCmd_DS_802_11_IBSS_Status ibssCoalescing;
         HostCmd_DS_802_11_LDO_CONFIG ldocfg;
+        HostCmd_DS_VERSION_EXT verext;
+        HostCmd_DS_DBGS_CFG dbgcfg;
+        HostCmd_DS_GET_MEM getmem;
         HostCmd_DS_INACTIVITY_TIMEOUT_EXT inactivityext;
     } params;
 } __ATTRIB_PACK__;

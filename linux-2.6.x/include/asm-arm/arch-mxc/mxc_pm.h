@@ -36,8 +36,9 @@
  *                       to support PLL dithering.
  * 12/14/2006  Motorola  Added structures for better operating point
  *                       control.
+ *
  * 02/15/2007  Motorola  Cache optimization changes
- * 02/19/2007  Motorola  Added interface for LCD DVFS callback handler
+ * 11/14/2007  Motorola  Add functions to fix errata issue.
  */
 
 /*!
@@ -202,6 +203,25 @@
  * by assembly source code.
  */
 #ifndef __ASSEMBLY__
+#ifdef CONFIG_MOT_FEAT_PM
+/*!
+ * Perform software workaround of a chip errata that results in an L1
+ * instruction cache corruption. This function must be called with
+ * interrupts disabled and just before the call to cpu_do_idle.
+ *
+ * @return  unsigned long     Saved value of MPDR0.
+ */
+unsigned long mxc_pm_l1_instr_cache_corruption_fix_before_wfi(void);
+
+/*!
+ * Perform software workaround of a chip errata that results in an L1
+ * instruction cache corruption.  This function must be called with
+ * interrupts disabled and just after the call to cpu_do_idle.
+ *
+ * @param   mpdr0     Saved value of MPDR0.
+ */
+void mxc_pm_l1_instr_cache_corruption_fix_after_wfi(unsigned long mpdr0);
+#endif
 /*!
  * Implementing Level 1 CRM Gate Control. Level 2 gate control
  * is provided at module level using LPMD registers
@@ -292,20 +312,12 @@ int mxc_pm_dvfs(unsigned long armfreq, long ahbfreq, long ipfreq);
 #define CORE_FREQ_266 266
 #define CORE_FREQ_399 399
 #define CORE_FREQ_532 532
-#ifdef CONFIG_FEAT_MXC31_CORE_OVERCLOCK_740
-#define CORE_FREQ_636 636
-#define CORE_FREQ_740 740
-#endif
 
 /*!
  * Define the maximum operating frequency of the cpu. This value is then
  * used to optimally configure the cpu's L2 cache. 
  */
-#ifdef CONFIG_FEAT_MXC31_CORE_OVERCLOCK_740
-	#define CORE_MAX_FREQ CORE_FREQ_740
-#else
-	#define CORE_MAX_FREQ CORE_FREQ_532
-#endif
+#define CORE_MAX_FREQ CORE_FREQ_532
 
 #define NUM_PLL                 3
 
@@ -325,13 +337,7 @@ typedef enum {
         INDX_266 =    1,
         INDX_399 =    2,
         INDX_532 =    3,
-#ifdef CONFIG_FEAT_MXC31_CORE_OVERCLOCK_740
-        INDX_636 =    4,
-        INDX_740 =    5,
-        NUM_DVFSOP_INDEXES = 6,
-#else
         NUM_DVFSOP_INDEXES = 4,
-#endif
 } dvfs_op_point_index_t;
 
 /*!
@@ -404,15 +410,6 @@ int mxc_pm_dither_setup(u16 ap_core_normal_pll_ppm, u16 ap_core_turbo_pll_ppm, u
  * @return  Returns 0 on success, -1 on failure.
  */
 void mxc_pm_dither_report(ap_all_plls_mfn_values_t *pllvals);
-
-/*!
- * mxc_pm_setup_lcd_callback: Set up a callback for LCD drivers that
- * need to send SPI commands to the panel before and after DVFS 
- * transitions to avoid flickers on the display.
- *
- * @param   enter_dvfs    true if entering DVFS, and false if exiting DVFS
- */
-extern void mxc_pm_setup_lcd_callback(int (*mxc_pm_lcd_dvfs_handler)(bool enter_dvfs));
 
 #endif /* __ASSEMBLY__ */
 #endif /* CONFIG_MOT_FEAT_PM */

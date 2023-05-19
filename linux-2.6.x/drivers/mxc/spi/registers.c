@@ -1,6 +1,6 @@
 /*
  * Copyright 2004-2006 Freescale Semiconductor, Inc. All Rights Reserved.
- * Copyright Motorola 2006
+ * Copyright 2006-2007 Motorola, Inc.
  */
 
 /*
@@ -16,6 +16,9 @@
  * Date         Author    Comment
  * ----------   --------  ---------------------
  * 10/06/2006   Motorola  Fix read/write issues
+ * 05/17/2007   Motorola  Fix write < 4 byte issues with WFN492
+ * 07/16/2007   Motorola  Implement Dynamic Clock Gating
+ * 08/10/2007   Motorola  Add spin_lock() to protect clock gating calls
  *
  */
 
@@ -29,11 +32,18 @@
 
 #include <linux/module.h>
 #include <asm/io.h>
+#ifdef CONFIG_MOT_FEAT_PM
+#include <asm/arch/clock.h>
+#endif
 
 #include "registers.h"
 
 extern unsigned long spi_ipg_clk;
 extern unsigned long spi_max_bit_rate;
+#ifdef CONFIG_MOT_FEAT_PM
+extern spinlock_t mxc_spi_lock;
+#endif
+
 /*!
  * Global variable which contains the context of the SPI driver
  */
@@ -315,7 +325,11 @@ void spi_put_tx_data(module_nb_t mod, unsigned char *buffer, int size)
 	}
 
 	if (remainder > 0) {
+#ifdef CONFIG_MOT_WFN492
+		int shift = (remainder - 1) * 8;
+#else
 		int shift = 24;
+#endif
 		int i = 0;
 
 		val = 0;
@@ -339,11 +353,26 @@ void spi_put_tx_data(module_nb_t mod, unsigned char *buffer, int size)
  */
 void spi_loopback_mode(module_nb_t mod, bool enable)
 {
+
+#ifdef CONFIG_MOT_FEAT_PM
+        spin_lock(&mxc_spi_lock);	
+	/* Enable our clocks */
+        mxc_clks_enable(CSPI1_CLK);
+        mxc_clks_enable(CSPI2_CLK);
+#endif
+
 	if (enable == true) {
 		_reg_CSPI(spi_add[mod].test_address) |= 0x4000;
 	} else {
 		_reg_CSPI(spi_add[mod].test_address) &= ~(0x4000);
 	}
+
+#ifdef CONFIG_MOT_FEAT_PM
+	/* Disable our clocks */
+        mxc_clks_disable(CSPI1_CLK);
+        mxc_clks_disable(CSPI2_CLK);
+        spin_unlock(&mxc_spi_lock);
+#endif
 }
 
 /*!
@@ -359,8 +388,13 @@ int spi_select_ss(module_nb_t mod, unsigned char nb)
 		return -1;
 	}
 
+#ifdef CONFIG_MOT_WFN492
+	MODIFY_REGISTER_32(3<<mxc_spi_unique_def->chip_select_shift, (nb << mxc_spi_unique_def->chip_select_shift),
+			   _reg_CSPI(spi_add[mod].ctrl_address));
+#else
 	MODIFY_REGISTER_32(0, (nb << mxc_spi_unique_def->chip_select_shift),
 			   _reg_CSPI(spi_add[mod].ctrl_address));
+#endif
 
 	return 0;
 }

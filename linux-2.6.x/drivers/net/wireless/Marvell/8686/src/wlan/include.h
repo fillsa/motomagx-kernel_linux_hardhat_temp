@@ -3,6 +3,7 @@
  * @brief This file contains all the necessary include file.
  *
  * (c) Copyright © 2003-2007, Marvell International Ltd. 
+ * (c) Copyright © 2007, Motorola.
  *
  * This software file (the "File") is distributed by Marvell International 
  * Ltd. under the terms of the GNU General Public License Version 2, June 1991 
@@ -23,8 +24,13 @@ Change log:
 	10/11/05: Add Doxygen format comments
 	01/11/06: Conditional include file removal/addition
 	01/30/06: Add kernel 2.6 support
-	
 ********************************************************/
+
+/********************************************************
+ Revision History:
+  * Author           Date            Description
+  * Motorola         20-Oct-2007     Added FMA support  
+*********************************************************/
 
 #ifndef _INCLUDE_H_
 #define _INCLUDE_H_
@@ -36,6 +42,10 @@ Change log:
 
 #include    "wlan_wmm.h"
 #include    "wlan_11d.h"
+
+#ifdef WFMA_SUPPORT
+#include    "wlan_fma_interface.h"
+#endif
 
 #include    "os_timers.h"
 
@@ -51,7 +61,6 @@ Change log:
 
 #include    <sdio.h>
 
-#include    "wlan_fw.h"
 #include    "wlan_wext.h"
 #include    "wlan_decl.h"
 #ifdef WPRM_DRV

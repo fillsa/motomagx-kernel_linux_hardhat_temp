@@ -46,8 +46,8 @@
  * 10-24-2006    Motorola  Added shredding support to YAFFS2
  *                         Added the check point mount option
  * 12-15-2006    Motorola  Added the middleOfMounting flag
- * 07-18-2007    Motorola  Enable the sync system call for yaffs2 for LJ6.1
- * 10-24-2007    Motorola  Enable the sync system call for yaffs2 for LJ6.3
+ * 08-23-2007    Motorola  Enable the sync system call for yaffs2
+ * 10-29-2007    Motorola  Modify the sync system call for yaffs2
  */
 
 const char *yaffs_fs_c_version =
@@ -104,9 +104,9 @@ extern const char *yaffs_guts_c_version;
 #include "yportenv.h"
 #include "yaffs_guts.h"
 
-unsigned yaffs_traceMask = YAFFS_TRACE_ALWAYS |
-//                         YAFFS_TRACE_OS | 
-//                         YAFFS_TRACE_GC | 
+unsigned yaffs_traceMask = YAFFS_TRACE_ALWAYS | 
+//                         YAFFS_TRACE_OS |
+//                         YAFFS_TRACE_GC |
 			   YAFFS_TRACE_BAD_BLOCKS | 
 			   YAFFS_TRACE_CHECKPOINT
 			   /* | 0xFFFFFFFF */; 
@@ -696,10 +696,6 @@ static int yaffs_commit_write(struct file *f, struct page *pg, unsigned offset,
 	   spos, nBytes));
 
 	nWritten = yaffs_file_write(f, addr, nBytes, &pos);
-#ifdef CONFIG_MOT_FEAT_YAFFS_SYNC
-        /* Mark the super block to sync */
-        /* pg->mapping->host->i_sb->s_dirt = 1; */
-#endif
 
 	if (nWritten != nBytes) {
 		T(YAFFS_TRACE_OS,
@@ -1389,10 +1385,9 @@ static int yaffs_do_sync_fs(struct super_block *sb)
 	if(sb->s_dirt) {
 		yaffs_GrossLock(dev);
 
-		if(dev) {
-			/*yaffs_CheckpointSave(dev);*/
+		if(dev)
 			yaffs_FlushEntireDeviceCache(dev);
-		}
+		
 		yaffs_GrossUnlock(dev);
 
 		sb->s_dirt = 0;
@@ -1410,7 +1405,7 @@ static int yaffs_write_super(struct super_block *sb)
 
 	T(YAFFS_TRACE_OS, (KERN_DEBUG "yaffs_write_super\n"));
 #ifdef CONFIG_MOT_FEAT_YAFFS_SYNC
-	yaffs_do_sync_fs(sb);
+        yaffs_do_sync_fs(sb);
 #endif
 #if (LINUX_VERSION_CODE < KERNEL_VERSION(2,6,18))
 	return 0; /* yaffs_do_sync_fs(sb);*/
@@ -1427,7 +1422,7 @@ static int yaffs_sync_fs(struct super_block *sb)
 
 	T(YAFFS_TRACE_OS, (KERN_DEBUG "yaffs_sync_fs\n"));
 #ifdef CONFIG_MOT_FEAT_YAFFS_SYNC
-	yaffs_do_sync_fs(sb);
+        yaffs_do_sync_fs(sb);
 #endif
 	return 0; /* yaffs_do_sync_fs(sb);*/
 	

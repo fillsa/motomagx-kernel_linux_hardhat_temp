@@ -5,6 +5,7 @@
  *
  *  Copyright (C) 1991-2002  Linus Torvalds
  *  Copyright (C) 2004 Red Hat, Inc., Ingo Molnar <mingo@redhat.com>
+ *  Copyright (C) 2006-2008 Motorola, Inc.
  *
  *  1996-12-23  Modified by Dave Grothe to fix bugs in semaphores and
  *		make semaphores SMP safe
@@ -18,18 +19,13 @@
  *  2003-09-03	Interactivity tuning by Con Kolivas.
  *  2004-04-02	Scheduler domains code by Nick Piggin
  *  2004-10-13  Real-Time Preemption support by Ingo Molnar
+ *  2006-06-26  Motorola: Added 2 instances of local_irq_disable() in 
+ *              preemption code
+ *  2006-11     Added panic on scheduling while atomic support
+ *  2007-12-03  Motorola: Added DBG code
+ *  2008-01-30  Motorola: Adjust the parameter to be identical with mem log mechnism.
  */
 
-/*  Copyright (C) 2006, 2008 Motorola, Inc. */
-/*
- * Date        Author            Comment
- * ==========  ================  ========================
- * 2006-06-26  Motorola	         Added 2 instances of local_irq_disable() 
- * 				 in preemption code
- * 2006-11-11  Motorola		 Added panic on scheduling while atomic support
- * 2008-03-11  Motorola 	 Log the schedule events
- */
- 
 
 #include <linux/mm.h>
 #include <linux/module.h>
@@ -62,7 +58,7 @@
 #include <asm/tlb.h>
 #include <linux/ltt-events.h>
 
-#ifdef CONFIG_MOT_FEAT_LOG_SCHEDULE_EVENTS
+#ifdef CONFIG_DEBUG_GNPO
 #include <linux/mem-log.h>
 #endif
 
@@ -3018,7 +3014,7 @@ switch_tasks:
 		prev = context_switch(rq, prev, next);
 		barrier();
 
-#ifdef CONFIG_MOT_FEAT_LOG_SCHEDULE_EVENTS
+#ifdef CONFIG_DEBUG_GNPO
 		/* Log the value of current, it will be printed out in kpanic when 
 		 * phone panic  
 		 */

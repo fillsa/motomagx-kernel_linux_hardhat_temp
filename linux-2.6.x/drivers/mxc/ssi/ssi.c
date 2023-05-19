@@ -1,6 +1,6 @@
 /*
  * Copyright 2004 Freescale Semiconductor, Inc.
- * Copyright (C) 2006,2007  Motorola, Inc.
+ * Copyright (C) 2006  Motorola, Inc.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -22,7 +22,6 @@
  * Date         Author    Comment
  * ----------   --------  ---------------------------
  * 04/28/2006   Motorola  Fixed bug causing audio data loss during A/v capture
- * 03/21/2007   Motorola  Add poll system call support to the audio driver
  *
 
  */
@@ -1158,7 +1157,7 @@ void ssi_tx_fifo_enable(ssi_mod module, fifo_nb fifo, bool enable)
  */
 void ssi_tx_flush_fifo(ssi_mod module)
 {
-	set_register_bits(1 << SSI_TRANSMITTER_CLEAR_SHIFT, 1 << SSI_TRANSMITTER_CLEAR_SHIFT,
+	set_register_bits(0, 1 << SSI_TRANSMITTER_CLEAR_SHIFT,
 			  MXC_SSISOR, module);
 }
 

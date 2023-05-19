@@ -1,5 +1,5 @@
 /*
- * Copyright 2006-2008 Motorola, Inc.
+ * Copyright (C) 2006-2007 Motorola, Inc.
  *
  * This code is licensed under LGPL.
  *
@@ -28,9 +28,10 @@
  * 01/18/2007  Motorola  Tie DSM to IDLE and reduce IOI timeout to 10ms
  * 01/28/2007  Motorola  Add long IOI timeout API for SD Card
  * 02/06/2007  Motorola  Resolve race condition in DSM.
+ * 04/04/2007  Motorola  Add test point definition for doze mode
  * 04/12/2007  Motorola  Check in idle for busy drivers/modules.
- * 06/07/2007  Motorola  Add notifier for flip and key events.
- * 03/31/2008  Motorola  Add function declaration of mpm_set_awake_state.
+ * 08/01/2007  Motorola  Add function declaration of mpm set awake state
+ * 10/25/2007  Motorola  Improved periodic job state collection for debug.
  */
 
 #ifndef LINUX_MPM_H
@@ -40,7 +41,6 @@
  * ioctl operations
  */
 #include <linux/ioctl.h>
-#include <linux/notifier.h>
 #include <asm/types.h>
 
 #define MPM_MS_PER_SECOND       (1000)
@@ -303,6 +303,9 @@ typedef unsigned long mpm_phoneattr_t;
 #define MPM_IOC_INITIATE_SLEEP      _IO ('A', 17)
 #define MPM_IOC_GET_PHONEATTR       _IOR('A', 18, mpm_phoneattr_t)
 #define MPM_IOC_CONFIG_DESENSE      _IOR('A', 19, mpm_desense_info_t)
+#define MPM_IOC_PRINT_PJSTAT        _IO ('A', 20)
+#define MPM_IOC_START_PJSTAT        _IO ('A', 21)
+#define MPM_IOC_STOP_PJSTAT         _IO ('A', 22)
 
 /*
  * ioctls for the mpm_stats device.
@@ -346,6 +349,7 @@ enum {
     MPM_TEST_SUSPEND_DELAYED_BY_PJ,
     MPM_TEST_DSM_ENTER,
     MPM_TEST_WAIT_EXIT,
+    MPM_TEST_DOZE_EXIT,
     MPM_TEST_STOP_EXIT,
     MPM_TEST_DSM_EXIT,
     MPM_TEST_SLEEP_ATTEMPT_FAILED,
@@ -357,6 +361,13 @@ enum {
  * Test point callback function types
  */
 typedef void(*mpm_test_callback_t)(int i, ...);
+
+/*
+ * PJ work state callback function types
+ */
+typedef void(*mpm_pjs_callback_t)(const unsigned long orig_func,
+                                  const char *comm,
+                                  const int pid);
 
 #ifdef CONFIG_ARCH_MXC
 /*
@@ -518,10 +529,9 @@ struct mpm_callback_fns
     mpm_callback_t resume_from_sleep;
 #ifdef CONFIG_MOT_FEAT_PM_STATS
     mpm_test_callback_t report_test_point;
+    mpm_pjs_callback_t collect_pj_stat;
 #endif
 };
-
-extern struct notifier_block *mpm_flipkey_notifier_list;
 
 extern int mpm_queue_empty(void);
 extern void mpm_get_queued_event(mpm_event_t *);
@@ -529,9 +539,7 @@ extern wait_queue_head_t mpm_wq;
 extern void mpm_event_notify(short type, short kind, int info);
 extern mpm_callback_t mpm_periodic_jobs_done;
 extern mpm_callback_t mpm_periodic_jobs_started;
-//#if defined(CONFIG_MACH_PICO) || defined(CONFIG_MACH_XPIXL) ||defined(CONFIG_MACH_NEVIS) 
 extern mpm_callback_t mpm_set_awake_state;
-//#endif
 extern mpm_callback_t mpm_ready_to_sleep;
 extern mpm_callback_t mpm_handle_ioi;
 extern mpm_callback_t mpm_handle_long_ioi;
@@ -544,6 +552,9 @@ extern const mpm_op_t* const mpm_getall_op(void);
 extern void mpm_print_opstat(char *buf, int buflen);
 extern void mpm_start_opstat(void);
 extern void mpm_stop_opstat(void);
+extern void mpm_print_pjstat(char *buf, int buflen);
+extern void mpm_start_pjstat(int mode);
+extern void mpm_stop_pjstat(void);
 extern void mpm_callback_register(struct mpm_callback_fns *);
 extern void mpm_callback_deregister(void);
 extern int  mpm_register_with_mpm(const char *name);
@@ -556,6 +567,7 @@ extern int mpm_panic_with_invalid_desense(void);
 #endif
 #ifdef CONFIG_MOT_FEAT_PM_STATS
 extern mpm_test_callback_t mpm_report_test_point;
+extern mpm_pjs_callback_t mpm_collect_pj_stat;
 extern void mpm_lpm_stat_ctl(int);
 extern void mpm_reset_lpm_stats(void);
 #endif
@@ -587,7 +599,6 @@ typedef struct {
     int		event_tail;
     mpm_event_t	events[MPM_MAX_EVENTS];
 } mpm_devq_t;
-
 
 #endif /* __KERNEL__ */
 

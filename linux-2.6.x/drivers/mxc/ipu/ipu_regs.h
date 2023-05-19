@@ -1,6 +1,5 @@
 /*
  * Copyright 2005-2006 Freescale Semiconductor, Inc. All Rights Reserved.
- * Copyright (C) 2008 Motorola, Inc.
  */
 
 /*
@@ -10,9 +9,6 @@
  *
  * http://www.opensource.org/licenses/gpl-license.html
  * http://www.gnu.org/copyleft/gpl.html
- *
- * Date     Author    Comment
- * 05/2008  Motorola  Add new elements for DI/DO read and write
  */
 
 /*
@@ -346,8 +342,6 @@ enum {
 	PF_CONF_PAUSE_ROW_SHIFT = 16,
 
 	/* DI_DISP_SIG_POL bits */
-    DI_D0_READ_POL_SHIFT = 4,
-    DI_D0_WRITE_POL_SHIFT = 3,
 	DI_D3_VSYNC_POL_SHIFT = 28,
 	DI_D3_HSYNC_POL_SHIFT = 27,
 	DI_D3_DRDY_SHARP_POL_SHIFT = 26,

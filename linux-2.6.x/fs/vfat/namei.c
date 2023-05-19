@@ -1,7 +1,8 @@
 /*
  *  linux/fs/vfat/namei.c
  *
- *  Copyright (C) 2007-2008 Motorola Inc.
+ *  Copyright (C) 2007-2008 Motorola, Inc.
+ *
  *  Written 1992,1993 by Werner Almesberger
  *
  *  Windows95/Windows NT compatible extended MSDOS filesystem
@@ -15,14 +16,10 @@
  *  Support Multibyte character and cleanup by
  *  				OGAWA Hirofumi <hirofumi@mail.parknet.co.jp>
  */
-
-
-
 /* ChangeLog:
  * (mm-dd-yyyy)  Author    Comment
-  * 10-31-2007    Motorola  Succeed hidden and system attr from parent inode for LJ6.1
- * 1i-21-2007    Motorola  Upmerge from 6.1. (Succeed hidden and system attr from parent inode)
- * 02-20-2008    Motorola  change hidden way
+ * 10-31-2007    Motorola  Succeed hidden and system attr from parent inode
+ * 02-20-2008    Motorola  Change hidden way
  */
 
 
@@ -710,16 +707,20 @@ static int vfat_add_entry(struct inode *dir,struct qstr* qname,
 	struct msdos_dir_entry *dummy_de;
 	struct buffer_head *dummy_bh;
 	loff_t dummy_i_pos;
-	int is_hid = 0;  
 
+#ifdef CONFIG_MOT_FEAT_ENABLE_HIDE_SYSFILE
+	int is_hid = 0;
+#endif
+	
 	len = vfat_striptail_len(qname);
 	if (len == 0)
 		return -ENOENT;
 	
+#ifdef CONFIG_MOT_FEAT_ENABLE_HIDE_SYSFILE
 	/* if create a hidden dir on linux OS, set ATTR_HIDDEN for windows */
 	if (qname->name[0] == '.')
-	    is_hid = 1;
-
+		is_hid = 1;
+#endif
 	dir_slots =
 	       kmalloc(sizeof(struct msdos_dir_slot) * MSDOS_SLOTS, GFP_KERNEL);
 	if (dir_slots == NULL)
@@ -757,10 +758,15 @@ static int vfat_add_entry(struct inode *dir,struct qstr* qname,
 	fat_date_unix2dos(dir->i_mtime.tv_sec, &(*de)->time, &(*de)->date);
 	(*de)->ctime = (*de)->time;
 	(*de)->adate = (*de)->cdate = (*de)->date;
-
+	
+#ifdef CONFIG_MOT_FEAT_ENABLE_HIDE_SYSFILE 
 	if (is_hid)
-	    (*de)->attr |= ATTR_HIDDEN | ATTR_SYS;
-
+		(*de)->attr |= ATTR_HIDDEN | ATTR_SYS;
+#else 
+	if (dir->i_ino != MSDOS_ROOT_INO) {
+		(*de)->attr |= (MSDOS_I(dir)->i_attrs & (ATTR_INV | ATTR_RO));	
+	}
+#endif
 	mark_buffer_dirty(*bh);
 
 	/* slots can't be less than 1 */

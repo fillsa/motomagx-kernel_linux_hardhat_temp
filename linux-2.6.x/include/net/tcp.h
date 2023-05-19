@@ -18,7 +18,7 @@
 
 /*
  * Copyright (c) 2007 Motorola, Inc. 
- * 03/09/2007         change 'TCP_RETR2' to 5, 'TCP_RTO_MAX' to 60. This will reduce TCP
+ * 04/16/2007         change 'TCP_RETR2' to 5, 'TCP_RTO_MAX' to 60. This will reduce TCP
  *                    retrans expire time. 
  */
 

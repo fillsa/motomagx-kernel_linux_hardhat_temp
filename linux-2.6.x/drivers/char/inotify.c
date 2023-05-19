@@ -26,9 +26,10 @@
  * 01-Dec-2006  Motorola        Changed inotify_super_block_umount list processing
  * 28-Mar-2007  Motorola        Change from list_for_each_entry to list_for_each_entry_safe 
  *                              in function inotify_super_block_umount.
- * 23-Oct-2007  Motorola        Add spinlock protection for inode 
- * 19-Dec-2007  Motorola        Adding inode checking during umounting
- * 25-Jun-2008  Motorola        Make sure the freed wd is not used immediately
+ * 17-Oct-2007  Motorola        Add spinlock protection for inode 
+ * 06-Dec-2007  Motorola        Adding inode checking during umounting
+ * 30-Jun-2008	Motorola	Make sure the released wd is not used immediately
+ * 11-Sep-2008  Motorola        Update the debug info.
  */
 
 #include <linux/module.h>
@@ -200,12 +201,10 @@ static inline struct inotify_inode_data * get_inode_data(struct inode *inode)
  */
 static inline void put_inode_data(struct inode *inode)
 {
-        //spin_lock(&inode->i_lock);
 	if (atomic_dec_and_test(&inode->inotify_data->count)) {
 		kmem_cache_free(inode_data_cachep, inode->inotify_data);
 		inode->inotify_data = NULL;
 	}
-        //spin_unlock(&inode->i_lock);
 }
 
 /*

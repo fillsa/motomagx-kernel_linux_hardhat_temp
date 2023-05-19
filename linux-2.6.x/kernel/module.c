@@ -1,8 +1,8 @@
 /* Rewritten by Rusty Russell, on the backs of many others...
    Copyright (C) 2002 Richard Henderson
    Copyright (C) 2001 Rusty Russell, 2002 Rusty Russell IBM.
-   Copyright (C) 2006-2008 Motorola, Inc.
-
+   Copyright 2006-2007 Motorola, Inc.
+   Copyright 2008 Motorola, Inc.
     This program is free software; you can redistribute it and/or modify
     it under the terms of the GNU General Public License as published by
     the Free Software Foundation; either version 2 of the License, or
@@ -19,8 +19,10 @@
 
     Date         Author          Comment
     10/2006      Motorola        Added secure module loading support 
+    03/2007      Mototola        Changed secure module code
     03/2007      Motorola        Applied GCOV 2.6.16 patch
     06/2008  	 Motorola	 Hash whole ELF file in secure module loading
+    06/2008      Motorola        Fix partition security issue
 */
 #include <linux/config.h>
 #include <linux/module.h>
@@ -46,11 +48,10 @@
 #include <asm/semaphore.h>
 #include <asm/cacheflush.h>
 #include <linux/gcov.h>
-//#ifdef CONFIG_MOT_FEAT_SECURE_MODULE
+#ifdef CONFIG_MOT_FEAT_SECURE_MODULE
 #include <linux/crypto.h>
 #include <asm/scatterlist.h>
-#include <linux/mount.h>
-//#endif /* CONFIG_MOT_FEAT_SECURE_MODULE */
+#endif /* CONFIG_MOT_FEAT_SECURE_MODULE */
 
 #if 0
 #define DEBUGP printk
@@ -1480,6 +1481,52 @@ static inline void add_kallsyms(struct module *mod,
 #endif /* CONFIG_KALLSYMS */
 
 #ifdef CONFIG_MOT_FEAT_SECURE_MODULE
+
+static char *motmodule_hashes;
+static DEFINE_SPINLOCK(motmodule_hash_lock);
+
+/* null is an empty list */
+static const char mot_empty_hash_list[]={'\0','\0'};
+
+int motmodule_hash_add_hashes(const char * hashes)
+{
+        char *tmp = mot_empty_hash_list;
+        int ret=-EPERM;
+
+        if (hashes)
+                tmp = hashes;
+
+        spin_lock(&motmodule_hash_lock);
+        if (!motmodule_hashes) {
+                motmodule_hashes = tmp;
+                ret = 0;
+        }
+        spin_unlock(&motmodule_hash_lock);
+
+        return ret;
+}
+
+EXPORT_SYMBOL(motmodule_hash_add_hashes);
+
+#ifdef DEBUGHASHES
+int motmodule_hash_get_hashes(char *buff, size_t buff_size)
+{
+    size_t left;
+    int ret;
+    char * hash;
+    
+    for ( left = buff_size, hash = motmodule_hashes; hash != NULL && *hash != '\0' && left > 0; ) {
+        ret = snprintf(buff, left,"%s\n",hash);
+        left -= (ret < left) ? ret : left;
+        buff += (ret < left) ? ret : left;
+        hash += strlen(hash) + 1;
+    }
+    return buff_size-left;
+}
+
+EXPORT_SYMBOL(motmodule_hash_get_hashes);
+#endif
+
 static void module_hash_update(struct crypto_tfm * tfm, 
             struct scatterlist * sg, uint8_t * data, unsigned int size)
 {
@@ -1506,75 +1553,31 @@ static void module_hash_update(struct crypto_tfm * tfm,
 
 static int module_hash_verify(uint8_t * digest)
 {
+    int i,j;
+    char * hash;
     char digest_ascii[41];
-    extern dev_t ROOT_DEV;
-    struct file * hashfile;
-    int correct_dev, i, j, in_hash;
-    char comp_char;
-    mm_segment_t orig_fs;
 
     /* store the digest in ascii for comparison */
     for(i=0, j=0; i < 20; i++, j+=2) {
         sprintf((digest_ascii+j), "%02x", digest[i]);
     }
     digest_ascii[40] = '\0';
-
-    /* Open up hash file for comparison */
-    hashfile = filp_open("/etc/modules.hash", O_RDONLY, 0);
-    if(IS_ERR(hashfile) || (hashfile == NULL)) {
-        printk(KERN_WARNING "Cannot open /etc/modules.hash\n");
-        return -EPERM;
+    
+    if (motmodule_hashes) {
+        for ( hash = motmodule_hashes; *hash != '\0'; ) {
+            if (!strcmp(hash, digest_ascii))
+                return 0;
+            hash += strlen(hash) + 1;
+        }
+    } else {
+        /* default state is to allow modules */
+        return 0;
     }
-
-    /* Make sure this file is on the correct device  */
-    spin_lock(&vfsmount_lock);
-    correct_dev = (hashfile->f_vfsmnt->mnt_sb->s_dev == ROOT_DEV);
-    spin_unlock(&vfsmount_lock);
-    if(!correct_dev) { 
-        printk(KERN_WARNING "Invalid mount point for /etc/modules.hash\n");
-        filp_close(hashfile, NULL);
-        return -EPERM;
-    } 
-
-    /* Allow read to modify the addr_limit to read into kernel space */
-    orig_fs = get_fs();
-    set_fs(KERNEL_DS); 
-
-    i = 0;
-    in_hash = 1;
-    /* Read the hashes from list of trusted hashes 
-     * /etc/modules.hash has lines of the format:
-     * <40 hex char digest> <filepath of module>\n */
-    while(hashfile->f_op->read(hashfile, &comp_char, 1, &(hashfile->f_pos))) {
-        /* If we just read a new line, start in new hash */
-        if(comp_char == '\n') {
-            in_hash = 1;
-            i = 0;
-            continue;
-        } 
-        if(!in_hash) {
-            continue;
-        }
-        /* Check if still matching and increment search offset */
-        if(comp_char != digest_ascii[i]) {
-            i = 0;          /* Reset our search offset */
-            in_hash = 0;    /* No longer in possible matching hash */
-            continue;
-        }
-        /* If we just compared the final character and it matched */
-        if(i == 39) {
-            set_fs(orig_fs);
-            filp_close(hashfile, NULL);
-            return 0; /* Return, we have found a matching hash */
-        }
-        i++;
-    }
+    
     /* If no matches it is an untrusted module */
     printk( KERN_WARNING "Untrusted module, correct hash must be listed in /etc/modules.hash\n");
-    set_fs(orig_fs);
-    filp_close(hashfile, NULL);
     return -EPERM;
-}         
+}
 #endif /* CONFIG_MOT_FEAT_SECURE_MODULE */
 
 /* Allocate and load the module: note that size of section 0 is always
@@ -1811,6 +1814,27 @@ static struct module *load_module(void __user *umod,
 	memset(ptr, 0, mod->init_size);
 	mod->module_init = ptr;
 
+#ifdef CONFIG_MOT_FEAT_SECURE_MODULE
+    /* Allocate sha1 transform  */
+    tfm = crypto_alloc_tfm("sha1", 0);
+    if (!tfm) {
+        printk("Couldn't load module - SHA1 transform unavailable\n");
+        return ERR_PTR(-EPERM);
+    }
+
+    /* Init the digest */
+    crypto_digest_init(tfm);
+
+    /* Allocate scatterlist for hash update */
+    sg = kmalloc(sizeof(struct scatterlist), GFP_KERNEL);
+    if (!sg) {
+        printk("Couldn't get memory for scatterlist\n");
+        err = -ENOMEM;
+        crypto_free_tfm(tfm);
+        goto free_core;
+    }
+#endif /* CONFIG_MOT_FEAT_SECURE_MODULE */
+
 	/* Transfer and hash each section which specifies SHF_ALLOC */
 	DEBUGP("final section addresses:\n");
 	for (i = 0; i < hdr->e_shnum; i++) {
@@ -1826,6 +1850,14 @@ static struct module *load_module(void __user *umod,
 			dest = mod->module_core + sechdrs[i].sh_entsize;
 
 		if (sechdrs[i].sh_type != SHT_NOBITS) {
+#ifdef CONFIG_MOT_FEAT_SECURE_MODULE
+            /* Update the module hash with this section 
+               Do not hash .gnu.linkonce.this_module (modindex),
+               because it is changed earlier in this function */
+            if(i != modindex)
+                module_hash_update(tfm, sg, (uint8_t *)sechdrs[i].sh_addr, 
+                                   sechdrs[i].sh_size);
+#endif /* CONFIG_MOT_FEAT_SECURE_MODULE */
 			memcpy(dest, (void *)sechdrs[i].sh_addr,
 			       sechdrs[i].sh_size);
         }
@@ -1835,6 +1867,23 @@ static struct module *load_module(void __user *umod,
 		DEBUGP("\t0x%lx %s\n", sechdrs[i].sh_addr, secstrings + sechdrs[i].sh_name);
 
 	}
+
+#ifdef CONFIG_MOT_FEAT_SECURE_MODULE
+    /* Free the scatterlist */
+    kfree(sg);
+
+    /* Finalize the transform and verify the digest,  
+       this will return an error if the digest does not match */
+    /* Store the final digest */
+    crypto_digest_final(tfm, digest);
+    /* Free the transform */
+    crypto_free_tfm(tfm);
+    /* Verify the module hash with hash from file */ 
+    err = module_hash_verify(digest);
+    if(err) {
+       goto free_core; 
+    }
+#endif /* CONFIG_MOT_FEAT_SECURE_MODULE */
 
 	/* Module has been moved. */
 	mod = (void *)sechdrs[modindex].sh_addr;
