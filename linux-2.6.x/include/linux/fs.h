@@ -1,5 +1,5 @@
 /*
- * Copyright 2006-2007 Motorola, Inc
+ * Copyright (C) 2006-2008 Motorola, Inc.
  */
 
 /* Date         Author          Comment
@@ -10,6 +10,7 @@
  *                              MOT_FEAT_FASTPATHNAME
  * 31-Jan-2007  Motorola        Fix the bug about st_ctime, and st_mtime field
  *                              of a mapped region, and msync()
+ * 29-Aug-2008  Motorola        Add the posix file lock patch                             
  */
 
 #ifndef _LINUX_FS_H
@@ -713,11 +714,19 @@ extern struct list_head file_lock_list;
 #include <linux/fcntl.h>
 
 extern int fcntl_getlk(struct file *, struct flock __user *);
+#ifdef CONFIG_MOT_FILELOCK_PATCH
+extern int fcntl_setlk(unsigned int, struct file *, unsigned int, struct flock __user *);
+#else
 extern int fcntl_setlk(struct file *, unsigned int, struct flock __user *);
+#endif
 
 #if BITS_PER_LONG == 32
 extern int fcntl_getlk64(struct file *, struct flock64 __user *);
+#ifdef CONFIG_MOT_FILELOCK_PATCH
+extern int fcntl_setlk64(unsigned int, struct file *, unsigned int, struct flock64 __user *);
+#else 
 extern int fcntl_setlk64(struct file *, unsigned int, struct flock64 __user *);
+#endif
 #endif
 
 extern void send_sigio(struct fown_struct *fown, int fd, int band);

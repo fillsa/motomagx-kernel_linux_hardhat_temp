@@ -84,6 +84,7 @@
 /* The integration of WFN444 required major reworking to this file. As a 
  * result we are enclosing the entire file in this ifdef, as opposed to
  * ifdef'ing the individual changes related to WFN444. */
+#if defined(CONFIG_MOT_WFN444) && defined(CONFIG_MOT_WFN487)
 
 #define DEBUG 0
 
@@ -3135,3 +3136,6 @@ EXPORT_SYMBOL(mxc_ipc_datalog_transfer_ongoing);
 EXPORT_SYMBOL(hw_ctrl_ipc_write_ex2);
 EXPORT_SYMBOL(hw_ctrl_ipc_read_ex2);
 EXPORT_SYMBOL(hw_ctrl_ipc_ioctl);
+#else
+#error UNSUPPORTED IPC CONFIGURATION
+#endif

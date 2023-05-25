@@ -20,6 +20,7 @@
  * 01-25-2008    Motorola  Remove repair FAT and fix issue in App
  * 02-20-2008    Motorola  Remove sticky mode
  * 06-25-2008    Motorola  Change lookup position for the lookup.
+ * 10-15-2008	 Motorola  Fix file corruption.
  */
 
 
@@ -1216,6 +1217,14 @@ static int fat_fill_inode(struct inode *inode, struct msdos_dir_entry *de)
 		MSDOS_I(inode)->i_start = le16_to_cpu(de->start);
 		if (sbi->fat_bits == 32)
 			MSDOS_I(inode)->i_start |= (le16_to_cpu(de->starthi) << 16);
+#ifdef CONFIG_MOT_FAT_CHECKDIR
+		else
+			if (de->starthi != 0)
+				return -ENOENT;
+				
+		if (le32_to_cpu(de->size)!=0)
+			return -ENOENT;
+#endif
 
 		MSDOS_I(inode)->i_logstart = MSDOS_I(inode)->i_start;
 		error = fat_calc_dir_size(inode);

@@ -27,6 +27,7 @@
  * 10/31/2007   Motorola    Integrate the patch for removing WFI SW workaround.
  * 11/14/2007   Motorola    Add fix for errata issues.
  * 04/22/2008   Motorola    Add fix of the keywest reboot issue.
+ * 21/05/2008   Motorola    Add ATLAS reboot mode.
  *
  */
 
@@ -40,6 +41,10 @@
 #endif
 
 #include <asm/mot-gpio.h>
+
+#if defined(CONFIG_MOT_FEAT_SYSREBOOT_ATLAS)
+#include <asm/power-ic-api.h>
+#endif
 
 /*!
  * @defgroup MSL Machine Specific Layer (MSL)
@@ -100,6 +105,70 @@ void arch_idle(void)
  */
 void arch_reset(char mode)
 {
+#if defined(CONFIG_MOT_FEAT_SYSREBOOT_ATLAS)
+        int retval, mema, step = 0;
+        struct timeval tv;
+#elif defined(CONFIG_MOT_FEAT_SYSREBOOT_CRM)
+        unsigned long ccmr;
+#endif  
+
+#if defined(CONFIG_MOT_FEAT_SYSREBOOT_ATLAS)
+        /*
+         * Set bit 4 of the Atlas MEMA register. This bit indicates to the
+         * MBM that the phone is to be reset.
+         */
+        retval = kernel_power_ic_backup_memory_read(KERNEL_BACKUP_MEMORY_ID_SOFT_RESET, &mema);
+        if(retval != 0) {
+            step = 1;
+            goto die;
+        }
+
+        mema |= 1;
+
+        retval = kernel_power_ic_backup_memory_write(KERNEL_BACKUP_MEMORY_ID_SOFT_RESET, mema);
+        if(retval != 0) {
+            step = 2;
+            goto die;
+        }
+
+        /*
+         * Set the Atlas RTC alarm to go off in 2 seconds. Experience indicates
+         * that values less than 2 may not work reliably.
+         */
+        retval = kernel_power_ic_rtc_get_time(&tv);
+        if(retval != 0) {
+            step = 3;
+            goto die;
+        }
+
+        tv.tv_sec += 2;
+
+        retval = kernel_power_ic_rtc_set_time_alarm(&tv);
+        if(retval != 0) {
+            step = 4;
+            goto die;
+        }
+
+        /* power down the system */
+	 gpio_signal_set_data(GPIO_SIGNAL_WDOG_AP, GPIO_DATA_LOW);
+die:
+        printk("recieved error %d from power_ic driver at step %d in reboot",
+                retval, step);
+
+        /* fall through to existing reset code */
+#elif defined(CONFIG_MOT_FEAT_SYSREBOOT_CRM)
+       /*
+        *  Need to Reboot via Clock Reset Module with Software reset
+        */
+	ccmr = __raw_readl(MXC_CCM_RCSR);
+	ccmr |= MXC_CCM_RCSR_NF16B;
+	__raw_writel(ccmr, MXC_CCM_RCSR);
+	
+	while(1) {
+          /* stay here, software reset */
+                arch_idle();
+        }
+#endif 
 
 	/* The GPS_RESET line is tied to "Boot Pin 1" on the ArgonLVi.
          * If this bit is high level, will cause software reboot hang up.

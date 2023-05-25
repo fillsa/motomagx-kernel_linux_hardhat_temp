@@ -1,6 +1,6 @@
 /*
  * Copyright 2004 Freescale Semiconductor, Inc. All Rights Reserved.
- * Copyright (C) 2006-2007 Motorola, Inc.
+ * Copyright (C) 2006-2008 Motorola, Inc.
  */
 
 /*
@@ -43,6 +43,10 @@
  * 08/07/2007  Motorola  Remove code of clearing up DPE bit.
  * 10/31/2007  Motorola  Integrate the patch for removing WFI SW workaround.
  * 11/14/2007  Motorola  Add fix for errata issues.
+ * 08/25/2008  Motorola  Force panic when neither DFSI or DFSP bits is correct
+ *                       for freq switching.
+ * 11/07/2008  Motorola  Disable PMICHE and set PMIC_HS_CNT to 80us as
+ *                       a work around for WD2 apmd panic issue.
  */
 
 /*!
@@ -88,6 +92,7 @@
 #include <asm/arch/gpio.h>
 #if CONFIG_MOT_FEAT_PM
 #include <asm/arch/mxc_mu.h>
+#include <asm/bootinfo.h>
 #endif
 
 #include "crm_regs.h"
@@ -125,7 +130,13 @@
 /*
  * Adds a 40us CKIH delay to allow POWER_RDY to go low after voltage change.
  */
-#define PMCR1_PMIC_HS_CNT       0x420 
+/* #define PMCR1_PMIC_HS_CNT       0x420 */
+
+/* 
+ * As a workaround to avoid blocking at PMIC HS, PMICHE is disabled
+ * Adjust 80us waiting for voltage change
+ */
+#define PMCR1_PMIC_HS_CNT       0x820
 #else
 #define PMIC_HS_CNT             0x204
 #endif
@@ -330,8 +341,9 @@ static int mxc_pm_dvsenable(void)
 #endif
 
 	if (mxc_pm_chk_dfsp() == DFS_NO_SWITCH) {
-		pmcr = ((((__raw_readl(MXC_CCM_PMCR0) | (MXC_CCM_PMCR0_DVSE)) |
-			  (MXC_CCM_PMCR0_PMICHE)) | (MXC_CCM_PMCR0_EMIHE)) |
+		/* Enable DVS, EMI handshake disable PMIC handshake and mask DFSI interrupt */
+		pmcr = ((((__raw_readl(MXC_CCM_PMCR0) | (MXC_CCM_PMCR0_DVSE)) &
+			  (~MXC_CCM_PMCR0_PMICHE)) | (MXC_CCM_PMCR0_EMIHE)) |
 			(MXC_CCM_PMCR0_DFSIM));
 		__raw_writel(pmcr, MXC_CCM_PMCR0);
 #ifdef CONFIG_MOT_FEAT_PM
@@ -493,6 +505,10 @@ static int mxc_pm_setturbo(dvfs_op_point_t dvfs_op_reqd)
 static int mxc_pm_chgfreq(dvfs_op_point_t dvfs_op)
 {
 	int retval = 0;
+#ifdef CONFIG_MOT_FEAT_PM
+        char buf[80];
+        int ms = 0;
+#endif
 
 	switch (dvfs_op) {
 
@@ -595,7 +611,41 @@ static int mxc_pm_chgfreq(dvfs_op_point_t dvfs_op)
 			 * will occur as soon as the switch completes
 			 * by setting DFSI
 			 */
-			while (((__raw_readl(MXC_CCM_PMCR0) >> 24) & 1) != 1) ;
+#ifdef CONFIG_MOT_FEAT_PM
+                        /* Delay 5s for switch complete with DFSI setting and DFSP clear */
+                        while (ms < 5000)
+                        {
+                        	if (((__raw_readl(MXC_CCM_PMCR0) >> 24) & 1) == 1)
+                        		break;
+                        	mdelay(1);
+                        	ms++;
+                        }
+                          
+                        /* if DFSI bit is not set and DFSP bit is not cleared
+                         * which indicates switch is not complete, then dump register
+                         * and panic.
+                         */
+                        if (ms >= 5000 && mxc_pm_chk_dfsp() == DFS_SWITCH)
+                        {
+                          /* Get the register context */
+                        	snprintf(buf, sizeof(buf),\
+                                         " MPDR0=0x%x\n PMCR0=0x%x\n PMCR1=0x%x\n MCR=0x%x\n powerup_reason = 0x%08x\n", \
+                                         __raw_readl(MXC_CCM_MPDR0), \
+                                         __raw_readl(MXC_CCM_PMCR0), \
+                                         __raw_readl(MXC_CCM_PMCR1), \
+                                         __raw_readl(MXC_CCM_MCR), \
+                                         mot_powerup_reason());
+                        	panic("Switch from TPLL to MPLL failed.\n Current registers context:\n%s", buf);
+                        }
+                        
+                        /* Check the DFSI and DFSP bit after switching complete */
+                        if (mxc_pm_chk_dfsp() == DFS_SWITCH)
+                        	printk(KERN_WARNING "DFSP bit not clear when TPLL to MPLL.\n");
+                        if (((__raw_readl(MXC_CCM_PMCR0) >> 24) & 1) != 1)
+                        	printk(KERN_WARNING "DFSI bit not set when TPLL to MPLL.\n");
+#else
+                        while (((__raw_readl(MXC_CCM_PMCR0) >> 24) & 1) != 1) ;
+#endif
 
 			/*
 			 * Clear DFSI interrupt
@@ -657,7 +707,41 @@ static int mxc_pm_chgfreq(dvfs_op_point_t dvfs_op)
 			 * will occur as soon as the switch completes
 			 * by setting DFSI
 			 */
-			while (((__raw_readl(MXC_CCM_PMCR0) >> 24) & 1) != 1) ;
+#ifdef CONFIG_MOT_FEAT_PM
+                        /* Delay 5s for switch complete with DFSI setting and DFSP clear */
+                        while (ms < 5000)
+                        {
+                        	if (((__raw_readl(MXC_CCM_PMCR0) >> 24) & 1) == 1)
+                        		break;
+                        	mdelay(1);
+                        	ms++;
+                        }
+
+                        /* if DFSI bit is not set and DFSP bit is not cleared
+                         * which indicates switch is not complete, then dump register
+                         * and panic.
+                         */
+                        if (ms >= 5000 && mxc_pm_chk_dfsp() == DFS_SWITCH)
+                        {
+                          /* Get the register context */
+                        	snprintf(buf, sizeof(buf),\
+                                         " MPDR0=0x%x\n PMCR0=0x%x\n PMCR1=0x%x\n MCR=0x%x\n powerup_reason = 0x%08x\n", \
+                                         __raw_readl(MXC_CCM_MPDR0), \
+                                         __raw_readl(MXC_CCM_PMCR0), \
+                                         __raw_readl(MXC_CCM_PMCR1), \
+                                         __raw_readl(MXC_CCM_MCR), \
+                                         mot_powerup_reason());
+                        	panic("Switch from MPLL to TPLL failed.\n Current registers context:\n%s", buf);
+                        }
+
+                        /* Check the DFSI and DFSP bit after switching complete */
+                        if (mxc_pm_chk_dfsp() == DFS_SWITCH)
+                        	printk(KERN_WARNING "DFSP bit not clear when MPLL to TPLL.\n");
+                        if (((__raw_readl(MXC_CCM_PMCR0) >> 24) & 1) != 1)
+                        	printk(KERN_WARNING "DFSI bit not set when MPLL to TPLL.\n");
+#else
+                        while (((__raw_readl(MXC_CCM_PMCR0) >> 24) & 1) != 1) ;
+#endif
 
 			/*
 			 * Clear DFSI interrupt

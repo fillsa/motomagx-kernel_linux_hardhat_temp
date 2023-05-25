@@ -925,8 +925,7 @@ static int mxcfb_ioctl(struct inode *inode, struct file *file,
 #if 0 //CR libll50024: Remove calls to power_ic lighting
 			/* Ascension does not have a separate GPIO to control
                          * backlight on/off */
-			kernel_power_ic_backlightset(KERNEL_BACKLIGHT_DISPLAY,
-                                    mxcfb_global_state.brightness);
+			kernel_power_ic_backlightset(KERNEL_BACKLIGHT_DISPLAY, mxcfb_global_state.brightness);
 #endif //CR libll50024: Remove calls to power_ic lighting
 #endif /* CONFIG_MOT_FEAT_GPIO_API_LIGHTING_LCD */
 			mxcfb_global_state.backlight_state |= BKLIGHT_ON;
@@ -986,8 +985,7 @@ static int mxcfb_ioctl(struct inode *inode, struct file *file,
 		if (mxcfb_global_state.backlight_state & BKLIGHT_ON) {
 #endif /* !CONFIG_MACH_SCMA11REF */
 #if 0 //CR libll50024: Remove calls to power_ic lighting
-		kernel_power_ic_backlightset(backlight_set.bl_select,
-                                    backlight_set.bl_brightness);
+		kernel_power_ic_backlightset(backlight_set.bl_select, backlight_set.bl_brightness);
 #endif //CR libll50024: Remove calls to power_ic lighting
 #if !defined(CONFIG_MACH_SCMA11REF)
 		}

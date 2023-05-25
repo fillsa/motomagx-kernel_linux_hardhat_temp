@@ -927,7 +927,7 @@ static void mxc_pm_chgfreq_common(dvfs_op_point_index_t dvfs_op_index)
 	__raw_writel(opinfo[dvfs_op_index].ap_pll_dp_hfs_mfd, pll_dp_hfs_mfdreg[MCUPLL]);
 	__raw_writel(opinfo[dvfs_op_index].ap_pll_dp_hfs_mfn, pll_dp_hfs_mfnreg[MCUPLL]);
 
-#ifdef E8_g71.01.2DR
+#if 0 //E8 03/19/2008   Motorola  Fix dead loop in wait for end of dithering cycle.	
 	/* Setup dithering of AP Core Normal PLL, if dithering enabled */
 	if ((__raw_readl(pll_dp_mfn_togc[MCUPLL]) & TOG_DIS) == 0)
 	{

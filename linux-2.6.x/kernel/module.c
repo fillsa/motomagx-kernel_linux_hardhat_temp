@@ -1814,27 +1814,6 @@ static struct module *load_module(void __user *umod,
 	memset(ptr, 0, mod->init_size);
 	mod->module_init = ptr;
 
-#ifdef CONFIG_MOT_FEAT_SECURE_MODULE
-    /* Allocate sha1 transform  */
-    tfm = crypto_alloc_tfm("sha1", 0);
-    if (!tfm) {
-        printk("Couldn't load module - SHA1 transform unavailable\n");
-        return ERR_PTR(-EPERM);
-    }
-
-    /* Init the digest */
-    crypto_digest_init(tfm);
-
-    /* Allocate scatterlist for hash update */
-    sg = kmalloc(sizeof(struct scatterlist), GFP_KERNEL);
-    if (!sg) {
-        printk("Couldn't get memory for scatterlist\n");
-        err = -ENOMEM;
-        crypto_free_tfm(tfm);
-        goto free_core;
-    }
-#endif /* CONFIG_MOT_FEAT_SECURE_MODULE */
-
 	/* Transfer and hash each section which specifies SHF_ALLOC */
 	DEBUGP("final section addresses:\n");
 	for (i = 0; i < hdr->e_shnum; i++) {
@@ -1850,14 +1829,6 @@ static struct module *load_module(void __user *umod,
 			dest = mod->module_core + sechdrs[i].sh_entsize;
 
 		if (sechdrs[i].sh_type != SHT_NOBITS) {
-#ifdef CONFIG_MOT_FEAT_SECURE_MODULE
-            /* Update the module hash with this section 
-               Do not hash .gnu.linkonce.this_module (modindex),
-               because it is changed earlier in this function */
-            if(i != modindex)
-                module_hash_update(tfm, sg, (uint8_t *)sechdrs[i].sh_addr, 
-                                   sechdrs[i].sh_size);
-#endif /* CONFIG_MOT_FEAT_SECURE_MODULE */
 			memcpy(dest, (void *)sechdrs[i].sh_addr,
 			       sechdrs[i].sh_size);
         }
@@ -1867,23 +1838,6 @@ static struct module *load_module(void __user *umod,
 		DEBUGP("\t0x%lx %s\n", sechdrs[i].sh_addr, secstrings + sechdrs[i].sh_name);
 
 	}
-
-#ifdef CONFIG_MOT_FEAT_SECURE_MODULE
-    /* Free the scatterlist */
-    kfree(sg);
-
-    /* Finalize the transform and verify the digest,  
-       this will return an error if the digest does not match */
-    /* Store the final digest */
-    crypto_digest_final(tfm, digest);
-    /* Free the transform */
-    crypto_free_tfm(tfm);
-    /* Verify the module hash with hash from file */ 
-    err = module_hash_verify(digest);
-    if(err) {
-       goto free_core; 
-    }
-#endif /* CONFIG_MOT_FEAT_SECURE_MODULE */
 
 	/* Module has been moved. */
 	mod = (void *)sechdrs[modindex].sh_addr;

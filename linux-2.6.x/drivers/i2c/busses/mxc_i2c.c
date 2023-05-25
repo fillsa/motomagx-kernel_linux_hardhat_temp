@@ -403,8 +403,13 @@ static int mxc_i2c_readbytes(mxc_i2c_device * dev, struct i2c_msg *msg,
 #else
 		if (rett = mxc_i2c_wait_for_tc(dev, msg->flags)) {
 #endif
-////			mxc_i2c_stop(dev);
-                 	return rett;
+
+#ifdef MENSHE_71_14_1AR || (! defined(CONFIG_MACH_ELBA) && ! defined(CONFIG_MACH_PIANOSA) && ! defined(CONFIG_MACH_KEYWEST))
+			mxc_i2c_stop(dev);
+			return -1;
+#else
+			return rett;
+#endif
 		}
 		/*
 		 * Do not generate an ACK for the last byte
@@ -460,8 +465,12 @@ static int mxc_i2c_writebytes(mxc_i2c_device * dev, struct i2c_msg *msg,
 #else
 		if (rett = mxc_i2c_wait_for_tc(dev, msg->flags)) {
 #endif
-//////			mxc_i2c_stop(dev);
+#ifdef MENSHE_71_14_1AR || (! defined(CONFIG_MACH_ELBA) && ! defined(CONFIG_MACH_PIANOSA) && ! defined(CONFIG_MACH_KEYWEST))
+			mxc_i2c_stop(dev);
+			return -1;
+#else
 			return rett;
+#endif
 		}
         
 	}

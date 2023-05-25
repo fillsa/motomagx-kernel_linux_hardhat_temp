@@ -265,10 +265,6 @@ parse_long:
 				if (fat_get_entry(inode,&cpos,&bh,&de,&i_pos)<0)
 					goto EODir;
 #else
-#ifdef ELBA_71_01_8BR
-				if (unlikely((cpos == o_pos) && (first_time != 0))) 
-					goto EODir;
-#endif
 				if (fat_get_entry(inode,&cpos,&bh,&de,&i_pos) < 0) {
 					if ((cpos >= o_pos) && (o_pos != 0)) {
 						if (unlikely(first_time++ != 0)) {

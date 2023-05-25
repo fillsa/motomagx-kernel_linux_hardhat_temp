@@ -1,7 +1,7 @@
 /*
  * mot-gpio.c - Motorola-specific GPIO API
  *
- * Copyright 2006-2007 Motorola, Inc.
+ * Copyright (C) 2006-2008 Motorola, Inc.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -31,6 +31,8 @@
  * 13-Feb-2007  Motorola        New GPIO IRQ manipulators.
  * 23-Mar-2007  Motorola        Add GPIO_SIGNAL_ANT_MMC_EN.
  * 19-Jul-2007  Motorola        Add dev_id to free_irq.
+ * 07-Nov-2008  Motorola        Configure GPIO20 to function mode 
+ *                              as PMICHE is disabled.
  */
 
 #include <linux/module.h>
@@ -902,8 +904,17 @@ int __init mot_iomux_mux_init(void)
         gpio_tracemsg( "%s: IOMUX pin: 0x%08x output: 0x%02x input: 0x%02x",
                 __FUNCTION__, fsl_pin, entry->output_config,
                 entry->input_config);
-
-        iomux_config_mux(fsl_pin, entry->output_config, entry->input_config);
+                
+#if defined(CONFIG_MACH_ARGONLVPHONE)
+	/*
+	 * PMICHE is disabled, the PMIC_RDY signal would be ignored, here just
+	 * put PIN_GPIO20 on a known state 1
+	 */
+	if (fsl_pin == PIN_GPIO20)
+		iomux_config_mux(fsl_pin, OUTPUTCONFIG_FUNC, INPUTCONFIG_FUNC);
+	else
+#endif
+		iomux_config_mux(fsl_pin, entry->output_config, entry->input_config);
     }
 
     kfree(data);

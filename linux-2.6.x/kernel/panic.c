@@ -17,6 +17,7 @@
  * 01/2008	Motorola	Add mem print log in panic
  * 01/2008	Motorola	Make memory log more flexable.
  * 03/2008      Motorola        Deleted APR PC.
+ * 06/2008	Motorola	Enable full backtrace on security phones.
  */
 
 /*
@@ -257,10 +258,13 @@ NORET_TYPE void panic(const char * fmt, ...)
 		/* dump the entire printk buffer to flash */
 		if ((security_mode == MOT_SECURITY_MODE_ENGINEERING) ||
 		    (security_mode == MOT_SECURITY_MODE_NO_SECURITY) ||
+#ifndef CONFIG_MOT_FEAT_ENHANCE_LOG 
 		    ((security_mode == MOT_SECURITY_MODE_PRODUCTION) &&
 		     (production_state == PRE_ACCEPTANCE_ACCEPTANCE) &&
 		     (bound_signature_state == BS_DIS_ENABLED))) {
-
+#else
+		     (security_mode == MOT_SECURITY_MODE_PRODUCTION)) {
+#endif
 			/* displays current memory statistics; the return value is being ignored */
 			meminfo_read_proc(buf, NULL, 0, 0, NULL, NULL);
 #ifdef CONFIG_MOT_FEAT_MEMDUMP

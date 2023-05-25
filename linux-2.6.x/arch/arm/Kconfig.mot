@@ -37,8 +37,14 @@
 # 12/25/2007  Motorola          Added CONFIG_MOT_FEAT_MOVINAND
 # 01/21/2008  Motorola          Added MOT_FEAT_ENABLE_JFFS2VFS_PATCH
 # 03/25/2008  Motorola          Added MOT_FEAT_ENABLE_HIDE_SYSFILE
+# 06/04/2008  Motorola		Added MOT_FEAT_ENHANCE_LOG
 # 06/24/2008  Motorola          Added MOT_FEAT_FLUSH_LOCKED_TLB 
+# 06/26/2008  Motorola		Added MOT_FEAT_COREDUMP_RECOVER
 # 07/23/2008  Motorola          Added MOT_FAT_LOOKUP
+# 08/29/2008  Motorola          Added MOT_FILELOCK_PATCH
+# 09/27/2008  Motorola		Added MOT_FEAT_FLUSH_PG_COREDUMP
+# 10/14/2008  Motorola		Added MOT_FEAT_DISABLE_TCP_WINDOW_SCALING_SACK
+# 10/15/2008  Motorola 		Added MOT_FAT_CHECKDIR
 #
 menu "Motorola Features"
 
@@ -318,6 +324,12 @@ config MOT_FEAT_MEMDUMP
                 in the boot command line to make it work.
                 Make sure no user-space program tries to fsck or
                 format the partition on boot.
+
+config MOT_FEAT_ENHANCE_LOG
+        bool "Enable enhanced log on security phone"
+        default n
+        help
+		If enabled, secure phone will dump kernel panic backtrace and full coredump is available in SD card.
 
 config MOT_FEAT_TEST_PANIC
         bool "Enable the test panic capability"
@@ -776,6 +788,13 @@ config MOT_FEAT_GPIO_API_LIGHTING_EL
                 On some phones the keypad electroluminescent backlight can be
                 enabled and disabled via GPIO settings.
 
+config MOT_FEAT_COREDUMP_RECOVER
+        bool "Reset phone when there are frequent coredumps"
+        depends on MOT_FEAT_APP_DUMP
+        default n
+        help
+           If this feature is enable, phone will get reset when there are freqeunt coredumps - more than 5 coredumps in 2 minutes.
+
 comment 'End of Motorola GPIO Lighting API'
 
 endmenu
@@ -1111,6 +1130,13 @@ config MOT_FEAT_MSS_CMCC
            If this feature is enabled, 
 	   MSS will be set to 0x055C for CMCC network.
 
+config MOT_FEAT_DISABLE_TCP_WINDOW_SCALING_SACK
+        bool "Disable the tcp window scaling and sack in AT&T network"
+        default n
+        help
+           If this feature is enabled,
+           TCP window scaling and sack will be disable for AT&T network.
+
 config MOT_FEAT_ENABLE_WD_IN_DSM
         bool "Enable Watchdog in DSM mode"
         default n
@@ -1144,14 +1170,27 @@ config MOT_FAT_LOOKUP
         help 
 	    If this feature is enabled, vfat filesystem  will get a ascending lookup.
 
-comment 'End of Motorola Features'
-
-
-config MOT_FEAT_LOG_SCHEDULE_EVENTS
-        bool "Log the schedule events"
+#for debug the GNPO Label with panic issue
+config MOT_FEAT_LOG_SCHEDULE_EVENTS #old config DEBUG_GNPO
+	bool "Log the schedule events"
         default n
         help
-           This is an option to log the latest schedule events to debug Watchdog timeout issue
+           This is an option to log the latest schedule events to debug Watchdog timeout issue.
+
+config MOT_FILELOCK_PATCH
+        bool "Add patch to avoid the race condition between close(2) and fcntl()"
+        default n
+        help
+            If this feature is enabled, it will avoid the race condition when using file lock.
+
+config MOT_FAT_CHECKDIR
+        bool "Check dir entries in fat filesystem "
+        default n
+        help 
+	    If this feature is enabled, fat file system will do a smaple valid 
+            for the dir entry.
+
+comment 'End of Motorola Features'
 
 #for debug the GNPO Label with panic issue
 config DEBUG_GNPO
@@ -1160,5 +1199,12 @@ config DEBUG_GNPO
         help
           Say Y here if you want debug print more panic information for GNPO
           label. The chosen GNPO  must have been configured before it is used.
+
+config MOT_FEAT_FLUSH_PG_COREDUMP
+        bool "Enable flush page cache of executable file"
+        default n
+        help
+          if this feature is enabled, it will flush page cache of executable file
+          of current coredump process.
 
 endmenu

@@ -1,6 +1,6 @@
 /*
  * Copyright 2006 Freescale Semiconductor, Inc. All Rights Reserved.
- * Copyright (C) 2006-2007 Motorola, Inc.
+ * Copyright (C) 2006-2008 Motorola, Inc.
  */
 /*
  * The code contained herein is licensed under the GNU General Public
@@ -20,6 +20,7 @@
  *                       and for Bluetooth use of UART
  * 08/01/2007  Motorola  Disable DMA for Bluetooth
  * 10/31/2007  Motorola  Enable DMA for Bluetooth
+ * 11/12/2008  Motorola  Disable BT DMA transfer
  */
 
 /*!
@@ -71,9 +72,9 @@
  * This is option to enable (set this option to 1) or disable DMA data transfer
  */
 /*!
- * Enable the DMA for Bluetooth.
+ * Disable the DMA for Bluetooth.
  */
-#define UART1_DMA_ENABLE        1
+#define UART1_DMA_ENABLE        0
 
 /*!
  * Specify the size of the DMA receive buffer. The minimum buffer size is 512
