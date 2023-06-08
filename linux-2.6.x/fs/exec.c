@@ -931,10 +931,12 @@ int flush_old_exec(struct linux_binprm * bprm)
 	if (current->euid == current->uid && current->egid == current->gid)
 		current->mm->dumpable = 1;
 
+#if 0
 #ifdef CONFIG_MOT_FEAT_APP_DUMP
 	/* Enable partial coredump */
 	current->mm->mot_dumped = 0;
 #endif /* CONFIG_MOT_FEAT_APP_DUMP */
+#endif
 
 	name = bprm->filename;
 	for (i=0; (ch = *(name++)) != '\0';) {
@@ -1764,13 +1766,14 @@ int do_coredump(long signr, int exit_code, struct pt_regs * regs)
 	/* continue system coredump after aplog_do_coredump, if necessary */
 	if (aplog_do_coredump != NULL) {
 		down_read(&aplog_do_coredump_lock);
+#if 0
 		if(mm->mot_dumped)
 		{
 			up_read(&aplog_do_coredump_lock);
 			goto fail;
 		}
 		mm->mot_dumped = 1;
-
+#endif
 #ifdef CONFIG_MOT_FEAT_COREDUMP_RECOVER
 		check_coredump_status(regs);
 #endif /* CONFIG_MOT_FEAT_COREDUMP_RECOVER */

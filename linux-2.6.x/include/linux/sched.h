@@ -368,9 +368,11 @@ struct mm_struct {
 	unsigned long saved_auxv[42]; /* for /proc/PID/auxv */
 
 	unsigned dumpable:1;
+#if 0
 #ifdef CONFIG_MOT_FEAT_APP_DUMP 
 	unsigned mot_dumped:1;
 #endif  /* CONFIG_MOT_FEAT_APP_DUMP */
+#endif
 	cpumask_t cpu_vm_mask;
 
 	/* Architecture-specific MM context */

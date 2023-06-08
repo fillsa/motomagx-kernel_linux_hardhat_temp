@@ -707,7 +707,6 @@ static int vfat_add_entry(struct inode *dir,struct qstr* qname,
 	struct msdos_dir_entry *dummy_de;
 	struct buffer_head *dummy_bh;
 	loff_t dummy_i_pos;
-
 #ifdef CONFIG_MOT_FEAT_ENABLE_HIDE_SYSFILE
 	int is_hid = 0;
 #endif

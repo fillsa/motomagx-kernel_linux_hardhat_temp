@@ -481,7 +481,7 @@ static int mxc_i2c_writebytes(mxc_i2c_device * dev, struct i2c_msg *msg,
 	return i;
 }
 
-#ifdef CONFIG_MACH_ELBA
+#if defined(CONFIG_MACH_ELBA) 
 #ifdef CONFIG_MOT_FEAT_I2C_BLK_SUSPEND
 /*!
  * Function initializes the I2C the registers.
@@ -513,7 +513,7 @@ static void mxc_i2c_module_en_clks(mxc_i2c_device * dev)
         /* Set the frequency divider */
         writew(dev->clkdiv, dev->membase + MXC_IFDR);
 }
-#else
+#else /* ifdef CONFIG_MOT_FEAT_I2C_BLK_SUSPEND*/
 /*!
  * Function enables the I2C module and initializes the registers.
  *
@@ -547,7 +547,7 @@ static void mxc_i2c_module_dis(mxc_i2c_device * dev)
         mxc_clks_disable(I2C_CLK);
 }
 
-#else
+#else /* CONFIG_MACH_ELBA */
 
 /*!
  * Function enables the I2C module and initializes the registers.
@@ -627,7 +627,7 @@ static int mxc_i2c_xfer(struct i2c_adapter *adap, struct i2c_msg msgs[],
 	if (num < 1) {
 		return 0;
 	}
-#if defined(CONFIG_MACH_ELBA) && defined(CONFIG_MOT_FEAT_I2C_BLK_SUSPEND)
+#if defined(CONFIG_MOT_FEAT_I2C_BLK_SUSPEND)
         set_bit(MXC_I2C_IN_TRANSACTION, &(dev->status));
         mxc_i2c_module_en_regs(dev, msgs[0].flags);
 #else
@@ -639,7 +639,7 @@ static int mxc_i2c_xfer(struct i2c_adapter *adap, struct i2c_msg msgs[],
 	 * Check bus state
 	 */
 	if (sr & MXC_I2SR_IBB) {
-#if defined(CONFIG_MACH_ELBA) && defined(CONFIG_MOT_FEAT_I2C_BLK_SUSPEND)
+#if defined(CONFIG_MOT_FEAT_I2C_BLK_SUSPEND)
                 clear_bit(MXC_I2C_IN_TRANSACTION, &(dev->status));
                 writew(0x0, dev->membase + MXC_I2CR);
 #else
@@ -667,7 +667,7 @@ static int mxc_i2c_xfer(struct i2c_adapter *adap, struct i2c_msg msgs[],
 			 */
 			if(rett = mxc_i2c_start(dev, &msgs[0])){
                                 mxc_i2c_stop(dev);
-#if defined(CONFIG_MACH_ELBA) && defined(CONFIG_MOT_FEAT_I2C_BLK_SUSPEND)
+#if defined(CONFIG_MOT_FEAT_I2C_BLK_SUSPEND)
                                 clear_bit(MXC_I2C_IN_TRANSACTION, &(dev->status));
                                 writew(0x0, dev->membase + MXC_I2CR);
 #else
@@ -683,7 +683,7 @@ static int mxc_i2c_xfer(struct i2c_adapter *adap, struct i2c_msg msgs[],
 #endif
 				mxc_i2c_stop(dev);
 				//gpio_i2c_inactive(dev->adap.id);
-#if defined(CONFIG_MACH_ELBA) && defined(CONFIG_MOT_FEAT_I2C_BLK_SUSPEND)
+#if defined(CONFIG_MOT_FEAT_I2C_BLK_SUSPEND)
                 		clear_bit(MXC_I2C_IN_TRANSACTION, &(dev->status));
                 		writew(0x0, dev->membase + MXC_I2CR);
 #else
@@ -710,7 +710,7 @@ static int mxc_i2c_xfer(struct i2c_adapter *adap, struct i2c_msg msgs[],
 #endif
 					mxc_i2c_stop(dev);
 					//gpio_i2c_inactive(dev->adap.id);
-#if defined(CONFIG_MACH_ELBA) && defined(CONFIG_MOT_FEAT_I2C_BLK_SUSPEND)
+#if defined(CONFIG_MOT_FEAT_I2C_BLK_SUSPEND)
 			                clear_bit(MXC_I2C_IN_TRANSACTION, &(dev->status));
                				writew(0x0, dev->membase + MXC_I2CR);
 #else
@@ -745,7 +745,7 @@ static int mxc_i2c_xfer(struct i2c_adapter *adap, struct i2c_msg msgs[],
 	}
 
 	//gpio_i2c_inactive(dev->adap.id);
-#if defined(CONFIG_MACH_ELBA) && defined(CONFIG_MOT_FEAT_I2C_BLK_SUSPEND)
+#if defined(CONFIG_MOT_FEAT_I2C_BLK_SUSPEND)
                 mxc_i2c_stop(dev);
 		clear_bit(MXC_I2C_IN_TRANSACTION, &(dev->status));
                 writew(0x0, dev->membase + MXC_I2CR);
@@ -954,7 +954,7 @@ static int mxci2c_remove(struct device *dev)
 #endif
 
 	dev_set_drvdata(dev, NULL);
-#if defined(CONFIG_MACH_ELBA) && defined(CONFIG_MOT_FEAT_I2C_BLK_SUSPEND)
+#if defined(CONFIG_MOT_FEAT_I2C_BLK_SUSPEND)
 	mxc_i2c_module_dis(mxcdev);
 #endif	
 	return 0;
@@ -1061,7 +1061,7 @@ static int __init mxc_i2c_init(void)
                         err = mpm_i2c_dev_nums[i];
                 }
 #endif
-#if defined(CONFIG_MOT_FEAT_I2C_BLK_SUSPEND) && defined(CONFIG_MACH_ELBA)
+#if defined(CONFIG_MOT_FEAT_I2C_BLK_SUSPEND)
                 mxc_i2c_module_en_clks(&mxc_i2c_devs[i]);
                 mxc_i2c_module_en_regs(&mxc_i2c_devs[i], 0);
 #endif

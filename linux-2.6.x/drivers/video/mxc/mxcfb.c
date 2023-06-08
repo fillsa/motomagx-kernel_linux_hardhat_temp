@@ -2045,8 +2045,7 @@ gpio_lcd_backlight_enable(true);
 #else
 #if 0 //CR libll50024: Remove calls to power_ic lighting
         /* Ascension does not have a separate GPIO to control backlight on/off */
-        kernel_power_ic_backlightset(KERNEL_BACKLIGHT_DISPLAY,
-                            mxcfb_global_state.bklight_main_brightness);
+        kernel_power_ic_backlightset(KERNEL_BACKLIGHT_DISPLAY, mxcfb_global_state.bklight_main_brightness);
 #endif //CR libll50024: Remove calls to power_ic lighting
 #endif /* CONFIG_MOT_FEAT_GPIO_API_LIGHTING_LCD */
 #endif /* CONFIG_MOT_FEAT_BOOT_BACKLIGHT */

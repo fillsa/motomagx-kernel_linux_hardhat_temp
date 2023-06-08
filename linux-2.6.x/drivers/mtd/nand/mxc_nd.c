@@ -474,7 +474,7 @@ static void send_read_page_lp(bool bSpareOnly)
 	if (nand_debug)
 		DEBUG (MTD_DEBUG_LEVEL3, "send_read_page_lp (%d)\n", bSpareOnly);
 
-#ifdef ELBA_71_01_8BR
+#ifdef MENSHE_E8_71_01_8BR
 #ifdef CONFIG_MOT_FEAT_PM
         /* Send IOI to MPM in order to not sleep during NAND access */
         mpm_handle_ioi();
